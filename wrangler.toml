@@ -1,6 +1,7 @@
 name = "degen-api"
 main = "worker/index.ts"
 compatibility_date = "2026-09-14"
+account_id = "79ccbd1a6b7972cb51ca01329547a726"
 
 [vars]
 ALLOWED_ORIGINS = "https://milesgoeswildtv.github.io,http://localhost:5173"
@@ -8,4 +9,4 @@ ALLOWED_ORIGINS = "https://milesgoeswildtv.github.io,http://localhost:5173"
 [[d1_databases]]
 binding = "DB"
 database_name = "DEGEN"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "3046b4d4-da5f-448e-a79a-162d538773f3"
