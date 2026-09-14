@@ -1,10 +1,12 @@
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
-import type { RouteKey } from '../domain/types';
+import type { BattlePermit, BattleReward, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
-import { PlayerStore } from './state';
 import { battleView, homeView, mapView, underpassView, updateBattleDom } from '../ui/views';
+import { GameApi } from './api';
+import { PlayerStore } from './state';
+import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
 
 export class AppController {
   private route: RouteKey = 'map';
@@ -12,14 +14,20 @@ export class AppController {
   private battleGame?: Phaser.Game;
   private battleEngine?: BattleEngine;
   private battleReturnTimer?: number;
+  private worldRefreshTimer?: number;
+  private underpassEvent?: WorldEventSnapshot;
+  private battlePermit?: BattlePermit;
 
   constructor(
     private readonly root: HTMLElement,
     private readonly store: PlayerStore,
+    private readonly api: GameApi,
   ) {}
 
-  start(): void {
+  async start(): Promise<void> {
+    await this.refreshWorld();
     this.render();
+    this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
   }
 
   private navigate(route: RouteKey): void {
@@ -36,14 +44,14 @@ export class AppController {
         this.root.innerHTML = homeView(player, this.selectedFurniture);
         break;
       case 'underpass':
-        this.root.innerHTML = underpassView(player);
+        this.root.innerHTML = underpassView(player, this.underpassEvent);
         break;
       case 'battle':
         this.root.innerHTML = battleView(player, TEST_DEGEN);
         break;
       case 'map':
       default:
-        this.root.innerHTML = mapView(player);
+        this.root.innerHTML = mapView(player, this.underpassEvent);
         break;
     }
 
@@ -81,11 +89,8 @@ export class AppController {
         const y = Number(cell.dataset.roomY);
         if (!Number.isInteger(x) || !Number.isInteger(y)) return;
 
-        if (this.selectedFurniture) {
-          this.store.placeFurniture(this.selectedFurniture, x, y);
-        } else {
-          this.store.removeFurnitureAt(x, y);
-        }
+        if (this.selectedFurniture) this.store.placeFurniture(this.selectedFurniture, x, y);
+        else this.store.removeFurnitureAt(x, y);
         this.render();
       });
     });
@@ -93,21 +98,34 @@ export class AppController {
 
   private bindUnderpass(): void {
     this.root.querySelector<HTMLButtonElement>('[data-start-battle]')?.addEventListener('click', () => {
-      this.navigate('battle');
+      void this.enterUnderpass();
     });
+  }
+
+  private async enterUnderpass(): Promise<void> {
+    const event = this.underpassEvent;
+    if (!event || event.phase !== 'open') return;
+
+    try {
+      this.battlePermit = this.api.enabled
+        ? await this.api.startUnderpass(this.store.snapshot.id, event.cycleId)
+        : createPreviewPermit(event.cycleId);
+
+      if (!this.battlePermit) throw new Error('No battle permit returned.');
+      this.navigate('battle');
+    } catch (error) {
+      console.warn('Underpass entry rejected.', error);
+      await this.refreshWorld();
+      this.render();
+    }
   }
 
   private mountBattle(): void {
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
-    if (!parent) return;
+    if (!parent || !this.battlePermit) return;
 
     this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status, reward) => {
-      if (status === 'victory' && reward) {
-        this.store.applyReward(reward);
-        this.store.markBossDefeated(TUNNEL_MAW.id);
-      }
-
-      this.battleReturnTimer = window.setTimeout(() => this.navigate('underpass'), 1400);
+      void this.finishBattle(status, reward);
     });
 
     this.battleEngine.subscribe(updateBattleDom);
@@ -119,6 +137,47 @@ export class AppController {
         if (ability) this.battleEngine?.useAbility(ability);
       });
     });
+  }
+
+  private async finishBattle(status: 'victory' | 'defeat', reward?: BattleReward): Promise<void> {
+    if (status === 'victory' && reward && this.battlePermit) {
+      if (this.api.enabled) {
+        try {
+          const result = await this.api.completeUnderpass(this.store.snapshot.id, this.battlePermit.permitId);
+          if (result) {
+            this.store.replaceFromServer(result.player);
+            this.underpassEvent = result.worldEvent;
+          }
+        } catch (error) {
+          console.warn('Server reward verification failed.', error);
+        }
+      } else {
+        const clearsBeforeThisFight = recordPreviewClear();
+        const fullReward = clearsBeforeThisFight < (this.underpassEvent?.fullRewardLimit ?? 3);
+        const previewReward: BattleReward = fullReward
+          ? { ...reward, tier: 'full' }
+          : { xp: 10, currency: 3, items: [], tier: 'reduced' };
+        this.store.applyReward(previewReward);
+        this.store.markBossDefeated(TUNNEL_MAW.id);
+        this.underpassEvent = getPreviewUnderpass();
+      }
+    }
+
+    this.battlePermit = undefined;
+    this.battleReturnTimer = window.setTimeout(() => this.navigate('underpass'), 1400);
+  }
+
+  private async refreshWorld(rerender = false): Promise<void> {
+    try {
+      this.underpassEvent = this.api.enabled
+        ? await this.api.getUnderpass(this.store.snapshot.id)
+        : getPreviewUnderpass();
+    } catch (error) {
+      console.warn('World-event sync failed; using local preview clock.', error);
+      this.underpassEvent = getPreviewUnderpass();
+    }
+
+    if (rerender && (this.route === 'map' || this.route === 'underpass')) this.render();
   }
 
   private destroyBattle(): void {

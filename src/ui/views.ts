@@ -1,11 +1,29 @@
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import type { BattleSnapshot } from '../game/combat/engine';
-import type { DegenDefinition, PlayerState } from '../domain/types';
+import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
 
 const escapeHtml = (value: string): string =>
-  value.replace(/[&<>'"]/g, (char) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+  value.replace(/[&<>'\"]/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '\"': '&quot;',
   })[char] ?? char);
+
+const remainingText = (target: string): string => {
+  const ms = Math.max(0, Date.parse(target) - Date.now());
+  const totalMinutes = Math.ceil(ms / 60_000);
+  if (totalMinutes >= 60) return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
+  return `${totalMinutes}m`;
+};
+
+const underpassStatus = (event?: WorldEventSnapshot): { label: string; detail: string; className: string } => {
+  if (!event) return { label: 'SYNCING', detail: 'Checking city activity…', className: 'syncing' };
+  if (event.phase === 'open') {
+    return { label: 'OPEN', detail: `${remainingText(event.closesAt)} remaining`, className: 'open' };
+  }
+  if (event.phase === 'warning') {
+    return { label: 'INSTABILITY RISING', detail: `Breach likely in ${remainingText(event.opensAt)}`, className: 'warning' };
+  }
+  return { label: 'SEALED', detail: 'Next breach unknown', className: 'sealed' };
+};
 
 export const appShell = (player: PlayerState, content: string): string => `
   <header class="topbar">
@@ -23,26 +41,32 @@ export const appShell = (player: PlayerState, content: string): string => `
   </nav>
 `;
 
-export const mapView = (player: PlayerState): string => {
+export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot): string => {
+  const eventStatus = underpassStatus(underpass);
   const cards = WORLD_LOCATIONS.map((location) => {
     const unlocked = player.unlockedLocations.includes(location.id);
+    const isUnderpass = location.id === 'underpass';
+    const status = isUnderpass ? eventStatus.label : unlocked ? 'OPEN' : 'LOCKED';
+    const detail = isUnderpass ? `<span class="event-detail">${escapeHtml(eventStatus.detail)}</span>` : '';
     return `
-      <button class="location-card" type="button" data-route="${location.route}" ${unlocked ? '' : 'disabled'}>
+      <button class="location-card ${isUnderpass ? `world-event ${eventStatus.className}` : ''}" type="button" data-route="${location.route}" ${unlocked ? '' : 'disabled'}>
         <span class="eyebrow">${escapeHtml(location.district)} // ${location.kind.toUpperCase()}</span>
         <strong>${escapeHtml(location.name)}</strong>
         <span>${escapeHtml(location.description)}</span>
-        <em>${unlocked ? 'OPEN' : 'LOCKED'}</em>
+        ${detail}
+        <em>${escapeHtml(status)}</em>
       </button>
     `;
   }).join('');
 
   return appShell(player, `
     <section class="hero-block">
-      <span class="eyebrow">CITY MAP // PROTOTYPE</span>
+      <span class="eyebrow">CITY MAP // LIVE WORLD</span>
       <h1>Where are you going?</h1>
-      <p>The final city will expand through destinations and unlockable locations instead of open-world traversal.</p>
+      <p>Locations can open, close, mutate, or appear without turning the city into an open-world traversal game.</p>
     </section>
     <section class="location-grid">${cards}</section>
+    ${underpass?.source === 'preview' ? '<p class="preview-note">PREVIEW MODE — this browser is simulating the world-event clock until the Cloudflare backend is connected.</p>' : ''}
   `);
 };
 
@@ -87,14 +111,26 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
   `);
 };
 
-export const underpassView = (player: PlayerState): string => appShell(player, `
-  <section class="hero-block danger">
-    <span class="eyebrow">CENTRAL // COMBAT LOCATION</span>
-    <h1>The Underpass</h1>
-    <p>Something is moving below the service road. Entering a battle means manifesting as your Degen immediately. There is no human-form combat.</p>
-    <button class="primary-action" type="button" data-start-battle>ENTER UNDERPASS</button>
-  </section>
-`);
+export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): string => {
+  const status = underpassStatus(event);
+  const isOpen = event?.phase === 'open';
+  const clears = event ? `${Math.min(event.fullRewardClears, event.fullRewardLimit)}/${event.fullRewardLimit}` : '—';
+  return appShell(player, `
+    <section class="hero-block danger underpass-hero ${status.className}">
+      <span class="eyebrow">CENTRAL // WORLD EVENT</span>
+      <div class="event-status ${status.className}">${escapeHtml(status.label)}</div>
+      <h1>The Underpass</h1>
+      <p>${escapeHtml(status.detail)}</p>
+      <div class="event-meta">
+        <span><strong>${clears}</strong> full-reward clears this breach</span>
+        <span>Closed 2–4h // Open 60–90m</span>
+      </div>
+      <p>When combat begins, you manifest as your Degen immediately. The entrance cannot be farmed while sealed.</p>
+      <button class="primary-action" type="button" data-start-battle ${isOpen ? '' : 'disabled'}>${isOpen ? 'ENTER UNDERPASS' : 'UNDERPASS SEALED'}</button>
+      ${event?.source === 'preview' ? '<small class="preview-note">Local preview cycle — production timing will be server-authoritative.</small>' : ''}
+    </section>
+  `);
+};
 
 export const battleView = (player: PlayerState, degen: DegenDefinition): string => appShell(player, `
   <section class="battle-layout">
@@ -128,7 +164,7 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   if (snapshot.status !== 'active') {
     const result = document.createElement('strong');
     result.className = `battle-result ${snapshot.status}`;
-    result.textContent = snapshot.status === 'victory' ? 'VICTORY — returning to the Underpass.' : 'DEFEAT — returning to the Underpass.';
+    result.textContent = snapshot.status === 'victory' ? 'VICTORY — verifying rewards.' : 'DEFEAT — returning to the Underpass.';
     log.append(result);
   }
 };

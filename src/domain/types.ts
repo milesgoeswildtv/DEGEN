@@ -1,6 +1,7 @@
 export type RouteKey = 'map' | 'home' | 'underpass' | 'battle';
 
 export type PlatformName = 'browser' | 'discord' | 'telegram';
+export type WorldEventPhase = 'sealed' | 'warning' | 'open';
 
 export interface PlatformIdentity {
   platform: PlatformName;
@@ -82,4 +83,30 @@ export interface BattleReward {
   currency: number;
   items: string[];
   furniture?: string[];
+  tier?: 'full' | 'reduced';
+}
+
+export interface WorldEventSnapshot {
+  eventKey: string;
+  cycleId: string;
+  phase: WorldEventPhase;
+  opensAt: string;
+  closesAt: string;
+  fullRewardClears: number;
+  fullRewardLimit: number;
+  source: 'server' | 'preview';
+}
+
+export interface BattlePermit {
+  permitId: string;
+  eventKey: string;
+  cycleId: string;
+  encounterKey: string;
+  expiresAt: string;
+}
+
+export interface BattleCompletionResult {
+  player: PlayerState;
+  reward: BattleReward;
+  worldEvent: WorldEventSnapshot;
 }

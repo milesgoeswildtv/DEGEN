@@ -1,5 +1,7 @@
 import './styles.css';
+import './world-events.css';
 import { AppController } from './app/AppController';
+import { GameApi } from './app/api';
 import { PlayerStore } from './app/state';
 import { createPlatformAdapter } from './platform/platform';
 
@@ -8,10 +10,8 @@ if (!root) throw new Error('DEGEN could not find #app');
 
 const platform = createPlatformAdapter();
 const identity = await platform.getIdentity();
-const store = new PlayerStore();
+const api = new GameApi();
+const store = new PlayerStore(api);
+await store.initialize(identity);
 
-if (store.snapshot.displayName === 'Player' && identity.displayName !== 'Player') {
-  store.setDisplayName(identity.displayName);
-}
-
-new AppController(root, store).start();
+await new AppController(root, store, api).start();

@@ -82,3 +82,38 @@ CREATE TABLE IF NOT EXISTS battle_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_battle_history_player ON battle_history(player_id, completed_at DESC);
+
+CREATE TABLE IF NOT EXISTS world_event_cycles (
+  id TEXT PRIMARY KEY,
+  event_key TEXT NOT NULL,
+  opens_at TEXT NOT NULL,
+  closes_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_world_event_cycles ON world_event_cycles(event_key, closes_at DESC);
+
+CREATE TABLE IF NOT EXISTS world_event_clears (
+  player_id TEXT NOT NULL,
+  event_key TEXT NOT NULL,
+  cycle_id TEXT NOT NULL,
+  full_reward_clears INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (player_id, event_key, cycle_id),
+  FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+  FOREIGN KEY (cycle_id) REFERENCES world_event_cycles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS battle_permits (
+  id TEXT PRIMARY KEY,
+  player_id TEXT NOT NULL,
+  event_key TEXT NOT NULL,
+  cycle_id TEXT NOT NULL,
+  encounter_key TEXT NOT NULL,
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TEXT NOT NULL,
+  completed_at TEXT,
+  FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+  FOREIGN KEY (cycle_id) REFERENCES world_event_cycles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_battle_permits_player ON battle_permits(player_id, completed_at, expires_at);
