@@ -12,6 +12,7 @@ on:
       - 'package-lock.json'
       - '.github/workflows/deploy-worker.yml'
 
+# Updating this workflow retriggers deployment after Cloudflare credential changes.
 jobs:
   deploy:
     runs-on: ubuntu-latest
