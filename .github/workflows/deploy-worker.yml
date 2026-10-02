@@ -15,6 +15,7 @@ on:
 # Updating this workflow retriggers deployment after Cloudflare credential changes.
 jobs:
   deploy:
+    environment: production
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
