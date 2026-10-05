@@ -3,6 +3,7 @@ import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
 import type { BattlePermit, BattleReward, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
+import { underpassRewardForClear } from '../game/progression';
 import { battleView, homeView, mapView, underpassView, updateBattleDom } from '../ui/views';
 import { GameApi } from './api';
 import { PlayerStore } from './state';
@@ -194,10 +195,10 @@ export class AppController {
         }
       } else {
         const clearsBeforeThisFight = recordPreviewClear();
-        const fullReward = clearsBeforeThisFight < (this.underpassEvent?.fullRewardLimit ?? 3);
-        const previewReward: BattleReward = fullReward
-          ? { ...reward, tier: 'full' }
-          : { xp: 10, currency: 3, items: [], tier: 'reduced' };
+        const previewReward = underpassRewardForClear(
+          clearsBeforeThisFight + 1,
+          this.underpassEvent?.fullRewardLimit,
+        );
         this.store.applyReward(previewReward);
         this.store.markBossDefeated(TUNNEL_MAW.id);
         this.underpassEvent = getPreviewUnderpass();
