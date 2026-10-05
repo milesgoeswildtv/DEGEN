@@ -25,14 +25,13 @@ Updated: 2026-10-05
 - Client and Worker share one deterministic turn resolver.
 
 ## Current slice
-Branch: `sidekick/degen-mana-foundation-v01`
+Branch: `automation/degen/recoverable-reward-claim-v2`
 
 Goal:
-- add authoritative Degen-only Mana to the shared combat model
-- persist current Degen Mana on server-owned battle permits
-- reject paid abilities when Mana is insufficient without consuming a turn
-- expose Mana and ability costs in the battle UI
-- keep monsters completely free of Mana/resource fields
+- make authoritative victory reward claiming recoverable and auditable
+- prevent simultaneous duplicate claims with a server-owned lease
+- preserve server-resolved victory and permit-expiry semantics
+- add durable reward receipt fields for idempotent replay
 
 ## Known remaining authority work
 - Add stronger integration coverage for invalid/expired permits, duplicate completion, and concurrent completion attempts.
@@ -47,4 +46,4 @@ After the Degen Mana slice is green and deployed:
 4. replace prototype Tunnel Maw / TEST_DEGEN flow with approved production combat content incrementally
 
 ## Highest-value next task
-Finish and merge the Degen-only Mana authority slice. Then choose between recoverable/idempotent reward claiming and the generic Shield foundation based on current production risk.
+Complete the recoverable/idempotent reward-claim Worker implementation and integration tests on this branch; do not merge the migration alone.
