@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
-import { resolveCombatTurn } from '../src/game/combat/rules';
+import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } from '../src/game/progression';
 
 interface Env {
@@ -49,6 +49,7 @@ type BattlePermitStateRow = {
   cycle_id: string;
   encounter_key: string;
   player_hp: number | null;
+  player_mana: number | null;
   enemy_hp: number | null;
   battle_status: 'active' | 'victory' | 'defeat';
   turn_count: number;
@@ -195,9 +196,9 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   const expiresAt = iso(Date.now() + 20 * 60_000);
   await env.DB.prepare(`INSERT INTO battle_permits (
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
-      player_hp, enemy_hp, battle_status, turn_count
-    ) VALUES (?, ?, 'underpass', ?, ?, ?, ?, ?, 'active', 0)`)
-    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt, TEST_DEGEN.maxHp, TUNNEL_MAW.maxHp).run();
+      player_hp, player_mana, enemy_hp, battle_status, turn_count
+    ) VALUES (?, ?, 'underpass', ?, ?, ?, ?, ?, ?, 'active', 0)`)
+    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt, TEST_DEGEN.maxHp, TEST_DEGEN.maxMana, TUNNEL_MAW.maxHp).run();
 
   return json(request, env, {
     permitId,
@@ -218,7 +219,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (!ability) return fail(request, env, 'Unknown ability.', 400);
 
   const permit = await env.DB.prepare(`SELECT
-      cycle_id, encounter_key, player_hp, enemy_hp, battle_status, turn_count
+      cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
     FROM battle_permits
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND expires_at > CURRENT_TIMESTAMP`)
     .bind(input.permitId, input.playerId)
@@ -227,23 +228,29 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
   if (permit.battle_status !== 'active') return fail(request, env, `Battle is already ${permit.battle_status}.`, 409);
-  if (permit.player_hp === null || permit.enemy_hp === null) return fail(request, env, 'Battle state is unavailable.', 409);
+  if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
+    return fail(request, env, 'Battle state is unavailable.', 409);
+  }
+  if (!canUseAbility(permit.player_mana, ability)) {
+    return fail(request, env, 'Not enough Mana for that ability.', 409);
+  }
 
   const turn = resolveCombatTurn({
     playerHp: permit.player_hp,
+    playerMana: permit.player_mana,
     enemyHp: permit.enemy_hp,
     ability,
     degen: TEST_DEGEN,
     enemy: TUNNEL_MAW,
   });
-  const { playerHp, enemyHp, status } = turn;
+  const { playerHp, playerMana, enemyHp, status } = turn;
 
   const updated = await env.DB.prepare(`UPDATE battle_permits
-    SET player_hp = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
+    SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
       AND expires_at > CURRENT_TIMESTAMP AND turn_count = ?
     RETURNING turn_count`)
-    .bind(playerHp, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
+    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
     .first<{ turn_count: number }>();
 
   if (!updated) return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
@@ -263,6 +270,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     permitId: input.permitId,
     status,
     playerHp,
+    playerMana,
     enemyHp,
     turnCount: updated.turn_count,
   });
