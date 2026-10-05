@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
+import { resolveCombatTurn } from '../src/game/combat/rules';
 
 interface Env {
   DB: D1Database;
@@ -229,19 +230,14 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (permit.battle_status !== 'active') return fail(request, env, `Battle is already ${permit.battle_status}.`, 409);
   if (permit.player_hp === null || permit.enemy_hp === null) return fail(request, env, 'Battle state is unavailable.', 409);
 
-  const playerDamage = ability.damage + Math.floor(TEST_DEGEN.power * 0.5);
-  const enemyHp = Math.max(0, permit.enemy_hp - playerDamage);
-
-  let playerHp = permit.player_hp;
-  let status: BattlePermitStateRow['battle_status'] = 'active';
-
-  if (enemyHp <= 0) {
-    status = 'victory';
-  } else {
-    const retaliation = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
-    playerHp = Math.max(0, playerHp - retaliation);
-    if (playerHp <= 0) status = 'defeat';
-  }
+  const turn = resolveCombatTurn({
+    playerHp: permit.player_hp,
+    enemyHp: permit.enemy_hp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  const { playerHp, enemyHp, status } = turn;
 
   const updated = await env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
