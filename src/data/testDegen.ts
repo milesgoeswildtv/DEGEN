@@ -15,14 +15,12 @@ export const TEST_DEGEN: DegenDefinition = {
       name: 'Slash',
       description: 'Reliable damage.',
       damage: 20,
-      stabilityDamage: 8,
     },
     {
       id: 'crack',
       name: 'Crack',
-      description: 'Lower damage, heavy Stability damage.',
-      damage: 11,
-      stabilityDamage: 26,
+      description: 'Heavy direct damage.',
+      damage: 26,
     },
   ],
 };
@@ -32,6 +30,5 @@ export const TUNNEL_MAW: EnemyDefinition = {
   name: 'Tunnel Maw',
   level: 1,
   maxHp: 92,
-  maxStability: 52,
   damage: 13,
 };
