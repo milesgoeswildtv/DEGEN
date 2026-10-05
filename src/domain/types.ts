@@ -14,7 +14,6 @@ export interface AbilityDefinition {
   name: string;
   description: string;
   damage: number;
-  stabilityDamage: number;
 }
 
 export interface DegenDefinition {
@@ -33,7 +32,6 @@ export interface EnemyDefinition {
   name: string;
   level: number;
   maxHp: number;
-  maxStability: number;
   damage: number;
 }
 
@@ -103,6 +101,14 @@ export interface BattlePermit {
   cycleId: string;
   encounterKey: string;
   expiresAt: string;
+}
+
+export interface BattleActionResult {
+  permitId: string;
+  status: 'active' | 'victory' | 'defeat';
+  playerHp: number;
+  enemyHp: number;
+  turnCount: number;
 }
 
 export interface BattleCompletionResult {
