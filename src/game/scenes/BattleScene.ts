@@ -54,12 +54,9 @@ export class BattleScene extends Phaser.Scene {
     this.enemyText?.setText([
       `${snapshot.enemyName}  Lv.${snapshot.enemyLevel}`,
       `HP ${snapshot.enemyHp}/${snapshot.enemyMaxHp}`,
-      `STB ${snapshot.enemyStability}/${snapshot.enemyMaxStability}`,
     ]);
 
-    const status = snapshot.status === 'active'
-      ? snapshot.enemyBroken ? 'BREAK' : 'CHOOSE AN ACTION'
-      : snapshot.status.toUpperCase();
+    const status = snapshot.status === 'active' ? 'CHOOSE AN ACTION' : snapshot.status.toUpperCase();
     this.statusText?.setText(status);
   }
 }
