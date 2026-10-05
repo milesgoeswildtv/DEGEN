@@ -1,4 +1,5 @@
-import type { AbilityDefinition, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
+import type { BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
+import { resolveCombatTurn } from './rules';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
 
@@ -58,31 +59,29 @@ export class BattleEngine {
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
     if (!ability) return;
 
-    this.resolvePlayerAbility(ability);
-    if (this.enemyHp <= 0) {
+    const result = resolveCombatTurn({
+      playerHp: this.playerHp,
+      enemyHp: this.enemyHp,
+      ability,
+      degen: this.degen,
+      enemy: this.enemy,
+    });
+
+    this.playerHp = result.playerHp;
+    this.enemyHp = result.enemyHp;
+    this.log.push(`${this.degen.name} uses ${ability.name}: ${result.playerDamage} damage.`);
+
+    if (result.status === 'victory') {
+      this.trimLog();
+      this.emit();
       this.finishVictory();
       return;
     }
 
-    this.resolveEnemyTurn();
-  }
-
-  private resolvePlayerAbility(ability: AbilityDefinition): void {
-    const damage = ability.damage + Math.floor(this.degen.power * 0.5);
-
-    this.enemyHp = Math.max(0, this.enemyHp - damage);
-    this.log.push(`${this.degen.name} uses ${ability.name}: ${damage} damage.`);
-    this.trimLog();
-    this.emit();
-  }
-
-  private resolveEnemyTurn(): void {
-    const mitigated = Math.max(1, this.enemy.damage - Math.floor(this.degen.guard * 0.45));
-    this.playerHp = Math.max(0, this.playerHp - mitigated);
-    this.log.push(`${this.enemy.name} hits back for ${mitigated}.`);
+    this.log.push(`${this.enemy.name} hits back for ${result.retaliationDamage}.`);
     this.trimLog();
 
-    if (this.playerHp <= 0) {
+    if (result.status === 'defeat') {
       this.status = 'defeat';
       this.log.push(`${this.degen.name} goes down.`);
       this.emit();
