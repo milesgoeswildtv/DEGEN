@@ -9,4 +9,4 @@ ALLOWED_ORIGINS = "https://milesgoeswildtv.github.io,http://localhost:5173"
 [[d1_databases]]
 binding = "DB"
 database_name = "DEGEN"
-database_id = "3046b4d4-da5f-448e-a79a-162d538773f3"
+database_id = "3046b4d4-da5f-448e-a79a-162d538773f3"\nmigrations_dir = "db/migrations"
