@@ -11,17 +11,12 @@ export interface BattleSnapshot {
   enemyLevel: number;
   enemyHp: number;
   enemyMaxHp: number;
-  enemyStability: number;
-  enemyMaxStability: number;
-  enemyBroken: boolean;
   log: string[];
 }
 
 export class BattleEngine {
   private playerHp: number;
   private enemyHp: number;
-  private enemyStability: number;
-  private enemyBroken = false;
   private status: BattleStatus = 'active';
   private log: string[] = [];
   private listeners = new Set<(snapshot: BattleSnapshot) => void>();
@@ -34,7 +29,6 @@ export class BattleEngine {
   ) {
     this.playerHp = degen.maxHp;
     this.enemyHp = enemy.maxHp;
-    this.enemyStability = enemy.maxStability;
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
   }
 
@@ -48,9 +42,6 @@ export class BattleEngine {
       enemyLevel: this.enemy.level,
       enemyHp: this.enemyHp,
       enemyMaxHp: this.enemy.maxHp,
-      enemyStability: this.enemyStability,
-      enemyMaxStability: this.enemy.maxStability,
-      enemyBroken: this.enemyBroken,
       log: [...this.log],
     };
   }
@@ -73,30 +64,14 @@ export class BattleEngine {
       return;
     }
 
-    if (this.enemyBroken) {
-      this.log.push(`${this.enemy.name} is BROKEN and loses its action.`);
-      this.enemyBroken = false;
-      this.enemyStability = this.enemy.maxStability;
-      this.emit();
-      return;
-    }
-
     this.resolveEnemyTurn();
   }
 
   private resolvePlayerAbility(ability: AbilityDefinition): void {
     const damage = ability.damage + Math.floor(this.degen.power * 0.5);
-    const stabilityDamage = ability.stabilityDamage + Math.floor(this.degen.control * 0.25);
 
     this.enemyHp = Math.max(0, this.enemyHp - damage);
-    this.enemyStability = Math.max(0, this.enemyStability - stabilityDamage);
     this.log.push(`${this.degen.name} uses ${ability.name}: ${damage} damage.`);
-
-    if (this.enemyHp > 0 && this.enemyStability === 0) {
-      this.enemyBroken = true;
-      this.log.push(`BREAK — ${this.enemy.name}'s Stability collapses.`);
-    }
-
     this.trimLog();
     this.emit();
   }
