@@ -112,6 +112,10 @@ CREATE TABLE IF NOT EXISTS battle_permits (
   started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at TEXT NOT NULL,
   completed_at TEXT,
+  player_hp INTEGER,
+  enemy_hp INTEGER,
+  battle_status TEXT NOT NULL DEFAULT 'active' CHECK (battle_status IN ('active', 'victory', 'defeat')),
+  turn_count INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
   FOREIGN KEY (cycle_id) REFERENCES world_event_cycles(id) ON DELETE CASCADE
 );
