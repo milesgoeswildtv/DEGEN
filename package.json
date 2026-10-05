@@ -10,7 +10,8 @@
     "check:worker": "wrangler deploy --dry-run",
     "db:apply": "wrangler d1 execute DEGEN --remote --file=db/schema.sql",
     "deploy:worker": "wrangler deploy",
-    "db:migrate": "wrangler d1 migrations apply DEGEN --remote"
+    "db:migrate": "wrangler d1 migrations apply DEGEN --remote",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts"
   },
   "dependencies": {
     "phaser": "^4.2.1"
