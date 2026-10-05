@@ -25,12 +25,14 @@ Updated: 2026-10-05
 - Client and Worker share one deterministic turn resolver.
 
 ## Current slice
-Branch: `sidekick/progression-tests-v01`
+Branch: `sidekick/degen-mana-foundation-v01`
 
 Goal:
-- remove duplicate reward/level math between preview client and Worker
-- add deterministic regression tests for combat outcomes, Underpass reward tiers, and XP overflow/level-up math
-- make those tests a CI gate
+- add authoritative Degen-only Mana to the shared combat model
+- persist current Degen Mana on server-owned battle permits
+- reject paid abilities when Mana is insufficient without consuming a turn
+- expose Mana and ability costs in the battle UI
+- keep monsters completely free of Mana/resource fields
 
 ## Known remaining authority work
 - Add stronger integration coverage for invalid/expired permits, duplicate completion, and concurrent completion attempts.
@@ -38,12 +40,11 @@ Goal:
 - Keep reward grants idempotent and auditable as more encounters are added.
 
 ## Next gameplay systems
-After authority regression coverage is solid:
+After the Degen Mana slice is green and deployed:
 1. generic Shield support
-2. Degen Mana foundation without giving Mana to monsters
-3. universal status engine
-4. data-driven approved monster definitions/loadouts
-5. replace prototype Tunnel Maw / TEST_DEGEN flow with approved production combat content incrementally
+2. universal status engine
+3. data-driven approved monster definitions/loadouts
+4. replace prototype Tunnel Maw / TEST_DEGEN flow with approved production combat content incrementally
 
 ## Highest-value next task
-Finish and merge the deterministic combat/progression test slice, then implement idempotent/recoverable reward claiming before expanding combat complexity.
+Finish and merge the Degen-only Mana authority slice. Then choose between recoverable/idempotent reward claiming and the generic Shield foundation based on current production risk.
