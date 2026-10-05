@@ -10,7 +10,7 @@
     "check:worker": "wrangler deploy --dry-run",
     "db:apply": "wrangler d1 execute DEGEN --remote --file=db/schema.sql",
     "deploy:worker": "wrangler deploy",
-    "db:migrate:battle-authority": "wrangler d1 execute DEGEN --remote --file=db/migrations/0002_authoritative_battle_state.sql"
+    "db:migrate": "wrangler d1 migrations apply DEGEN --remote"
   },
   "dependencies": {
     "phaser": "^4.2.1"
