@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
   advanceLevel,
@@ -16,6 +16,7 @@ test('prototype combat resolves the same deterministic turn every time', () => {
 
   const a = resolveCombatTurn({
     playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
     enemyHp: TUNNEL_MAW.maxHp,
     ability,
     degen: TEST_DEGEN,
@@ -23,6 +24,7 @@ test('prototype combat resolves the same deterministic turn every time', () => {
   });
   const b = resolveCombatTurn({
     playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
     enemyHp: TUNNEL_MAW.maxHp,
     ability,
     degen: TEST_DEGEN,
@@ -31,6 +33,7 @@ test('prototype combat resolves the same deterministic turn every time', () => {
 
   assert.deepEqual(a, b);
   assert.equal(a.playerDamage, 29);
+  assert.equal(a.playerMana, TEST_DEGEN.maxMana);
   assert.equal(a.retaliationDamage, 10);
   assert.equal(a.status, 'active');
 });
@@ -41,6 +44,7 @@ test('a killing blow never receives retaliation', () => {
 
   const result = resolveCombatTurn({
     playerHp: 5,
+    playerMana: TEST_DEGEN.maxMana,
     enemyHp: 20,
     ability,
     degen: TEST_DEGEN,
@@ -50,6 +54,7 @@ test('a killing blow never receives retaliation', () => {
   assert.equal(result.status, 'victory');
   assert.equal(result.enemyHp, 0);
   assert.equal(result.playerHp, 5);
+  assert.equal(result.playerMana, TEST_DEGEN.maxMana - ability.manaCost);
   assert.equal(result.retaliationDamage, 0);
 });
 
@@ -60,6 +65,7 @@ test('enemy retaliation cannot be reduced below one damage', () => {
 
   const result = resolveCombatTurn({
     playerHp: tank.maxHp,
+    playerMana: tank.maxMana,
     enemyHp: TUNNEL_MAW.maxHp,
     ability,
     degen: tank,
@@ -76,6 +82,7 @@ test('defeat is resolved when retaliation reduces player HP to zero', () => {
 
   const result = resolveCombatTurn({
     playerHp: 1,
+    playerMana: TEST_DEGEN.maxMana,
     enemyHp: TUNNEL_MAW.maxHp,
     ability,
     degen: TEST_DEGEN,
@@ -84,6 +91,43 @@ test('defeat is resolved when retaliation reduces player HP to zero', () => {
 
   assert.equal(result.status, 'defeat');
   assert.equal(result.playerHp, 0);
+});
+
+
+test('Degen Mana is spent by paid abilities and zero-cost abilities remain available at zero Mana', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
+  const paid = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(free);
+  assert.ok(paid);
+
+  assert.equal(canUseAbility(0, free), true);
+  assert.equal(canUseAbility(0, paid), false);
+  assert.equal(canUseAbility(paid.manaCost, paid), true);
+
+  const result = resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: paid,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+
+  assert.equal(result.playerMana, TEST_DEGEN.maxMana - paid.manaCost);
+});
+
+test('turn resolution rejects a paid ability when the Degen lacks Mana', () => {
+  const paid = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(paid);
+
+  assert.throws(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: paid.manaCost - 1,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: paid,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  }), /Insufficient Mana/);
 });
 
 test('Underpass rewards are full for the first three clears and reduced after', () => {

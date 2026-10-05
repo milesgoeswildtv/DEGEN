@@ -48,6 +48,7 @@ export class BattleScene extends Phaser.Scene {
     this.hpText?.setText([
       snapshot.playerName,
       `HP ${snapshot.playerHp}/${snapshot.playerMaxHp}`,
+      `MANA ${snapshot.playerMana}/${snapshot.playerMaxMana}`,
       'MANIFESTED',
     ]);
 

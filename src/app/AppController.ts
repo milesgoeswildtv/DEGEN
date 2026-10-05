@@ -159,6 +159,7 @@ export class AppController {
         if (
           local.status !== authoritative.status
           || local.playerHp !== authoritative.playerHp
+          || local.playerMana !== authoritative.playerMana
           || local.enemyHp !== authoritative.enemyHp
         ) {
           console.warn('Authoritative battle state diverged from the local presentation simulation.', {
@@ -176,8 +177,13 @@ export class AppController {
   }
 
   private setAbilityButtonsDisabled(disabled: boolean): void {
+    const snapshot = this.battleEngine?.snapshot;
     this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
-      button.disabled = disabled;
+      const manaCost = Number(button.dataset.manaCost ?? 0);
+      button.disabled = disabled
+        || !snapshot
+        || snapshot.status !== 'active'
+        || manaCost > snapshot.playerMana;
     });
   }
 

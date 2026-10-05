@@ -139,9 +139,10 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
       <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
       <div class="ability-grid">
         ${degen.abilities.map((ability) => `
-          <button type="button" data-ability="${ability.id}">
+          <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
+            <small>${ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}</small>
           </button>
         `).join('')}
       </div>
@@ -158,7 +159,8 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   log.innerHTML = snapshot.log.map((entry) => `<div>${escapeHtml(entry)}</div>`).join('');
 
   document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
-    button.disabled = snapshot.status !== 'active';
+    const manaCost = Number(button.dataset.manaCost ?? 0);
+    button.disabled = snapshot.status !== 'active' || manaCost > snapshot.playerMana;
   });
 
   if (snapshot.status !== 'active') {

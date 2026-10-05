@@ -14,12 +14,14 @@ export interface AbilityDefinition {
   name: string;
   description: string;
   damage: number;
+  manaCost: number;
 }
 
 export interface DegenDefinition {
   id: string;
   name: string;
   maxHp: number;
+  maxMana: number;
   power: number;
   guard: number;
   speed: number;
@@ -107,6 +109,7 @@ export interface BattleActionResult {
   permitId: string;
   status: 'active' | 'victory' | 'defeat';
   playerHp: number;
+  playerMana: number;
   enemyHp: number;
   turnCount: number;
 }
