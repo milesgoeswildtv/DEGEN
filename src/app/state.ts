@@ -1,4 +1,5 @@
 import type { BattleReward, FurniturePlacement, PlatformIdentity, PlayerState } from '../domain/types';
+import { advanceLevel } from '../game/progression';
 import { GameApi } from './api';
 
 const STORAGE_KEY = 'degen.prototype.player.v2';
@@ -22,8 +23,6 @@ const createDefaultPlayer = (id = newPlayerId()): PlayerState => ({
   },
   defeatedBosses: [],
 });
-
-const xpNeededForLevel = (level: number): number => 100 + (level - 1) * 75;
 
 export class PlayerStore {
   private state: PlayerState;
@@ -79,7 +78,9 @@ export class PlayerStore {
   }
 
   applyReward(reward: BattleReward): void {
-    this.state.xp += reward.xp;
+    const progression = advanceLevel(this.state.level, this.state.xp, reward.xp);
+    this.state.level = progression.level;
+    this.state.xp = progression.xp;
     this.state.currency += reward.currency;
     this.state.inventory.push(...reward.items);
 
@@ -87,11 +88,6 @@ export class PlayerStore {
       if (!this.state.housing.inventory.includes(furnitureId)) {
         this.state.housing.inventory.push(furnitureId);
       }
-    }
-
-    while (this.state.xp >= xpNeededForLevel(this.state.level)) {
-      this.state.xp -= xpNeededForLevel(this.state.level);
-      this.state.level += 1;
     }
 
     this.commitLocal();
