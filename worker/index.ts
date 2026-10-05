@@ -2,13 +2,13 @@
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
 import { resolveCombatTurn } from '../src/game/combat/rules';
+import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } from '../src/game/progression';
 
 interface Env {
   DB: D1Database;
   ALLOWED_ORIGINS?: string;
 }
 
-const FULL_REWARD_LIMIT = 3;
 const STARTER_FURNITURE = ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'];
 const STARTER_LOCATIONS = ['home', 'downtown', 'underpass'];
 
@@ -42,7 +42,6 @@ const randomInt = (min: number, max: number): number => {
   crypto.getRandomValues(bytes);
   return min + ((bytes[0] ?? 0) % (max - min + 1));
 };
-const xpNeeded = (level: number): number => 100 + (level - 1) * 75;
 
 type CycleRow = { id: string; event_key: string; opens_at: string; closes_at: string };
 type CharacterRow = { level: number; xp: number; currency: number; degen_key: string };
@@ -150,7 +149,7 @@ async function worldSnapshot(db: D1Database, playerId: string, cycle?: CycleRow)
     opensAt: activeCycle.opens_at,
     closesAt: activeCycle.closes_at,
     fullRewardClears: clears?.full_reward_clears ?? 0,
-    fullRewardLimit: FULL_REWARD_LIMIT,
+    fullRewardLimit: UNDERPASS_FULL_REWARD_LIMIT,
     source: 'server' as const,
   };
 }
@@ -288,21 +287,15 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     .bind(input.playerId, permit.cycle_id).run();
   const clearRow = await env.DB.prepare(`UPDATE world_event_clears SET full_reward_clears = full_reward_clears + 1 WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ? RETURNING full_reward_clears`)
     .bind(input.playerId, permit.cycle_id).first<{ full_reward_clears: number }>();
-  const fullReward = (clearRow?.full_reward_clears ?? FULL_REWARD_LIMIT + 1) <= FULL_REWARD_LIMIT;
-
-  const reward = fullReward
-    ? { xp: 75, currency: 30, items: ['underpass-scrap'], furniture: ['tunnel-trophy'], tier: 'full' as const }
-    : { xp: 10, currency: 3, items: [] as string[], furniture: [] as string[], tier: 'reduced' as const };
+  const clearNumber = clearRow?.full_reward_clears ?? UNDERPASS_FULL_REWARD_LIMIT + 1;
+  const reward = underpassRewardForClear(clearNumber);
+  const fullReward = reward.tier === 'full';
 
   const character = await env.DB.prepare(`SELECT level, xp, currency, degen_key FROM characters WHERE player_id = ?`).bind(input.playerId).first<CharacterRow>();
   if (!character) return fail(request, env, 'Player character not found.', 404);
 
-  let level = character.level;
-  let xp = character.xp + reward.xp;
-  while (xp >= xpNeeded(level)) {
-    xp -= xpNeeded(level);
-    level += 1;
-  }
+  const progression = advanceLevel(character.level, character.xp, reward.xp);
+  const { level, xp } = progression;
 
   const writes = [
     env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?, updated_at = CURRENT_TIMESTAMP WHERE player_id = ?`)
