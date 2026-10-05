@@ -1,4 +1,4 @@
-import type { BattleCompletionResult, BattlePermit, HousingState, PlatformIdentity, PlayerState, WorldEventSnapshot } from '../domain/types';
+import type { BattleActionResult, BattleCompletionResult, BattlePermit, HousingState, PlatformIdentity, PlayerState, WorldEventSnapshot } from '../domain/types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
@@ -31,6 +31,14 @@ export class GameApi {
     return this.request<BattlePermit>('/api/battle/start', {
       method: 'POST',
       body: JSON.stringify({ playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
+    });
+  }
+
+  async actUnderpass(playerId: string, permitId: string, abilityId: string): Promise<BattleActionResult | undefined> {
+    if (!this.enabled) return undefined;
+    return this.request<BattleActionResult>('/api/battle/action', {
+      method: 'POST',
+      body: JSON.stringify({ playerId, permitId, abilityId }),
     });
   }
 

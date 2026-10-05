@@ -1,5 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 
+import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
+import { resolveCombatTurn } from '../src/game/combat/rules';
+
 interface Env {
   DB: D1Database;
   ALLOWED_ORIGINS?: string;
@@ -42,8 +45,15 @@ const randomInt = (min: number, max: number): number => {
 const xpNeeded = (level: number): number => 100 + (level - 1) * 75;
 
 type CycleRow = { id: string; event_key: string; opens_at: string; closes_at: string };
-
 type CharacterRow = { level: number; xp: number; currency: number; degen_key: string };
+type BattlePermitStateRow = {
+  cycle_id: string;
+  encounter_key: string;
+  player_hp: number | null;
+  enemy_hp: number | null;
+  battle_status: 'active' | 'victory' | 'defeat';
+  turn_count: number;
+};
 
 async function ensurePlayer(db: D1Database, playerId: string, displayName: string): Promise<void> {
   await db.batch([
@@ -175,24 +185,104 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
 
 async function handleStartBattle(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; eventKey?: string; cycleId?: string; encounterKey?: string }>(request);
-  if (!input.playerId || input.eventKey !== 'underpass' || !input.cycleId || input.encounterKey !== 'tunnel-maw') return fail(request, env, 'Invalid battle start request');
+  if (!input.playerId || input.eventKey !== 'underpass' || !input.cycleId || input.encounterKey !== TUNNEL_MAW.id) {
+    return fail(request, env, 'Invalid battle start request');
+  }
+
   const cycle = await ensureUnderpassCycle(env.DB);
   if (cycle.id !== input.cycleId || phaseFor(cycle) !== 'open') return fail(request, env, 'The Underpass is sealed.', 409);
 
   const permitId = crypto.randomUUID();
   const expiresAt = iso(Date.now() + 20 * 60_000);
-  await env.DB.prepare(`INSERT INTO battle_permits (id, player_id, event_key, cycle_id, encounter_key, expires_at) VALUES (?, ?, 'underpass', ?, 'tunnel-maw', ?)`)
-    .bind(permitId, input.playerId, cycle.id, expiresAt).run();
-  return json(request, env, { permitId, eventKey: 'underpass', cycleId: cycle.id, encounterKey: 'tunnel-maw', expiresAt });
+  await env.DB.prepare(`INSERT INTO battle_permits (
+      id, player_id, event_key, cycle_id, encounter_key, expires_at,
+      player_hp, enemy_hp, battle_status, turn_count
+    ) VALUES (?, ?, 'underpass', ?, ?, ?, ?, ?, 'active', 0)`)
+    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt, TEST_DEGEN.maxHp, TUNNEL_MAW.maxHp).run();
+
+  return json(request, env, {
+    permitId,
+    eventKey: 'underpass',
+    cycleId: cycle.id,
+    encounterKey: TUNNEL_MAW.id,
+    expiresAt,
+  });
+}
+
+async function handleBattleAction(request: Request, env: Env): Promise<Response> {
+  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string }>(request);
+  if (!input.playerId || !input.permitId || !input.abilityId) {
+    return fail(request, env, 'playerId, permitId, and abilityId are required');
+  }
+
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === input.abilityId);
+  if (!ability) return fail(request, env, 'Unknown ability.', 400);
+
+  const permit = await env.DB.prepare(`SELECT
+      cycle_id, encounter_key, player_hp, enemy_hp, battle_status, turn_count
+    FROM battle_permits
+    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND expires_at > CURRENT_TIMESTAMP`)
+    .bind(input.permitId, input.playerId)
+    .first<BattlePermitStateRow>();
+
+  if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+  if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
+  if (permit.battle_status !== 'active') return fail(request, env, `Battle is already ${permit.battle_status}.`, 409);
+  if (permit.player_hp === null || permit.enemy_hp === null) return fail(request, env, 'Battle state is unavailable.', 409);
+
+  const turn = resolveCombatTurn({
+    playerHp: permit.player_hp,
+    enemyHp: permit.enemy_hp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  const { playerHp, enemyHp, status } = turn;
+
+  const updated = await env.DB.prepare(`UPDATE battle_permits
+    SET player_hp = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
+    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
+      AND expires_at > CURRENT_TIMESTAMP AND turn_count = ?
+    RETURNING turn_count`)
+    .bind(playerHp, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
+    .first<{ turn_count: number }>();
+
+  if (!updated) return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
+
+  if (status === 'defeat') {
+    const character = await env.DB.prepare(`SELECT level FROM characters WHERE player_id = ?`)
+      .bind(input.playerId).first<{ level: number }>();
+    if (character) {
+      await env.DB.prepare(`INSERT INTO battle_history (
+        id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
+      ) VALUES (?, ?, ?, 'defeat', ?, 0, 0)`)
+        .bind(crypto.randomUUID(), input.playerId, TUNNEL_MAW.id, character.level).run();
+    }
+  }
+
+  return json(request, env, {
+    permitId: input.permitId,
+    status,
+    playerHp,
+    enemyHp,
+    turnCount: updated.turn_count,
+  });
 }
 
 async function handleCompleteBattle(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; permitId?: string }>(request);
   if (!input.playerId || !input.permitId) return fail(request, env, 'playerId and permitId are required');
 
-  const permit = await env.DB.prepare(`UPDATE battle_permits SET completed_at = CURRENT_TIMESTAMP WHERE id = ? AND player_id = ? AND completed_at IS NULL AND expires_at > CURRENT_TIMESTAMP RETURNING cycle_id, encounter_key`)
+  const permit = await env.DB.prepare(`UPDATE battle_permits
+    SET completed_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND player_id = ? AND completed_at IS NULL
+      AND expires_at > CURRENT_TIMESTAMP AND battle_status = 'victory'
+    RETURNING cycle_id, encounter_key`)
     .bind(input.permitId, input.playerId).first<{ cycle_id: string; encounter_key: string }>();
-  if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+
+  if (!permit) {
+    return fail(request, env, 'Battle is not an authoritative unclaimed victory, or the permit expired.', 409);
+  }
 
   await env.DB.prepare(`INSERT OR IGNORE INTO world_event_clears (player_id, event_key, cycle_id, full_reward_clears) VALUES (?, 'underpass', ?, 0)`)
     .bind(input.playerId, permit.cycle_id).run();
@@ -206,6 +296,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
 
   const character = await env.DB.prepare(`SELECT level, xp, currency, degen_key FROM characters WHERE player_id = ?`).bind(input.playerId).first<CharacterRow>();
   if (!character) return fail(request, env, 'Player character not found.', 404);
+
   let level = character.level;
   let xp = character.xp + reward.xp;
   while (xp >= xpNeeded(level)) {
@@ -214,22 +305,27 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   }
 
   const writes = [
-    env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?, updated_at = CURRENT_TIMESTAMP WHERE player_id = ?`).bind(level, xp, reward.currency, input.playerId),
-    env.DB.prepare(`INSERT INTO battle_history (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded) VALUES (?, ?, 'tunnel-maw', 'victory', ?, ?, ?)`).bind(crypto.randomUUID(), input.playerId, level, reward.xp, reward.currency),
-    env.DB.prepare(`INSERT OR IGNORE INTO defeated_bosses (player_id, boss_key) VALUES (?, 'tunnel-maw')`).bind(input.playerId),
+    env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?, updated_at = CURRENT_TIMESTAMP WHERE player_id = ?`)
+      .bind(level, xp, reward.currency, input.playerId),
+    env.DB.prepare(`INSERT INTO battle_history (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded) VALUES (?, ?, ?, 'victory', ?, ?, ?)`)
+      .bind(crypto.randomUUID(), input.playerId, permit.encounter_key, level, reward.xp, reward.currency),
+    env.DB.prepare(`INSERT OR IGNORE INTO defeated_bosses (player_id, boss_key) VALUES (?, ?)`)
+      .bind(input.playerId, permit.encounter_key),
   ];
 
   if (fullReward) {
     writes.push(
       env.DB.prepare(`INSERT INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES (?, ?, 'underpass-scrap', 'item', 1)
         ON CONFLICT(id) DO UPDATE SET quantity = quantity + 1`).bind(`${input.playerId}:item:underpass-scrap`, input.playerId),
-      env.DB.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES (?, ?, 'tunnel-trophy', 'furniture', 1)`).bind(`${input.playerId}:furniture:tunnel-trophy`, input.playerId),
+      env.DB.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES (?, ?, 'tunnel-trophy', 'furniture', 1)`)
+        .bind(`${input.playerId}:furniture:tunnel-trophy`, input.playerId),
     );
   }
   await env.DB.batch(writes);
 
   const player = await loadPlayer(env.DB, input.playerId);
-  const cycle = await env.DB.prepare(`SELECT id, event_key, opens_at, closes_at FROM world_event_cycles WHERE id = ?`).bind(permit.cycle_id).first<CycleRow>();
+  const cycle = await env.DB.prepare(`SELECT id, event_key, opens_at, closes_at FROM world_event_cycles WHERE id = ?`)
+    .bind(permit.cycle_id).first<CycleRow>();
   const event = cycle ? await worldSnapshot(env.DB, input.playerId, cycle) : await worldSnapshot(env.DB, input.playerId);
   return json(request, env, { player, reward, worldEvent: event });
 }
@@ -250,6 +346,7 @@ export default {
         return json(request, env, snapshot);
       }
       if (request.method === 'POST' && url.pathname === '/api/battle/start') return handleStartBattle(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/action') return handleBattleAction(request, env);
       if (request.method === 'POST' && url.pathname === '/api/battle/complete') return handleCompleteBattle(request, env);
       return fail(request, env, 'Not found', 404);
     } catch (error) {

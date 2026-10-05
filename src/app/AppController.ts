@@ -17,6 +17,7 @@ export class AppController {
   private worldRefreshTimer?: number;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
+  private battleActionPending = false;
 
   constructor(
     private readonly root: HTMLElement,
@@ -134,8 +135,48 @@ export class AppController {
     this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
       button.addEventListener('click', () => {
         const ability = button.dataset.ability;
-        if (ability) this.battleEngine?.useAbility(ability);
+        if (ability) void this.useBattleAbility(ability);
       });
+    });
+  }
+
+  private async useBattleAbility(abilityId: string): Promise<void> {
+    if (!this.battleEngine || !this.battlePermit || this.battleActionPending) return;
+
+    this.battleActionPending = true;
+    this.setAbilityButtonsDisabled(true);
+
+    try {
+      const authoritative = this.api.enabled
+        ? await this.api.actUnderpass(this.store.snapshot.id, this.battlePermit.permitId, abilityId)
+        : undefined;
+
+      this.battleEngine.useAbility(abilityId);
+
+      if (authoritative) {
+        const local = this.battleEngine.snapshot;
+        if (
+          local.status !== authoritative.status
+          || local.playerHp !== authoritative.playerHp
+          || local.enemyHp !== authoritative.enemyHp
+        ) {
+          console.warn('Authoritative battle state diverged from the local presentation simulation.', {
+            authoritative,
+            local,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn('Battle action rejected by authoritative server.', error);
+    } finally {
+      this.battleActionPending = false;
+      if (this.battleEngine?.snapshot.status === 'active') this.setAbilityButtonsDisabled(false);
+    }
+  }
+
+  private setAbilityButtonsDisabled(disabled: boolean): void {
+    this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
+      button.disabled = disabled;
     });
   }
 
@@ -188,5 +229,6 @@ export class AppController {
     this.battleGame?.destroy(true);
     this.battleGame = undefined;
     this.battleEngine = undefined;
+    this.battleActionPending = false;
   }
 }

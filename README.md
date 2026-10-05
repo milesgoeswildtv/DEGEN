@@ -5,6 +5,8 @@ Persistent RPG built for a shared core with Discord Activity and Telegram Mini A
 ## Locked product rules
 
 - Combat is **Degen-only**. Entering any battle means the player manifests as their Degen for the entire encounter.
+- Universal Stability/Break is retired. The prototype combat foundation is HP + abilities now, with Mana/status/Shield systems layered in as their finalized rules land.
+- Server-backed Underpass battles validate every action on the Worker before victory rewards can be claimed; a battle permit alone is not sufficient.
 - Human/normal form exists outside battle only.
 - NPCs never have Degens. Only real players do.
 - The city is navigated through a clickable map and location screens, not a seamless open world.
@@ -47,3 +49,14 @@ db/
 ```
 
 Local browser storage is used only for the prototype persistence adapter. Permanent progression will move behind the authoritative backend before production multiplayer/economy work begins.
+
+
+## Battle-authority migration
+
+The Worker deployment workflow now applies tracked D1 migrations automatically before deploying the Worker. To apply them manually:
+
+```bash
+npm run db:migrate
+```
+
+The Worker persists authoritative player HP, enemy HP, battle status, and turn count on each permit. `/api/battle/complete` grants rewards only when that persisted battle state is already a server-resolved victory.
