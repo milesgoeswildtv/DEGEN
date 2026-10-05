@@ -1,5 +1,5 @@
 import type { BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
-import { resolveCombatTurn } from './rules';
+import { canUseAbility, resolveCombatTurn } from './rules';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
 
@@ -8,6 +8,8 @@ export interface BattleSnapshot {
   playerName: string;
   playerHp: number;
   playerMaxHp: number;
+  playerMana: number;
+  playerMaxMana: number;
   enemyName: string;
   enemyLevel: number;
   enemyHp: number;
@@ -17,6 +19,7 @@ export interface BattleSnapshot {
 
 export class BattleEngine {
   private playerHp: number;
+  private playerMana: number;
   private enemyHp: number;
   private status: BattleStatus = 'active';
   private log: string[] = [];
@@ -29,6 +32,7 @@ export class BattleEngine {
     private readonly onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
   ) {
     this.playerHp = degen.maxHp;
+    this.playerMana = degen.maxMana;
     this.enemyHp = enemy.maxHp;
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
   }
@@ -39,6 +43,8 @@ export class BattleEngine {
       playerName: this.degen.name,
       playerHp: this.playerHp,
       playerMaxHp: this.degen.maxHp,
+      playerMana: this.playerMana,
+      playerMaxMana: this.degen.maxMana,
       enemyName: this.enemy.name,
       enemyLevel: this.enemy.level,
       enemyHp: this.enemyHp,
@@ -59,8 +65,16 @@ export class BattleEngine {
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
     if (!ability) return;
 
+    if (!canUseAbility(this.playerMana, ability)) {
+      this.log.push(`Not enough Mana for ${ability.name}.`);
+      this.trimLog();
+      this.emit();
+      return;
+    }
+
     const result = resolveCombatTurn({
       playerHp: this.playerHp,
+      playerMana: this.playerMana,
       enemyHp: this.enemyHp,
       ability,
       degen: this.degen,
@@ -68,8 +82,13 @@ export class BattleEngine {
     });
 
     this.playerHp = result.playerHp;
+    this.playerMana = result.playerMana;
     this.enemyHp = result.enemyHp;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${result.playerDamage} damage.`);
+
+    if (ability.manaCost > 0) {
+      this.log.push(`Mana -${ability.manaCost}.`);
+    }
 
     if (result.status === 'victory') {
       this.trimLog();
