@@ -2,6 +2,7 @@ import type { AbilityDefinition, DegenDefinition, EnemyDefinition } from '../../
 
 export interface CombatTurnInput {
   playerHp: number;
+  playerMana: number;
   enemyHp: number;
   ability: AbilityDefinition;
   degen: DegenDefinition;
@@ -11,18 +12,28 @@ export interface CombatTurnInput {
 export interface CombatTurnResult {
   status: 'active' | 'victory' | 'defeat';
   playerHp: number;
+  playerMana: number;
   enemyHp: number;
   playerDamage: number;
   retaliationDamage: number;
 }
 
+export const canUseAbility = (playerMana: number, ability: AbilityDefinition): boolean =>
+  playerMana >= ability.manaCost;
+
 export const resolveCombatTurn = ({
   playerHp,
+  playerMana,
   enemyHp,
   ability,
   degen,
   enemy,
 }: CombatTurnInput): CombatTurnResult => {
+  if (!canUseAbility(playerMana, ability)) {
+    throw new RangeError(`Insufficient Mana for ${ability.name}`);
+  }
+
+  const nextPlayerMana = playerMana - ability.manaCost;
   const playerDamage = ability.damage + Math.floor(degen.power * 0.5);
   const nextEnemyHp = Math.max(0, enemyHp - playerDamage);
 
@@ -30,6 +41,7 @@ export const resolveCombatTurn = ({
     return {
       status: 'victory',
       playerHp,
+      playerMana: nextPlayerMana,
       enemyHp: nextEnemyHp,
       playerDamage,
       retaliationDamage: 0,
@@ -42,6 +54,7 @@ export const resolveCombatTurn = ({
   return {
     status: nextPlayerHp <= 0 ? 'defeat' : 'active',
     playerHp: nextPlayerHp,
+    playerMana: nextPlayerMana,
     enemyHp: nextEnemyHp,
     playerDamage,
     retaliationDamage,
