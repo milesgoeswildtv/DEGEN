@@ -53,10 +53,10 @@ Local browser storage is used only for the prototype persistence adapter. Perman
 
 ## Battle-authority migration
 
-Before deploying the Worker version that adds `POST /api/battle/action`, apply the one-time D1 migration:
+The Worker deployment workflow now applies tracked D1 migrations automatically before deploying the Worker. To apply them manually:
 
 ```bash
-npm run db:migrate:battle-authority
+npm run db:migrate
 ```
 
 The Worker persists authoritative player HP, enemy HP, battle status, and turn count on each permit. `/api/battle/complete` grants rewards only when that persisted battle state is already a server-resolved victory.
