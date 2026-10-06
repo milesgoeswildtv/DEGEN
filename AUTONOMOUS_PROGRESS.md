@@ -48,3 +48,17 @@ After the Degen Mana slice is green and deployed:
 
 ## Highest-value next task
 Finish and merge the Degen-only Mana authority slice. Then choose between recoverable/idempotent reward claiming and the generic Shield foundation based on current production risk.
+
+
+## 2026-10-06 reward-authority production slice
+- Authoritative starting main: `2df79a123a022212721634c048147d8bf935566a`.
+- Active branch: `automation/degen/reward-authority-v22`.
+- Pushed migration `db/migrations/0004_reward_receipt.sql` at `e3defb1de4159d238cbf9603ce0dad3c662ee45c`.
+- Pushed Worker consumer at `e2042be2a565c349898afd5cee0aa6128416316d`.
+- Reward lifecycle is persisted as pending/claiming/awarded with a 60-second stale-claim lease.
+- Fresh claims still require an unexpired server-resolved victory; recovery reuses the persisted clear number.
+- Award writes are claim-token guarded and batched; victory history uses the permit ID deterministically; awarded retries replay the persisted receipt.
+- No production D1 migration or deployment has been performed from this branch.
+- Stability/Break audit: no stale state in the inspected engine/types/test data. Monster definitions still have no Mana/resource field.
+- Battle-authority status: implementation pushed; PR CI/build/Worker dry-run and D1-compatible authority regression coverage remain before merge.
+- Best next task: run PR checks, fix any compile/dry-run failures, then cover duplicate/expired/full-vs-reduced/stale-claim completion.
