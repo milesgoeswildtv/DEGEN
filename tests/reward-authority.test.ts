@@ -26,7 +26,7 @@ test('reward receipt migration defaults existing permits to pending', () => {
     ('p', 'player', 'underpass', 'cycle', 'tunnel-maw', datetime('now', '+5 minutes'), NULL, 'victory');`);
   db.exec(migration);
   const row = db.prepare("SELECT reward_state, reward_clear_number FROM battle_permits WHERE id = 'p'").get();
-  assert.deepEqual(row, { reward_state: 'pending', reward_clear_number: null });
+  assert.deepEqual(Object.assign({}, row), { reward_state: 'pending', reward_clear_number: null });
 });
 
 test('claim predicate rejects expired and non-victory permits and locks duplicate live claims', () => {
@@ -41,7 +41,7 @@ test('claim predicate rejects expired and non-victory permits and locks duplicat
   const claim = db.prepare(`UPDATE battle_permits SET reward_state='claiming',
     reward_claim_token=?, reward_claimed_at=CURRENT_TIMESTAMP
     WHERE id=? AND player_id='player' AND battle_status='victory' AND
-    reward_state='pending' AND completed_at IS NULL AND expires_at>CURRENT_TIMESTAMP
+    reward_state='pending' AND completed_at IS NULL AND datetime(expires_at)>CURRENT_TIMESTAMP
     RETURNING id`);
   assert.ok(claim.get('a', 'valid'));
   assert.equal(claim.get('b', 'valid'), undefined);
@@ -60,7 +60,7 @@ test('stale claim recovery preserves assigned clear number and awarded receipts 
   const recovered = db.prepare(`UPDATE battle_permits SET reward_claim_token='new',
     reward_claimed_at=CURRENT_TIMESTAMP WHERE id='p' AND reward_state='claiming'
     AND reward_claimed_at < datetime('now', '-60 seconds') RETURNING reward_clear_number`).get();
-  assert.deepEqual(recovered, { reward_clear_number: 1 });
+  assert.deepEqual(Object.assign({}, recovered), { reward_clear_number: 1 });
 
   db.exec(`UPDATE battle_permits SET reward_state='awarded', completed_at=CURRENT_TIMESTAMP,
     reward_xp=75, reward_currency=30, reward_tier='full' WHERE id='p'`);
