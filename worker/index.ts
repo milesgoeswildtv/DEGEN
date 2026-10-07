@@ -221,7 +221,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const permit = await env.DB.prepare(`SELECT
       cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
     FROM battle_permits
-    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND expires_at > CURRENT_TIMESTAMP`)
+    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP`)
     .bind(input.permitId, input.playerId)
     .first<BattlePermitStateRow>();
 
@@ -248,7 +248,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const updated = await env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
-      AND expires_at > CURRENT_TIMESTAMP AND turn_count = ?
+      AND datetime(expires_at) > CURRENT_TIMESTAMP AND turn_count = ?
     RETURNING turn_count`)
     .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
     .first<{ turn_count: number }>();
@@ -309,7 +309,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
-      (reward_state = 'pending' AND completed_at IS NULL AND expires_at > CURRENT_TIMESTAMP)
+      (reward_state = 'pending' AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP)
       OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId)
