@@ -59,16 +59,16 @@ async function ensurePlayer(db: D1Database, playerId: string, displayName: strin
   await db.batch([
     db.prepare(`INSERT INTO players (id, display_name) VALUES (?, ?)
       ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP`).bind(playerId, displayName.slice(0, 32)),
+    // Seed the starter bed only on initial character creation. An empty room
+    // on subsequent bootstraps is a valid saved layout, not missing data.
+    db.prepare(`INSERT OR IGNORE INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation)
+      SELECT ?, ?, 'starter-bed', 1, 1, 0
+      WHERE NOT EXISTS (SELECT 1 FROM characters WHERE player_id = ?)`).bind(`${playerId}:starter-bed-placed`, playerId, playerId),
     db.prepare(`INSERT OR IGNORE INTO characters (player_id, level, xp, currency, degen_key) VALUES (?, 1, 0, 0, 'test-degen')`).bind(playerId),
     ...STARTER_LOCATIONS.map((location) => db.prepare(`INSERT OR IGNORE INTO unlocked_locations (player_id, location_key) VALUES (?, ?)`).bind(playerId, location)),
     ...STARTER_FURNITURE.map((item) => db.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES (?, ?, ?, 'furniture', 1)`).bind(`${playerId}:furniture:${item}`, playerId, item)),
   ]);
 
-  const housing = await db.prepare(`SELECT COUNT(*) AS count FROM housing_placements WHERE player_id = ?`).bind(playerId).first<{ count: number }>();
-  if ((housing?.count ?? 0) === 0) {
-    await db.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, 'starter-bed', 1, 1, 0)`)
-      .bind(`${playerId}:starter-bed-placed`, playerId).run();
-  }
 }
 
 async function loadPlayer(db: D1Database, playerId: string) {
@@ -173,8 +173,28 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
 async function handleHousing(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; housing?: { inventory?: string[]; placements?: Array<{ instanceId: string; furnitureId: string; x: number; y: number; rotation?: number }> } }>(request);
   if (!input.playerId || !input.housing) return fail(request, env, 'playerId and housing are required');
-  const allowed = new Set((await env.DB.prepare(`SELECT item_key FROM player_inventory WHERE player_id = ? AND item_type = 'furniture'`).bind(input.playerId).all<{ item_key: string }>()).results.map((row) => row.item_key));
-  const placements = (input.housing.placements ?? []).filter((item) => allowed.has(item.furnitureId) && Number.isInteger(item.x) && Number.isInteger(item.y) && item.x >= 0 && item.x <= 7 && item.y >= 0 && item.y <= 5);
+  const inventory = await env.DB.prepare(`SELECT item_key, quantity FROM player_inventory
+    WHERE player_id = ? AND item_type = 'furniture'`).bind(input.playerId)
+    .all<{ item_key: string; quantity: number }>();
+  const remaining = new Map<string, number>();
+  for (const row of inventory.results) {
+    remaining.set(row.item_key, (remaining.get(row.item_key) ?? 0) + Math.max(0, row.quantity));
+  }
+  const occupied = new Set<string>();
+  const instanceIds = new Set<string>();
+  const placements: NonNullable<NonNullable<typeof input.housing>['placements']> = [];
+  for (const item of input.housing.placements ?? []) {
+    if (typeof item.instanceId !== 'string' || !item.instanceId
+      || !Number.isInteger(item.x) || !Number.isInteger(item.y)
+      || item.x < 0 || item.x > 7 || item.y < 0 || item.y > 5) continue;
+    const cell = `${item.x}:${item.y}`;
+    const available = remaining.get(item.furnitureId) ?? 0;
+    if (available <= 0 || occupied.has(cell) || instanceIds.has(item.instanceId)) continue;
+    remaining.set(item.furnitureId, available - 1);
+    occupied.add(cell);
+    instanceIds.add(item.instanceId);
+    placements.push(item);
+  }
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM housing_placements WHERE player_id = ?`).bind(input.playerId),
     ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)

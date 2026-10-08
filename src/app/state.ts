@@ -27,6 +27,8 @@ const createDefaultPlayer = (id = newPlayerId()): PlayerState => ({
 export class PlayerStore {
   private state: PlayerState;
   private listeners = new Set<(state: PlayerState) => void>();
+  private housingSaveInFlight = false;
+  private pendingHousingSave?: { playerId: string; housing: PlayerState['housing'] };
 
   constructor(private readonly api: GameApi) {
     this.state = this.load();
@@ -131,10 +133,23 @@ export class PlayerStore {
   }
 
   private async persistHousing(): Promise<void> {
+    // Serialize requests to prevent an older response from overwriting a newer layout.
+    // Coalesce intermediate edits while retaining the latest immutable snapshot.
+    this.pendingHousingSave = { playerId: this.state.id, housing: structuredClone(this.state.housing) };
+    if (this.housingSaveInFlight) return;
+    this.housingSaveInFlight = true;
     try {
-      await this.api.saveHousing(this.state.id, this.state.housing);
-    } catch (error) {
-      console.warn('Housing save failed; local copy retained.', error);
+      while (this.pendingHousingSave) {
+        const next = this.pendingHousingSave;
+        this.pendingHousingSave = undefined;
+        try {
+          await this.api.saveHousing(next.playerId, next.housing);
+        } catch (error) {
+          console.warn('Housing save failed; local copy retained.', error);
+        }
+      }
+    } finally {
+      this.housingSaveInFlight = false;
     }
   }
 
