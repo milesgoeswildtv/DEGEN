@@ -119,7 +119,26 @@ try {
   assert.equal(duplicate.status, 200);
   assert.deepEqual(duplicate.data.reward, reward.data.reward);
   assert.equal((await complete('defeat')).status, 409);
-  console.log('PASS local Worker/D1 expected-turn CAS, Mana, zero-cost, victory, defeat, reward replay');
+  // Inspect the persisted local D1 state after shutting down the Worker.
+  const child = worker;
+  child.kill('SIGTERM');
+  await Promise.race([new Promise(resolve => child.once('exit', resolve)), sleep(2000)]);
+  if (child.exitCode === null) {
+    child.kill('SIGKILL');
+    await Promise.race([new Promise(resolve => child.once('exit', resolve)), sleep(2000)]);
+  }
+  worker = undefined;
+  assert.deepEqual(sql("SELECT turn_count,player_mana FROM battle_permits WHERE id='concurrent'"),
+    [{turn_count:2,player_mana:4}]);
+  assert.deepEqual(sql("SELECT turn_count,player_mana FROM battle_permits WHERE id='zero-mana'"),
+    [{turn_count:1,player_mana:0}]);
+  assert.deepEqual(sql("SELECT battle_status,turn_count,player_mana,reward_state FROM battle_permits WHERE id='victory'"),
+    [{battle_status:'victory',turn_count:1,player_mana:0,reward_state:'awarded'}]);
+  assert.deepEqual(sql("SELECT battle_status,turn_count,player_mana FROM battle_permits WHERE id='defeat'"),
+    [{battle_status:'defeat',turn_count:1,player_mana:0}]);
+  assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='victory'").length,1);
+  assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='defeat'").length,1);
+  console.log('PASS local Worker/D1 turn CAS, Mana, terminal replay, reward replay and persisted state');
 } finally {
   if (worker && worker.exitCode === null) {
     worker.kill('SIGTERM');
