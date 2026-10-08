@@ -68,3 +68,41 @@ test('stale claim recovery preserves assigned clear number and awarded receipts 
     WHERE id='p' AND reward_state IN ('pending','claiming') RETURNING id`).get();
   assert.equal(retry, undefined);
 });
+
+test('action CAS rejects expired, stale, terminal, and wrong-player turns without mutation', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE battle_permits (
+    id TEXT PRIMARY KEY, player_id TEXT NOT NULL, expires_at TEXT NOT NULL,
+    completed_at TEXT, battle_status TEXT NOT NULL, turn_count INTEGER NOT NULL,
+    player_hp INTEGER NOT NULL, player_mana INTEGER NOT NULL, enemy_hp INTEGER NOT NULL
+  )`);
+  const insert = db.prepare(`INSERT INTO battle_permits
+    (id, player_id, expires_at, completed_at, battle_status, turn_count, player_hp, player_mana, enemy_hp)
+    VALUES (?, 'player', ?, ?, ?, 0, 100, 5, 30)`);
+  const future = new Date(Date.now() + 300000).toISOString();
+  insert.run('active', future, null, 'active');
+  insert.run('expired', new Date(Date.now() - 300000).toISOString(), null, 'active');
+  insert.run('completed', future, '2026-10-01 00:00:00', 'active');
+  insert.run('defeated', future, null, 'defeat');
+
+  const action = db.prepare(`UPDATE battle_permits SET
+    player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
+    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
+      AND datetime(expires_at) > CURRENT_TIMESTAMP AND turn_count = ?
+    RETURNING turn_count`);
+  const state = db.prepare('SELECT player_hp, player_mana, enemy_hp, turn_count, battle_status FROM battle_permits WHERE id = ?');
+  for (const id of ['expired', 'completed', 'defeated', 'missing']) {
+    const before = state.get(id);
+    assert.equal(action.get(90, 2, 20, 'active', id, 'player', 0), undefined);
+    assert.deepEqual(state.get(id), before);
+  }
+  assert.equal(action.get(90, 2, 20, 'active', 'active', 'wrong-player', 0), undefined);
+  assert.equal(action.get(90, 2, 20, 'active', 'active', 'player', 0)?.turn_count, 1);
+  const afterFirst = state.get('active');
+  assert.equal(action.get(80, 0, 10, 'active', 'active', 'player', 0), undefined);
+  assert.deepEqual(state.get('active'), afterFirst);
+  assert.equal(action.get(80, 0, 10, 'victory', 'active', 'player', 1)?.turn_count, 2);
+  const victory = state.get('active');
+  assert.equal(action.get(70, 0, 0, 'victory', 'active', 'player', 2), undefined);
+  assert.deepEqual(state.get('active'), victory);
+});
