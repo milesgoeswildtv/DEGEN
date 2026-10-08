@@ -18,7 +18,9 @@ Persistent RPG built for a shared core with Discord Activity and Telegram Mini A
 
 `Map -> Central district -> Underpass -> Battle -> XP/Loot -> Home`
 
-The city interface groups the existing Residential (Home) and Central (Downtown, Underpass) destinations into a clickable district map. Downtown is a navigable scene with future activities clearly marked as unavailable; it does not introduce new lore or gameplay systems. Home remains available from the bottom navigation.\n\nThe first slice intentionally uses a placeholder TEST_DEGEN so combat, persistence, routing, and housing can be built independently of final Degen character design.
+The city interface groups the existing Residential (Home) and Central (Downtown, Underpass) destinations into a clickable district map. Downtown is a navigable scene with future activities clearly marked as unavailable; it does not introduce new lore or gameplay systems. Home remains available from the bottom navigation.
+
+The first slice intentionally uses a placeholder TEST_DEGEN so combat, persistence, routing, and housing can be built independently of final Degen character design.
 
 ## Run locally
 

@@ -18,12 +18,13 @@ const WORLD_LOCATIONS = runInNewContext(
 ) as Array<{ id: string; name: string; route: string; district: string }>;
 
 const views = runInNewContext(
-  compile('../src/ui/views.ts') + '\n({ mapView, districtView, locationView });',
+  compile('../src/ui/views.ts') + '\n({ mapView, districtView, locationView, underpassView });',
   { WORLD_LOCATIONS, FURNITURE_CATALOG: [], getFurniture: () => undefined },
 ) as {
   mapView: (player: unknown, event?: unknown) => string;
   districtView: (player: unknown, district: string, event?: unknown) => string;
   locationView: (player: unknown, id: string) => string;
+  underpassView: (player: unknown, event?: unknown) => string;
 };
 
 const player = {
@@ -127,4 +128,13 @@ test('controller follows map to district to location and rejects locked navigati
   controller.navigate('district');
   locationButton.click();
   assert.equal(controller.route, 'district');
+});
+
+test('Underpass retains a breadcrumb back to its Central district', () => {
+  const html = views.underpassView(player, {
+    phase: 'sealed', fullRewardClears: 0, fullRewardLimit: 3,
+  });
+  assert.match(html, /data-route="district">CENTRAL/);
+  assert.match(html, /data-route="map"/);
+  assert.match(html, /UNDERPASS SEALED/);
 });

@@ -152,6 +152,7 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): 
   const isOpen = event?.phase === 'open';
   const clears = event ? `${Math.min(event.fullRewardClears, event.fullRewardLimit)}/${event.fullRewardLimit}` : '—';
   return appShell(player, `
+    <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-route="district">CENTRAL</button></div>
     <section class="hero-block danger underpass-hero ${status.className}">
       <span class="eyebrow">CENTRAL // WORLD EVENT</span>
       <div class="event-status ${status.className}">${escapeHtml(status.label)}</div>
