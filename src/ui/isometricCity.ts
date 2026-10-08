@@ -20,10 +20,20 @@ const building = (x: number, y: number, column: number, row: number): string => 
   const halfWidth = central ? 26 : 23;
   const halfDepth = 14;
   const roofY = y - height;
-  const palette = central
-    ? ['#72665d', '#4c4449', '#342f38']
-    : ['#756d5d', '#534a47', '#3d363b'];
-  const [top, left, right] = palette;
+  const palettes = central
+    ? [
+      ['#8b6d58', '#5d4548', '#382f3b'],
+      ['#566f73', '#344c56', '#26313d'],
+      ['#85725f', '#57483e', '#3a3338'],
+      ['#78657e', '#4c405a', '#302e42'],
+    ]
+    : [
+      ['#a27b62', '#70544b', '#514147'],
+      ['#797b66', '#555a4d', '#3a4441'],
+      ['#b18c63', '#7c5c49', '#5a4541'],
+      ['#6e7f83', '#4e5d62', '#384349'],
+    ];
+  const [top, left, right] = palettes[(column * 3 + row * 5) % palettes.length]!;
   const roof = `${x},${roofY - halfDepth} ${x + halfWidth},${roofY} ${x},${roofY + halfDepth} ${x - halfWidth},${roofY}`;
   const windows = Array.from({ length: Math.max(1, Math.floor(height / 19)) }, (_, index) => {
     const yy = roofY + 16 + index * 18;
@@ -33,11 +43,43 @@ const building = (x: number, y: number, column: number, row: number): string => 
   const roofDetail = (column + row) % 3 === 0
     ? `<path d="M ${x - 9} ${roofY - 4} l 9 -5 10 5 -9 5 z" fill="#2b3438"/>`
     : '';
+  const variation = (column * 7 + row * 11) % 9;
+  // Visual identity comes from deterministic, inexpensive SVG details.
+  // No new location, faction, character, or gameplay content is implied.
+  const rooftopClutter = variation % 3 === 0
+    ? `<g stroke="#302e31" stroke-width="1">
+        <path d="M ${x - 12} ${roofY - 3} l 10 -6 11 6 -10 6 z" fill="#9b765e"/>
+        <path d="M ${x - 2} ${roofY - 9} v -10 l 9 -5 v 10" fill="none" stroke="#c9a68a" stroke-width="2"/>
+      </g>`
+    : variation % 3 === 1
+      ? `<g><ellipse cx="${x + 2}" cy="${roofY - 4}" rx="8" ry="4" fill="#273b42"/>
+          <path d="M ${x - 6} ${roofY - 4} v -10 q 8 -6 16 0 v 10" fill="#4e6d6d" stroke="#182b33"/>
+          <ellipse cx="${x + 2}" cy="${roofY - 14}" rx="8" ry="4" fill="#7b8c7e"/>
+        </g>`
+      : `<path d="M ${x - 10} ${roofY - 2} l 8 -5 10 5 -8 5 z" fill="#d1a66f" stroke="#5e4539"/>`;
+  const facadeDetail = variation % 2 === 0
+    ? `<path d="M ${x - halfWidth + 3} ${roofY + 13} v ${height - 17} m 5 -${height - 17} v ${height - 17}" stroke="#bb8869" stroke-width="2" opacity=".65"/>
+       <path d="M ${x - halfWidth + 3} ${y - 3} l 12 6" stroke="#a8b1a5" stroke-width="2"/>`
+    : `<path d="M ${x + halfWidth - 3} ${roofY + 15} v ${height - 18} m -6 -${height - 18} v ${height - 18}" stroke="#647c7c" stroke-width="2" opacity=".75"/>
+       <path d="M ${x + 4} ${y - 5} l 14 -8" stroke="#b6a68d" stroke-width="2"/>`;
+  const improvised = variation === 2 || variation === 5
+    ? `<g><path d="M ${x - halfWidth - 3} ${roofY + 13} l -9 -5 v 12 l 9 5" fill="#846f64" stroke="#d0aa79"/>
+       <path d="M ${x - halfWidth - 9} ${roofY + 20} v ${Math.max(6, height - 22)}" stroke="#3d4c52" stroke-width="2" stroke-dasharray="5 4"/>
+       <path d="M ${x - halfWidth - 10} ${roofY + 16} l 11 6" stroke="#c1a07a" stroke-width="2"/></g>`
+    : '';
+  const rooftopSign = central && variation === 7
+    ? `<g><path d="M ${x - 15} ${roofY - 10} v -23 m 29 23 v -23" stroke="#514344" stroke-width="3"/>
+       <path d="M ${x - 15} ${roofY - 33} l 29 0 v 16 l -29 0 z" fill="#2d303e" stroke="#d6a077" stroke-width="2"/>
+       <path d="M ${x - 10} ${roofY - 25} h 19" stroke="#e4b18c" stroke-width="3"/></g>`
+    : '';
+  const wallMarks = variation === 4 || variation === 8
+    ? `<path d="M ${x + 4} ${y - 14} l 7 -4 4 2 -6 5 8 -1" fill="none" stroke="#c89a7e" stroke-width="2" opacity=".85"/>`
+    : '';
   return `<g class="iso-building">
     <polygon points="${x - halfWidth},${roofY} ${x},${roofY + halfDepth} ${x},${y + halfDepth} ${x - halfWidth},${y}" fill="${left}"/>
     <polygon points="${x},${roofY + halfDepth} ${x + halfWidth},${roofY} ${x + halfWidth},${y} ${x},${y + halfDepth}" fill="${right}"/>
     <polygon points="${roof}" fill="${top}" stroke="#998474" stroke-width="1"/>
-    ${windows}${roofDetail}
+    ${windows}${roofDetail}${rooftopClutter}${facadeDetail}${improvised}${rooftopSign}${wallMarks}
   </g>`;
 };
 

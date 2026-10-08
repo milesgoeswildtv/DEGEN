@@ -226,3 +226,16 @@ test('world sync recovery restores authoritative event state after a transient f
   assert.equal(controller.worldSyncFailed, false);
   assert.equal(controller.underpassEvent?.cycleId, 'server-cycle');
 });
+
+
+test('isometric city scaffold has distinct buildings without inventing playable destinations', () => {
+  const html = views.mapView(player, { phase: 'open', closesAt: new Date(Date.now() + 60_000).toISOString() });
+  const buildings = html.match(/class="iso-building"/g) ?? [];
+  assert.ok(buildings.length >= 35, 'expected dense but lightweight SVG blocks');
+  assert.match(html, /#566f73/);
+  assert.match(html, /#a27b62/);
+  assert.match(html, /#4e6d6d/);
+  assert.doesNotMatch(html, /data-location="unknown"/);
+  assert.match(html, /data-district="Residential"/);
+  assert.match(html, /data-district="Central"/);
+});
