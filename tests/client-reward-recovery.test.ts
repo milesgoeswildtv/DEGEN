@@ -40,6 +40,7 @@ const setup = (enabled: boolean, completeUnderpass?: () => Promise<unknown>) => 
     },
     console: { warn: () => {} },
     mapView: () => '', homeView: () => '', underpassView: () => '', battleView: () => '',
+    bindCityViewport: () => {},
     getPreviewUnderpass: () => ({}),
     recordPreviewClear: () => 0,
     underpassRewardForClear: () => ({ xp: 75, currency: 30, items: [] }),

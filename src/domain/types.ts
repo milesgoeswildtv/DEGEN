@@ -1,4 +1,4 @@
-export type RouteKey = 'map' | 'home' | 'underpass' | 'battle';
+export type RouteKey = 'map' | 'district' | 'location' | 'home' | 'underpass' | 'battle';
 
 export type PlatformName = 'browser' | 'discord' | 'telegram';
 export type WorldEventPhase = 'sealed' | 'warning' | 'open';

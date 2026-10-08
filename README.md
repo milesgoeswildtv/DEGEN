@@ -16,9 +16,17 @@ Persistent RPG built for a shared core with Discord Activity and Telegram Mini A
 
 ## First vertical slice
 
-`Map -> Home -> Underpass -> Battle -> XP/Loot -> Home`
+`Map -> Central district -> Underpass -> Battle -> XP/Loot -> Home`
+
+The city interface groups the existing Residential (Home) and Central (Downtown, Underpass) destinations into a clickable district map. Downtown is a navigable scene with future activities clearly marked as unavailable; it does not introduce new lore or gameplay systems. Home remains available from the bottom navigation.
 
 The first slice intentionally uses a placeholder TEST_DEGEN so combat, persistence, routing, and housing can be built independently of final Degen character design.
+
+## City foundation (PR #6, not yet production-live)
+
+The city is one interconnected, lightweight SVG isometric metropolis. On touch devices, drag to pan, pinch to zoom, or use the 44px zoom/reset controls. Keyboard users can focus the map and use arrow keys, +/- and 0. District pins derive from `WORLD_LOCATIONS` and preserve Map → District → Location navigation and the permanent Home shortcut.
+
+The current Central/Residential buildings are **replaceable technical art scaffolding**, not approved final city designs. No new districts, NPCs, or activities are introduced by this slice. The map camera is UI-only; the Worker remains authoritative for world events, battle, rewards, and housing.
 
 ## Run locally
 

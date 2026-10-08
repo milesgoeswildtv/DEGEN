@@ -1,3 +1,4 @@
+import { renderIsometricCity, renderIsometricDistrict } from './isometricCity';
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
@@ -25,6 +26,16 @@ const underpassStatus = (event?: WorldEventSnapshot): { label: string; detail: s
   return { label: 'SEALED', detail: 'Next breach unknown', className: 'sealed' };
 };
 
+const worldStatus = (event?: WorldEventSnapshot, backendOffline = false) =>
+  backendOffline
+    ? { label: 'OFFLINE', detail: 'Cannot reach the DEGEN server', className: 'sealed' }
+    : underpassStatus(event);
+
+const worldConnectionNotice = (backendOffline: boolean): string =>
+  backendOffline
+    ? '<p class="world-connection-error" role="status">LIVE WORLD UNAVAILABLE — The game cannot reach its server. Underpass combat is disabled until connection is restored.</p>'
+    : '';
+
 export const appShell = (player: PlayerState, content: string): string => `
   <header class="topbar">
     <button class="brand" type="button" data-route="map">DEGEN</button>
@@ -41,32 +52,71 @@ export const appShell = (player: PlayerState, content: string): string => `
   </nav>
 `;
 
-export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot): string => {
-  const eventStatus = underpassStatus(underpass);
-  const cards = WORLD_LOCATIONS.map((location) => {
-    const unlocked = player.unlockedLocations.includes(location.id);
-    const isUnderpass = location.id === 'underpass';
-    const status = isUnderpass ? eventStatus.label : unlocked ? 'OPEN' : 'LOCKED';
-    const detail = isUnderpass ? `<span class="event-detail">${escapeHtml(eventStatus.detail)}</span>` : '';
-    return `
-      <button class="location-card ${isUnderpass ? `world-event ${eventStatus.className}` : ''}" type="button" data-route="${location.route}" ${unlocked ? '' : 'disabled'}>
-        <span class="eyebrow">${escapeHtml(location.district)} // ${location.kind.toUpperCase()}</span>
-        <strong>${escapeHtml(location.name)}</strong>
-        <span>${escapeHtml(location.description)}</span>
-        ${detail}
-        <em>${escapeHtml(status)}</em>
-      </button>
-    `;
-  }).join('');
-
+export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot, backendOffline = false): string => {
+  const status = worldStatus(underpass, backendOffline);
   return appShell(player, `
-    <section class="hero-block">
-      <span class="eyebrow">CITY MAP // LIVE WORLD</span>
-      <h1>Where are you going?</h1>
-      <p>Locations can open, close, mutate, or appear without turning the city into an open-world traversal game.</p>
+    <section class="hero-block city-heading">
+      <span class="eyebrow">CITY MAP // DISTRICTS</span>
+      <h1>Choose your district.</h1>
+      <p>Explore the connected metropolis. Tap a district to reveal its locations. Home is always one tap away.</p>
     </section>
-    <section class="location-grid">${cards}</section>
-    ${underpass?.source === 'preview' ? '<p class="preview-note">PREVIEW MODE — this browser is simulating the world-event clock until the Cloudflare backend is connected.</p>' : ''}
+    <section class="city-overview" aria-label="City map">
+      <div class="city-map-header"><span>DEGEN // CITY GRID</span><span>SELECT A DISTRICT</span></div>
+      ${renderIsometricCity(WORLD_LOCATIONS, player.unlockedLocations, status.label)}
+      <div class="city-map-footer">MAP → DISTRICT → LOCATION</div>
+    </section>
+    ${worldConnectionNotice(backendOffline)}
+    ${!backendOffline && underpass?.source === 'preview'
+      ? '<p class="preview-note">PREVIEW MODE — world-event timing is simulated until the backend is connected.</p>'
+      : ''}
+  `);
+};
+
+export const districtView = (player: PlayerState, district: string, underpass?: WorldEventSnapshot, backendOffline = false): string => {
+  const locations = WORLD_LOCATIONS.filter((location) => location.district === district);
+  if (!locations.length) return mapView(player, underpass, backendOffline);
+  const status = worldStatus(underpass, backendOffline);
+  const cards = locations.map((location) => {
+    const unlocked = player.unlockedLocations.includes(location.id);
+    const event = location.id === 'underpass';
+    return `<button class="city-destination ${event ? `world-event ${status.className}` : ''}" type="button" data-location="${escapeHtml(location.id)}" ${unlocked ? '' : 'disabled'}>
+      <span class="eyebrow">${escapeHtml(location.kind.toUpperCase())} // ${escapeHtml(district.toUpperCase())}</span>
+      <strong>${escapeHtml(location.name)}</strong><span>${escapeHtml(location.description)}</span>
+      ${event ? `<span class="event-detail">${escapeHtml(status.detail)}</span>` : ''}
+      <em>${!unlocked ? 'LOCKED' : event ? escapeHtml(status.label) : 'ENTER LOCATION'} ↗</em>
+    </button>`;
+  }).join('');
+  return appShell(player, `
+    <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><strong>${escapeHtml(district.toUpperCase())}</strong></div>
+    <section class="district-hero ${district === 'Central' ? 'central' : 'residential'}"><span class="eyebrow">CITY DISTRICT</span><h1>${escapeHtml(district)}</h1>
+      <p>Select a location to enter.</p>
+    </section>
+    ${renderIsometricDistrict(district, locations, player.unlockedLocations, status.label)}
+    ${worldConnectionNotice(backendOffline)}
+    <section class="district-locations" aria-label="${escapeHtml(district)} locations">${cards}</section>
+  `);
+};
+
+export const locationView = (player: PlayerState, locationId: string): string => {
+  const location = WORLD_LOCATIONS.find((item) => item.id === locationId && item.route === 'location');
+  if (!location || !player.unlockedLocations.includes(location.id)) return mapView(player);
+  const otherDestinations = WORLD_LOCATIONS
+    .filter((item) => item.district === location.district && item.id !== location.id
+      && player.unlockedLocations.includes(item.id))
+    .map((item) => `<button class="city-connected-location" type="button" data-location="${escapeHtml(item.id)}">
+      <span class="eyebrow">${escapeHtml(item.kind.toUpperCase())}</span><strong>${escapeHtml(item.name)}</strong><span aria-hidden="true">↗</span>
+    </button>`).join('');
+  return appShell(player, `
+    <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-route="district">${escapeHtml(location.district.toUpperCase())}</button></div>
+    <section class="location-scene"><div class="location-scene-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="location-scene-copy"><span class="eyebrow">${escapeHtml(location.district)} // ${escapeHtml(location.kind.toUpperCase())}</span>
+      <h1>${escapeHtml(location.name)}</h1><p>${escapeHtml(location.description)}</p>
+      <span class="location-scene-status">ACCESSIBLE // ACTIVITIES IN DEVELOPMENT</span></div>
+    </section>
+    ${otherDestinations ? `<section class="city-connected" aria-label="Other destinations in ${escapeHtml(location.district)}">
+      <span class="eyebrow">MORE IN ${escapeHtml(location.district.toUpperCase())}</span><div>${otherDestinations}</div>
+    </section>` : ''}
+    <button class="secondary-action city-back-action" type="button" data-route="district">← BACK TO ${escapeHtml(location.district.toUpperCase())}</button>
   `);
 };
 
@@ -111,11 +161,12 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
   `);
 };
 
-export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): string => {
-  const status = underpassStatus(event);
-  const isOpen = event?.phase === 'open';
-  const clears = event ? `${Math.min(event.fullRewardClears, event.fullRewardLimit)}/${event.fullRewardLimit}` : '—';
+export const underpassView = (player: PlayerState, event?: WorldEventSnapshot, backendOffline = false): string => {
+  const status = worldStatus(event, backendOffline);
+  const isOpen = event?.phase === 'open' && !backendOffline;
+  const clears = event && !backendOffline ? `${Math.min(event.fullRewardClears, event.fullRewardLimit)}/${event.fullRewardLimit}` : '—';
   return appShell(player, `
+    <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-route="district">CENTRAL</button></div>
     <section class="hero-block danger underpass-hero ${status.className}">
       <span class="eyebrow">CENTRAL // WORLD EVENT</span>
       <div class="event-status ${status.className}">${escapeHtml(status.label)}</div>
@@ -127,7 +178,8 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): 
       </div>
       <p>When combat begins, you manifest as your Degen immediately. The entrance cannot be farmed while sealed.</p>
       <button class="primary-action" type="button" data-start-battle ${isOpen ? '' : 'disabled'}>${isOpen ? 'ENTER UNDERPASS' : 'UNDERPASS SEALED'}</button>
-      ${event?.source === 'preview' ? '<small class="preview-note">Local preview cycle — production timing will be server-authoritative.</small>' : ''}
+      ${worldConnectionNotice(backendOffline)}
+      ${!backendOffline && event?.source === 'preview' ? '<small class="preview-note">Local preview cycle — production timing will be server-authoritative.</small>' : ''}
     </section>
   `);
 };
