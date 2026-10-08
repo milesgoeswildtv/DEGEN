@@ -32,11 +32,22 @@ function setup(overrides: { expiresAt?: string; playerHp?: number; playerMana?: 
     VALUES ('permit', 'p1', 'underpass', 'cycle', 'tunnel-maw', ?, ?, ?, ?, 'active', 0)`)
     .run(overrides.expiresAt ?? expires, overrides.playerHp ?? TEST_DEGEN.maxHp,
       overrides.playerMana ?? TEST_DEGEN.maxMana, overrides.enemyHp ?? TUNNEL_MAW.maxHp);
+  let beforeCas: (() => void) | undefined;
   const adapter = {
     prepare(sql: string) {
       return { bind(...params: unknown[]) {
         const statement = db.prepare(sql);
-        return { first: () => statement.get(...params), run: () => statement.run(...params) };
+        return {
+          first: () => {
+            if (sql.startsWith('UPDATE battle_permits') && beforeCas) {
+              const hook = beforeCas;
+              beforeCas = undefined;
+              hook();
+            }
+            return statement.get(...params);
+          },
+          run: () => statement.run(...params),
+        };
       } };
     },
   };
@@ -48,7 +59,11 @@ function setup(overrides: { expiresAt?: string; playerHp?: number; playerMana?: 
     return { status: response.status, data: await response.json() as Record<string, unknown> };
   };
   const state = () => db.prepare('SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id = ?').get('permit') as Record<string, unknown>;
-  return { db, act, state };
+  return { db, act, state, injectCasRace: () => {
+    beforeCas = () => db.prepare(`UPDATE battle_permits
+      SET player_hp = 110, player_mana = 8, enemy_hp = 57, turn_count = 1
+      WHERE id = 'permit'`).run();
+  } };
 }
 
 test('paid ability consumes exactly its cost and persists one turn', async () => {
@@ -246,5 +261,25 @@ test('invalid and expired permits do not expose authoritative state', async () =
     assert.equal(result.data.battleState,undefined);
   }
   assert.deepEqual(state(),before);
+  db.close();
+});
+
+test('CAS conflict re-reads the latest Worker state instead of replaying stale damage', async () => {
+  const { db, act, state, injectCasRace } = setup();
+  injectCasRace();
+  const result = await act('crack', 'permit', 'p1', 0);
+  assert.equal(result.status, 409);
+  const authoritative = result.data.battleState as {
+    permitId: string; status: string; turnCount: number;
+    playerHp: number; playerMana: number; enemyHp: number;
+  };
+  assert.equal(authoritative.permitId, 'permit');
+  assert.equal(authoritative.status, 'active');
+  assert.equal(authoritative.turnCount, 1);
+  assert.equal(authoritative.playerMana, 8);
+  assert.equal(authoritative.enemyHp, 57);
+  assert.equal(authoritative.playerHp, 110);
+  assert.equal(state().turn_count, 1);
+  assert.equal(state().player_mana, 8);
   db.close();
 });
