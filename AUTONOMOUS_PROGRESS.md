@@ -77,3 +77,8 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - QA: prior local SQLite source-backed tests passed; this run has not executed full `npm test`, `npm run build`, `npm run check:worker`, Wrangler/D1 integration or mobile testing. CI on this branch is pending a PR. No new migrations, config changes, or remote D1 writes.
 - Existing draft PRs #6 city, #7 CORS, #8 housing remain unmerged. No Miles design blocker.
 - Best next task: open draft PR for atomic defeat, obtain green full CI and actual local D1 transaction QA, then proceed with client-first turn-replay protection before Worker enforcement.
+
+### Unmerged blocker: defeat-history expiry boundary (2026-10-08)
+- LOCAL SQLite boundary QA 4/4 passed, exposing a flaw in the pushed atomic-defeat patch: the action CAS may succeed just before permit expiry, but the history INSERT's repeated expiry predicate may fail just after expiry. This can commit defeat without history.
+- REQUIRED BEFORE MERGE: remove the second statement's expiry predicate only; retain expiry validation in the terminal action CAS. Add the boundary test and verify in actual Wrangler/D1. Patch and reproduction staged locally; write was rejected. No production deployment.
+- Atomic branch tests now seven cases, but no branch CI (PR creation rejected twice). Client-first expected-turn branch remains unchanged after two rejected writes.
