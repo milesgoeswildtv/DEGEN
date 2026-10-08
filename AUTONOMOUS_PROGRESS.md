@@ -91,3 +91,8 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL reconstructed-source QA: 22/22 Worker/Mana, 16/16 client/compatibility, 16/16 replay stress passed, plus isolated TypeScript validation. Removing the turn precondition intentionally failed the replay regression; restoring it passed. These are not full-repository CI.
 - Branch remains PUSHED only, without PR/merge/deployment. Legacy requests still permit sequential replay until mandatory enforcement follows the compatible client rollout. No schema, migration, config, or remote D1 changes.
 - Next: PR, full CI with actual local Wrangler/D1, build and Worker dry-run, review integration with atomic-defeat branch, client-first deployment, then mandatory server enforcement.
+
+### Forced CAS interleaving regression — 2026-10-08
+- PUSHED `tests/worker-battle-turn-precondition.test.ts` deterministic hook that mutates the authoritative permit between SELECT and CAS; stale action must return 409 with freshly re-read HP/Mana/enemy HP/turnCount and must not apply a second action.
+- LOCAL reconstructed-source test suite with exact main schema/migrations/shared rules: 23/23 passed. Separate reconstructed atomic+optional-turn integration: 25/25 passed. Neither replaces full CI or real Wrangler/D1.
+- Latest current branch must still pass `npm test`, `npm run build`, `npm run check:worker`; PR creation remains blocked and no merge/deploy/D1 mutation occurred.
