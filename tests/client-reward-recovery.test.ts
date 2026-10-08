@@ -2,16 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
-import ts from 'typescript';
+import { stripTypeScriptTypes } from 'node:module';
 
 // Execute the real controller source with mocked browser/API dependencies.
 // No Worker or browser rendering is implied by this deterministic unit test.
 const controllerSource = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\n/gm, '')
   .replace('export class AppController', 'class AppController');
-const compiled = ts.transpileModule(controllerSource, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
-}).outputText;
+const compiled = stripTypeScriptTypes(controllerSource, { mode: 'transform' });
 
 const setup = (enabled: boolean, completeUnderpass?: () => Promise<unknown>) => {
   const storage = new Map<string, string>();
