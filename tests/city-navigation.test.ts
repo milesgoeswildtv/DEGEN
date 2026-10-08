@@ -72,3 +72,59 @@ test('locked destinations are disabled and cannot expose their location scene', 
   assert.match(map, /data-district="Central" disabled/);
   assert.doesNotMatch(views.locationView(restricted, 'downtown'), /ACTIVITIES IN DEVELOPMENT/);
 });
+
+test('controller follows map to district to location and rejects locked navigation', () => {
+  const makeButton = (dataset: Record<string, string>) => {
+    let click = () => {};
+    return {
+      dataset,
+      addEventListener: (_event: string, handler: () => void) => { click = handler; },
+      click: () => click(),
+    };
+  };
+  const districtButton = makeButton({ district: 'Central' });
+  const locationButton = makeButton({ location: 'downtown' });
+  const backButton = makeButton({ route: 'district' });
+  const root = {
+    innerHTML: '',
+    querySelectorAll: (selector: string) => {
+      if (selector === '[data-district]') return [districtButton];
+      if (selector === '[data-location]') return [locationButton];
+      if (selector === '[data-route]') return [backButton];
+      return [];
+    },
+    querySelector: () => null,
+  };
+  const store = { snapshot: { ...player } };
+  const Controller = runInNewContext(
+    compile('../src/app/AppController.ts') + '\nAppController;',
+    {
+      WORLD_LOCATIONS,
+      mapView: () => 'map', districtView: () => 'district', locationView: () => 'location',
+      homeView: () => 'home', underpassView: () => 'underpass', battleView: () => 'battle',
+    },
+  ) as new (root: unknown, store: unknown, api: unknown) => {
+    route: string;
+    render(): void;
+    navigate(route: string): void;
+  };
+  const controller = new Controller(root, store, { enabled: false });
+  controller.render();
+  assert.equal(root.innerHTML, 'map');
+  districtButton.click();
+  assert.equal(controller.route, 'district');
+  assert.equal(root.innerHTML, 'district');
+  locationButton.click();
+  assert.equal(controller.route, 'location');
+  assert.equal(root.innerHTML, 'location');
+  backButton.click();
+  assert.equal(controller.route, 'district');
+
+  store.snapshot.unlockedLocations = ['home'];
+  controller.navigate('map');
+  districtButton.click();
+  assert.equal(controller.route, 'map');
+  controller.navigate('district');
+  locationButton.click();
+  assert.equal(controller.route, 'district');
+});
