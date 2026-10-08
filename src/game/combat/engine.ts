@@ -1,4 +1,4 @@
-import type { BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
+import type { BattleActionResult, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
 import { canUseAbility, resolveCombatTurn } from './rules';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
@@ -57,6 +57,45 @@ export class BattleEngine {
     this.listeners.add(listener);
     listener(this.snapshot);
     return () => this.listeners.delete(listener);
+  }
+
+  // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
+  applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
+    if (this.status !== 'active') return;
+    const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
+    if (!ability) return;
+
+    const playerDamage = Math.max(0, this.enemyHp - result.enemyHp);
+    const retaliationDamage = Math.max(0, this.playerHp - result.playerHp);
+    const manaSpent = Math.max(0, this.playerMana - result.playerMana);
+    this.playerHp = result.playerHp;
+    this.playerMana = result.playerMana;
+    this.enemyHp = result.enemyHp;
+    this.log.push(`${this.degen.name} uses ${ability.name}: ${playerDamage} damage.`);
+    if (manaSpent > 0) this.log.push(`Mana -${manaSpent}.`);
+
+    if (result.status === 'victory') {
+      this.status = 'victory';
+      this.log.push(`${this.enemy.name} is defeated.`);
+      this.trimLog();
+      this.emit();
+      this.finish('victory');
+      return;
+    }
+
+    if (retaliationDamage > 0) {
+      this.log.push(`${this.enemy.name} hits back for ${retaliationDamage}.`);
+    }
+    if (result.status === 'defeat') {
+      this.status = 'defeat';
+      this.log.push(`${this.degen.name} goes down.`);
+      this.trimLog();
+      this.emit();
+      this.finish('defeat');
+      return;
+    }
+    this.trimLog();
+    this.emit();
   }
 
   useAbility(abilityId: string): void {

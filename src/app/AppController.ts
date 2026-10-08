@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
-import type { BattlePermit, BattleReward, RouteKey, WorldEventSnapshot } from '../domain/types';
+import type { BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { underpassRewardForClear } from '../game/progression';
@@ -126,8 +126,8 @@ export class AppController {
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     if (!parent || !this.battlePermit) return;
 
-    this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status, reward) => {
-      void this.finishBattle(status, reward);
+    this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+      void this.finishBattle(status);
     });
 
     this.battleEngine.subscribe(updateBattleDom);
@@ -143,36 +143,30 @@ export class AppController {
 
   private async useBattleAbility(abilityId: string): Promise<void> {
     if (!this.battleEngine || !this.battlePermit || this.battleActionPending) return;
+    const engine = this.battleEngine;
+    const permitId = this.battlePermit.permitId;
 
     this.battleActionPending = true;
     this.setAbilityButtonsDisabled(true);
 
     try {
-      const authoritative = this.api.enabled
-        ? await this.api.actUnderpass(this.store.snapshot.id, this.battlePermit.permitId, abilityId)
-        : undefined;
-
-      this.battleEngine.useAbility(abilityId);
-
-      if (authoritative) {
-        const local = this.battleEngine.snapshot;
-        if (
-          local.status !== authoritative.status
-          || local.playerHp !== authoritative.playerHp
-          || local.playerMana !== authoritative.playerMana
-          || local.enemyHp !== authoritative.enemyHp
-        ) {
-          console.warn('Authoritative battle state diverged from the local presentation simulation.', {
-            authoritative,
-            local,
-          });
+      if (this.api.enabled) {
+        const authoritative = await this.api.actUnderpass(this.store.snapshot.id, permitId, abilityId);
+        if (this.battleEngine !== engine || this.battlePermit?.permitId !== permitId) return;
+        if (!authoritative || authoritative.permitId !== permitId) {
+          throw new Error('Missing or mismatched authoritative battle action response.');
         }
+        engine.applyAuthoritativeAction(abilityId, authoritative);
+      } else {
+        engine.useAbility(abilityId);
       }
     } catch (error) {
       console.warn('Battle action rejected by authoritative server.', error);
     } finally {
-      this.battleActionPending = false;
-      if (this.battleEngine?.snapshot.status === 'active') this.setAbilityButtonsDisabled(false);
+      if (this.battleEngine === engine) {
+        this.battleActionPending = false;
+        if (engine.snapshot.status === 'active') this.setAbilityButtonsDisabled(false);
+      }
     }
   }
 
@@ -187,8 +181,8 @@ export class AppController {
     });
   }
 
-  private async finishBattle(status: 'victory' | 'defeat', reward?: BattleReward): Promise<void> {
-    if (status === 'victory' && reward && this.battlePermit) {
+  private async finishBattle(status: 'victory' | 'defeat'): Promise<void> {
+    if (status === 'victory' && this.battlePermit) {
       if (this.api.enabled) {
         try {
           const result = await this.api.completeUnderpass(this.store.snapshot.id, this.battlePermit.permitId);
