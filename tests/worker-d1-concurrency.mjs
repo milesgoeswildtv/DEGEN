@@ -37,7 +37,7 @@ async function eventuallyComplete(id) {
 }
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
-  cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist, '--yes']);
+  cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES('integration-player','Integration');
