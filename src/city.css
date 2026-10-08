@@ -1,0 +1,78 @@
+/* City navigation: existing Central and Residential districts only. No invented destinations. */
+.city-heading h1 { max-width: 780px; }
+.city-overview { position: relative; overflow: hidden; isolation: isolate; padding: 16px; border: 1px solid #414047; border-radius: 20px; background: radial-gradient(ellipse at 50% 15%, #302a29, transparent 60%), repeating-linear-gradient(90deg, transparent 0 58px, #26252b 59px 61px), repeating-linear-gradient(0deg, transparent 0 58px, #26252b 59px 61px), #111116; }
+.city-overview::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(140deg, transparent 35%, #5b4a3544 36%, #5b4a3544 38%, transparent 39%), linear-gradient(35deg, transparent 57%, #46424a66 58%, #46424a66 60%, transparent 61%); }
+.city-map-header, .city-map-footer { display: flex; justify-content: space-between; gap: 12px; color: #a7a2a1; font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .14em; }
+.city-map-header { margin: 0 4px 18px; }
+.city-map-footer { margin: 18px 4px 2px; justify-content: flex-end; }
+.city-district-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; min-height: 360px; }
+.city-district { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; gap: 9px; min-width: 0; min-height: 340px; padding: 22px; text-align: left; color: #f5f0e9; border: 1px solid #6b625d; border-radius: 14px; background: linear-gradient(180deg, #24262d 0%, #18191f 52%, #121217 100%); cursor: pointer; box-shadow: inset 0 0 0 1px #ffffff08, 0 12px 30px #0005; }
+.city-district.residential { background: linear-gradient(180deg, #302b2a 0%, #242024 52%, #141316 100%); border-color: #594c49; }
+.city-district:hover, .city-district:focus-visible { border-color: #c0a37c; }
+.city-district:disabled { opacity: .5; cursor: not-allowed; }
+.city-district .eyebrow { position: relative; z-index: 1; color: #d0bba4; }
+.city-district strong { position: relative; z-index: 1; font-size: clamp(28px, 5vw, 52px); letter-spacing: -.055em; line-height: 1; text-shadow: 0 2px 20px #000; }
+.city-district > span:not(.eyebrow):not(.city-district-art) { position: relative; z-index: 1; font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .08em; color: #c4bfc0; }
+.city-district em { position: relative; z-index: 1; margin-top: auto; padding: 8px 12px; border: 1px solid #bca48788; background: #1c1b1dcc; border-radius: 6px; font: 800 12px/1.3 ui-monospace, monospace; letter-spacing: .1em; font-style: normal; }
+.city-district .city-event-pill.open { color: #ffb7a9 !important; }
+.city-district .city-event-pill.warning { color: #ffdb96 !important; }
+.city-district .city-event-pill.sealed { color: #b6b2b7 !important; }
+.city-district-art { position: absolute; inset: 18% 0 0; display: flex; justify-content: center; align-items: flex-end; gap: 5px; opacity: .42; pointer-events: none; transform: perspective(300px) rotateX(8deg); }
+.city-district-art i { display: block; width: 17%; height: 45%; background: repeating-linear-gradient(0deg, transparent 0 17px, #c5b5a31a 18px 19px), repeating-linear-gradient(90deg, transparent 0 15px, #d9bb9333 16px 18px), #08090e; box-shadow: -5px 0 0 #393239; }
+.city-district-art i:nth-child(2) { height: 72%; width: 13%; }
+.city-district-art i:nth-child(3) { height: 89%; width: 19%; }
+.city-district-art i:nth-child(4) { height: 62%; width: 15%; }
+.city-district-art i:nth-child(5) { height: 36%; width: 22%; }
+.city-district.residential .city-district-art i { height: 26%; }
+.city-district.residential .city-district-art i:nth-child(2) { height: 39%; }
+.city-district.residential .city-district-art i:nth-child(3) { height: 47%; }
+.city-district.residential .city-district-art i:nth-child(4) { height: 34%; }
+.city-breadcrumb { display: flex; align-items: center; gap: 12px; margin: 4px 0 16px; color: #918d91; font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .1em; }
+.city-breadcrumb button { border: 0; padding: 8px 0; color: #e4d3c0; background: none; font: inherit; cursor: pointer; }
+.city-breadcrumb strong { color: #c4bfc2; }
+.district-hero { position: relative; isolation: isolate; min-height: 250px; overflow: hidden; border: 1px solid #484048; border-radius: 18px; padding: 30px 26px; background: radial-gradient(ellipse at 75% 10%, #624d3c70, transparent 58%), linear-gradient(140deg, #28272d, #101115); }
+.district-hero.residential { background: radial-gradient(ellipse at 75% 10%, #68503d5e, transparent 58%), linear-gradient(140deg, #302a2b, #141217); }
+.district-hero .eyebrow { color: #cbb39a; }
+.district-hero h1 { position: relative; z-index: 1; margin: 12px 0; font-size: clamp(44px, 9vw, 78px); line-height: 1; letter-spacing: -.06em; }
+.district-hero p { position: relative; z-index: 1; color: #c5bcc0; }
+.district-skyline { position: absolute; inset: 30% 0 0 42%; display: flex; align-items: flex-end; gap: 5px; opacity: .34; z-index: -1; }
+.district-skyline i { flex: 1; height: 45%; background: repeating-linear-gradient(90deg, #aa917122 0 4px, transparent 5px 18px), #09090d; }
+.district-skyline i:nth-child(2) { height: 76%; }
+.district-skyline i:nth-child(3) { height: 95%; }
+.district-skyline i:nth-child(4) { height: 62%; }
+.district-skyline i:nth-child(5) { height: 83%; }
+.district-skyline i:nth-child(6) { height: 35%; }
+.district-locations { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 18px; }
+.city-destination { min-height: 230px; display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px solid #48424a; border-radius: 14px; text-align: left; color: #f4f4f5; background: linear-gradient(145deg, #242228, #121217); cursor: pointer; }
+.city-destination:hover, .city-destination:focus-visible { border-color: #c4a987; }
+.city-destination:disabled { opacity: .45; cursor: not-allowed; }
+.city-destination strong { font-size: 27px; letter-spacing: -.03em; }
+.city-destination > span:not(.eyebrow) { color: #aaa5aa; line-height: 1.5; }
+.city-destination em { margin-top: auto; font: 800 12px/1.4 ui-monospace, monospace; font-style: normal; letter-spacing: .1em; color: #d2b799; }
+.location-scene { position: relative; display: flex; align-items: flex-end; overflow: hidden; isolation: isolate; min-height: 460px; border: 1px solid #5b4a45; border-radius: 18px; background: radial-gradient(ellipse at 52% 20%, #6d493b70, transparent 55%), linear-gradient(180deg, #3b3439 0%, #202027 50%, #0d0d12 100%); }
+.location-scene-art { position: absolute; inset: 10% 0 0; z-index: -1; display: flex; justify-content: space-around; align-items: flex-end; gap: 8px; opacity: .6; }
+.location-scene-art i { width: 17%; height: 57%; background: repeating-linear-gradient(0deg, transparent 0 26px, #1e1d22 27px 30px), repeating-linear-gradient(90deg, #bc94724d 0 6px, transparent 7px 20px), #0c0c11; box-shadow: 8px 0 0 #4a3437; }
+.location-scene-art i:nth-child(2) { height: 88%; }
+.location-scene-art i:nth-child(3) { height: 69%; }
+.location-scene-art i:nth-child(4) { height: 95%; }
+.location-scene-art i:nth-child(5) { height: 48%; }
+.location-scene-art i:nth-child(6) { height: 74%; }
+.location-scene-copy { width: 100%; padding: 36px 26px; background: linear-gradient(0deg, #09090ded, #09090d99 75%, transparent); }
+.location-scene-copy h1 { margin: 8px 0; font-size: clamp(42px, 9vw, 76px); letter-spacing: -.05em; }
+.location-scene-copy p { max-width: 520px; line-height: 1.5; color: #d1c9ca; }
+.location-scene-status { display: inline-block; margin-top: 12px; color: #d3b997; font: 800 11px/1.5 ui-monospace, monospace; letter-spacing: .1em; }
+.city-back-action { margin-top: 16px; }
+@media (max-width: 600px) {
+  .city-overview { padding: 12px; }
+  .city-district-grid { grid-template-columns: 1fr; }
+  .city-district { min-height: 235px; }
+  .city-map-header { font-size: 9px; }
+  .city-map-header span:last-child { display: none; }
+  .district-hero { min-height: 205px; padding: 24px 18px; }
+  .location-scene { min-height: 390px; }
+  .location-scene-copy { padding: 26px 18px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .city-district, .city-destination { transition: border-color .2s, transform .2s; }
+  .city-district:active, .city-destination:active { transform: scale(.99); }
+}

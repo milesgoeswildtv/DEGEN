@@ -42,31 +42,67 @@ export const appShell = (player: PlayerState, content: string): string => `
 `;
 
 export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot): string => {
-  const eventStatus = underpassStatus(underpass);
-  const cards = WORLD_LOCATIONS.map((location) => {
-    const unlocked = player.unlockedLocations.includes(location.id);
-    const isUnderpass = location.id === 'underpass';
-    const status = isUnderpass ? eventStatus.label : unlocked ? 'OPEN' : 'LOCKED';
-    const detail = isUnderpass ? `<span class="event-detail">${escapeHtml(eventStatus.detail)}</span>` : '';
-    return `
-      <button class="location-card ${isUnderpass ? `world-event ${eventStatus.className}` : ''}" type="button" data-route="${location.route}" ${unlocked ? '' : 'disabled'}>
-        <span class="eyebrow">${escapeHtml(location.district)} // ${location.kind.toUpperCase()}</span>
-        <strong>${escapeHtml(location.name)}</strong>
-        <span>${escapeHtml(location.description)}</span>
-        ${detail}
-        <em>${escapeHtml(status)}</em>
-      </button>
-    `;
+  const status = underpassStatus(underpass);
+  const districts = [...new Set(WORLD_LOCATIONS.map((location) => location.district))];
+  const cards = districts.map((district) => {
+    const locations = WORLD_LOCATIONS.filter((location) => location.district === district);
+    const accessible = locations.filter((location) => player.unlockedLocations.includes(location.id)).length;
+    return `<button type="button" class="city-district ${district === 'Central' ? 'central' : 'residential'}" data-district="${escapeHtml(district)}" ${accessible ? '' : 'disabled'}>
+      <span class="city-district-art" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="eyebrow">DISTRICT // ${escapeHtml(district.toUpperCase())}</span>
+      <strong>${escapeHtml(district)}</strong>
+      <span>${accessible} OF ${locations.length} LOCATIONS ACCESSIBLE</span>
+      ${district === 'Central' ? `<span class="city-event-pill ${status.className}">UNDERPASS // ${escapeHtml(status.label)}</span>` : ''}
+      <em>EXPLORE DISTRICT ↗</em>
+    </button>`;
   }).join('');
-
   return appShell(player, `
-    <section class="hero-block">
-      <span class="eyebrow">CITY MAP // LIVE WORLD</span>
-      <h1>Where are you going?</h1>
-      <p>Locations can open, close, mutate, or appear without turning the city into an open-world traversal game.</p>
+    <section class="hero-block city-heading"><span class="eyebrow">CITY MAP // DISTRICTS</span>
+      <h1>Choose your district.</h1><p>Select a district, then a location. Home is always one tap away.</p>
     </section>
-    <section class="location-grid">${cards}</section>
-    ${underpass?.source === 'preview' ? '<p class="preview-note">PREVIEW MODE — this browser is simulating the world-event clock until the Cloudflare backend is connected.</p>' : ''}
+    <section class="city-overview" aria-label="City map">
+      <div class="city-map-header"><span>DEGEN // CITY GRID</span><span>SELECT A DISTRICT</span></div>
+      <div class="city-district-grid">${cards}</div>
+      <div class="city-map-footer">MAP → DISTRICT → LOCATION</div>
+    </section>
+    ${underpass?.source === 'preview' ? '<p class="preview-note">PREVIEW MODE — world-event timing is simulated until the backend is connected.</p>' : ''}
+  `);
+};
+
+export const districtView = (player: PlayerState, district: string, underpass?: WorldEventSnapshot): string => {
+  const locations = WORLD_LOCATIONS.filter((location) => location.district === district);
+  if (!locations.length) return mapView(player, underpass);
+  const status = underpassStatus(underpass);
+  const cards = locations.map((location) => {
+    const unlocked = player.unlockedLocations.includes(location.id);
+    const event = location.id === 'underpass';
+    return `<button class="city-destination ${event ? `world-event ${status.className}` : ''}" type="button" data-location="${escapeHtml(location.id)}" ${unlocked ? '' : 'disabled'}>
+      <span class="eyebrow">${escapeHtml(location.kind.toUpperCase())} // ${escapeHtml(district.toUpperCase())}</span>
+      <strong>${escapeHtml(location.name)}</strong><span>${escapeHtml(location.description)}</span>
+      ${event ? `<span class="event-detail">${escapeHtml(status.detail)}</span>` : ''}
+      <em>${!unlocked ? 'LOCKED' : event ? escapeHtml(status.label) : 'ENTER LOCATION'} ↗</em>
+    </button>`;
+  }).join('');
+  return appShell(player, `
+    <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><strong>${escapeHtml(district.toUpperCase())}</strong></div>
+    <section class="district-hero ${district === 'Central' ? 'central' : 'residential'}"><span class="eyebrow">CITY DISTRICT</span><h1>${escapeHtml(district)}</h1>
+      <p>Select a location to enter.</p><div class="district-skyline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    </section>
+    <section class="district-locations" aria-label="${escapeHtml(district)} locations">${cards}</section>
+  `);
+};
+
+export const locationView = (player: PlayerState, locationId: string): string => {
+  const location = WORLD_LOCATIONS.find((item) => item.id === locationId && item.route === 'location');
+  if (!location || !player.unlockedLocations.includes(location.id)) return mapView(player);
+  return appShell(player, `
+    <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-route="district">${escapeHtml(location.district.toUpperCase())}</button></div>
+    <section class="location-scene"><div class="location-scene-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="location-scene-copy"><span class="eyebrow">${escapeHtml(location.district)} // ${escapeHtml(location.kind.toUpperCase())}</span>
+      <h1>${escapeHtml(location.name)}</h1><p>${escapeHtml(location.description)}</p>
+      <span class="location-scene-status">ACCESSIBLE // ACTIVITIES IN DEVELOPMENT</span></div>
+    </section>
+    <button class="secondary-action city-back-action" type="button" data-route="district">← BACK TO ${escapeHtml(location.district.toUpperCase())}</button>
   `);
 };
 

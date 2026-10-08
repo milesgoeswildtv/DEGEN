@@ -1,16 +1,19 @@
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
+import { WORLD_LOCATIONS } from '../data/world';
 import type { BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { underpassRewardForClear } from '../game/progression';
-import { battleView, homeView, mapView, underpassView, updateBattleDom } from '../ui/views';
+import { battleView, districtView, homeView, locationView, mapView, underpassView, updateBattleDom } from '../ui/views';
 import { GameApi } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
 
 export class AppController {
   private route: RouteKey = 'map';
+  private selectedDistrict = 'Central';
+  private selectedLocationId = 'downtown';
   private selectedFurniture?: string;
   private battleGame?: Phaser.Game;
   private battleEngine?: BattleEngine;
@@ -46,6 +49,12 @@ export class AppController {
     const player = this.store.snapshot;
 
     switch (this.route) {
+      case 'district':
+        this.root.innerHTML = districtView(player, this.selectedDistrict, this.underpassEvent);
+        break;
+      case 'location':
+        this.root.innerHTML = locationView(player, this.selectedLocationId);
+        break;
       case 'home':
         this.root.innerHTML = homeView(player, this.selectedFurniture);
         break;
@@ -72,6 +81,26 @@ export class AppController {
       button.addEventListener('click', () => {
         const route = button.dataset.route as RouteKey | undefined;
         if (route) this.navigate(route);
+      });
+    });
+
+    this.root.querySelectorAll<HTMLButtonElement>('[data-district]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const district = button.dataset.district;
+        if (!district || !WORLD_LOCATIONS.some((location) =>
+          location.district === district && this.store.snapshot.unlockedLocations.includes(location.id))) return;
+        this.selectedDistrict = district;
+        this.navigate('district');
+      });
+    });
+
+    this.root.querySelectorAll<HTMLButtonElement>('[data-location]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const location = WORLD_LOCATIONS.find((entry) => entry.id === button.dataset.location);
+        if (!location || !this.store.snapshot.unlockedLocations.includes(location.id)) return;
+        this.selectedDistrict = location.district;
+        this.selectedLocationId = location.id;
+        this.navigate(location.route);
       });
     });
   }
@@ -277,7 +306,7 @@ export class AppController {
       this.underpassEvent = getPreviewUnderpass();
     }
 
-    if (rerender && (this.route === 'map' || this.route === 'underpass')) this.render();
+    if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 
   private destroyBattle(): void {
