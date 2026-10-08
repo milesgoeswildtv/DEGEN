@@ -245,26 +245,36 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   });
   const { playerHp, playerMana, enemyHp, status } = turn;
 
-  const updated = await env.DB.prepare(`UPDATE battle_permits
+  const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
       AND datetime(expires_at) > CURRENT_TIMESTAMP AND turn_count = ?
     RETURNING turn_count`)
-    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
-    .first<{ turn_count: number }>();
+    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, permit.turn_count);
 
-  if (!updated) return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
-
+  let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
     const character = await env.DB.prepare(`SELECT level FROM characters WHERE player_id = ?`)
       .bind(input.playerId).first<{ level: number }>();
-    if (character) {
-      await env.DB.prepare(`INSERT INTO battle_history (
+    if (!character) return fail(request, env, 'Player character not found.', 404);
+    // Commit the terminal turn and its deterministic history marker atomically.
+    const results = await env.DB.batch([
+      actionUpdate,
+      env.DB.prepare(`INSERT INTO battle_history (
         id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
-      ) VALUES (?, ?, ?, 'defeat', ?, 0, 0)`)
-        .bind(crypto.randomUUID(), input.playerId, TUNNEL_MAW.id, character.level).run();
-    }
+      ) SELECT ?, ?, ?, 'defeat', ?, 0, 0
+        WHERE EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
+          AND battle_status = 'defeat' AND turn_count = ?
+          AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO NOTHING`)
+        .bind(`${input.permitId}:defeat`, input.playerId, TUNNEL_MAW.id, character.level,
+          input.permitId, input.playerId, permit.turn_count + 1),
+    ]);
+    updated = results[0]?.results?.[0] as { turn_count: number } | undefined;
+  } else {
+    updated = await actionUpdate.first<{ turn_count: number }>();
   }
+  if (!updated) return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
 
   return json(request, env, {
     permitId: input.permitId,
