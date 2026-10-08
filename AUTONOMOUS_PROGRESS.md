@@ -79,3 +79,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Deployment/schema: no D1 migration, deployment config, remote D1 write, or production deploy in this slice. Existing D1 bindings/migrations remain unchanged; migration-before-Worker ordering stays in place.
 - Delivery blocker: draft PR creation rejected twice, and branch-specific CI-trigger update rejected twice. No Miles design blocker.
 - Best next task: obtain full CI and real local Wrangler/D1 QA on this branch, deliver a reviewed PR, deploy compatible client first, then enforce mandatory turn preconditions in a separate Worker rollout.
+
+### Replay QA / local D1 harness — 2026-10-08
+- Branch `automation/degen/battle-turn-client-v01` now contains `tests/worker-d1-turn-replay.test.ts` for real local Wrangler/D1 HTTP coverage; PUSHED, not yet executed in real Wrangler.
+- LOCAL reconstructed-source SQLite/VM QA passed 22/22 cases, including 64 concurrent same-turn requests, 100 sequential retries, zero-Mana free ability, terminal recovery, invalid expected counts, and legacy clients. An initial local test-fixture adapter error was corrected; not a production failure.
+- `npm test`, `npm run build`, `npm run check:worker`, and full CI on this exact branch head remain REQUIRED. CI trigger and PR creation were each rejected twice. No production deploy, migration, or D1 write.
+- Mana/reward authority remain merged on main; atomic defeat reliability is a separate unmerged branch. Best next task: reviewed PR and full CI/local Wrangler, then client-first deployment and later mandatory Worker enforcement.
