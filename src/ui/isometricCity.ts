@@ -91,7 +91,7 @@ export const renderIsometricCity = (
       aria-label="${escapeHtml(district)}, ${accessible} of ${matching.length} locations accessible">
       <span class="city-pin-marker" aria-hidden="true">⌖</span>
       <strong>${escapeHtml(district)}</strong>
-      <small>${accessible}/${matching.length} OPEN${district === 'Central' ? ` · UNDERPASS ${escapeHtml(underpassLabel)}` : ''}</small>
+      <small>${accessible}/${matching.length} OPEN${district === 'Central' ? ` · UNDERPASS // ${escapeHtml(underpassLabel)}` : ''}</small>
     </button>`;
   }).join('');
   return `<div class="city-viewport" data-city-viewport role="region" tabindex="0" aria-label="Pan and zoom city map">

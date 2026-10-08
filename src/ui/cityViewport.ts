@@ -40,7 +40,7 @@ export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undef
   };
   const reset = () => { camera = { x: 0, y: 0, scale: initialScale }; render(); };
   const pinch = () => {
-    const [a, b] = [...pointers.values()];
+    const [a, b] = [...pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
     const rect = viewport.getBoundingClientRect();
     return { distance: Math.hypot(a.x - b.x, a.y - b.y), center: { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top } };
   };

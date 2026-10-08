@@ -80,7 +80,7 @@ test('locked destinations are disabled and cannot expose their location scene', 
   assert.match(central, /data-location="downtown" disabled/);
   assert.match(central, /data-location="underpass" disabled/);
   const map = views.mapView(restricted);
-  assert.match(map, /data-district="Central" disabled/);
+  assert.match(map, /data-district="Central"[^>]*disabled/);
   assert.doesNotMatch(views.locationView(restricted, 'downtown'), /ACTIVITIES IN DEVELOPMENT/);
   assert.doesNotMatch(views.locationView({ ...player, unlockedLocations: ['downtown'] }, 'downtown'), /data-location="underpass"/);
 });
