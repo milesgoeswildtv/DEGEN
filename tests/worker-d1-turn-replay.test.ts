@@ -1,0 +1,129 @@
+// Isolated local Wrangler Worker + D1 regression. Never uses --remote.
+import assert from 'node:assert/strict';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { setTimeout as sleep } from 'node:timers/promises';
+import test from 'node:test';
+
+test('real local Worker/D1 guards expected turns and preserves Mana and rewards', { timeout: 120_000 }, async () => {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const wrangler = resolve(root, 'node_modules/.bin/wrangler');
+  const scratch = mkdtempSync(join(tmpdir(), 'degen-turn-replay-'));
+  const persist = join(scratch, 'd1');
+  const origin = 'http://127.0.0.1:8794';
+  const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
+  let worker: ReturnType<typeof spawn> | undefined;
+  let logs = '';
+
+  const cli = (args: string[]): string => {
+    const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 90_000 });
+    if (r.error || r.status !== 0) throw Error(`wrangler ${args.join(' ')} failed: ${r.error ?? ''}\n${r.stdout}\n${r.stderr}`);
+    return r.stdout;
+  };
+  const request = async (path: string, data: Record<string, unknown>) => {
+    const r = await fetch(origin + path, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: 'qa-player', ...data }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    return { status: r.status, data: await r.json() as Record<string, any> };
+  };
+  const act = (permitId: string, abilityId: string, expectedTurnCount?: number) =>
+    request('/api/battle/action', { permitId, abilityId, ...(expectedTurnCount === undefined ? {} : { expectedTurnCount }) });
+  const complete = (permitId: string) => request('/api/battle/complete', { permitId });
+
+  try {
+    cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, '--file=db/schema.sql']);
+    cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', `--persist-to=${persist}`]);
+    const seed = join(scratch, 'seed.sql');
+    writeFileSync(seed, `
+      INSERT INTO players(id,display_name) VALUES('qa-player','QA');
+      INSERT INTO characters(player_id,level,xp,currency,degen_key)
+        VALUES('qa-player',1,0,0,'test-degen');
+      INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+        VALUES('old-cycle','underpass',datetime('now','-4 hours'),datetime('now','-2 hours'));
+      INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
+        battle_status,player_hp,player_mana,enemy_hp,turn_count)
+      VALUES
+        ('active','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
+        ('concurrent','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
+        ('zero','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0),
+        ('defeat','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',1,12,92,0),
+        ('expired','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
+        ('legacy','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0);
+    `);
+    cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
+
+    worker = spawn(wrangler, ['dev', '--local', `--persist-to=${persist}`, '--ip=127.0.0.1', '--port=8794'], {
+      cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    for (const stream of [worker.stdout, worker.stderr]) {
+      stream.on('data', (data) => { logs = (logs + data.toString()).slice(-10000); });
+    }
+    let ready = false;
+    for (let i = 0; i < 80; i++) {
+      if (worker.exitCode !== null) throw Error('Worker exited: ' + logs);
+      try {
+        const r = await fetch(origin + '/api/health', { signal: AbortSignal.timeout(600) });
+        if (r.ok && (await r.json() as {ok:boolean}).ok) { ready = true; break; }
+      } catch { /* wait for local Worker startup */ }
+      await sleep(250);
+    }
+    assert.ok(ready, 'Local Worker did not start: ' + logs);
+
+    assert.equal((await act('active', 'crack', 0)).data.playerMana, 8);
+    for (let i = 0; i < 20; i++) {
+      const replay = await act('active', 'crack', 0);
+      assert.equal(replay.status, 409);
+      assert.equal(replay.data.battleState.turnCount, 1);
+      assert.equal(replay.data.battleState.playerMana, 8);
+    }
+    assert.equal((await act('active', 'crack', 1)).data.playerMana, 4);
+    const victory = await act('active', 'crack', 2);
+    assert.equal(victory.status, 200);
+    assert.equal(victory.data.status, 'victory');
+    assert.equal(victory.data.playerMana, 0);
+    const recovered = await act('active', 'crack', 2);
+    assert.equal(recovered.status, 409);
+    assert.equal(recovered.data.battleState.status, 'victory');
+    assert.equal((await complete('active')).status, 200);
+    const receipt = await complete('active');
+    assert.equal(receipt.status, 200);
+    assert.equal(receipt.data.player.currency, 30);
+    assert.equal(receipt.data.player.xp, 75);
+
+    assert.equal((await act('zero', 'crack', 0)).status, 409);
+    const free = await act('zero', 'slash', 0);
+    assert.equal(free.status, 200);
+    assert.equal(free.data.playerMana, 0);
+
+    const concurrent = await Promise.all(Array.from({ length: 16 }, () => act('concurrent', 'crack', 0)));
+    assert.equal(concurrent.filter((r) => r.status === 200).length, 1);
+    assert.equal(concurrent.filter((r) => r.status === 409).length, 15);
+
+    assert.equal((await act('defeat', 'slash', 0)).data.status, 'defeat');
+    const defeatReplay = await act('defeat', 'slash', 0);
+    assert.equal(defeatReplay.status, 409);
+    assert.equal(defeatReplay.data.battleState.status, 'defeat');
+    assert.equal((await complete('defeat')).status, 409);
+
+    const expired = await act('expired', 'crack', 0);
+    assert.equal(expired.status, 409);
+    assert.equal(expired.data.battleState, undefined);
+    assert.equal((await act('missing', 'crack', 0)).status, 409);
+
+    // Compatibility during rollout; mandatory Worker enforcement is a later change.
+    assert.equal((await act('legacy', 'slash')).status, 200);
+    assert.equal((await act('legacy', 'slash')).status, 200);
+  } finally {
+    if (worker && worker.exitCode === null) {
+      worker.kill('SIGTERM');
+      await Promise.race([new Promise<void>((done) => worker!.once('exit', () => done())), sleep(2000)]);
+      if (worker.exitCode === null) worker.kill('SIGKILL');
+    }
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
