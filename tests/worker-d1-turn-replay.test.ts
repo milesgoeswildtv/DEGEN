@@ -45,6 +45,10 @@ test('real local Worker/D1 guards expected turns and preserves Mana and rewards'
         VALUES('qa-player',1,0,0,'test-degen');
       INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
         VALUES('old-cycle','underpass',datetime('now','-4 hours'),datetime('now','-2 hours'));
+      INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+        VALUES('open-cycle','underpass',
+          strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 minute'),
+          strftime('%Y-%m-%dT%H:%M:%fZ','now','+60 minutes'));
       INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
         battle_status,player_hp,player_mana,enemy_hp,turn_count)
       VALUES
@@ -77,6 +81,24 @@ test('real local Worker/D1 guards expected turns and preserves Mana and rewards'
       await sleep(250);
     }
     assert.ok(ready, 'Local Worker did not start: ' + logs);
+
+    // Exercise the real start endpoint rather than trusting seeded client Mana.
+    const worldResponse = await fetch(origin + '/api/world/underpass?playerId=qa-player');
+    assert.equal(worldResponse.status, 200);
+    const world = await worldResponse.json() as Record<string, any>;
+    assert.equal(world.phase, 'open');
+    assert.equal(world.cycleId, 'open-cycle');
+    const started = await request('/api/battle/start', {
+      eventKey: 'underpass', cycleId: world.cycleId, encounterKey: 'tunnel-maw',
+    });
+    assert.equal(started.status, 200);
+    assert.equal(started.data.cycleId, 'open-cycle');
+    const firstStartedAction = await act(started.data.permitId as string, 'crack', 0);
+    assert.equal(firstStartedAction.status, 200);
+    assert.equal(firstStartedAction.data.playerMana, 8);
+    assert.equal(firstStartedAction.data.playerHp, 110);
+    assert.equal(firstStartedAction.data.enemyHp, 57);
+    assert.equal(firstStartedAction.data.turnCount, 1);
 
     assert.equal((await act('active', 'crack', 0)).data.playerMana, 8);
     for (let i = 0; i < 20; i++) {
