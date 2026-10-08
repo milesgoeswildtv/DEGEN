@@ -53,7 +53,10 @@ test('real local Worker/D1 guards expected turns and preserves Mana and rewards'
         ('zero','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0),
         ('defeat','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',1,12,92,0),
         ('expired','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
-        ('legacy','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0);
+        ('legacy','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
+        ('full-2','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,4,20,0),
+        ('full-3','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,4,20,0),
+        ('reduced-4','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,4,20,0);
     `);
     cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
 
@@ -94,6 +97,26 @@ test('real local Worker/D1 guards expected turns and preserves Mana and rewards'
     assert.equal(receipt.status, 200);
     assert.equal(receipt.data.player.currency, 30);
     assert.equal(receipt.data.player.xp, 75);
+    // Reward tier, duplicate completion, and level-up remain Worker-owned.
+    for (const [permitId, tier, currency, level, xp] of [
+      ['full-2', 'full', 60, 2, 50],
+      ['full-3', 'full', 90, 2, 125],
+      ['reduced-4', 'reduced', 93, 2, 135],
+    ] as const) {
+      const killingBlow = await act(permitId, 'crack', 0);
+      assert.equal(killingBlow.status, 200);
+      assert.equal(killingBlow.data.status, 'victory');
+      const completed = await complete(permitId);
+      assert.equal(completed.status, 200);
+      assert.equal(completed.data.reward.tier, tier);
+      assert.equal(completed.data.player.currency, currency);
+      assert.equal(completed.data.player.level, level);
+      assert.equal(completed.data.player.xp, xp);
+      const repeated = await complete(permitId);
+      assert.equal(repeated.status, 200);
+      assert.equal(repeated.data.player.currency, currency);
+      assert.equal(repeated.data.player.xp, xp);
+    }
 
     assert.equal((await act('zero', 'crack', 0)).status, 409);
     const free = await act('zero', 'slash', 0);
