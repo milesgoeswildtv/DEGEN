@@ -56,7 +56,8 @@ test('real local Worker/D1 guards expected turns and preserves Mana and rewards'
         ('legacy','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
         ('full-2','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,4,20,0),
         ('full-3','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,4,20,0),
-        ('reduced-4','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,4,20,0);
+        ('reduced-4','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,4,20,0),
+        ('race','qa-player','underpass','old-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,4,20,0);
     `);
     cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
 
@@ -117,6 +118,20 @@ test('real local Worker/D1 guards expected turns and preserves Mana and rewards'
       assert.equal(repeated.data.player.currency, currency);
       assert.equal(repeated.data.player.xp, xp);
     }
+
+    // A completion racing a legitimate killing blow cannot award on permit possession.
+    const [raceAction, raceClaim] = await Promise.all([
+      act('race', 'crack', 0), complete('race'),
+    ]);
+    assert.equal(raceAction.status, 200);
+    assert.equal(raceAction.data.status, 'victory');
+    assert.ok([200, 409].includes(raceClaim.status));
+    const raceReceipt = await complete('race');
+    assert.equal(raceReceipt.status, 200);
+    assert.equal(raceReceipt.data.reward.tier, 'reduced');
+    assert.equal(raceReceipt.data.player.currency, 96);
+    assert.equal(raceReceipt.data.player.level, 2);
+    assert.equal(raceReceipt.data.player.xp, 145);
 
     assert.equal((await act('zero', 'crack', 0)).status, 409);
     const free = await act('zero', 'slash', 0);
