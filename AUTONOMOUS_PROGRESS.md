@@ -93,3 +93,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - GitHub PR-body updates and ready-for-review mutations were rejected; existing draft PR metadata may lag verified code. No repeated write attempts should bypass these safety restrictions.
 - Mana foundation and reward idempotency remain merged on main. D1 schema and tracked migrations 0002–0005 unchanged; deploy ordering schema → migrations → Worker verified in workflow.
 - Best next task: deliver the battle-action test branch through a reviewed PR when mutation permission allows, then obtain CI; separately perform real mobile/Telegram QA of PR #6 before accepting city visuals or merging.
+
+### Housing quantity authority — 2026-10-08
+- Main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/housing-reliability-v01` at `170c5bcf297c68e15a9b8db50c31a64cb1ef2850`; draft PR #8, PUSHED/CI GREEN, not merged/live.
+- Changed `worker/index.ts`: cap housing placements by server-owned furniture quantities; filter duplicate cells and instance IDs while retaining valid placements. Changed `tests/housing-bootstrap-seed.test.ts`: 3 new SQLite regressions.
+- CI `37849775897`: `npm test` 30/30, local Worker/D1 reward integration, `npm run build`, `npm run check:worker` all PASS. Real mobile housing QA pending.
+- Degen-only Mana/reward authority merged on main; no monster Mana/reversion. Atomic defeat and client-first recovery remain separate green feature branches; server replay and platform identity remain unresolved.
+- No schema/config/migration change; D1 tracked 0002–0005, no remote writes. PR #8 description update rejected twice; no Miles design blocker.
+- Best next task: review PR #8 furniture placement semantics and verify mobile reload; obtain approval before merge.
