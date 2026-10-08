@@ -100,3 +100,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 ### Battle start Mana integration — 2026-10-08
 - PUSHED addition to `tests/worker-d1-turn-replay.test.ts`: seeds an open Underpass cycle, calls real Worker `GET /api/world/underpass` and `POST /api/battle/start`, then verifies first action uses server-initialized 12 Mana/120 HP/92 enemy HP (after Crack: 8 Mana, 110 HP, 57 enemy HP). Test has NOT run under real Wrangler/D1 yet.
 - No runtime balance/schema change. Full CI and PR remain pending; local reconstructed-source CAS tests passed 23/23.
+
+### CI-verified battle turn continuation (2026-10-08)
+- Main: 33e7477961d2a6ab7b79bf52d78a93901e19f658. Branch: automation/degen/battle-turn-client-v01 at cd307e93ea928c61facd30c7abd909377475d4ee (PUSHED, not merged/live; no PR).
+- New tests/worker-d1-turn-replay.mjs and CI workflow gate: actual local Wrangler/D1 expected-turn replay, Degen Mana, free action, victory, defeat, duplicate completion.
+- CI 37860471584 SUCCESS: 45 tests, local D1 reward + turn-replay harnesses, build, Worker dry-run.
+- Mana and reward authority MERGED on main; atomic defeat separate green branch. No monster Mana/reversion, no remote D1/deploy, tracked migrations unchanged.
+- Blockers: PR creation safety rejection; unverified platform identity. No Miles design blocker.
+- Best next task: PR review, reconcile atomic/client Worker changes, deploy client first, then require turn preconditions.
