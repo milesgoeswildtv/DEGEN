@@ -309,7 +309,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
-      (reward_state = 'pending' AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP)
+      (reward_state = 'pending' AND completed_at IS NULL AND (datetime(expires_at) > CURRENT_TIMESTAMP OR reward_clear_number IS NOT NULL))
       OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId)
@@ -341,47 +341,80 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
   if (!owned?.reward_clear_number) return fail(request, env, 'Unable to assign authoritative reward clear.', 409);
 
-  const reward = underpassRewardForClear(owned.reward_clear_number);
-  const character = await env.DB.prepare(`SELECT level, xp, currency, degen_key FROM characters WHERE player_id = ?`)
-    .bind(input.playerId).first<CharacterRow>();
-  if (!character) return fail(request, env, 'Player character not found.', 404);
-  const progression = advanceLevel(character.level, character.xp, reward.xp);
+const reward = underpassRewardForClear(owned.reward_clear_number);
   const owns = `EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
     AND reward_state = 'claiming' AND reward_claim_token = ?)`;
-  const writes = [
-    env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?, updated_at = CURRENT_TIMESTAMP
-      WHERE player_id = ? AND ${owns}`).bind(progression.level, progression.xp, reward.currency,
-        input.playerId, input.permitId, input.playerId, token),
-    env.DB.prepare(`INSERT OR IGNORE INTO battle_history
-      (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
-      SELECT ?, ?, ?, 'victory', ?, ?, ? WHERE ${owns}`).bind(`${input.permitId}:victory`, input.playerId,
-        owned.encounter_key, progression.level, reward.xp, reward.currency, input.permitId, input.playerId, token),
-    env.DB.prepare(`INSERT OR IGNORE INTO defeated_bosses (player_id, boss_key)
-      SELECT ?, ? WHERE ${owns}`).bind(input.playerId, owned.encounter_key, input.permitId, input.playerId, token),
-  ];
-  if (reward.tier === 'full') {
-    writes.push(
-      env.DB.prepare(`INSERT INTO player_inventory (id, player_id, item_key, item_type, quantity)
-        SELECT ?, ?, 'underpass-scrap', 'item', 1 WHERE ${owns}
-        ON CONFLICT(id) DO UPDATE SET quantity = quantity + 1`)
-        .bind(`${input.playerId}:item:underpass-scrap`, input.playerId, input.permitId, input.playerId, token),
-      env.DB.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity)
-        SELECT ?, ?, 'tunnel-trophy', 'furniture', 1 WHERE ${owns}`)
-        .bind(`${input.playerId}:furniture:tunnel-trophy`, input.playerId, input.permitId, input.playerId, token),
-    );
-  }
-  writes.push(env.DB.prepare(`UPDATE battle_permits SET reward_state = 'awarded', completed_at = CURRENT_TIMESTAMP,
-      reward_xp = ?, reward_currency = ?, reward_tier = ?, reward_level = ?, reward_remaining_xp = ?
-    WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
-    .bind(reward.xp, reward.currency, reward.tier, progression.level, progression.xp,
-      input.permitId, input.playerId, token));
-  await env.DB.batch(writes);
+  const applied = `EXISTS (SELECT 1 FROM characters WHERE player_id = ?
+    AND last_reward_claim_token = ?)`;
+  const guard = `${owns} AND ${applied}`;
 
-  const awarded = await env.DB.prepare(`SELECT cycle_id, encounter_key, reward_state, reward_clear_number,
-      reward_xp, reward_currency, reward_tier FROM battle_permits WHERE id = ? AND player_id = ?`)
-    .bind(input.permitId, input.playerId).first<ReceiptRow>();
-  if (!awarded || awarded.reward_state !== 'awarded') return fail(request, env, 'Reward claim changed; retry.', 409);
-  return respond(awarded);
+  // Other permits may award the same character after our snapshot. Retry
+  // a failed compare-and-swap with fresh progression rather than losing XP.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const character = await env.DB.prepare(`SELECT level, xp, currency, degen_key FROM characters WHERE player_id = ?`)
+      .bind(input.playerId).first<CharacterRow>();
+    if (!character) return fail(request, env, 'Player character not found.', 404);
+    const progression = advanceLevel(character.level, character.xp, reward.xp);
+    const writes: D1PreparedStatement[] = [
+      env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?,
+          last_reward_claim_token = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE player_id = ? AND level = ? AND xp = ? AND ${owns}`)
+        .bind(progression.level, progression.xp, reward.currency, token, input.playerId,
+          character.level, character.xp, input.permitId, input.playerId, token),
+      // A pre-existing victory marker must fail the whole D1 transaction.
+      env.DB.prepare(`INSERT INTO battle_history
+        (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+        SELECT ?, ?, ?, 'victory', ?, ?, ? WHERE ${guard}`)
+        .bind(`${input.permitId}:victory`, input.playerId, owned.encounter_key,
+          progression.level, reward.xp, reward.currency, input.permitId, input.playerId,
+          token, input.playerId, token),
+      env.DB.prepare(`INSERT OR IGNORE INTO defeated_bosses (player_id, boss_key)
+        SELECT ?, ? WHERE ${guard}`)
+        .bind(input.playerId, owned.encounter_key, input.permitId, input.playerId,
+          token, input.playerId, token),
+    ];
+    if (reward.tier === 'full') {
+      writes.push(
+        env.DB.prepare(`INSERT INTO player_inventory (id, player_id, item_key, item_type, quantity)
+          SELECT ?, ?, 'underpass-scrap', 'item', 1 WHERE ${guard}
+          ON CONFLICT(id) DO UPDATE SET quantity = quantity + 1`)
+          .bind(`${input.playerId}:item:underpass-scrap`, input.playerId, input.permitId,
+            input.playerId, token, input.playerId, token),
+        env.DB.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity)
+          SELECT ?, ?, 'tunnel-trophy', 'furniture', 1 WHERE ${guard}`)
+          .bind(`${input.playerId}:furniture:tunnel-trophy`, input.playerId, input.permitId,
+            input.playerId, token, input.playerId, token),
+      );
+    }
+    writes.push(env.DB.prepare(`UPDATE battle_permits SET reward_state = 'awarded',
+        completed_at = CURRENT_TIMESTAMP, reward_xp = ?, reward_currency = ?,
+        reward_tier = ?, reward_level = ?, reward_remaining_xp = ?
+      WHERE id = ? AND player_id = ? AND reward_state = 'claiming'
+        AND reward_claim_token = ? AND ${applied}`)
+      .bind(reward.xp, reward.currency, reward.tier, progression.level, progression.xp,
+        input.permitId, input.playerId, token, input.playerId, token));
+
+    // All award statements are one atomic D1 batch. A stale character
+    // snapshot changes zero rows and the token gate blocks every later write.
+    await env.DB.batch(writes);
+    const awarded = await env.DB.prepare(`SELECT cycle_id, encounter_key, reward_state,
+        reward_clear_number, reward_xp, reward_currency, reward_tier, reward_claim_token
+      FROM battle_permits WHERE id = ? AND player_id = ?`)
+      .bind(input.permitId, input.playerId)
+      .first<ReceiptRow & { reward_claim_token: string | null }>();
+    if (awarded?.reward_state === 'awarded') return respond(awarded);
+    if (awarded?.reward_state !== 'claiming' || awarded.reward_claim_token !== token) {
+      return fail(request, env, 'Reward claim changed; retry.', 409);
+    }
+  }
+
+  // Release only this token after bounded contention; retain its reserved
+  // clear number for a later retry, even if the permit has since expired.
+  await env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
+      reward_claim_token = NULL, reward_claimed_at = NULL
+    WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
+    .bind(input.permitId, input.playerId, token).run();
+  return fail(request, env, 'Concurrent reward updates; retry completion.', 409);
 }
 
 export default {
