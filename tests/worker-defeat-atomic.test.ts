@@ -165,3 +165,33 @@ test('defeat grants no XP, currency, or inventory', async () => {
   assert.deepEqual(s.history().map(x=>x.id),['permit:defeat']);
   s.db.close();
 });
+
+test('paid ability on a losing turn deducts Mana once and does not grant rewards', async () => {
+  const s = setup(1);
+  const before = s.db.prepare("SELECT level,xp,currency FROM characters WHERE player_id='p1'").get();
+  const response = await s.act('crack');
+  assert.equal(response.status, 200);
+  const body = await response.json() as {status:string;playerMana:number;turnCount:number};
+  assert.equal(body.status, 'defeat');
+  assert.equal(body.playerMana, TEST_DEGEN.maxMana - 4);
+  assert.equal(body.turnCount, 1);
+  for (let i = 0; i < 20; i++) assert.equal((await s.act('crack')).status, 409);
+  assert.equal((s.state() as {player_mana:number}).player_mana, TEST_DEGEN.maxMana - 4);
+  assert.deepEqual(s.history().map(row => row.id), ['permit:defeat']);
+  assert.deepEqual(s.db.prepare("SELECT level,xp,currency FROM characters WHERE player_id='p1'").get(), before);
+  s.db.close();
+});
+
+test('failed paid-defeat history write rolls back HP, Mana, turn and damage', async () => {
+  const s = setup(1);
+  const original = s.state();
+  s.db.exec("CREATE TRIGGER reject_paid_history BEFORE INSERT ON battle_history BEGIN SELECT RAISE(ABORT,'QA_PAID_HISTORY_FAILURE'); END;");
+  await assert.rejects(s.act('crack'), /QA_PAID_HISTORY_FAILURE/);
+  assert.deepEqual(s.state(), original);
+  assert.equal(s.history().length, 0);
+  s.db.exec('DROP TRIGGER reject_paid_history');
+  assert.equal((await s.act('crack')).status, 200);
+  assert.equal((s.state() as {player_mana:number}).player_mana, TEST_DEGEN.maxMana - 4);
+  assert.deepEqual(s.history().map(row => row.id), ['permit:defeat']);
+  s.db.close();
+});
