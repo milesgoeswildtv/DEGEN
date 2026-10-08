@@ -183,3 +183,36 @@ test('controller does not issue server battle permits against fallback preview c
   await controller.enterUnderpass();
   assert.equal(starts, 0);
 });
+
+test('world sync recovery restores authoritative event state after a transient failure', async () => {
+  let attempts = 0;
+  const Controller = runInNewContext(
+    compile('../src/app/AppController.ts') + '\nAppController;',
+    {
+      getPreviewUnderpass: () => ({ phase: 'open', cycleId: 'preview', source: 'preview' }),
+      console: { warn: () => {} },
+    },
+  ) as new (root: unknown, store: unknown, api: unknown) => {
+    worldSyncFailed: boolean;
+    underpassEvent?: { source: string; cycleId: string };
+    refreshWorld(): Promise<void>;
+  };
+  const controller = new Controller(
+    { innerHTML: '', querySelectorAll: () => [], querySelector: () => null },
+    { snapshot: player },
+    {
+      enabled: true,
+      getUnderpass: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('Temporary network failure');
+        return { phase: 'open', cycleId: 'server-cycle', source: 'server' };
+      },
+    },
+  );
+  await controller.refreshWorld();
+  assert.equal(controller.worldSyncFailed, true);
+  assert.equal(controller.underpassEvent?.source, 'preview');
+  await controller.refreshWorld();
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(controller.underpassEvent?.cycleId, 'server-cycle');
+});
