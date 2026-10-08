@@ -5,8 +5,8 @@
 - Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Reward PR #5 MERGED, Mana COMPLETE/MERGED; existing D1 migration ordering unchanged.
 - PR #6: `automation/degen/city-navigation-v01` -> `main`, DRAFT/PUSHED, NOT MERGED OR LIVE.
 - Files: `src/domain/types.ts`, `src/data/world.ts`, `src/ui/views.ts`, `src/app/AppController.ts`, `src/main.ts`, `src/city.css`, `tests/city-navigation.test.ts`, `README.md`, and this log.
-- Scope: existing Central/Residential map -> district -> location navigation, Downtown scene, Underpass live status, Home shortcut. No new district, lore, NPC, monster, reward or database behavior.
-- QA: PR first head `9ef9eb6c50056bbdbfbdaee421f2cc8edeb90703` passed CI `37739175321` (npm test, local Worker/D1 concurrency, build, check:worker). New handler regression test added; fresh CI pending.
+- Scope: existing Central/Residential map -> district -> location navigation, Downtown scene, Underpass live status, Home shortcut, direct Downtown-to-Underpass navigation, and fail-closed server-offline warnings. No new district, lore, NPC, monster, reward or database behavior.
+- QA: PR first head `9ef9eb6c50056bbdbfbdaee421f2cc8edeb90703` passed CI `37739175321` (npm test, local Worker/D1 concurrency, build, check:worker). CI 37739971686 also green on later head b05e8cc (26 tests, local Worker/D1 harness, build, Worker dry-run); latest world-sync recovery test awaits fresh CI.
 - Cloudflare Pages check reports deployed PR preview at `https://automation-degen-city-naviga.degen-8ze.pages.dev`; browser/mobile visual and live API QA NOT verified.
 - Observed integration risk: `wrangler.toml` ALLOWED_ORIGINS omits the actual Cloudflare Pages domain `degen-8ze.pages.dev`. No Worker/config changes made in this city slice.
 - No production D1 writes or deploys by this worker. Best next task: fresh CI, mobile preview QA, and separate reviewed Pages/Worker CORS fix.
