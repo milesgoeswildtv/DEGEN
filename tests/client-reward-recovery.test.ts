@@ -49,7 +49,7 @@ const setup = (enabled: boolean, completeUnderpass?: () => Promise<unknown>) => 
   };
   const Controller = runInNewContext(compiled + '\nAppController;', scope) as new (
     root: unknown, store: unknown, api: unknown
-  ) => { battlePermit?: { permitId: string }; finishBattle(status: string): Promise<void>; start(): Promise<void> };
+  ) => { route: string; battlePermit?: { permitId: string }; finishBattle(status: string): Promise<void>; start(): Promise<void> };
   return { Controller, root, store, api, storage, timers };
 };
 
@@ -82,6 +82,7 @@ test('successful Worker completion returns from victory only after authoritative
   const fixture = setup(true);
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   controller.battlePermit = { permitId: 'permit-2' };
+  controller.route = 'battle';
   await controller.finishBattle('victory');
   assert.equal(controller.battlePermit, undefined);
   assert.equal(fixture.store.replaced, 1);
