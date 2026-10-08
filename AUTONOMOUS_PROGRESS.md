@@ -61,3 +61,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Tracked migrations `0004_reward_receipt.sql` and `0005_reward_claim_character_guard.sql`; deploy workflow applies migrations before Worker. No remote D1 change or deployment performed.
 - Previous PR draft-to-ready mutation was rejected; no new design blocker from Miles.
 - Best next task: isolate real Worker/D1, issue overlapping legitimate completion requests, verify both rewards and duplicate suppression, then inspect fresh CI and review PR before merge.
+
+
+## Integration harness QA — 2026-10-08
+- Main `2df79a123a022212721634c048147d8bf935566a`; PR #5 head `252e8224c7ba3d6e135845fa52db4430a7841215` remains draft, unmerged, not deployed.
+- CI `37718852315` green but did not run `tests/worker-d1-concurrency.mjs`.
+- LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
+- Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
+- Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
