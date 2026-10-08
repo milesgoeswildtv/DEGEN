@@ -69,3 +69,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+## Optional Worker turn-precondition continuation — 2026-10-08
+- Authority check: main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; feature branch `automation/degen/battle-turn-client-v01` (PUSHED only, not PR/merged/live).
+- This branch now includes `worker/index.ts` opt-in `expectedTurnCount` validation, CAS against the submitted turn, and Worker-owned `battleState` in 409 conflict responses. Existing clients without the field still work during the client-first rollout; mandatory enforcement is NOT enabled yet.
+- Added `tests/worker-battle-turn-precondition.test.ts` covering sequential replay, concurrent actions, Mana, zero-cost abilities, killing-blow/defeat recovery, expired/invalid permits, and legacy compatibility. Client `src/app/AppController.ts`, `src/app/api.ts`, `src/game/combat/engine.ts`, and `tests/battle-client-recovery.test.ts` remain part of this coherent slice.
+- Degen-only Mana: COMPLETE/MERGED on main; no monster Mana or automatic reversion. Reward idempotency/recoverability: MERGED on main; atomic defeat/history reliability remains a separate pushed branch awaiting PR/merge.
+- QA: source-level verification confirmed the new Worker guard and test file on the remote feature branch; full `npm test`, `npm run build`, `npm run check:worker`, CI on this exact head, and live Worker/D1 tests are still REQUIRED and must not be claimed as passed.
+- Deployment/schema: no D1 migration, deployment config, remote D1 write, or production deploy in this slice. Existing D1 bindings/migrations remain unchanged; migration-before-Worker ordering stays in place.
+- Delivery blocker: draft PR creation rejected twice, and branch-specific CI-trigger update rejected twice. No Miles design blocker.
+- Best next task: obtain full CI and real local Wrangler/D1 QA on this branch, deliver a reviewed PR, deploy compatible client first, then enforce mandatory turn preconditions in a separate Worker rollout.
