@@ -75,3 +75,13 @@ test('409 with authoritative state is recoverable; Mana rejection is not',async(
   await assert.rejects(mana.api.actUnderpass('p1','permit','crack',0),
     error=>!(error instanceof mana.BattleTurnConflictError));
 });
+
+test('skipped authoritative turns are reconciled without fabricated ability damage',()=>{
+  const engine=new BattleEngine(TEST_DEGEN,TUNNEL_MAW,()=>{});
+  engine.applyAuthoritativeAction('crack',turn('active',4,22,2));
+  assert.equal(engine.snapshot.turnCount,2);
+  assert.equal(engine.snapshot.playerMana,4);
+  assert.equal(engine.snapshot.enemyHp,22);
+  assert.ok(engine.snapshot.log.some(line=>line.includes('synchronized with server')));
+  assert.equal(engine.snapshot.log.some(line=>line.includes('Crack: 70 damage')),false);
+});
