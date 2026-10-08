@@ -51,10 +51,10 @@ async function stop() {
   if (child.exitCode === null) child.kill('SIGKILL');
   worker=undefined;
 }
-async function act(id) {
+async function act(id, abilityId = 'slash') {
   const r=await fetch(origin+'/api/battle/action',{
     method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({playerId:'qa-player',permitId:id,abilityId:'slash'}),
+    body:JSON.stringify({playerId:'qa-player',permitId:id,abilityId}),
     signal:AbortSignal.timeout(15000),
   });
   const raw = await r.text();
@@ -108,7 +108,26 @@ try {
   await stop();
   assert.equal(sql("SELECT id FROM battle_history WHERE id='rollback:defeat'").length,1);
   assert.deepEqual(sql("SELECT xp,currency FROM characters WHERE player_id='qa-player'"),[{xp:0,currency:0}]);
-  console.log('PASS local Worker/D1 defeat expiry, rollback, retry and no rewards');
+  seed('paid-rollback');
+  sql(`CREATE TRIGGER qa_fail_paid_history BEFORE INSERT ON battle_history
+    WHEN NEW.id='paid-rollback:defeat' BEGIN SELECT RAISE(ABORT,'QA_PAID_HISTORY_FAILURE'); END`);
+  await start();
+  assert.equal((await act('paid-rollback', 'crack')).status,500);
+  await stop();
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='paid-rollback'"),
+    [{player_hp:1,player_mana:12,enemy_hp:92,turn_count:0,battle_status:'active'}]);
+  assert.equal(sql("SELECT id FROM battle_history WHERE id='paid-rollback:defeat'").length,0);
+  sql('DROP TRIGGER qa_fail_paid_history');
+  await start();
+  assert.equal((await act('paid-rollback', 'crack')).status,200);
+  const repeated=await Promise.all(Array.from({length:12},()=>act('paid-rollback', 'crack')));
+  assert.ok(repeated.every((result)=>result.status===409));
+  await stop();
+  assert.deepEqual(sql("SELECT player_hp,player_mana,turn_count,battle_status FROM battle_permits WHERE id='paid-rollback'"),
+    [{player_hp:0,player_mana:8,turn_count:1,battle_status:'defeat'}]);
+  assert.equal(sql("SELECT id FROM battle_history WHERE id='paid-rollback:defeat'").length,1);
+  assert.deepEqual(sql("SELECT xp,currency FROM characters WHERE player_id='qa-player'"),[{xp:0,currency:0}]);
+  console.log('PASS local Worker/D1 defeat expiry, free and paid rollback, retry and no rewards');
 } finally {
   await stop();
   rmSync(scratch,{recursive:true,force:true});
