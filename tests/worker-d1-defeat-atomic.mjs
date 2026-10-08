@@ -58,9 +58,11 @@ async function act(id) {
     signal:AbortSignal.timeout(15000),
   });
   const raw = await r.text();
+  // Wrangler's local development error overlay is HTML for thrown D1 errors.
+  // The rollback case intentionally causes that 500; inspect persisted state after stopping the Worker.
   let body;
   try { body = JSON.parse(raw); } catch {
-    throw Error(`Non-JSON Worker action HTTP ${r.status} (content-type ${r.headers.get('content-type')})\n${raw.slice(0,1000)}\nWRANGLER LOGS:\n${logs}`);
+    body = { errorPage: raw.slice(0, 200), workerLogs: logs.slice(-2000) };
   }
   return {status:r.status,body};
 }
