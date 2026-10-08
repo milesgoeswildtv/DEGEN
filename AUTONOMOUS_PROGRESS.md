@@ -103,3 +103,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Local source-backed fixtures: 114/114 test executions passed, nine shared Git blobs verified, strict isolated TypeScript checks passed. Negative controls caught history expiry and reward replay regressions; restored tests 12/12 green. Not exact remote Worker, Wrangler/D1, or browser QA.
 - Boundary correction and new regression are pushed. Draft PR creation rejected twice; real Wrangler/D1 integration test prepared locally, not pushed. Mana/reward authority merged; action replay and unverified platform identity remain unresolved.
 - No schema/config or production D1 changes. Next: open draft PR and run full CI and real Wrangler/D1 before review/merge.
+
+### Atomic defeat run 14 — 2026-10-08
+- Authority: main `33e7477961d2a6ab7b79bf52d78a93901e19f658` (unchanged). Branch `automation/degen/atomic-defeat-history-v01` is PUSHED feature-only; no PR, merge, deployment, or remote D1 write.
+- This run PUSHED `tests/worker-defeat-atomic.test.ts` additions: paid ability ending in defeat spends exactly four Degen Mana once, duplicate actions cannot spend again, and a failed history write rolls back player HP/Mana, enemy HP, and turn count.
+- LOCAL QA: reconstructed Worker/SQLite/client fixture 27/27 tests passed, including both new regression scenarios. This is not exact full-repository `npm test`, `npm run build`, `npm run check:worker`, or real Wrangler/D1.
+- Draft PR creation rejected twice; a separate real local Wrangler/D1 test and CI wiring were prepared but rejected. They are NOT PUSHED.
+- Mana: COMPLETE/MERGED on main; no monster Mana, no forced reversion. Reward authority/idempotency: MERGED on main. Sequential active-action replay and platform-identity authentication remain unresolved.
+- Schema/deploy: no new migration. Existing tracked 0002–0005 migrations and deploy-before-Worker order unchanged. No production D1 operation.
+- Miles blocker: none on design. Delivery blocker: GitHub PR/write safety rejection; branch CI remains unavailable.
+- Best next task: open draft PR for atomic-defeat branch, run real local Wrangler/D1 fault-injection and full CI, then review/merge only when green; afterward client-first action replay protection.
