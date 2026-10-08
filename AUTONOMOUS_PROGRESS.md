@@ -69,3 +69,16 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+
+## Production continuation — 2026-10-08 (latest)
+- **Authoritative main:** `33e7477961d2a6ab7b79bf52d78a93901e19f658`. No direct writes to main.
+- **Mana:** COMPLETE / MERGED. `DegenDefinition.maxMana`, `AbilityDefinition.manaCost`, shared turn resolution, Worker-owned permit Mana, zero-cost ability behavior, unaffordable rejection, and 0-Mana no-reversion remain unchanged. Monsters have no Mana.
+- **Reward authority:** PR #5 MERGED on main; receipt state, claim-token guards, D1 integration harness and migrations 0004/0005 are in main. No new reward-economy changes this run.
+- **PUSHED / PR #7:** `automation/degen/cloudflare-pages-origin-v01` head `8d0644f4e2d0811672fbf972cb05b0d819b0c44b`. Production Pages CORS origin plus 3 config regression tests. CI `37786096716` SUCCESS. Draft, not merged/deployed.
+- **PUSHED / PR #8 (this branch):** `automation/degen/housing-reliability-v01` head before this progress commit `e153db65dce51ca6ce401833add2180bd1c8e861`. Changed `worker/index.ts`, `src/app/state.ts`, and added `tests/housing-bootstrap-seed.test.ts`, `tests/housing-save-order.test.ts`. New players seed a starter bed only once; an intentionally empty room survives bootstrap; serialized/coalesced saves prevent out-of-order housing writes. CI `37786346034` SUCCESS (repository npm tests, local Worker/D1 harness, build, Worker dry-run). Draft, not merged/deployed.
+- **PUSHED / PR #6:** `automation/degen/city-navigation-v01` head `98cba204a3b3b34f7ea7e699cd015823d751a138`. Added tappable isometric district location pins, mobile viewport resize observer lifecycle and reset, plus deterministic tests. CI for this new head pending; visual art remains a noncanonical technical scaffold. No live mobile/Safari/Telegram verification.
+- **D1 assumptions:** Existing `wrangler.toml` DB binding is authoritative. Migrations 0002–0005 are tracked; deploy workflow applies schema then migrations before Worker code. No remote D1 writes, schema changes, or production deployment this run.
+- **QA evidence:** PR #7 and #8 full GitHub CI success as cited. City new head awaits full CI and running-app/mobile visual QA; local fixture evidence from earlier handoff is not live proof. Container cannot clone GitHub (DNS unavailable); GitHub Actions is the actual full-repo validation.
+- **Miles blockers:** No new design decisions needed. Merge/deployment remains a review gate; do not represent draft PRs as live.
+- **One best next task:** Inspect fresh PR #6 CI, fix any failing city regression, and verify its actual mobile navigation/interaction before review/merge. After that, review PR #7 and #8 for safe merge/deployment sequencing.
