@@ -97,3 +97,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Migration/config: no changes. Existing tracked 0002–0005 migrations remain authoritative and Worker deploy workflow applies them before code. No remote D1 write.
 - QA: local full repository tests, build, Worker dry-run and real Wrangler/D1 are required before merge. Branch CI must be observed on the PR head; prior isolated model results do not count as CI.
 - Next best task: open draft PR, obtain full CI and local Wrangler/D1 boundary verification; then client-first replay protection.
+
+### Atomic defeat run 13 QA — 2026-10-08
+- Main 33e7477961d2a6ab7b79bf52d78a93901e19f658; branch automation/degen/atomic-defeat-history-v01 pushed at cb581e5822035683f1a7db7e3533879836a16d45; no PR/merge/live deployment.
+- Local source-backed fixtures: 114/114 test executions passed, nine shared Git blobs verified, strict isolated TypeScript checks passed. Negative controls caught history expiry and reward replay regressions; restored tests 12/12 green. Not exact remote Worker, Wrangler/D1, or browser QA.
+- Boundary correction and new regression are pushed. Draft PR creation rejected twice; real Wrangler/D1 integration test prepared locally, not pushed. Mana/reward authority merged; action replay and unverified platform identity remain unresolved.
+- No schema/config or production D1 changes. Next: open draft PR and run full CI and real Wrangler/D1 before review/merge.
