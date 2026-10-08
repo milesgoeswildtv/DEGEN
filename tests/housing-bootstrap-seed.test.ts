@@ -116,3 +116,51 @@ test('Worker PUT clearing the room survives subsequent bootstrap', async () => {
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 0);
   db.close();
 });
+
+function housingRequest(playerId: string, placements: Array<{ instanceId: string; furnitureId: string; x: number; y: number }>) {
+  return new Request('https://degen-api.example/api/player/housing', {
+    method: 'PUT',
+    body: JSON.stringify({ playerId, housing: { inventory: [], placements } }),
+  });
+}
+
+test('server cannot duplicate one owned furniture item across two cells', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'quantity-owner', 'Owner');
+  const response = await handleHousing(housingRequest('quantity-owner', [
+    { instanceId: 'bed-one', furnitureId: 'starter-bed', x: 0, y: 0 },
+    { instanceId: 'bed-two', furnitureId: 'starter-bed', x: 1, y: 1 },
+  ]), { DB: adapter });
+  assert.equal(response.status, 204);
+  const saved = db.prepare("SELECT id FROM housing_placements WHERE player_id='quantity-owner' ORDER BY id").all();
+  assert.deepEqual(saved.map(row => row.id), ['bed-one']);
+  db.close();
+});
+
+test('server respects actual inventory quantity when two copies are owned', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'two-copies', 'Two');
+  db.prepare("UPDATE player_inventory SET quantity=2 WHERE player_id='two-copies' AND item_key='starter-bed'").run();
+  const response = await handleHousing(housingRequest('two-copies', [
+    { instanceId: 'bed-one', furnitureId: 'starter-bed', x: 0, y: 0 },
+    { instanceId: 'bed-two', furnitureId: 'starter-bed', x: 1, y: 1 },
+  ]), { DB: adapter });
+  assert.equal(response.status, 204);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='two-copies'").get()!.n, 2);
+  db.close();
+});
+
+test('server skips duplicate cell and placement identifiers without rolling back valid items', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'duplicates', 'Dupes');
+  const response = await handleHousing(housingRequest('duplicates', [
+    { instanceId: 'bed-one', furnitureId: 'starter-bed', x: 0, y: 0 },
+    { instanceId: 'chair-one', furnitureId: 'starter-chair', x: 0, y: 0 },
+    { instanceId: 'bed-one', furnitureId: 'starter-lamp', x: 1, y: 1 },
+    { instanceId: 'rug-one', furnitureId: 'starter-rug', x: 2, y: 2 },
+  ]), { DB: adapter });
+  assert.equal(response.status, 204);
+  const saved = db.prepare("SELECT id FROM housing_placements WHERE player_id='duplicates' ORDER BY id").all();
+  assert.deepEqual(saved.map(row => row.id), ['bed-one', 'rug-one']);
+  db.close();
+});

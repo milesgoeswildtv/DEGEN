@@ -173,8 +173,28 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
 async function handleHousing(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; housing?: { inventory?: string[]; placements?: Array<{ instanceId: string; furnitureId: string; x: number; y: number; rotation?: number }> } }>(request);
   if (!input.playerId || !input.housing) return fail(request, env, 'playerId and housing are required');
-  const allowed = new Set((await env.DB.prepare(`SELECT item_key FROM player_inventory WHERE player_id = ? AND item_type = 'furniture'`).bind(input.playerId).all<{ item_key: string }>()).results.map((row) => row.item_key));
-  const placements = (input.housing.placements ?? []).filter((item) => allowed.has(item.furnitureId) && Number.isInteger(item.x) && Number.isInteger(item.y) && item.x >= 0 && item.x <= 7 && item.y >= 0 && item.y <= 5);
+  const inventory = await env.DB.prepare(`SELECT item_key, quantity FROM player_inventory
+    WHERE player_id = ? AND item_type = 'furniture'`).bind(input.playerId)
+    .all<{ item_key: string; quantity: number }>();
+  const remaining = new Map<string, number>();
+  for (const row of inventory.results) {
+    remaining.set(row.item_key, (remaining.get(row.item_key) ?? 0) + Math.max(0, row.quantity));
+  }
+  const occupied = new Set<string>();
+  const instanceIds = new Set<string>();
+  const placements: NonNullable<NonNullable<typeof input.housing>['placements']> = [];
+  for (const item of input.housing.placements ?? []) {
+    if (typeof item.instanceId !== 'string' || !item.instanceId
+      || !Number.isInteger(item.x) || !Number.isInteger(item.y)
+      || item.x < 0 || item.x > 7 || item.y < 0 || item.y > 5) continue;
+    const cell = `${item.x}:${item.y}`;
+    const available = remaining.get(item.furnitureId) ?? 0;
+    if (available <= 0 || occupied.has(cell) || instanceIds.has(item.instanceId)) continue;
+    remaining.set(item.furnitureId, available - 1);
+    occupied.add(cell);
+    instanceIds.add(item.instanceId);
+    placements.push(item);
+  }
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM housing_placements WHERE player_id = ?`).bind(input.playerId),
     ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)
