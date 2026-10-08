@@ -10,6 +10,7 @@ export interface BattleSnapshot {
   playerMaxHp: number;
   playerMana: number;
   playerMaxMana: number;
+  turnCount: number;
   enemyName: string;
   enemyLevel: number;
   enemyHp: number;
@@ -21,6 +22,7 @@ export class BattleEngine {
   private playerHp: number;
   private playerMana: number;
   private enemyHp: number;
+  private turnCount = 0;
   private status: BattleStatus = 'active';
   private log: string[] = [];
   private listeners = new Set<(snapshot: BattleSnapshot) => void>();
@@ -45,6 +47,7 @@ export class BattleEngine {
       playerMaxHp: this.degen.maxHp,
       playerMana: this.playerMana,
       playerMaxMana: this.degen.maxMana,
+      turnCount: this.turnCount,
       enemyName: this.enemy.name,
       enemyLevel: this.enemy.level,
       enemyHp: this.enemyHp,
@@ -61,7 +64,7 @@ export class BattleEngine {
 
   // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
   applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
-    if (this.status !== 'active') return;
+    if (this.status !== 'active' || result.turnCount <= this.turnCount) return;
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
     if (!ability) return;
 
@@ -71,6 +74,7 @@ export class BattleEngine {
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
     this.enemyHp = result.enemyHp;
+    this.turnCount = result.turnCount;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${playerDamage} damage.`);
     if (manaSpent > 0) this.log.push(`Mana -${manaSpent}.`);
 
@@ -98,6 +102,25 @@ export class BattleEngine {
     this.emit();
   }
 
+  // Restore Worker-owned state after a stale response; no client damage/reward calculation.
+  syncAuthoritativeState(result: BattleActionResult): void {
+    if (this.status !== 'active' || result.turnCount < this.turnCount) return;
+    if (result.turnCount === this.turnCount && result.status === this.status
+      && result.playerHp === this.playerHp && result.playerMana === this.playerMana
+      && result.enemyHp === this.enemyHp) return;
+    this.playerHp = result.playerHp;
+    this.playerMana = result.playerMana;
+    this.enemyHp = result.enemyHp;
+    this.turnCount = result.turnCount;
+    this.status = result.status;
+    this.log.push('Battle state synchronized with server.');
+    if (result.status === 'victory') this.log.push(`${this.enemy.name} is defeated.`);
+    if (result.status === 'defeat') this.log.push(`${this.degen.name} goes down.`);
+    this.trimLog();
+    this.emit();
+    if (result.status !== 'active') this.finish(result.status);
+  }
+
   useAbility(abilityId: string): void {
     if (this.status !== 'active') return;
 
@@ -123,6 +146,7 @@ export class BattleEngine {
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
     this.enemyHp = result.enemyHp;
+    this.turnCount += 1;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${result.playerDamage} damage.`);
 
     if (ability.manaCost > 0) {
