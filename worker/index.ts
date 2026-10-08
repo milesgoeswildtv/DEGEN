@@ -59,16 +59,16 @@ async function ensurePlayer(db: D1Database, playerId: string, displayName: strin
   await db.batch([
     db.prepare(`INSERT INTO players (id, display_name) VALUES (?, ?)
       ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP`).bind(playerId, displayName.slice(0, 32)),
+    // Seed the starter bed only on initial character creation. An empty room
+    // on subsequent bootstraps is a valid saved layout, not missing data.
+    db.prepare(`INSERT OR IGNORE INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation)
+      SELECT ?, ?, 'starter-bed', 1, 1, 0
+      WHERE NOT EXISTS (SELECT 1 FROM characters WHERE player_id = ?)`).bind(`${playerId}:starter-bed-placed`, playerId, playerId),
     db.prepare(`INSERT OR IGNORE INTO characters (player_id, level, xp, currency, degen_key) VALUES (?, 1, 0, 0, 'test-degen')`).bind(playerId),
     ...STARTER_LOCATIONS.map((location) => db.prepare(`INSERT OR IGNORE INTO unlocked_locations (player_id, location_key) VALUES (?, ?)`).bind(playerId, location)),
     ...STARTER_FURNITURE.map((item) => db.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES (?, ?, ?, 'furniture', 1)`).bind(`${playerId}:furniture:${item}`, playerId, item)),
   ]);
 
-  const housing = await db.prepare(`SELECT COUNT(*) AS count FROM housing_placements WHERE player_id = ?`).bind(playerId).first<{ count: number }>();
-  if ((housing?.count ?? 0) === 0) {
-    await db.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, 'starter-bed', 1, 1, 0)`)
-      .bind(`${playerId}:starter-bed-placed`, playerId).run();
-  }
 }
 
 async function loadPlayer(db: D1Database, playerId: string) {
