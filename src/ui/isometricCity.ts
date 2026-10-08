@@ -146,3 +146,13 @@ export const renderIsometricCity = (
     <button type="button" data-city-zoom="in" aria-label="Zoom in">+</button>
   </div>`;
 };
+
+/** District close-up reuses the same connected city geometry; no second world map. */
+export const renderIsometricDistrict = (district: string): string => {
+  const anchor = anchors[district] ?? { x: 50, y: 50 };
+  return `<div class="district-iso-scene" role="img" aria-label="Isometric view of ${escapeHtml(district)} district">
+    <div class="district-iso-world" style="transform:translate(-${anchor.x}%,-${anchor.y}%)">
+      ${cityArt}
+    </div>
+  </div>`;
+};

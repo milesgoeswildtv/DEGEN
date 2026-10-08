@@ -1,4 +1,4 @@
-import { renderIsometricCity } from './isometricCity';
+import { renderIsometricCity, renderIsometricDistrict } from './isometricCity';
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
@@ -89,8 +89,9 @@ export const districtView = (player: PlayerState, district: string, underpass?: 
   return appShell(player, `
     <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><strong>${escapeHtml(district.toUpperCase())}</strong></div>
     <section class="district-hero ${district === 'Central' ? 'central' : 'residential'}"><span class="eyebrow">CITY DISTRICT</span><h1>${escapeHtml(district)}</h1>
-      <p>Select a location to enter.</p><div class="district-skyline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <p>Select a location to enter.</p>
     </section>
+    ${renderIsometricDistrict(district)}
     ${worldConnectionNotice(backendOffline)}
     <section class="district-locations" aria-label="${escapeHtml(district)} locations">${cards}</section>
   `);

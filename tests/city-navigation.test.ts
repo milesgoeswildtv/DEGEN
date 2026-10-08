@@ -18,13 +18,18 @@ const WORLD_LOCATIONS = runInNewContext(
 ) as Array<{ id: string; name: string; route: string; district: string }>;
 
 const renderIsometricCity = runInNewContext(
-  compile('../src/ui/isometricCity.ts') + '\nrenderIsometricCity;',
+  compile('../src/ui/isometricCity.ts') + '\nrenderIsometricCity;'
+  {},
+);
+
+const renderIsometricDistrict = runInNewContext(
+  compile('../src/ui/isometricCity.ts') + '\nrenderIsometricDistrict;',
   {},
 );
 
 const views = runInNewContext(
   compile('../src/ui/views.ts') + '\n({ mapView, districtView, locationView, underpassView });',
-  { WORLD_LOCATIONS, FURNITURE_CATALOG: [], getFurniture: () => undefined, renderIsometricCity },
+  { WORLD_LOCATIONS, FURNITURE_CATALOG: [], getFurniture: () => undefined, renderIsometricCity, renderIsometricDistrict },
 ) as {
   mapView: (player: unknown, event?: unknown, backendOffline?: boolean) => string;
   districtView: (player: unknown, district: string, event?: unknown, backendOffline?: boolean) => string;
@@ -56,6 +61,8 @@ test('district view exposes the existing Central destinations and Underpass live
     phase: 'sealed', opensAt: new Date(Date.now() + 600_000).toISOString(),
   });
   assert.match(html, /data-location="downtown"/);
+  assert.match(html, /district-iso-scene/);
+  assert.match(html, /city-iso-art/);
   assert.match(html, /data-location="underpass"/);
   assert.match(html, /SEALED/);
   assert.match(html, /data-route="map"/);

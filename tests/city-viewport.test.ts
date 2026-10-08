@@ -73,7 +73,7 @@ test('wheel and keyboard zoom update the same camera, and drag ignores district 
   assert.ok(map.camera().scale > 0.8);
   map.event('keydown', { key: '0' });
   assert.equal(map.camera().scale, 0.8);
-  assert.match(map.pin.style.transform, /scale\\(1\\.25\\)/);
+  assert.ok(map.pin.style.transform.endsWith('scale(1.25)'));
   assert.match(map.world.style.transform, /scale\(0\.8\)/);
 });
 
