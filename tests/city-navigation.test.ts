@@ -18,7 +18,7 @@ const WORLD_LOCATIONS = runInNewContext(
 ) as Array<{ id: string; name: string; route: string; district: string }>;
 
 const renderIsometricCity = runInNewContext(
-  compile('../src/ui/isometricCity.ts') + '\nrenderIsometricCity;'
+  compile('../src/ui/isometricCity.ts') + '\nrenderIsometricCity;',
   {},
 );
 
