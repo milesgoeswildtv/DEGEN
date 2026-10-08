@@ -65,6 +65,11 @@ export class BattleEngine {
   // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
   applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
     if (this.status !== 'active' || result.turnCount <= this.turnCount) return;
+    // A skipped turn may include another action; never attribute its cumulative damage to this ability.
+    if (result.turnCount > this.turnCount + 1) {
+      this.syncAuthoritativeState(result);
+      return;
+    }
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
     if (!ability) return;
 
