@@ -66,13 +66,36 @@ try {
   const file = join(scratch, 'seed.sql');
   writeFileSync(file, "INSERT INTO players(id,display_name) VALUES('qa-player','QA');" +
     "INSERT INTO characters(player_id,degen_key,level) VALUES('qa-player','test-degen',3);" +
-    "INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('closed-cycle','underpass',datetime('now','-4 hours'),datetime('now','-2 hours'));");
+    "INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('closed-cycle','underpass',datetime('now','-4 hours'),datetime('now','-2 hours'));" +
+    "INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('open-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));");
   cli(['d1','execute','DEGEN','--local','--persist-to=' + persist,'--file=' + file]);
   seed('concurrent', 120, 12, 92);
   seed('zero-mana', 120, 0, 92);
   seed('victory', 5, 4, 20);
   seed('defeat', 1, 0, 92);
   await start();
+
+  // Exercise real Worker battle entry; the server initializes Degen Mana and HP.
+  const worldResponse = await fetch(origin + '/api/world/underpass?playerId=qa-player');
+  assert.equal(worldResponse.status, 200);
+  const world = await worldResponse.json();
+  assert.equal(world.cycleId, 'open-cycle');
+  assert.equal(world.phase, 'open');
+  const startResponse = await fetch(origin + '/api/battle/start', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({playerId:'qa-player',eventKey:'underpass',
+      cycleId:world.cycleId,encounterKey:'tunnel-maw'}),
+  });
+  assert.equal(startResponse.status, 200);
+  const started = await startResponse.json();
+  assert.ok(typeof started.permitId === 'string' && started.permitId.length > 0);
+  const serverPermitId = started.permitId;
+  const serverFirst = await act(serverPermitId, 'crack', 0);
+  assert.equal(serverFirst.status, 200);
+  assert.equal(serverFirst.data.playerMana, 8);
+  assert.equal(serverFirst.data.playerHp, 110);
+  assert.equal(serverFirst.data.enemyHp, 57);
+  assert.equal(serverFirst.data.turnCount, 1);
 
   const first = await Promise.all(Array.from({ length: 16 }, () => act('concurrent', 'crack', 0)));
   assert.equal(first.filter(r => r.status === 200).length, 1);
@@ -138,7 +161,9 @@ try {
     [{battle_status:'defeat',turn_count:1,player_mana:0}]);
   assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='victory'").length,1);
   assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='defeat'").length,1);
-  console.log('PASS local Worker/D1 turn CAS, Mana, terminal replay, reward replay and persisted state');
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='" + serverPermitId + "'"),
+    [{player_hp:110,player_mana:8,enemy_hp:57,turn_count:1}]);
+  console.log('PASS local Worker/D1 server battle start, Mana, turn CAS, terminal replay, rewards and persisted state');
 } finally {
   if (worker && worker.exitCode === null) {
     worker.kill('SIGTERM');
