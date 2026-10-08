@@ -109,3 +109,38 @@ test('expiry between snapshot and CAS rejects without terminal history', async (
   assert.equal(s.history().length,0);
   s.db.close();
 });
+
+test('mixed victory/defeat race chooses exactly one terminal result', async () => {
+  const s=setup();
+  s.db.exec("UPDATE battle_permits SET enemy_hp=32 WHERE id='permit'");
+  const outcomes=await Promise.all([s.act('crack'),s.act('slash')]);
+  assert.equal(outcomes.filter(x=>x.status===200).length,1);
+  assert.equal(outcomes.filter(x=>x.status===409).length,1);
+  const state=s.state() as {battle_status:string;turn_count:number;player_mana:number};
+  assert.equal(state.turn_count,1);
+  assert.ok(state.battle_status==='victory'||state.battle_status==='defeat');
+  assert.equal(s.history().length,state.battle_status==='defeat'?1:0);
+  assert.equal(state.player_mana,state.battle_status==='victory'?8:12);
+  s.db.close();
+});
+
+test('missing character rejects without a terminal state or history', async () => {
+  const s=setup();
+  s.db.exec("DELETE FROM characters WHERE player_id='p1'");
+  assert.equal((await s.act()).status,404);
+  assert.equal((s.state() as {battle_status:string}).battle_status,'active');
+  assert.equal((s.state() as {turn_count:number}).turn_count,0);
+  assert.equal(s.history().length,0);
+  s.db.close();
+});
+
+test('defeat grants no XP, currency, or inventory', async () => {
+  const s=setup();
+  const before=s.db.prepare("SELECT level,xp,currency FROM characters WHERE player_id='p1'").get();
+  const items=s.db.prepare("SELECT COUNT(*) AS n FROM player_inventory WHERE player_id='p1'").get();
+  assert.equal((await s.act()).status,200);
+  assert.deepEqual(s.db.prepare("SELECT level,xp,currency FROM characters WHERE player_id='p1'").get(),before);
+  assert.deepEqual(s.db.prepare("SELECT COUNT(*) AS n FROM player_inventory WHERE player_id='p1'").get(),items);
+  assert.deepEqual(s.history().map(x=>x.id),['permit:defeat']);
+  s.db.close();
+});
