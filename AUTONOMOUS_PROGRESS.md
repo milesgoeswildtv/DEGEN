@@ -69,3 +69,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+## Atomic defeat continuation — 2026-10-08
+- Main authority SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Feature branch `automation/degen/atomic-defeat-history-v01`, commits `da102113` and `622d6e18`: PUSHED, not merged or deployed. PR creation blocked twice by connector safety.
+- Files: `worker/index.ts` adds transactional terminal defeat/history with deterministic `permitId:defeat`; `tests/worker-defeat-atomic.test.ts` covers history failure rollback/retry, concurrent/duplicate requests, zero-Mana free actions, and expiry race.
+- Mana: COMPLETE/MERGED on main; monsters have no Mana, no reversion at 0. Reward receipt idempotency: MERGED on main. Sequential active-action replay and platform identity verification remain separate unresolved issues.
+- QA: prior local SQLite source-backed tests passed; this run has not executed full `npm test`, `npm run build`, `npm run check:worker`, Wrangler/D1 integration or mobile testing. CI on this branch is pending a PR. No new migrations, config changes, or remote D1 writes.
+- Existing draft PRs #6 city, #7 CORS, #8 housing remain unmerged. No Miles design blocker.
+- Best next task: open draft PR for atomic defeat, obtain green full CI and actual local D1 transaction QA, then proceed with client-first turn-replay protection before Worker enforcement.
