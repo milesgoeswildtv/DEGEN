@@ -82,3 +82,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL SQLite boundary QA 4/4 passed, exposing a flaw in the pushed atomic-defeat patch: the action CAS may succeed just before permit expiry, but the history INSERT's repeated expiry predicate may fail just after expiry. This can commit defeat without history.
 - REQUIRED BEFORE MERGE: remove the second statement's expiry predicate only; retain expiry validation in the terminal action CAS. Add the boundary test and verify in actual Wrangler/D1. Patch and reproduction staged locally; write was rejected. No production deployment.
 - Atomic branch tests now seven cases, but no branch CI (PR creation rejected twice). Client-first expected-turn branch remains unchanged after two rejected writes.
+
+## 2026-10-08 local atomic-defeat QA
+- Main SHA 33e7477961d2a6ab7b79bf52d78a93901e19f658; atomic branch remains unmerged, no PR/CI.
+- History INSERT expiry recheck remains a merge blocker; corrected SQL and regression staged locally.
+- Local composed Worker/SQLite/client QA: 71 overlapping passing Node tests; expected old-guard boundary failure; strict isolated TypeScript passed. Not full CI or Cloudflare D1.
+- Best next task: push one-predicate expiry fix and test, open draft PR, run full CI and Wrangler/D1 before merge.
