@@ -1,3 +1,4 @@
+import { bindCityViewport, type CityCamera } from '../ui/cityViewport';
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
 import { WORLD_LOCATIONS } from '../data/world';
@@ -13,6 +14,7 @@ import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './
 export class AppController {
   private route: RouteKey = 'map';
   private selectedDistrict = 'Central';
+  private cityCamera?: CityCamera;
   private selectedLocationId = 'downtown';
   private selectedFurniture?: string;
   private battleGame?: Phaser.Game;
@@ -72,6 +74,7 @@ export class AppController {
     }
 
     this.bindCommonNavigation();
+    if (this.route === 'map') bindCityViewport(this.root, this.cityCamera, (next) => { this.cityCamera = next; });
     if (this.route === 'home') this.bindHousing();
     if (this.route === 'underpass') this.bindUnderpass();
     if (this.route === 'battle') this.mountBattle();

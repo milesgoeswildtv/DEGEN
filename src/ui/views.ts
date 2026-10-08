@@ -1,3 +1,4 @@
+import { renderIsometricCity } from './isometricCity';
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
@@ -53,30 +54,21 @@ export const appShell = (player: PlayerState, content: string): string => `
 
 export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot, backendOffline = false): string => {
   const status = worldStatus(underpass, backendOffline);
-  const districts = [...new Set(WORLD_LOCATIONS.map((location) => location.district))];
-  const cards = districts.map((district) => {
-    const locations = WORLD_LOCATIONS.filter((location) => location.district === district);
-    const accessible = locations.filter((location) => player.unlockedLocations.includes(location.id)).length;
-    return `<button type="button" class="city-district ${district === 'Central' ? 'central' : 'residential'}" data-district="${escapeHtml(district)}" ${accessible ? '' : 'disabled'}>
-      <span class="city-district-art" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-      <span class="eyebrow">DISTRICT // ${escapeHtml(district.toUpperCase())}</span>
-      <strong>${escapeHtml(district)}</strong>
-      <span>${accessible} OF ${locations.length} LOCATIONS ACCESSIBLE</span>
-      ${district === 'Central' ? `<span class="city-event-pill ${status.className}">UNDERPASS // ${escapeHtml(status.label)}</span>` : ''}
-      <em>EXPLORE DISTRICT ↗</em>
-    </button>`;
-  }).join('');
   return appShell(player, `
-    <section class="hero-block city-heading"><span class="eyebrow">CITY MAP // DISTRICTS</span>
-      <h1>Choose your district.</h1><p>Select a district, then a location. Home is always one tap away.</p>
+    <section class="hero-block city-heading">
+      <span class="eyebrow">CITY MAP // DISTRICTS</span>
+      <h1>Choose your district.</h1>
+      <p>Explore the connected metropolis. Tap a district to reveal its locations. Home is always one tap away.</p>
     </section>
     <section class="city-overview" aria-label="City map">
       <div class="city-map-header"><span>DEGEN // CITY GRID</span><span>SELECT A DISTRICT</span></div>
-      <div class="city-district-grid">${cards}</div>
+      ${renderIsometricCity(WORLD_LOCATIONS, player.unlockedLocations, status.label)}
       <div class="city-map-footer">MAP → DISTRICT → LOCATION</div>
     </section>
     ${worldConnectionNotice(backendOffline)}
-    ${!backendOffline && underpass?.source === 'preview' ? '<p class="preview-note">PREVIEW MODE — world-event timing is simulated until the backend is connected.</p>' : ''}
+    ${!backendOffline && underpass?.source === 'preview'
+      ? '<p class="preview-note">PREVIEW MODE — world-event timing is simulated until the backend is connected.</p>'
+      : ''}
   `);
 };
 

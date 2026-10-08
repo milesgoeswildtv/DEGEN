@@ -72,8 +72,8 @@ const cityArt = `<svg class="city-iso-art" viewBox="0 0 1000 620" role="img" ari
 </svg>`;
 
 const anchors: Record<string, { x: number; y: number }> = {
-  Residential: { x: 33, y: 58 },
-  Central: { x: 64, y: 55 },
+  Residential: { x: 39, y: 58 },
+  Central: { x: 61, y: 55 },
 };
 
 export const renderIsometricCity = (
@@ -94,7 +94,7 @@ export const renderIsometricCity = (
       <small>${accessible}/${matching.length} OPEN${district === 'Central' ? ` · UNDERPASS ${escapeHtml(underpassLabel)}` : ''}</small>
     </button>`;
   }).join('');
-  return `<div class="city-viewport" data-city-viewport aria-label="Pan and zoom city map">
+  return `<div class="city-viewport" data-city-viewport role="region" tabindex="0" aria-label="Pan and zoom city map">
     <div class="city-world" data-city-world>${cityArt}${pins}</div>
   </div>
   <div class="city-map-controls" aria-label="Map zoom controls">

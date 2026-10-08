@@ -17,9 +17,14 @@ const WORLD_LOCATIONS = runInNewContext(
   {},
 ) as Array<{ id: string; name: string; route: string; district: string }>;
 
+const renderIsometricCity = runInNewContext(
+  compile('../src/ui/isometricCity.ts') + '\nrenderIsometricCity;',
+  {},
+);
+
 const views = runInNewContext(
   compile('../src/ui/views.ts') + '\n({ mapView, districtView, locationView, underpassView });',
-  { WORLD_LOCATIONS, FURNITURE_CATALOG: [], getFurniture: () => undefined },
+  { WORLD_LOCATIONS, FURNITURE_CATALOG: [], getFurniture: () => undefined, renderIsometricCity },
 ) as {
   mapView: (player: unknown, event?: unknown, backendOffline?: boolean) => string;
   districtView: (player: unknown, district: string, event?: unknown, backendOffline?: boolean) => string;
@@ -39,6 +44,10 @@ test('city map derives only existing districts and routes through district selec
   assert.match(html, /data-district="Residential"/);
   assert.doesNotMatch(html, /data-location="underpass"/);
   assert.match(html, /data-route="home"/);
+  assert.match(html, /data-city-viewport/);
+  assert.match(html, /data-city-world/);
+  assert.match(html, /data-city-zoom="in"/);
+  assert.match(html, /tabindex="0"/);
   assert.match(html, /&lt;Player&gt;/);
 });
 
@@ -103,6 +112,7 @@ test('controller follows map to district to location and rejects locked navigati
     compile('../src/app/AppController.ts') + '\nAppController;',
     {
       WORLD_LOCATIONS,
+      bindCityViewport: () => {},
       mapView: () => 'map', districtView: () => 'district', locationView: () => 'location',
       homeView: () => 'home', underpassView: () => 'underpass', battleView: () => 'battle',
     },

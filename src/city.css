@@ -1,32 +1,9 @@
 /* City navigation: existing Central and Residential districts only. No invented destinations. */
 .city-heading h1 { max-width: 780px; }
-.city-overview { position: relative; overflow: hidden; isolation: isolate; padding: 16px; border: 1px solid #414047; border-radius: 20px; background: radial-gradient(ellipse at 50% 15%, #302a29, transparent 60%), repeating-linear-gradient(90deg, transparent 0 58px, #26252b 59px 61px), repeating-linear-gradient(0deg, transparent 0 58px, #26252b 59px 61px), #111116; }
-.city-overview::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(140deg, transparent 35%, #5b4a3544 36%, #5b4a3544 38%, transparent 39%), linear-gradient(35deg, transparent 57%, #46424a66 58%, #46424a66 60%, transparent 61%); }
+.city-overview { position: relative; overflow: hidden; isolation: isolate; padding: 12px; border: 1px solid #6d5a50; border-radius: 18px; background: #15161d; }
 .city-map-header, .city-map-footer { display: flex; justify-content: space-between; gap: 12px; color: #a7a2a1; font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .14em; }
 .city-map-header { margin: 0 4px 18px; }
 .city-map-footer { margin: 18px 4px 2px; justify-content: flex-end; }
-.city-district-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; min-height: 360px; }
-.city-district { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; gap: 9px; min-width: 0; min-height: 340px; padding: 22px; text-align: left; color: #f5f0e9; border: 1px solid #6b625d; border-radius: 14px; background: linear-gradient(180deg, #24262d 0%, #18191f 52%, #121217 100%); cursor: pointer; box-shadow: inset 0 0 0 1px #ffffff08, 0 12px 30px #0005; }
-.city-district.residential { background: linear-gradient(180deg, #302b2a 0%, #242024 52%, #141316 100%); border-color: #594c49; }
-.city-district:hover, .city-district:focus-visible { border-color: #c0a37c; }
-.city-district:disabled { opacity: .5; cursor: not-allowed; }
-.city-district .eyebrow { position: relative; z-index: 1; color: #d0bba4; }
-.city-district strong { position: relative; z-index: 1; font-size: clamp(28px, 5vw, 52px); letter-spacing: -.055em; line-height: 1; text-shadow: 0 2px 20px #000; }
-.city-district > span:not(.eyebrow):not(.city-district-art) { position: relative; z-index: 1; font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .08em; color: #c4bfc0; }
-.city-district em { position: relative; z-index: 1; margin-top: auto; padding: 8px 12px; border: 1px solid #bca48788; background: #1c1b1dcc; border-radius: 6px; font: 800 12px/1.3 ui-monospace, monospace; letter-spacing: .1em; font-style: normal; }
-.city-district .city-event-pill.open { color: #ffb7a9 !important; }
-.city-district .city-event-pill.warning { color: #ffdb96 !important; }
-.city-district .city-event-pill.sealed { color: #b6b2b7 !important; }
-.city-district-art { position: absolute; inset: 18% 0 0; display: flex; justify-content: center; align-items: flex-end; gap: 5px; opacity: .42; pointer-events: none; transform: perspective(300px) rotateX(8deg); }
-.city-district-art i { display: block; width: 17%; height: 45%; background: repeating-linear-gradient(0deg, transparent 0 17px, #c5b5a31a 18px 19px), repeating-linear-gradient(90deg, transparent 0 15px, #d9bb9333 16px 18px), #08090e; box-shadow: -5px 0 0 #393239; }
-.city-district-art i:nth-child(2) { height: 72%; width: 13%; }
-.city-district-art i:nth-child(3) { height: 89%; width: 19%; }
-.city-district-art i:nth-child(4) { height: 62%; width: 15%; }
-.city-district-art i:nth-child(5) { height: 36%; width: 22%; }
-.city-district.residential .city-district-art i { height: 26%; }
-.city-district.residential .city-district-art i:nth-child(2) { height: 39%; }
-.city-district.residential .city-district-art i:nth-child(3) { height: 47%; }
-.city-district.residential .city-district-art i:nth-child(4) { height: 34%; }
 .city-breadcrumb { display: flex; align-items: center; gap: 12px; margin: 4px 0 16px; color: #918d91; font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .1em; }
 .city-breadcrumb button { border: 0; padding: 8px 0; color: #e4d3c0; background: none; font: inherit; cursor: pointer; }
 .city-breadcrumb strong { color: #c4bfc2; }
@@ -63,9 +40,7 @@
 .location-scene-status { display: inline-block; margin-top: 12px; color: #d3b997; font: 800 11px/1.5 ui-monospace, monospace; letter-spacing: .1em; }
 .city-back-action { margin-top: 16px; }
 @media (max-width: 600px) {
-  .city-overview { padding: 12px; }
-  .city-district-grid { grid-template-columns: 1fr; }
-  .city-district { min-height: 235px; }
+  .city-overview { padding: 8px; }
   .city-map-header { font-size: 9px; }
   .city-map-header span:last-child { display: none; }
   .district-hero { min-height: 205px; padding: 24px 18px; }
@@ -73,8 +48,8 @@
   .location-scene-copy { padding: 26px 18px; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .city-district, .city-destination { transition: border-color .2s, transform .2s; }
-  .city-district:active, .city-destination:active { transform: scale(.99); }
+  .city-destination { transition: border-color .2s, transform .2s; }
+  .city-destination:active { transform: scale(.99); }
 }
 
 .city-connected { margin-top: 22px; }
@@ -86,3 +61,57 @@
 .city-connected-location:hover, .city-connected-location:focus-visible { border-color: #c4a987; }
 
 .world-connection-error { margin: 16px 0; padding: 14px 16px; border: 1px solid #9c503f; border-radius: 10px; color: #ffdbce; background: #4d242440; font: 700 12px/1.6 ui-monospace, monospace; letter-spacing: .04em; }
+
+/* Mobile-first interactive isometric metropolis. Artwork is a replaceable SVG scaffold. */
+.city-viewport {
+  position: relative; width: 100%; height: clamp(390px, 54vw, 590px);
+  overflow: hidden; isolation: isolate; touch-action: none; user-select: none;
+  -webkit-user-select: none; cursor: grab;
+  background: radial-gradient(ellipse at center, #30292d, #11141b 80%);
+  border: 1px solid #373239; border-radius: 13px;
+}
+.city-viewport:active { cursor: grabbing; }
+.city-viewport:focus-visible { outline: 3px solid #e4b786; outline-offset: -3px; }
+.city-world {
+  position: absolute; left: 50%; top: 50%; width: 1000px; height: 620px;
+  transform: translate(-50%, -50%); transform-origin: center center;
+  will-change: transform;
+}
+.city-iso-art { display: block; width: 100%; height: 100%; pointer-events: none; }
+.city-iso-pin {
+  position: absolute; left: var(--pin-x); top: var(--pin-y); transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  min-width: 136px; min-height: 58px; padding: 9px 12px;
+  border: 2px solid #c9a079; border-radius: 10px;
+  background: #252027f2; color: #f7e9d9;
+  box-shadow: 0 6px 24px #000b, inset 0 0 0 1px #ffffff0b;
+  text-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.city-iso-pin::before {
+  content: ''; position: absolute; bottom: -12px; left: calc(50% - 6px);
+  width: 12px; height: 12px; transform: rotate(45deg); background: #c9a079; z-index: -1;
+}
+.city-iso-pin .city-pin-marker { color: #c9a079; font: 900 12px/1 monospace; }
+.city-iso-pin strong { font-size: 19px; line-height: 1; letter-spacing: -.03em; }
+.city-iso-pin small { color: #d5b894; font: 800 9px/1.4 ui-monospace, monospace; letter-spacing: .03em; }
+.city-iso-pin:hover, .city-iso-pin:focus-visible { border-color: #ffe0ad; background: #40303a; }
+.city-iso-pin:focus-visible { outline: 3px solid #f9e6c5; outline-offset: 3px; }
+.city-iso-pin:disabled { opacity: .55; filter: grayscale(.65); cursor: not-allowed; }
+.city-map-controls { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
+.city-map-controls span {
+  margin-right: auto; color: #ad9e97; font: 700 10px/1.4 ui-monospace, monospace; letter-spacing: .08em;
+}
+.city-map-controls button {
+  flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid #80685b;
+  border-radius: 8px; background: #29242a; color: #f6e5d2;
+  font-size: 22px; font-weight: 800; cursor: pointer;
+}
+.city-map-controls button:disabled { opacity: .35; cursor: not-allowed; }
+.city-map-controls button:focus-visible { outline: 2px solid #ffe0ad; outline-offset: 2px; }
+@media (max-width: 600px) {
+  .city-viewport { height: min(52vh, 470px); min-height: 365px; }
+  .city-map-controls span { font-size: 9px; max-width: 130px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .city-world, .city-iso-pin { transition: none !important; }
+}
