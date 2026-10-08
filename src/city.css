@@ -120,3 +120,10 @@
 @media (max-width: 600px) {
   .district-iso-scene { height: 230px; }
 }
+
+/* Keep district pins fully visible in narrow Telegram/web viewports. */
+@media (max-width: 360px) {
+  .city-iso-pin { min-width: 116px; padding: 8px; }
+  .city-iso-pin strong { font-size: 17px; }
+  .city-iso-pin small { font-size: 9px; }
+}

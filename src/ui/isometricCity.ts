@@ -114,8 +114,8 @@ const cityArt = `<svg class="city-iso-art" viewBox="0 0 1000 620" role="img" ari
 </svg>`;
 
 const anchors: Record<string, { x: number; y: number }> = {
-  Residential: { x: 39, y: 58 },
-  Central: { x: 61, y: 55 },
+  Residential: { x: 40, y: 58 },
+  Central: { x: 60, y: 55 },
 };
 
 export const renderIsometricCity = (

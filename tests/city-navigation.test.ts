@@ -52,6 +52,8 @@ test('city map derives only existing districts and routes through district selec
   assert.match(html, /data-city-viewport/);
   assert.match(html, /data-city-world/);
   assert.match(html, /data-city-zoom="in"/);
+  assert.match(html, /--pin-x:40%/);
+  assert.match(html, /--pin-x:60%/);
   assert.match(html, /tabindex="0"/);
   assert.match(html, /&lt;Player&gt;/);
 });
