@@ -62,6 +62,7 @@ test('Downtown is a reachable location scene but unimplemented activities are la
   assert.match(html, /Downtown/);
   assert.match(html, /ACTIVITIES IN DEVELOPMENT/);
   assert.match(html, /data-route="district"/);
+  assert.match(html, /data-location="underpass"/);
 });
 
 test('locked destinations are disabled and cannot expose their location scene', () => {
@@ -72,6 +73,7 @@ test('locked destinations are disabled and cannot expose their location scene', 
   const map = views.mapView(restricted);
   assert.match(map, /data-district="Central" disabled/);
   assert.doesNotMatch(views.locationView(restricted, 'downtown'), /ACTIVITIES IN DEVELOPMENT/);
+  assert.doesNotMatch(views.locationView({ ...player, unlockedLocations: ['downtown'] }, 'downtown'), /data-location="underpass"/);
 });
 
 test('controller follows map to district to location and rejects locked navigation', () => {
@@ -118,6 +120,11 @@ test('controller follows map to district to location and rejects locked navigati
   locationButton.click();
   assert.equal(controller.route, 'location');
   assert.equal(root.innerHTML, 'location');
+  locationButton.dataset.location = 'underpass';
+  locationButton.click();
+  assert.equal(controller.route, 'underpass');
+  assert.equal(root.innerHTML, 'underpass');
+  locationButton.dataset.location = 'downtown';
   backButton.click();
   assert.equal(controller.route, 'district');
 

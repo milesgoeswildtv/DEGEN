@@ -95,6 +95,12 @@ export const districtView = (player: PlayerState, district: string, underpass?: 
 export const locationView = (player: PlayerState, locationId: string): string => {
   const location = WORLD_LOCATIONS.find((item) => item.id === locationId && item.route === 'location');
   if (!location || !player.unlockedLocations.includes(location.id)) return mapView(player);
+  const otherDestinations = WORLD_LOCATIONS
+    .filter((item) => item.district === location.district && item.id !== location.id
+      && player.unlockedLocations.includes(item.id))
+    .map((item) => `<button class="city-connected-location" type="button" data-location="${escapeHtml(item.id)}">
+      <span class="eyebrow">${escapeHtml(item.kind.toUpperCase())}</span><strong>${escapeHtml(item.name)}</strong><span aria-hidden="true">↗</span>
+    </button>`).join('');
   return appShell(player, `
     <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-route="district">${escapeHtml(location.district.toUpperCase())}</button></div>
     <section class="location-scene"><div class="location-scene-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
@@ -102,6 +108,9 @@ export const locationView = (player: PlayerState, locationId: string): string =>
       <h1>${escapeHtml(location.name)}</h1><p>${escapeHtml(location.description)}</p>
       <span class="location-scene-status">ACCESSIBLE // ACTIVITIES IN DEVELOPMENT</span></div>
     </section>
+    ${otherDestinations ? `<section class="city-connected" aria-label="Other destinations in ${escapeHtml(location.district)}">
+      <span class="eyebrow">MORE IN ${escapeHtml(location.district.toUpperCase())}</span><div>${otherDestinations}</div>
+    </section>` : ''}
     <button class="secondary-action city-back-action" type="button" data-route="district">← BACK TO ${escapeHtml(location.district.toUpperCase())}</button>
   `);
 };
