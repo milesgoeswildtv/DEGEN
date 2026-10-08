@@ -12,6 +12,7 @@ const makeMap = (width = 380, height = 420) => {
     getBoundingClientRect: () => ({ left: 0, top: 0 }),
   };
   const world = { style: {} as Record<string, string> };
+  const pin = { style: {} as Record<string, string> };
   const zoomIn = { dataset: { cityZoom: 'in' }, disabled: false, addEventListener: (_: string, fn: () => void) => { zoomInClick = fn; } };
   const zoomOut = { dataset: { cityZoom: 'out' }, disabled: false, addEventListener: (_: string, fn: () => void) => { zoomOutClick = fn; } };
   const reset = { addEventListener: (_: string, fn: () => void) => { resetClick = fn; } };
@@ -23,7 +24,7 @@ const makeMap = (width = 380, height = 420) => {
       selector === '[data-city-viewport]' ? viewport :
       selector === '[data-city-world]' ? world :
       selector === '[data-city-reset]' ? reset : null,
-    querySelectorAll: (selector: string) => selector === '[data-city-zoom]' ? [zoomIn, zoomOut] : [],
+    querySelectorAll: (selector: string) => selector === '[data-city-zoom]' ? [zoomIn, zoomOut] : selector === '.city-iso-pin' ? [pin] : [],
   };
   let current = { x: 0, y: 0, scale: 1 };
   bindCityViewport(root as unknown as HTMLElement, undefined, (camera) => { current = camera; });
@@ -33,7 +34,7 @@ const makeMap = (width = 380, height = 420) => {
       target: { closest: () => null }, key: '', preventDefault: () => {},
       ...overrides,
     });
-  return { viewport, world, event, zoomIn: () => zoomInClick(), zoomOut: () => zoomOutClick(), reset: () => resetClick(), camera: () => current };
+  return { viewport, world, pin, event, zoomIn: () => zoomInClick(), zoomOut: () => zoomOutClick(), reset: () => resetClick(), camera: () => current };
 };
 
 test('camera zoom is bounded and does not pan off the connected metropolis', () => {
@@ -72,6 +73,7 @@ test('wheel and keyboard zoom update the same camera, and drag ignores district 
   assert.ok(map.camera().scale > 0.8);
   map.event('keydown', { key: '0' });
   assert.equal(map.camera().scale, 0.8);
+  assert.match(map.pin.style.transform, /scale\\(1\\.25\\)/);
   assert.match(map.world.style.transform, /scale\(0\.8\)/);
 });
 

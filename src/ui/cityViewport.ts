@@ -25,6 +25,10 @@ export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undef
     camera = constrainCityCamera(camera, viewport.clientWidth, viewport.clientHeight);
     world.style.transform = `translate(-50%, -50%) translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
     viewport.dataset.cityScale = camera.scale.toFixed(2);
+    // Preserve readable, full-size touch targets at every map zoom.
+    root.querySelectorAll<HTMLElement>('.city-iso-pin').forEach((pin) => {
+      pin.style.transform = `translate(-50%, -50%) scale(${1 / camera.scale})`;
+    });
     root.querySelectorAll<HTMLButtonElement>('[data-city-zoom]').forEach(button => {
       button.disabled = button.dataset.cityZoom === 'in' ? camera.scale >= MAX_CITY_ZOOM : camera.scale <= MIN_CITY_ZOOM;
     });

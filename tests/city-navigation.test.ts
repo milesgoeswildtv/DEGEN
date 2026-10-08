@@ -239,3 +239,37 @@ test('isometric city scaffold has distinct buildings without inventing playable 
   assert.match(html, /data-district="Residential"/);
   assert.match(html, /data-district="Central"/);
 });
+
+
+test('map camera persists across authoritative world refresh rerenders', async () => {
+  const cameraHistory: Array<{ x: number; y: number; scale: number } | undefined> = [];
+  const Controller = runInNewContext(
+    compile('../src/app/AppController.ts') + '\nAppController;',
+    {
+      WORLD_LOCATIONS,
+      mapView: () => 'map', districtView: () => 'district', locationView: () => 'location',
+      homeView: () => 'home', underpassView: () => 'underpass', battleView: () => 'battle',
+      getPreviewUnderpass: () => ({ phase: 'sealed', source: 'preview' }),
+      bindCityViewport: (_root: unknown, previous: { x: number; y: number; scale: number } | undefined,
+        onChange: (camera: { x: number; y: number; scale: number }) => void) => {
+        cameraHistory.push(previous);
+        if (!previous) onChange({ x: 48, y: -16, scale: 1.25 });
+      },
+    },
+  ) as new (root: unknown, store: unknown, api: unknown) => {
+    render(): void;
+    refreshWorld(rerender?: boolean): Promise<void>;
+  };
+  const controller = new Controller(
+    { innerHTML: '', querySelectorAll: () => [], querySelector: () => null },
+    { snapshot: player },
+    { enabled: false },
+  );
+  controller.render();
+  await controller.refreshWorld(true);
+  assert.equal(cameraHistory.length, 2);
+  assert.equal(cameraHistory[0], undefined);
+  assert.equal(cameraHistory[1]?.x, 48);
+  assert.equal(cameraHistory[1]?.y, -16);
+  assert.equal(cameraHistory[1]?.scale, 1.25);
+});
