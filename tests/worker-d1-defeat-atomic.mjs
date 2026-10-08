@@ -57,7 +57,12 @@ async function act(id) {
     body:JSON.stringify({playerId:'qa-player',permitId:id,abilityId:'slash'}),
     signal:AbortSignal.timeout(15000),
   });
-  return {status:r.status,body:await r.json()};
+  const raw = await r.text();
+  let body;
+  try { body = JSON.parse(raw); } catch {
+    throw Error(`Non-JSON Worker action HTTP ${r.status} (content-type ${r.headers.get('content-type')})\n${raw.slice(0,1000)}\nWRANGLER LOGS:\n${logs}`);
+  }
+  return {status:r.status,body};
 }
 function seed(id) {
   sql(`INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
