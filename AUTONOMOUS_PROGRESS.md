@@ -96,3 +96,7 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - PUSHED `tests/worker-battle-turn-precondition.test.ts` deterministic hook that mutates the authoritative permit between SELECT and CAS; stale action must return 409 with freshly re-read HP/Mana/enemy HP/turnCount and must not apply a second action.
 - LOCAL reconstructed-source test suite with exact main schema/migrations/shared rules: 23/23 passed. Separate reconstructed atomic+optional-turn integration: 25/25 passed. Neither replaces full CI or real Wrangler/D1.
 - Latest current branch must still pass `npm test`, `npm run build`, `npm run check:worker`; PR creation remains blocked and no merge/deploy/D1 mutation occurred.
+
+### Battle start Mana integration — 2026-10-08
+- PUSHED addition to `tests/worker-d1-turn-replay.test.ts`: seeds an open Underpass cycle, calls real Worker `GET /api/world/underpass` and `POST /api/battle/start`, then verifies first action uses server-initialized 12 Mana/120 HP/92 enemy HP (after Crack: 8 Mana, 110 HP, 57 enemy HP). Test has NOT run under real Wrangler/D1 yet.
+- No runtime balance/schema change. Full CI and PR remain pending; local reconstructed-source CAS tests passed 23/23.
