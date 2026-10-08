@@ -25,6 +25,16 @@ const underpassStatus = (event?: WorldEventSnapshot): { label: string; detail: s
   return { label: 'SEALED', detail: 'Next breach unknown', className: 'sealed' };
 };
 
+const worldStatus = (event?: WorldEventSnapshot, backendOffline = false) =>
+  backendOffline
+    ? { label: 'OFFLINE', detail: 'Cannot reach the DEGEN server', className: 'sealed' }
+    : underpassStatus(event);
+
+const worldConnectionNotice = (backendOffline: boolean): string =>
+  backendOffline
+    ? '<p class="world-connection-error" role="status">LIVE WORLD UNAVAILABLE — The game cannot reach its server. Underpass combat is disabled until connection is restored.</p>'
+    : '';
+
 export const appShell = (player: PlayerState, content: string): string => `
   <header class="topbar">
     <button class="brand" type="button" data-route="map">DEGEN</button>
@@ -41,8 +51,8 @@ export const appShell = (player: PlayerState, content: string): string => `
   </nav>
 `;
 
-export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot): string => {
-  const status = underpassStatus(underpass);
+export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot, backendOffline = false): string => {
+  const status = worldStatus(underpass, backendOffline);
   const districts = [...new Set(WORLD_LOCATIONS.map((location) => location.district))];
   const cards = districts.map((district) => {
     const locations = WORLD_LOCATIONS.filter((location) => location.district === district);
@@ -65,14 +75,15 @@ export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot): st
       <div class="city-district-grid">${cards}</div>
       <div class="city-map-footer">MAP → DISTRICT → LOCATION</div>
     </section>
-    ${underpass?.source === 'preview' ? '<p class="preview-note">PREVIEW MODE — world-event timing is simulated until the backend is connected.</p>' : ''}
+    ${worldConnectionNotice(backendOffline)}
+    ${!backendOffline && underpass?.source === 'preview' ? '<p class="preview-note">PREVIEW MODE — world-event timing is simulated until the backend is connected.</p>' : ''}
   `);
 };
 
-export const districtView = (player: PlayerState, district: string, underpass?: WorldEventSnapshot): string => {
+export const districtView = (player: PlayerState, district: string, underpass?: WorldEventSnapshot, backendOffline = false): string => {
   const locations = WORLD_LOCATIONS.filter((location) => location.district === district);
-  if (!locations.length) return mapView(player, underpass);
-  const status = underpassStatus(underpass);
+  if (!locations.length) return mapView(player, underpass, backendOffline);
+  const status = worldStatus(underpass, backendOffline);
   const cards = locations.map((location) => {
     const unlocked = player.unlockedLocations.includes(location.id);
     const event = location.id === 'underpass';
@@ -88,6 +99,7 @@ export const districtView = (player: PlayerState, district: string, underpass?: 
     <section class="district-hero ${district === 'Central' ? 'central' : 'residential'}"><span class="eyebrow">CITY DISTRICT</span><h1>${escapeHtml(district)}</h1>
       <p>Select a location to enter.</p><div class="district-skyline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
     </section>
+    ${worldConnectionNotice(backendOffline)}
     <section class="district-locations" aria-label="${escapeHtml(district)} locations">${cards}</section>
   `);
 };
@@ -156,10 +168,10 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
   `);
 };
 
-export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): string => {
-  const status = underpassStatus(event);
-  const isOpen = event?.phase === 'open';
-  const clears = event ? `${Math.min(event.fullRewardClears, event.fullRewardLimit)}/${event.fullRewardLimit}` : '—';
+export const underpassView = (player: PlayerState, event?: WorldEventSnapshot, backendOffline = false): string => {
+  const status = worldStatus(event, backendOffline);
+  const isOpen = event?.phase === 'open' && !backendOffline;
+  const clears = event && !backendOffline ? `${Math.min(event.fullRewardClears, event.fullRewardLimit)}/${event.fullRewardLimit}` : '—';
   return appShell(player, `
     <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-route="district">CENTRAL</button></div>
     <section class="hero-block danger underpass-hero ${status.className}">
@@ -173,7 +185,8 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): 
       </div>
       <p>When combat begins, you manifest as your Degen immediately. The entrance cannot be farmed while sealed.</p>
       <button class="primary-action" type="button" data-start-battle ${isOpen ? '' : 'disabled'}>${isOpen ? 'ENTER UNDERPASS' : 'UNDERPASS SEALED'}</button>
-      ${event?.source === 'preview' ? '<small class="preview-note">Local preview cycle — production timing will be server-authoritative.</small>' : ''}
+      ${worldConnectionNotice(backendOffline)}
+      ${!backendOffline && event?.source === 'preview' ? '<small class="preview-note">Local preview cycle — production timing will be server-authoritative.</small>' : ''}
     </section>
   `);
 };

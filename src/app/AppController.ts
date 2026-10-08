@@ -20,6 +20,7 @@ export class AppController {
   private battleReturnTimer?: number;
   private worldRefreshTimer?: number;
   private underpassEvent?: WorldEventSnapshot;
+  private worldSyncFailed = false;
   private battlePermit?: BattlePermit;
   private battleActionPending = false;
   private rewardResolution: Promise<void> = Promise.resolve();
@@ -50,7 +51,7 @@ export class AppController {
 
     switch (this.route) {
       case 'district':
-        this.root.innerHTML = districtView(player, this.selectedDistrict, this.underpassEvent);
+        this.root.innerHTML = districtView(player, this.selectedDistrict, this.underpassEvent, this.worldSyncFailed);
         break;
       case 'location':
         this.root.innerHTML = locationView(player, this.selectedLocationId);
@@ -59,14 +60,14 @@ export class AppController {
         this.root.innerHTML = homeView(player, this.selectedFurniture);
         break;
       case 'underpass':
-        this.root.innerHTML = underpassView(player, this.underpassEvent);
+        this.root.innerHTML = underpassView(player, this.underpassEvent, this.worldSyncFailed);
         break;
       case 'battle':
         this.root.innerHTML = battleView(player, TEST_DEGEN);
         break;
       case 'map':
       default:
-        this.root.innerHTML = mapView(player, this.underpassEvent);
+        this.root.innerHTML = mapView(player, this.underpassEvent, this.worldSyncFailed);
         break;
     }
 
@@ -139,7 +140,7 @@ export class AppController {
 
   private async enterUnderpass(): Promise<void> {
     const event = this.underpassEvent;
-    if (!event || event.phase !== 'open') return;
+    if (!event || event.phase !== 'open' || (this.api.enabled && this.worldSyncFailed)) return;
 
     try {
       this.battlePermit = this.api.enabled
@@ -298,11 +299,17 @@ export class AppController {
 
   private async refreshWorld(rerender = false): Promise<void> {
     try {
-      this.underpassEvent = this.api.enabled
-        ? await this.api.getUnderpass(this.store.snapshot.id)
-        : getPreviewUnderpass();
+      if (this.api.enabled) {
+        const snapshot = await this.api.getUnderpass(this.store.snapshot.id);
+        if (!snapshot) throw new Error('Missing authoritative world-event snapshot.');
+        this.underpassEvent = snapshot;
+      } else {
+        this.underpassEvent = getPreviewUnderpass();
+      }
+      this.worldSyncFailed = false;
     } catch (error) {
-      console.warn('World-event sync failed; using local preview clock.', error);
+      console.warn('World-event sync failed; server-backed combat is unavailable.', error);
+      this.worldSyncFailed = this.api.enabled;
       this.underpassEvent = getPreviewUnderpass();
     }
 

@@ -21,10 +21,10 @@ const views = runInNewContext(
   compile('../src/ui/views.ts') + '\n({ mapView, districtView, locationView, underpassView });',
   { WORLD_LOCATIONS, FURNITURE_CATALOG: [], getFurniture: () => undefined },
 ) as {
-  mapView: (player: unknown, event?: unknown) => string;
-  districtView: (player: unknown, district: string, event?: unknown) => string;
+  mapView: (player: unknown, event?: unknown, backendOffline?: boolean) => string;
+  districtView: (player: unknown, district: string, event?: unknown, backendOffline?: boolean) => string;
   locationView: (player: unknown, id: string) => string;
-  underpassView: (player: unknown, event?: unknown) => string;
+  underpassView: (player: unknown, event?: unknown, backendOffline?: boolean) => string;
 };
 
 const player = {
@@ -144,4 +144,42 @@ test('Underpass retains a breadcrumb back to its Central district', () => {
   assert.match(html, /data-route="district">CENTRAL/);
   assert.match(html, /data-route="map"/);
   assert.match(html, /UNDERPASS SEALED/);
+});
+
+test('server-backed offline mode exposes a warning and disables fake Underpass entry', () => {
+  const event = { phase: 'open', fullRewardClears: 0, fullRewardLimit: 3, source: 'preview' };
+  const map = views.mapView(player, event, true);
+  assert.match(map, /UNDERPASS \/\/ OFFLINE/);
+  assert.match(map, /LIVE WORLD UNAVAILABLE/);
+  const district = views.districtView(player, 'Central', event, true);
+  assert.match(district, /LIVE WORLD UNAVAILABLE/);
+  const underpass = views.underpassView(player, event, true);
+  assert.match(underpass, /UNDERPASS SEALED/);
+  assert.match(underpass, /data-start-battle disabled/);
+  assert.doesNotMatch(underpass, /Local preview cycle/);
+});
+
+test('controller does not issue server battle permits against fallback preview cycles', async () => {
+  const root = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null };
+  let starts = 0;
+  const Controller = runInNewContext(
+    compile('../src/app/AppController.ts') + '\nAppController;',
+    {
+      getPreviewUnderpass: () => ({ phase: 'open', cycleId: 'preview', source: 'preview' }),
+      console: { warn: () => {} },
+    },
+  ) as new (root: unknown, store: unknown, api: unknown) => {
+    worldSyncFailed: boolean;
+    refreshWorld(): Promise<void>;
+    enterUnderpass(): Promise<void>;
+  };
+  const controller = new Controller(root, { snapshot: player }, {
+    enabled: true,
+    getUnderpass: async () => { throw new Error('CORS blocked'); },
+    startUnderpass: async () => { starts += 1; return undefined; },
+  });
+  await controller.refreshWorld();
+  assert.equal(controller.worldSyncFailed, true);
+  await controller.enterUnderpass();
+  assert.equal(starts, 0);
 });

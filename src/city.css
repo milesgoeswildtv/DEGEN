@@ -84,3 +84,5 @@
 .city-connected-location .eyebrow { grid-column: 1 / -1; color: #ae9d8c; }
 .city-connected-location strong { font-size: 20px; }
 .city-connected-location:hover, .city-connected-location:focus-visible { border-color: #c4a987; }
+
+.world-connection-error { margin: 16px 0; padding: 14px 16px; border: 1px solid #9c503f; border-radius: 10px; color: #ffdbce; background: #4d242440; font: 700 12px/1.6 ui-monospace, monospace; letter-spacing: .04em; }
