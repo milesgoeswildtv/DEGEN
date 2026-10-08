@@ -265,7 +265,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       ) SELECT ?, ?, ?, 'defeat', ?, 0, 0
         WHERE EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
           AND battle_status = 'defeat' AND turn_count = ?
-          AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP)
+          AND completed_at IS NULL)
         ON CONFLICT(id) DO NOTHING`)
         .bind(`${input.permitId}:defeat`, input.playerId, TUNNEL_MAW.id, character.level,
           input.permitId, input.playerId, permit.turn_count + 1),

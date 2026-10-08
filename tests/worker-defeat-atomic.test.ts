@@ -30,6 +30,7 @@ function setup(hp = 1) {
     battle_status,player_hp,player_mana,enemy_hp,turn_count) VALUES
     ('permit','p1','underpass','cycle','tunnel-maw',datetime('now','+20 minutes'),'active',?,12,92,0)`).run(hp);
   let beforeBatch: (() => void) | undefined;
+  let afterFirstBatchStatement: (() => void) | undefined;
   const adapter = {
     prepare(sql: string) { return { bind(...params: unknown[]) { return {
       first: async () => db.prepare(sql).get(...params) ?? null,
@@ -41,12 +42,17 @@ function setup(hp = 1) {
       db.exec('BEGIN');
       try {
         const results: Array<{results: unknown[]}> = [];
-        for (const stmt of statements) {
+        for (const [index, stmt] of statements.entries()) {
           if (/\bRETURNING\b/i.test(stmt.sql)) {
             results.push({results: db.prepare(stmt.sql).all(...stmt.params)});
           } else {
             db.prepare(stmt.sql).run(...stmt.params);
             results.push({results: []});
+          }
+          if (index === 0 && afterFirstBatchStatement) {
+            const hook = afterFirstBatchStatement;
+            afterFirstBatchStatement = undefined;
+            hook();
           }
         }
         db.exec('COMMIT');
@@ -60,7 +66,9 @@ function setup(hp = 1) {
   const act = (abilityId = 'slash') => action(request(abilityId), {DB:adapter});
   const state = () => db.prepare("SELECT battle_status,player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='permit'").get();
   const history = () => db.prepare("SELECT id FROM battle_history WHERE player_id='p1'").all();
-  return {db,act,state,history,expireBeforeBatch:() => {beforeBatch=() => {
+  return {db,act,state,history,expireAfterCas:() => {afterFirstBatchStatement=() => {
+    db.exec("UPDATE battle_permits SET expires_at=datetime('now','-1 minute') WHERE id='permit'");
+  };},expireBeforeBatch:() => {beforeBatch=() => {
     db.exec("UPDATE battle_permits SET expires_at=datetime('now','-1 minute') WHERE id='permit'");
   };}};
 }
@@ -107,6 +115,19 @@ test('expiry between snapshot and CAS rejects without terminal history', async (
   assert.equal((s.state() as {battle_status:string}).battle_status,'active');
   assert.equal((s.state() as {turn_count:number}).turn_count,0);
   assert.equal(s.history().length,0);
+  s.db.close();
+});
+
+test('expiry after authorized terminal CAS still records defeat history', async () => {
+  const s=setup();
+  s.expireAfterCas();
+  const response=await s.act();
+  assert.equal(response.status,200);
+  assert.equal((s.state() as {battle_status:string}).battle_status,'defeat');
+  assert.equal((s.state() as {turn_count:number}).turn_count,1);
+  assert.deepEqual(s.history().map((row) => row.id),['permit:defeat']);
+  for (let i=0;i<10;i++) assert.equal((await s.act()).status,409);
+  assert.deepEqual(s.history().map((row) => row.id),['permit:defeat']);
   s.db.close();
 });
 

@@ -88,3 +88,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - History INSERT expiry recheck remains a merge blocker; corrected SQL and regression staged locally.
 - Local composed Worker/SQLite/client QA: 71 overlapping passing Node tests; expected old-guard boundary failure; strict isolated TypeScript passed. Not full CI or Cloudflare D1.
 - Best next task: push one-predicate expiry fix and test, open draft PR, run full CI and Wrangler/D1 before merge.
+
+## Atomic defeat expiry-boundary correction — 2026-10-08
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Branch: `automation/degen/atomic-defeat-history-v01` (feature only; no merge/deploy).
+- Corrected `worker/index.ts`: the terminal UPDATE remains permit-expiry guarded; its same-transaction history INSERT no longer repeats the expiry predicate after a valid CAS. Deterministic defeat history ID and no-reward defeat behavior unchanged.
+- Added `tests/worker-defeat-atomic.test.ts` boundary regression injecting expiry between authorized terminal CAS and history insert, plus retry uniqueness assertion.
+- Mana foundation: COMPLETE/MERGED on main; monsters never have Mana or 0-Mana reversion. Reward idempotency: MERGED on main; sequential action replay and platform identity verification remain unresolved.
+- Migration/config: no changes. Existing tracked 0002–0005 migrations remain authoritative and Worker deploy workflow applies them before code. No remote D1 write.
+- QA: local full repository tests, build, Worker dry-run and real Wrangler/D1 are required before merge. Branch CI must be observed on the PR head; prior isolated model results do not count as CI.
+- Next best task: open draft PR, obtain full CI and local Wrangler/D1 boundary verification; then client-first replay protection.
