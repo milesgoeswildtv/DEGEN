@@ -86,3 +86,16 @@ test('pinch zoom responds to two independent pointers', () => {
   map.event('pointerup', { pointerId: 2 });
   map.event('pointerup', { pointerId: 1 });
 });
+
+
+test('cancelled touch and lost capture never leave the map dragging', () => {
+  const map = makeMap();
+  map.event('pointerdown', { pointerId: 1, clientX: 100 });
+  map.event('pointercancel', { pointerId: 1 });
+  map.event('pointermove', { pointerId: 1, clientX: 240 });
+  assert.equal(map.camera().x, 0);
+  map.event('pointerdown', { pointerId: 2, clientX: 100 });
+  map.event('lostpointercapture', { pointerId: 2 });
+  map.event('pointermove', { pointerId: 2, clientX: 240 });
+  assert.equal(map.camera().x, 0);
+});
