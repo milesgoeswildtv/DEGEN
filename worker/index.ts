@@ -210,11 +210,15 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 }
 
 async function handleBattleAction(request: Request, env: Env): Promise<Response> {
-  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string }>(request);
+  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount?: number }>(request);
   if (!input.playerId || !input.permitId || !input.abilityId) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
   }
 
+  // Optional until compatible clients have deployed; legacy clients remain supported.
+  if (input.expectedTurnCount !== undefined && (!Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0)) {
+    return fail(request, env, 'expectedTurnCount must be a nonnegative safe integer.', 400);
+  }
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === input.abilityId);
   if (!ability) return fail(request, env, 'Unknown ability.', 400);
 
@@ -227,13 +231,22 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
 
   if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
-  if (permit.battle_status !== 'active') return fail(request, env, `Battle is already ${permit.battle_status}.`, 409);
   if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
   }
-  if (!canUseAbility(permit.player_mana, ability)) {
-    return fail(request, env, 'Not enough Mana for that ability.', 409);
+  const battleState = (row: BattlePermitStateRow) => ({
+    permitId: input.permitId,
+    status: row.battle_status,
+    playerHp: row.player_hp!, playerMana: row.player_mana!, enemyHp: row.enemy_hp!,
+    turnCount: row.turn_count,
+  });
+  const conflict = (message: string, row: BattlePermitStateRow) =>
+    json(request, env, { error: message, battleState: battleState(row) }, 409);
+  if (permit.battle_status !== 'active') return conflict(`Battle is already ${permit.battle_status}.`, permit);
+  if (input.expectedTurnCount !== undefined && permit.turn_count !== input.expectedTurnCount) {
+    return conflict('Stale battle turn.', permit);
   }
+  if (!canUseAbility(permit.player_mana, ability)) return conflict('Not enough Mana for that ability.', permit);
 
   const turn = resolveCombatTurn({
     playerHp: permit.player_hp,
@@ -250,10 +263,19 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
       AND datetime(expires_at) > CURRENT_TIMESTAMP AND turn_count = ?
     RETURNING turn_count`)
-    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
+    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, input.expectedTurnCount ?? permit.turn_count)
     .first<{ turn_count: number }>();
 
-  if (!updated) return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
+  if (!updated) {
+    const latest = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana,
+        enemy_hp, battle_status, turn_count FROM battle_permits
+      WHERE id = ? AND player_id = ? AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP`)
+      .bind(input.permitId, input.playerId).first<BattlePermitStateRow>();
+    if (latest && latest.player_hp !== null && latest.player_mana !== null && latest.enemy_hp !== null) {
+      return conflict('Battle state changed; retry from the latest authoritative state.', latest);
+    }
+    return fail(request, env, 'Battle state changed; permit is no longer active.', 409);
+  }
 
   if (status === 'defeat') {
     const character = await env.DB.prepare(`SELECT level FROM characters WHERE player_id = ?`)
