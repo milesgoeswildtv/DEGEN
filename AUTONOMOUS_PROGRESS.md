@@ -85,3 +85,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL reconstructed-source SQLite/VM QA passed 22/22 cases, including 64 concurrent same-turn requests, 100 sequential retries, zero-Mana free ability, terminal recovery, invalid expected counts, and legacy clients. An initial local test-fixture adapter error was corrected; not a production failure.
 - `npm test`, `npm run build`, `npm run check:worker`, and full CI on this exact branch head remain REQUIRED. CI trigger and PR creation were each rejected twice. No production deploy, migration, or D1 write.
 - Mana/reward authority remain merged on main; atomic defeat reliability is a separate unmerged branch. Best next task: reviewed PR and full CI/local Wrangler, then client-first deployment and later mandatory Worker enforcement.
+
+### Extended Worker/D1 integration coverage — 2026-10-08
+- Additional PUSHED test commits cover full/reduced Underpass reward tiers, level-up and duplicate completion receipts, and concurrent killing-blow/completion races in `tests/worker-d1-turn-replay.test.ts`. Real Wrangler/D1 execution remains PENDING.
+- LOCAL reconstructed-source QA: 22/22 Worker/Mana, 16/16 client/compatibility, 16/16 replay stress passed, plus isolated TypeScript validation. Removing the turn precondition intentionally failed the replay regression; restoring it passed. These are not full-repository CI.
+- Branch remains PUSHED only, without PR/merge/deployment. Legacy requests still permit sequential replay until mandatory enforcement follows the compatible client rollout. No schema, migration, config, or remote D1 changes.
+- Next: PR, full CI with actual local Wrangler/D1, build and Worker dry-run, review integration with atomic-defeat branch, client-first deployment, then mandatory server enforcement.
