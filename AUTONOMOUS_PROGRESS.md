@@ -82,3 +82,14 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - **QA evidence:** PR #7 and #8 full GitHub CI success as cited. City new head awaits full CI and running-app/mobile visual QA; local fixture evidence from earlier handoff is not live proof. Container cannot clone GitHub (DNS unavailable); GitHub Actions is the actual full-repo validation.
 - **Miles blockers:** No new design decisions needed. Merge/deployment remains a review gate; do not represent draft PRs as live.
 - **One best next task:** Inspect fresh PR #6 CI, fix any failing city regression, and verify its actual mobile navigation/interaction before review/merge. After that, review PR #7 and #8 for safe merge/deployment sequencing.
+
+
+### Follow-up QA and branch handoff — 2026-10-08
+- Main remains `33e7477961d2a6ab7b79bf52d78a93901e19f658`; no direct main writes, merges, or production Worker/D1 deployments.
+- PR #6 city head `98cba204a3b3b34f7ea7e699cd015823d751a138`: CI `37786640200` SUCCESS, 36/36 Node tests, isolated Worker/D1 harness, Vite build, Worker dry-run; Cloudflare Pages preview deployed successfully. Mobile Safari/Telegram and actual running-app interaction are still **not** verified; the city remains scaffold art.
+- PR #7 CORS head `8c56f56b56e47d81a510d45fe8b1df925b1f5163`: 6 CORS config/real Worker OPTIONS tests, CI `37786864015` SUCCESS, 24/24 Node tests, Worker/D1 harness, build, Worker dry-run. Production Pages origin exact-match; no wildcard or preview origins. Draft/unmerged.
+- PR #8 housing head before this follow-up `c08d20de958b591c6826a68253f64cf20e288bba`: CI `37786727353` SUCCESS, 27/27 Node tests, Worker/D1 harness, build, Worker dry-run. Draft/unmerged.
+- **PUSHED BRANCH ONLY (no PR):** `automation/degen/battle-action-integration-v01` commit `90256385bafbb97d6c2ca14230f9ec57ce648723`, adds `tests/worker-battle-action.test.ts` with 12 direct Worker/SQLite authority cases for Mana, permits, concurrent CAS, victory/defeat, and event closure. PR creation was rejected twice; no full CI exists for this new branch. Preserve it and retry normal PR delivery later, without creating a duplicate branch.
+- GitHub PR-body updates and ready-for-review mutations were rejected; existing draft PR metadata may lag verified code. No repeated write attempts should bypass these safety restrictions.
+- Mana foundation and reward idempotency remain merged on main. D1 schema and tracked migrations 0002–0005 unchanged; deploy ordering schema → migrations → Worker verified in workflow.
+- Best next task: deliver the battle-action test branch through a reviewed PR when mutation permission allows, then obtain CI; separately perform real mobile/Telegram QA of PR #6 before accepting city visuals or merging.
