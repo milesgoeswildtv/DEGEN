@@ -15,6 +15,7 @@ export class AppController {
   private route: RouteKey = 'map';
   private selectedDistrict = 'Central';
   private cityCamera?: CityCamera;
+  private releaseCityViewport?: () => void;
   private selectedLocationId = 'downtown';
   private selectedFurniture?: string;
   private battleGame?: Phaser.Game;
@@ -49,6 +50,8 @@ export class AppController {
   }
 
   private render(): void {
+    this.releaseCityViewport?.();
+    this.releaseCityViewport = undefined;
     const player = this.store.snapshot;
 
     switch (this.route) {
@@ -74,7 +77,7 @@ export class AppController {
     }
 
     this.bindCommonNavigation();
-    if (this.route === 'map') bindCityViewport(this.root, this.cityCamera, (next) => { this.cityCamera = next; });
+    if (this.route === 'map') this.releaseCityViewport = bindCityViewport(this.root, this.cityCamera, (next) => { this.cityCamera = next; });
     if (this.route === 'home') this.bindHousing();
     if (this.route === 'underpass') this.bindUnderpass();
     if (this.route === 'battle') this.mountBattle();

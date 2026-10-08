@@ -99,3 +99,71 @@ test('cancelled touch and lost capture never leave the map dragging', () => {
   map.event('pointermove', { pointerId: 2, clientX: 240 });
   assert.equal(map.camera().x, 0);
 });
+
+test('viewport resize keeps current zoom and clamps camera to new dimensions', () => {
+  const original = globalThis.ResizeObserver;
+  let observer: { fire(): void; disconnect(): void; disconnected: boolean } | undefined;
+  class FakeObserver {
+    disconnected = false;
+    private callback: () => void;
+    constructor(callback: () => void) { this.callback = callback; observer = this; }
+    observe(_element: unknown) {}
+    disconnect() { this.disconnected = true; }
+    fire() { if (!this.disconnected) this.callback(); }
+  }
+  try {
+    globalThis.ResizeObserver = FakeObserver as unknown as typeof ResizeObserver;
+    const viewport = { clientWidth: 320, clientHeight: 365, dataset: {}, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+    const world = { style: {} as Record<string, string> };
+    const pin = { style: {} as Record<string, string> };
+    const root = {
+      querySelector: (s: string) => s === '[data-city-viewport]' ? viewport : s === '[data-city-world]' ? world : null,
+      querySelectorAll: (s: string) => s === '.city-iso-pin' ? [pin] : [],
+    };
+    const history: Array<{ x: number; y: number; scale: number }> = [];
+    const release = bindCityViewport(root as unknown as HTMLElement, { x: 300, y: 200, scale: 1 }, (camera) => history.push(camera));
+    assert.equal(history.at(-1)?.y, 127.5);
+    viewport.clientWidth = 900;
+    viewport.clientHeight = 650;
+    observer!.fire();
+    assert.equal(history.at(-1)?.x, 50);
+    assert.equal(history.at(-1)?.y, 0);
+    assert.equal(history.at(-1)?.scale, 1);
+    assert.equal(pin.style.transform, 'translate(-50%, -50%) scale(1)');
+    release();
+    assert.equal(observer?.disconnected, true);
+    const count = history.length;
+    observer!.fire();
+    assert.equal(history.length, count, 'disposed observer must not update stale map');
+  } finally {
+    globalThis.ResizeObserver = original;
+  }
+});
+
+test('map reset uses the current viewport width after rotation', () => {
+  const original = globalThis.ResizeObserver;
+  try {
+    globalThis.ResizeObserver = undefined as unknown as typeof ResizeObserver;
+    const viewport = { clientWidth: 320, clientHeight: 365, dataset: {}, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+    const world = { style: {} };
+    let reset = () => {};
+    const root = {
+      querySelector: (s: string) => s === '[data-city-viewport]' ? viewport : s === '[data-city-world]' ? world :
+        s === '[data-city-reset]' ? { addEventListener: (_type: string, fn: () => void) => { reset = fn; } } : null,
+      querySelectorAll: () => [],
+    };
+    let camera = { x: 0, y: 0, scale: 0 };
+    const release = bindCityViewport(root as unknown as HTMLElement, undefined, (next) => { camera = next; });
+    assert.equal(camera.scale, 0.8);
+    viewport.clientWidth = 900;
+    viewport.clientHeight = 600;
+    reset();
+    assert.equal(camera.scale, 1);
+    viewport.clientWidth = 320;
+    reset();
+    assert.equal(camera.scale, 0.8);
+    release();
+  } finally {
+    globalThis.ResizeObserver = original;
+  }
+});

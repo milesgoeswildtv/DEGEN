@@ -148,11 +148,27 @@ export const renderIsometricCity = (
 };
 
 /** District close-up reuses the same connected city geometry; no second world map. */
-export const renderIsometricDistrict = (district: string): string => {
+export const renderIsometricDistrict = (
+  district: string,
+  locations: readonly LocationDefinition[],
+  unlockedLocations: readonly string[],
+  underpassLabel: string,
+): string => {
   const anchor = anchors[district] ?? { x: 50, y: 50 };
-  return `<div class="district-iso-scene" role="img" aria-label="Isometric view of ${escapeHtml(district)} district">
-    <div class="district-iso-world" style="transform:translate(-${anchor.x}%,-${anchor.y}%)">
+  const pins = locations.filter((location) => location.district === district).map((location, index) => {
+    const accessible = unlockedLocations.includes(location.id);
+    const eventLabel = location.id === 'underpass' ? ` · ${escapeHtml(underpassLabel)}` : '';
+    const accessibleLabel = location.id === 'underpass' ? `, ${escapeHtml(underpassLabel)}` : '';
+    return `<button class="district-iso-pin" type="button" data-location="${escapeHtml(location.id)}"
+      style="--district-pin-x:${index % 2 ? 65 : 35}%;--district-pin-y:${index % 2 ? 73 : 30}%;"
+      ${accessible ? '' : 'disabled'} aria-label="${escapeHtml(location.name)}${accessibleLabel}${accessible ? '' : ', locked'}">
+      <strong>${escapeHtml(location.name)}</strong><small>${accessible ? 'ENTER' : 'LOCKED'}${eventLabel}</small>
+    </button>`;
+  }).join('');
+  return `<div class="district-iso-scene" role="group" aria-label="Isometric view of ${escapeHtml(district)} district destinations">
+    <div class="district-iso-world" aria-hidden="true" style="transform:translate(-${anchor.x}%,-${anchor.y}%)">
       ${cityArt}
     </div>
+    <div class="district-iso-hotspots">${pins}</div>
   </div>`;
 };

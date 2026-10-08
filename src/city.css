@@ -127,3 +127,19 @@
   .city-iso-pin strong { font-size: 17px; }
   .city-iso-pin small { font-size: 9px; }
 }
+
+/* Tappable destinations overlay the existing isometric district close-up. */
+.district-iso-hotspots { position: absolute; inset: 0; pointer-events: none; }
+.district-iso-pin {
+  position: absolute; left: var(--district-pin-x); top: var(--district-pin-y);
+  transform: translate(-50%, -50%); pointer-events: auto;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  min-width: 110px; max-width: calc(50% - 12px); min-height: 48px;
+  padding: 10px 12px; border: 1px solid #d0a67a; border-radius: 10px;
+  background: #1d1b22ed; color: #f4ece3; text-align: left; cursor: pointer;
+  box-shadow: 0 6px 18px #0009;
+}
+.district-iso-pin strong { font-size: 15px; line-height: 1.2; }
+.district-iso-pin small { font: 700 10px/1.4 ui-monospace, monospace; color: #e0b98d; }
+.district-iso-pin:focus-visible { outline: 3px solid #ffe0ad; outline-offset: 2px; }
+.district-iso-pin:disabled { opacity: .5; cursor: not-allowed; }

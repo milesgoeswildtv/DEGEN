@@ -64,6 +64,10 @@ test('district view exposes the existing Central destinations and Underpass live
   });
   assert.match(html, /data-location="downtown"/);
   assert.match(html, /district-iso-scene/);
+  assert.match(html, /role="group"/);
+  assert.match(html, /class="district-iso-pin"[^>]*data-location="downtown"/);
+  assert.match(html, /class="district-iso-pin"[^>]*data-location="underpass"/);
+  assert.match(html, /aria-label="The Underpass, SEALED"/);
   assert.match(html, /city-iso-art/);
   assert.match(html, /data-location="underpass"/);
   assert.match(html, /SEALED/);
@@ -88,6 +92,8 @@ test('locked destinations are disabled and cannot expose their location scene', 
   const central = views.districtView(restricted, 'Central');
   assert.match(central, /data-location="downtown" disabled/);
   assert.match(central, /data-location="underpass" disabled/);
+  assert.match(central, /class="district-iso-pin"[^>]*data-location="downtown"[^>]*disabled/);
+  assert.match(central, /class="district-iso-pin"[^>]*data-location="underpass"[^>]*disabled/);
   const map = views.mapView(restricted);
   assert.match(map, /data-district="Central"[^>]*disabled/);
   assert.doesNotMatch(views.locationView(restricted, 'downtown'), /ACTIVITIES IN DEVELOPMENT/);

@@ -91,7 +91,7 @@ export const districtView = (player: PlayerState, district: string, underpass?: 
     <section class="district-hero ${district === 'Central' ? 'central' : 'residential'}"><span class="eyebrow">CITY DISTRICT</span><h1>${escapeHtml(district)}</h1>
       <p>Select a location to enter.</p>
     </section>
-    ${renderIsometricDistrict(district)}
+    ${renderIsometricDistrict(district, locations, player.unlockedLocations, status.label)}
     ${worldConnectionNotice(backendOffline)}
     <section class="district-locations" aria-label="${escapeHtml(district)} locations">${cards}</section>
   `);

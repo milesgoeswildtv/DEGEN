@@ -12,12 +12,12 @@ export const constrainCityCamera = (camera: CityCamera, width: number, height: n
 };
 
 // Purely presentational; authoritative game state remains in the Worker.
-export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undefined, onChange: (camera: CityCamera) => void): void => {
+export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undefined, onChange: (camera: CityCamera) => void): () => void => {
   const viewport = root.querySelector<HTMLElement>('[data-city-viewport]');
   const world = root.querySelector<HTMLElement>('[data-city-world]');
-  if (!viewport || !world) return;
-  const initialScale = viewport.clientWidth < 700 ? 0.8 : 1;
-  let camera = previous ?? { x: 0, y: 0, scale: initialScale };
+  if (!viewport || !world) return () => {};
+  const defaultScale = () => viewport.clientWidth < 700 ? 0.8 : 1;
+  let camera = previous ?? { x: 0, y: 0, scale: defaultScale() };
   const pointers = new Map<number, { x: number; y: number }>();
   let lastPinch = 0;
   let lastCenter = { x: 0, y: 0 };
@@ -42,7 +42,7 @@ export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undef
     camera.scale = next;
     render();
   };
-  const reset = () => { camera = { x: 0, y: 0, scale: initialScale }; render(); };
+  const reset = () => { camera = { x: 0, y: 0, scale: defaultScale() }; render(); };
   const pinch = () => {
     const [a, b] = [...pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
     const rect = viewport.getBoundingClientRect();
@@ -96,5 +96,8 @@ export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undef
     button.addEventListener('click', () => zoom(button.dataset.cityZoom === 'in' ? 1.2 : 1 / 1.2));
   });
   root.querySelector<HTMLButtonElement>('[data-city-reset]')?.addEventListener('click', reset);
+  const resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => render());
+  resizeObserver?.observe(viewport);
   render();
+  return () => { resizeObserver?.disconnect(); pointers.clear(); };
 };
