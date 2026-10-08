@@ -108,3 +108,10 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana and reward authority MERGED on main; atomic defeat separate green branch. No monster Mana/reversion, no remote D1/deploy, tracked migrations unchanged.
 - Blockers: PR creation safety rejection; unverified platform identity. No Miles design blocker.
 - Best next task: PR review, reconcile atomic/client Worker changes, deploy client first, then require turn preconditions.
+
+### Final local D1 battle-start verification — 2026-10-08
+- Main: 33e7477961d2a6ab7b79bf52d78a93901e19f658; branch head 6d6857971c4b3a84f8a20f82549a716ad42cac90 before this note. PUSHED, no PR/merge/live.
+- tests/worker-d1-turn-replay.mjs now verifies real Worker GET world event -> POST battle start -> server-initialized 12 Mana/120 HP/92 enemy HP -> Crack turn (8 Mana, 110 HP, 57 enemy HP), plus D1 persistence after Worker stop. Existing replay/reward cases remain.
+- CI 37860877938 SUCCESS: 45 tests, local Wrangler/D1 reward and battle integration, npm run build, npm run check:worker. No remote D1 or mobile proof.
+- Mana merged; no monster Mana/reversion. Reward authority merged; atomic defeat separate green branch. Migrations and D1 binding unchanged. PR creation and platform authentication remain blockers; no Miles design blocker.
+- Best next task: reviewed PR delivery, reconcile atomic/client Worker changes, deploy client before mandatory expected-turn enforcement.
