@@ -19,6 +19,7 @@ export class AppController {
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
   private battleActionPending = false;
+  private rewardResolution: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly root: HTMLElement,
@@ -29,6 +30,9 @@ export class AppController {
   async start(): Promise<void> {
     await this.refreshWorld();
     this.render();
+    if (this.api.enabled) {
+      for (const permitId of this.pendingRewardPermits()) void this.queueRewardCompletion(permitId);
+    }
     this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
   }
 
@@ -181,28 +185,82 @@ export class AppController {
     });
   }
 
+  private pendingRewardKey(): string {
+    return `degen.pending.reward-permits.v1:${this.store.snapshot.id}`;
+  }
+
+  // Persist only permit identifiers for retry. Rewards and progression stay Worker-owned.
+  private pendingRewardPermits(): string[] {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(this.pendingRewardKey()) ?? '[]');
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private rememberPendingReward(permitId: string): void {
+    try {
+      const ids = this.pendingRewardPermits();
+      if (!ids.includes(permitId)) localStorage.setItem(this.pendingRewardKey(), JSON.stringify([...ids, permitId]));
+    } catch (error) {
+      console.warn('Unable to persist pending battle reward retry.', error);
+    }
+  }
+
+  private forgetPendingReward(permitId: string): void {
+    try {
+      localStorage.setItem(this.pendingRewardKey(), JSON.stringify(
+        this.pendingRewardPermits().filter((id) => id !== permitId),
+      ));
+    } catch (error) {
+      console.warn('Unable to clear completed battle reward retry.', error);
+    }
+  }
+
+  private queueRewardCompletion(permitId: string): Promise<void> {
+    const playerId = this.store.snapshot.id;
+    // Serialize pending completions so an older response cannot replace a newer player snapshot.
+    this.rewardResolution = this.rewardResolution.then(async () => {
+      try {
+        const result = await this.api.completeUnderpass(playerId, permitId);
+        if (!result) throw new Error('Missing authoritative battle completion response.');
+        this.store.replaceFromServer(result.player);
+        this.underpassEvent = result.worldEvent;
+        this.forgetPendingReward(permitId);
+        if (this.battlePermit?.permitId === permitId) {
+          this.battlePermit = undefined;
+          if (this.route === 'battle') {
+            this.battleReturnTimer = window.setTimeout(() => this.navigate('underpass'), 1400);
+          }
+        } else if (this.route !== 'battle') {
+          this.render();
+        }
+      } catch (error) {
+        console.warn('Server reward verification failed; retaining permit for retry.', error);
+        window.setTimeout(() => void this.queueRewardCompletion(permitId), 15_000);
+      }
+    });
+    return this.rewardResolution;
+  }
+
   private async finishBattle(status: 'victory' | 'defeat'): Promise<void> {
     if (status === 'victory' && this.battlePermit) {
       if (this.api.enabled) {
-        try {
-          const result = await this.api.completeUnderpass(this.store.snapshot.id, this.battlePermit.permitId);
-          if (result) {
-            this.store.replaceFromServer(result.player);
-            this.underpassEvent = result.worldEvent;
-          }
-        } catch (error) {
-          console.warn('Server reward verification failed.', error);
-        }
-      } else {
-        const clearsBeforeThisFight = recordPreviewClear();
-        const previewReward = underpassRewardForClear(
-          clearsBeforeThisFight + 1,
-          this.underpassEvent?.fullRewardLimit,
-        );
-        this.store.applyReward(previewReward);
-        this.store.markBossDefeated(TUNNEL_MAW.id);
-        this.underpassEvent = getPreviewUnderpass();
+        const permitId = this.battlePermit.permitId;
+        this.rememberPendingReward(permitId);
+        await this.queueRewardCompletion(permitId);
+        return;
       }
+
+      const clearsBeforeThisFight = recordPreviewClear();
+      const previewReward = underpassRewardForClear(
+        clearsBeforeThisFight + 1,
+        this.underpassEvent?.fullRewardLimit,
+      );
+      this.store.applyReward(previewReward);
+      this.store.markBossDefeated(TUNNEL_MAW.id);
+      this.underpassEvent = getPreviewUnderpass();
     }
 
     this.battlePermit = undefined;
