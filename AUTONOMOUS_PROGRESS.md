@@ -152,3 +152,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Miles blocker: public economy requires verified Discord/Telegram authentication and request-level authorization; unrelated staged auth changes are not merged.
 - Next: verify CI at exact new head and review PR #9 before merging; keep public economy gated.
 - Status: planned GitHub object commit; not MERGED/LIVE.
+
+## 2026-10-09 — PR #9 deterministic CI fixture repair (feature branch)
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Existing draft PR #9 branch `automation/degen/battle-turn-client-v01`, previous head `fe3b8b939c2b243326870086366c2247ebd3577e`.
+- Scope: mandatory `expectedTurnCount` numeric type guard in `worker/index.ts`; update precondition and atomic-defeat test request helpers; update local Worker/D1 legacy-client expectations to 400. No combat balance, reward calculation, schema, deployment config, or runtime behavior change beyond explicit type guard.
+- Prior CI on `fe3b8b939c2b243326870086366c2247ebd3577e`: 33/55 Node tests passed; 22 failed due outdated test fixtures. New-head CI must verify `npm test`, local Worker/D1 concurrency/replay/defeat, `npm run build`, and `npm run check:worker`; no live/mobile proof.
+- Degen-only Mana: COMPLETE/MERGED on main; player-only, paid ability deducted once, free abilities usable at 0, no reversion. Reward receipt/idempotency: MERGED on main; PR #9 atomic defeat/earned-victory recovery unmerged.
+- D1: existing `wrangler.toml` binding; tracked migrations 0002–0005 applied before Worker deploy. No production D1 write or deployment.
+- Miles blocker: platform-authenticated account identity and request-level authorization required before public economy.
+- Best next task: inspect exact-head PR #9 CI, repair any remaining failures, then review PR diff and deploy compatibility in safe order; do not merge until green.
+- Status: this note accompanies proposed feature-branch repair; not merged/live.

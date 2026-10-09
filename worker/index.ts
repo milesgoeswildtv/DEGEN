@@ -216,7 +216,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   }
 
   // Every action must identify its observed turn to prevent replay.
-  if (!Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount! < 0) {
+  if (typeof input.expectedTurnCount !== 'number' || !Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0) {
     return fail(request, env, 'expectedTurnCount must be a nonnegative safe integer.', 400);
   }
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === input.abilityId);

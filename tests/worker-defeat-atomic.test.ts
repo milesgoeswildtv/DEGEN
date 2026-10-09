@@ -61,7 +61,7 @@ function setup(hp = 1) {
     },
   };
   const request = (abilityId = 'slash') => new Request('https://example.com/api/battle/action', {
-    method:'POST', body:JSON.stringify({playerId:'p1',permitId:'permit',abilityId}),
+    method:'POST', body:JSON.stringify({playerId:'p1',permitId:'permit',abilityId,expectedTurnCount:0}),
   });
   const act = (abilityId = 'slash') => action(request(abilityId), {DB:adapter});
   const state = () => db.prepare("SELECT battle_status,player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='permit'").get();

@@ -72,7 +72,7 @@ function setup(overrides: { expiresAt?: string; playerHp?: number; playerMana?: 
       }
     },
   };
-  const act = async (abilityId = 'slash', permitId = 'permit', playerId = 'p1', expectedTurnCount?: unknown) => {
+  const act = async (abilityId = 'slash', permitId = 'permit', playerId = 'p1', expectedTurnCount: unknown = 0) => {
     const request = new Request('https://degen-api.example/api/battle/action', {
       method: 'POST', body: JSON.stringify({ playerId, permitId, abilityId, ...(expectedTurnCount === undefined ? {} : { expectedTurnCount }) }),
     });

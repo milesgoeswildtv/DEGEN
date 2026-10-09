@@ -175,9 +175,9 @@ test('real local Worker/D1 guards expected turns and preserves Mana and rewards'
     assert.equal(expired.data.battleState, undefined);
     assert.equal((await act('missing', 'crack', 0)).status, 409);
 
-    // Compatibility during rollout; mandatory Worker enforcement is a later change.
-    assert.equal((await act('legacy', 'slash')).status, 200);
-    assert.equal((await act('legacy', 'slash')).status, 200);
+    // Legacy clients must supply a turn precondition before taking an action.
+    assert.equal((await act('legacy', 'slash')).status, 400);
+    assert.equal((await act('legacy', 'slash')).status, 400);
   } finally {
     if (worker && worker.exitCode === null) {
       worker.kill('SIGTERM');
