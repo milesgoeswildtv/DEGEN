@@ -171,3 +171,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1 schema/migrations remain tracked; no remote D1 operations or deployments in this run.
 - Miles blocker: public economic routes still need authenticated platform sessions; client-first deployment required for mandatory turn preconditions.
 - Best next task: inspect new-head CI, fix any real regression on same branch, then review PR #9 before merge.
+
+## 2026-10-09 — Green CI / client-first dependency
+- Main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #9 `b5b5526c9f0f245cec04524e551351ccf7d370c8` PUSHED/draft, unmerged.
+- Changed: two local Worker/D1 fixtures now pass `expectedTurnCount: 0`; no gameplay, DB, or config changes.
+- CI runs 37967744093 and 37967739698 SUCCESS: 55 Node tests, Worker/D1 reward concurrency, turn replay, atomic defeat, web build, Worker check. No mobile/live proof.
+- Mana COMPLETE/MERGED on main; reward receipt/idempotency MERGED; atomic defeat/earned victory PR-only.
+- D1 binding/config unchanged; tracked migrations applied before Worker; no production D1 operations.
+- Client-first branch `automation/degen/battle-client-first-v01` PUSHED at `cf9c99763380f1f06b33a9b9ec68f04d26d4140c`, PR creation blocked twice. Client must deploy before mandatory Worker enforcement.
+- Miles blocker: verified Discord/Telegram sessions and economic-route authorization before public play.
+- Next: deliver client-first PR, verify browser requests/CI, then review PR #9 deployment order.
