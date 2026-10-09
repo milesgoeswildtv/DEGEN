@@ -69,3 +69,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+## 2026-10-09 — Client-first battle compatibility (PUSHED, no PR)
+- Authoritative main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/battle-client-first-v01` created from exact main. Source client changes extracted from combat PR #9, no competing rules.
+- Changed `src/app/AppController.ts`, `src/app/api.ts`, `src/game/combat/engine.ts`, `tests/battle-client-recovery.test.ts`: send `expectedTurnCount`, recover stale Worker state, avoid duplicate client Mana damage and rewards.
+- Same client files pass in PR #9 CI at `b5b5526c9f0f245cec04524e551351ccf7d370c8` (runs 37967744093/37967739698). This branch has NO independent CI because PR creation was rejected twice and push CI only targets main/PR.
+- Mana COMPLETE/MERGED on main; reward receipt/idempotency MERGED; atomic defeat and earned-victory recovery remain PR #9 only.
+- No D1/schema/config changes. Deployment migrations tracked before Worker; no production D1 or deployment operation.
+- Miles blocker: authenticated Discord/Telegram identity and economic-route authorization before public gameplay. Client-first release must precede mandatory Worker turn enforcement.
+- Best next task: open client-first PR when permitted, verify CI and deployed client behavior, then review/merge PR #9 only after compatible clients are live.
