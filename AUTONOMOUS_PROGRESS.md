@@ -75,9 +75,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
 - PUSHED branch: `automation/degen/telegram-init-data-verifier-v01`, commit `c6adc8a97a052ac123a999bab2d4b64a1f31f87e`; no PR, merge or deploy.
 - Added isolated `worker/auth/telegramInitData.ts` (57 lines). No Worker route invokes it, no secrets/config changed, no client authentication enabled.
-- Local staged-equivalent verifier tests: 18/18 passed (Node 22.16.0); new tests are NOT pushed; branch CI, full `npm test`, `npm run build`, `npm run check:worker` unverified. GitHub PR creation and test writes rejected.
+- Exact pushed verifier blob `3f4ea0fa8b37438c1050030d4eea80a3f878c6f7` was byte-matched locally; 22/22 verifier tests passed, plus 70/70 combined LOCAL tests across staged authentication/HTTP/SQLite models (includes negative controls proving unresolved vulnerabilities). Strict TS 5.8.3 passed. New tests are NOT pushed; branch CI, full `npm test`, `npm run build`, `npm run check:worker`, real Wrangler/D1 and mobile remain unverified. GitHub PR creation and test writes rejected after independent retries.
 - Mana foundation: COMPLETE/MERGED on main, no monster Mana or forced reversion.
 - Battle/rewards: server-owned state/receipts merged; atomic defeat/turn recovery/earned-victory settlement remain draft PR #9, unmerged.
 - D1: `wrangler.toml` binding and tracked migrations unchanged; schema+migrations precede Worker deployment. No production D1 mutation.
 - Critical blocker: Worker still trusts client-supplied player IDs; signed sessions and server-owned verified platform provisioning are absent.
-- Next: add verifier regression tests to branch, run CI and open reviewed PR, then integrate verified platform sessions.
+- Additional staged-only finding: 15-minute bearer sessions can expire while a 20-minute battle permit is still valid and the original Telegram initData is older than 10 minutes. Design safe renewal/re-authentication before public rollout.\n- Next: add verifier regression tests to branch, run CI and open reviewed PR, then integrate verified platform sessions and fail-closed client startup.
