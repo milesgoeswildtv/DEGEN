@@ -37,18 +37,39 @@ function setup(overrides: { expiresAt?: string; playerHp?: number; playerMana?: 
     prepare(sql: string) {
       return { bind(...params: unknown[]) {
         const statement = db.prepare(sql);
+        const applyRace = () => {
+          if (sql.startsWith('UPDATE battle_permits') && beforeCas) {
+            const hook = beforeCas;
+            beforeCas = undefined;
+            hook();
+          }
+        };
         return {
           first: () => {
-            if (sql.startsWith('UPDATE battle_permits') && beforeCas) {
-              const hook = beforeCas;
-              beforeCas = undefined;
-              hook();
-            }
+            applyRace();
             return statement.get(...params);
           },
           run: () => statement.run(...params),
+          // D1.batch returns per-statement rows and rolls back all writes on error.
+          execute: () => {
+            applyRace();
+            if (/\bRETURNING\b/i.test(sql)) return { results: statement.all(...params) };
+            statement.run(...params);
+            return { results: [] };
+          },
         };
       } };
+    },
+    batch(statements: Array<{ execute: () => { results: unknown[] } }>) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const results = statements.map((statement) => statement.execute());
+        db.exec('COMMIT');
+        return results;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
     },
   };
   const act = async (abilityId = 'slash', permitId = 'permit', playerId = 'p1', expectedTurnCount?: unknown) => {
