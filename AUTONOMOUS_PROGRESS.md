@@ -129,3 +129,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana COMPLETE/MERGED on main; no monster Mana or forced reversion. Reward idempotency/recovery MERGED; PR #9 atomic defeat/turn enforcement draft and unmerged.
 - D1 migrations 0002–0005 tracked and deploy workflow applies schema/migrations before Worker. No D1/config changes and no remote deployment.
 - Public economy blocker: verified platform auth/authorization. Next task: obtain client-first PR and independent CI; verify frontend-first deployment before PR #9 Worker enforcement.
+
+## 2026-10-09 — Underpass account-switch permit guard (PUSH TARGET)
+- Main authority: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Feature branch `automation/degen/battle-client-first-v01` at parent `776dca22cadbf62d2be7d5c69c21ac64c6e64a24`; draft PR #10 now opened, full CI pending at time of edit.
+- Fix: capture issuing player before Underpass request, install permit only after checking route, navigation generation, player identity, and valid permit ID. Legally issued permits remain valid across event closure. No gameplay/economy changes.
+- Changed `src/app/AppController.ts`, `tests/world-sync-authority.test.ts`, this log. Mana COMPLETE/MERGED; reward idempotency MERGED; PR #9 strict turn validation unmerged. No D1/config/deployment edits.
+- Required follow-up: full PR CI, Worker/D1, mobile QA, and platform-authenticated sessions before public economy. Client-first frontend must be live before strict Worker PR #9.

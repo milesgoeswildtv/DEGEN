@@ -279,3 +279,22 @@ test('returning to Underpass during pending request does not revive old navigati
   assert.equal(app.battlePermit, undefined);
   assert.equal(app.underpassEntryPending, false);
 });
+
+test('account switch during permit issuance cannot enter another account battle', async () => {
+  let resolveStart;
+  const store = { snapshot: { id: 'account-a' } };
+  const app = new AppController({}, store, {
+    enabled: true,
+    startUnderpass: () => new Promise(resolve => { resolveStart = resolve; }),
+  });
+  app.route = 'underpass';
+  app.underpassEvent = serverOpen;
+  app.render = () => {};
+  const pending = app.enterUnderpass();
+  store.snapshot.id = 'account-b';
+  resolveStart({ permitId: 'issued-to-a', cycleId: serverOpen.cycleId });
+  await pending;
+  assert.equal(app.route, 'underpass');
+  assert.equal(app.battlePermit, undefined);
+  assert.equal(app.underpassEntryPending, false);
+});

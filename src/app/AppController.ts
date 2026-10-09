@@ -116,22 +116,21 @@ export class AppController {
     const event = this.underpassEvent;
     if (this.route !== 'underpass' || !event || event.phase !== 'open' || this.underpassEntryPending) return;
     const entryGeneration = this.navigationGeneration;
+    const playerId = this.store.snapshot.id;
     this.underpassEntryPending = true;
 
     try {
-      this.battlePermit = this.api.enabled
-        ? await this.api.startUnderpass(this.store.snapshot.id, event.cycleId)
+      const permit = this.api.enabled
+        ? await this.api.startUnderpass(playerId, event.cycleId)
         : createPreviewPermit(event.cycleId);
 
-      if (!this.battlePermit || typeof this.battlePermit.permitId !== 'string' || !this.battlePermit.permitId.trim()) {
-        this.battlePermit = undefined;
+      if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()) {
         throw new Error('No valid battle permit returned.');
       }
-      // A permit response must not redirect after the user navigated elsewhere.
-      if (this.route !== 'underpass' || this.navigationGeneration !== entryGeneration) {
-        this.battlePermit = undefined;
-        return;
-      }
+      // A legal permit survives event closure, but cannot be used under another account.
+      if (this.route !== 'underpass' || this.navigationGeneration !== entryGeneration
+        || this.store.snapshot.id !== playerId) return;
+      this.battlePermit = permit;
       this.navigate('battle');
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
