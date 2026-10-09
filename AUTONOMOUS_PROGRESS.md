@@ -82,3 +82,6 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Critical blocker: Worker still trusts client-supplied player IDs; signed sessions and server-owned verified platform provisioning are absent.
 - Additional staged-only finding: 15-minute bearer sessions can expire while a 20-minute battle permit is still valid and the original Telegram initData is older than 10 minutes. Design safe renewal/re-authentication before public rollout.
 - Next: add verifier regression tests to branch, run CI and open reviewed PR, then integrate verified platform sessions and fail-closed client startup.
+
+## 2026-10-09 verifier tests
+Main 33e7477961d2a6ab7b79bf52d78a93901e19f658. Feature branch automation/degen/telegram-init-data-verifier-v01 at 3f6c6d9e2d8fea0d5590b8121e5e152de0df1c26 (PUSHED, not merged/live). Added four Telegram verification tests; CI on latest head pending. Existing 22 local verifier tests passed. Mana merged; rewards server-owned; combat PR #9 pending. No D1 migration or remote DB writes; tracked migrations precede Worker deploy. Blocker: platform authentication and session-bound economic authorization. Next: verify CI and deliver reviewed PR.
