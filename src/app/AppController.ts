@@ -17,6 +17,7 @@ export class AppController {
   private battleReturnTimer?: number;
   private worldRefreshTimer?: number;
   private underpassEvent?: WorldEventSnapshot;
+  private worldRefreshGeneration = 0;
   private battlePermit?: BattlePermit;
   private battleActionPending = false;
   private rewardResolution: Promise<void> = Promise.resolve();
@@ -273,11 +274,15 @@ export class AppController {
   }
 
   private async refreshWorld(rerender = false): Promise<void> {
+    const generation = ++this.worldRefreshGeneration;
     try {
-      this.underpassEvent = this.api.enabled
+      const event = this.api.enabled
         ? await this.api.getUnderpass(this.store.snapshot.id)
         : getPreviewUnderpass();
+      if (generation !== this.worldRefreshGeneration) return;
+      this.underpassEvent = event;
     } catch (error) {
+      if (generation !== this.worldRefreshGeneration) return;
       console.warn('World-event sync failed; keeping server-backed event unavailable.', error);
       this.underpassEvent = undefined;
     }

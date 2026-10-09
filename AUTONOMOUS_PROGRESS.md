@@ -89,3 +89,8 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Degen Mana remains COMPLETE / MERGED on main; no monster Mana or reversion. Reward idempotency/recoverability is merged on main. PR #9 is green but draft/unmerged, and must not deploy Worker turn enforcement ahead of the compatible frontend.
 - D1/migration: no schema/config edits in this slice; tracked migrations still precede Worker deployment. Production D1 untouched. Authentication/authorization is a public-economy blocker.
 - Best next task: obtain client-first PR/CI, verify the new test against full source and local Worker/D1, then stage frontend-first rollout before PR #9 Worker enforcement.
+
+### Follow-up: overlapping world-event request ordering (PUSHED / no PR)
+- Source: `src/app/AppController.ts` now ignores older success/failure responses after a newer world-event refresh begins, preserving the latest server result or fail-closed state. No new persistent state, D1 schema, gameplay rules, or economics.
+- Added two deferred-request ordering regressions to `tests/world-sync-authority.test.ts`. Narrow local controller fixture: 4/6 passed before generation guard; 6/6 passed afterward. Full repository/Worker CI not independently run on client-first branch.
+- Main remains `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #9 green/draft/unmerged; frontend-first deployment prerequisite unchanged. Production D1 untouched.

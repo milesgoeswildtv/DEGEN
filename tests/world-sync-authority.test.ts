@@ -57,3 +57,28 @@ test('successful Worker sync uses authoritative event', async () => {
   assert.equal(app.underpassEvent, serverOpen);
   assert.equal(previewCalls, 0);
 });
+
+test('late older server success cannot overwrite newer sealed state', async () => {
+  const requests = [];
+  const app = make({ enabled: true, getUnderpass: () => new Promise((resolve, reject) => requests.push({ resolve, reject })) });
+  const old = app.refreshWorld();
+  const current = app.refreshWorld();
+  const sealed = { ...serverOpen, phase: 'sealed', cycleId: 'new-cycle' };
+  requests[1].resolve(sealed);
+  await current;
+  requests[0].resolve(serverOpen);
+  await old;
+  assert.equal(app.underpassEvent, sealed);
+});
+
+test('late older request failure cannot erase newer server state', async () => {
+  const requests = [];
+  const app = make({ enabled: true, getUnderpass: () => new Promise((resolve, reject) => requests.push({ resolve, reject })) });
+  const old = app.refreshWorld();
+  const current = app.refreshWorld();
+  requests[1].resolve(serverOpen);
+  await current;
+  requests[0].reject(Error('late failure'));
+  await old;
+  assert.equal(app.underpassEvent, serverOpen);
+});
