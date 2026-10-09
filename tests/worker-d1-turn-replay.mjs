@@ -73,6 +73,9 @@ try {
   seed('zero-mana', 120, 0, 92);
   seed('victory', 5, 4, 20);
   seed('defeat', 1, 0, 92);
+  seed('race-complete', 5, 4, 20);
+  seed('expired', 120, 12, 92);
+  sql("UPDATE battle_permits SET expires_at=datetime('now','-2 minutes') WHERE id='expired'");
   await start();
 
   // Exercise real Worker battle entry; the server initializes Degen Mana and HP.
@@ -136,6 +139,33 @@ try {
   assert.equal(lossRetry.status, 409);
   assert.equal(lossRetry.data.battleState.status, 'defeat');
 
+  // Completion racing the killing blow may initially see an active battle.
+  // Once the Worker resolves victory, retry must settle exactly one reward.
+  const [raceAction, raceCompletion] = await Promise.all([
+    act('race-complete', 'crack', 0),
+    complete('race-complete'),
+  ]);
+  assert.equal(raceAction.status, 200);
+  assert.equal(raceAction.data.status, 'victory');
+  assert.ok([200, 409].includes(raceCompletion.status));
+  let raceReward;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const response = await complete('race-complete');
+    if (response.status === 200) { raceReward = response; break; }
+    assert.equal(response.status, 409);
+    await sleep(40);
+  }
+  assert.ok(raceReward, 'A server-resolved concurrent victory must remain claimable');
+  const raceReplay = await complete('race-complete');
+  assert.equal(raceReplay.status, 200);
+  assert.deepEqual(raceReplay.data.reward, raceReward.data.reward);
+  assert.equal(raceReplay.data.player.xp, raceReward.data.player.xp);
+  assert.equal(raceReplay.data.player.currency, raceReward.data.player.currency);
+
+  // Expired active permits are neither actionable nor eligible for completion.
+  assert.equal((await act('expired', 'slash', 0)).status, 409);
+  assert.equal((await complete('expired')).status, 409);
+
   const reward = await complete('victory');
   assert.equal(reward.status, 200);
   const duplicate = await complete('victory');
@@ -159,7 +189,12 @@ try {
     [{battle_status:'victory',turn_count:1,player_mana:0,reward_state:'awarded'}]);
   assert.deepEqual(sql("SELECT battle_status,turn_count,player_mana FROM battle_permits WHERE id='defeat'"),
     [{battle_status:'defeat',turn_count:1,player_mana:0}]);
-  assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='victory'").length,1);
+  assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='victory'").length,2);
+  assert.equal(sql("SELECT id FROM battle_history WHERE id='race-complete:victory'").length,1);
+  assert.deepEqual(sql("SELECT battle_status,reward_state FROM battle_permits WHERE id='race-complete'"),
+    [{battle_status:'victory',reward_state:'awarded'}]);
+  assert.deepEqual(sql("SELECT battle_status,turn_count FROM battle_permits WHERE id='expired'"),
+    [{battle_status:'active',turn_count:0}]);
   assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='defeat'").length,1);
   assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='" + serverPermitId + "'"),
     [{player_hp:110,player_mana:8,enemy_hp:57,turn_count:1}]);
