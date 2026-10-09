@@ -158,12 +158,29 @@ async function worldSnapshot(db: D1Database, playerId: string, cycle?: CycleRow)
 async function handleBootstrap(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; displayName?: string; platform?: string; platformUserId?: string }>(request);
   if (!input.playerId) return fail(request, env, 'playerId is required');
+  const platform = input.platform;
+  const platformUserId = input.platformUserId;
+  const hasPlatformIdentity = (platform === 'discord' || platform === 'telegram') && !!platformUserId;
+  if (hasPlatformIdentity) {
+    const linked = await env.DB.prepare(`SELECT player_id FROM platform_identities
+      WHERE platform = ? AND platform_user_id = ?`)
+      .bind(platform, platformUserId).first<{ player_id: string }>();
+    if (linked && linked.player_id !== input.playerId) {
+      return fail(request, env, 'Platform identity is already linked to another player.', 409);
+    }
+  }
   await ensurePlayer(env.DB, input.playerId, input.displayName || 'Player');
 
-  if ((input.platform === 'discord' || input.platform === 'telegram') && input.platformUserId) {
-    await env.DB.prepare(`INSERT INTO platform_identities (platform, platform_user_id, player_id, display_name) VALUES (?, ?, ?, ?)
-      ON CONFLICT(platform, platform_user_id) DO UPDATE SET player_id = excluded.player_id, display_name = excluded.display_name`)
-      .bind(input.platform, input.platformUserId, input.playerId, (input.displayName || 'Player').slice(0, 32)).run();
+  if (hasPlatformIdentity) {
+    // Guard identity ownership atomically against concurrent bootstrap requests.
+    // Platform credentials are NOT authenticated here; verification is a separate requirement.
+    const linked = await env.DB.prepare(`INSERT INTO platform_identities (platform, platform_user_id, player_id, display_name) VALUES (?, ?, ?, ?)
+      ON CONFLICT(platform, platform_user_id) DO UPDATE SET display_name = excluded.display_name
+      WHERE platform_identities.player_id = excluded.player_id
+      RETURNING player_id`)
+      .bind(platform, platformUserId, input.playerId, (input.displayName || 'Player').slice(0, 32))
+      .first<{ player_id: string }>();
+    if (!linked) return fail(request, env, 'Platform identity is already linked to another player.', 409);
   }
 
   const player = await loadPlayer(env.DB, input.playerId);
