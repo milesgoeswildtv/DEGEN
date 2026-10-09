@@ -69,3 +69,15 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+
+## Build worker 2026-10-09 — Telegram verifier helper
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- PUSHED branch: `automation/degen/telegram-init-data-verifier-v01`, commit `c6adc8a97a052ac123a999bab2d4b64a1f31f87e`; no PR, merge or deploy.
+- Added isolated `worker/auth/telegramInitData.ts` (57 lines). No Worker route invokes it, no secrets/config changed, no client authentication enabled.
+- Local staged-equivalent verifier tests: 18/18 passed (Node 22.16.0); new tests are NOT pushed; branch CI, full `npm test`, `npm run build`, `npm run check:worker` unverified. GitHub PR creation and test writes rejected.
+- Mana foundation: COMPLETE/MERGED on main, no monster Mana or forced reversion.
+- Battle/rewards: server-owned state/receipts merged; atomic defeat/turn recovery/earned-victory settlement remain draft PR #9, unmerged.
+- D1: `wrangler.toml` binding and tracked migrations unchanged; schema+migrations precede Worker deployment. No production D1 mutation.
+- Critical blocker: Worker still trusts client-supplied player IDs; signed sessions and server-owned verified platform provisioning are absent.
+- Next: add verifier regression tests to branch, run CI and open reviewed PR, then integrate verified platform sessions.
