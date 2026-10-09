@@ -55,7 +55,7 @@ try {
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',70,0,30,3),
       ('expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'defeat',0,0,30,3),
-      ('earned-live','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,1,0);
+      ('earned-live','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,1,0);
     CREATE TRIGGER qa_expire_earned_victory AFTER UPDATE OF battle_status ON battle_permits
     WHEN NEW.id = 'earned-live' AND NEW.battle_status = 'victory'
     BEGIN UPDATE battle_permits SET expires_at = datetime('now','-20 minutes') WHERE id = NEW.id; END;
@@ -116,7 +116,7 @@ try {
   assert.equal(actionResponse.status, 200);
   const action = await actionResponse.json();
   assert.equal(action.status, 'victory');
-  assert.equal(action.playerMana, 12);
+  assert.equal(action.playerMana, 0);
   assert.equal(action.turnCount, 1);
   const earned = await eventuallyComplete('earned-live');
   assert.equal(earned.reward.tier, 'reduced');
