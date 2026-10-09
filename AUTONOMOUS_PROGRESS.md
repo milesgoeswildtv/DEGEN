@@ -81,3 +81,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 
 ### Client-first legacy Worker HTTP compatibility (STAGED/PUSH TARGET)
 - Added a seeded active permit and real local Worker/D1 action in `tests/worker-d1-concurrency.mjs` with `expectedTurnCount: 0`, verifying existing permissive Worker accepts the future client request and returns turn 1 / Mana 8. Requires independent PR CI; no deployed verification.
+
+## 2026-10-09 — Server-world fail-closed regression (PUSHED / no PR)
+- Main authority: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Branch: `automation/degen/battle-client-first-v01`, from main. Client-first PR creation rejected twice; no PR, merge or deployment.
+- Fix: `src/app/AppController.ts` no longer substitutes an untrusted local preview cycle when an enabled Worker world-event request fails. Previously open server state is cleared, so the entry control cannot advertise a fake open event. Preview remains available only when the backend is intentionally disabled.
+- Tests: `tests/world-sync-authority.test.ts` adds four controller-level cases for failure, previously open state, preview-only mode, and successful server sync. A narrow local fixture reproduced 2/4 failures before the fix and 4/4 passes afterward; full-repository CI and browser QA on this branch remain unverified.
+- Degen Mana remains COMPLETE / MERGED on main; no monster Mana or reversion. Reward idempotency/recoverability is merged on main. PR #9 is green but draft/unmerged, and must not deploy Worker turn enforcement ahead of the compatible frontend.
+- D1/migration: no schema/config edits in this slice; tracked migrations still precede Worker deployment. Production D1 untouched. Authentication/authorization is a public-economy blocker.
+- Best next task: obtain client-first PR/CI, verify the new test against full source and local Worker/D1, then stage frontend-first rollout before PR #9 Worker enforcement.
