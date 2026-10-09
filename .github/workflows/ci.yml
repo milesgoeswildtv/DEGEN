@@ -24,6 +24,8 @@ jobs:
         run: node tests/worker-d1-concurrency.mjs
       - name: Verify expected-turn replay on local Worker/D1
         run: node tests/worker-d1-turn-replay.mjs
+      - name: Verify atomic defeat transactions on local Worker/D1
+        run: node tests/worker-d1-defeat-atomic.mjs
       - name: Build web app
         run: npm run build
       - name: Validate Cloudflare Worker
