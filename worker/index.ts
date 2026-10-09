@@ -309,12 +309,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
-      (reward_state = 'pending' AND completed_at IS NULL AND (datetime(expires_at) > CURRENT_TIMESTAMP OR reward_clear_number IS NOT NULL))
+      (reward_state = 'pending' AND completed_at IS NULL)
       OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
-  if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
+  if (!claim) return fail(request, env, 'Battle reward is already being claimed or cannot be claimed.', 409);
 
   if (claim.reward_clear_number === null) {
     await env.DB.batch([
