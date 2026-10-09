@@ -46,7 +46,14 @@ try {
   const b = await Promise.all(Array.from({ length: 30 }, (_, i) => world(i + 30)));
   assert.ok(b.every(e => e.cycleId === id), 'cycle changed across repeated reads');
   assert.ok(Date.parse(a[0].opensAt) < Date.parse(a[0].closesAt));
-  console.log('PASS isolated Worker/D1: 60 world reads converge on one cycle');
+  const check = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=SELECT COUNT(*) AS n FROM world_event_cycles WHERE event_key = 'underpass'", '--json'],
+    { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  assert.equal(check.status, 0, 'local D1 count query failed: ' + check.stderr);
+  const result = JSON.parse(check.stdout);
+  const row = Array.isArray(result) ? result[0]?.results?.[0] : result.results?.[0];
+  assert.equal(row?.n, 1, 'concurrent requests must persist exactly one Underpass cycle');
+  console.log('PASS isolated Worker/D1: 60 requests and exactly one persisted cycle');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
