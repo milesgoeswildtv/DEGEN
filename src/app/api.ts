@@ -2,6 +2,13 @@ import type { BattleActionResult, BattleCompletionResult, BattlePermit, HousingS
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
+export class BattleTurnConflictError extends Error {
+  constructor(readonly battleState: BattleActionResult) {
+    super('Battle turn changed; synchronized from the Worker.');
+    this.name = 'BattleTurnConflictError';
+  }
+}
+
 export class GameApi {
   readonly enabled = API_BASE.length > 0;
 
@@ -34,11 +41,11 @@ export class GameApi {
     });
   }
 
-  async actUnderpass(playerId: string, permitId: string, abilityId: string): Promise<BattleActionResult | undefined> {
+  async actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<BattleActionResult | undefined> {
     if (!this.enabled) return undefined;
     return this.request<BattleActionResult>('/api/battle/action', {
       method: 'POST',
-      body: JSON.stringify({ playerId, permitId, abilityId }),
+      body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
     });
   }
 
@@ -56,6 +63,15 @@ export class GameApi {
       headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
     });
     if (!response.ok) {
+      if (response.status === 409 && path === '/api/battle/action') {
+        const conflict = await response.clone().json().catch(() => null) as { battleState?: BattleActionResult } | null;
+        const state = conflict?.battleState;
+        if (state && typeof state.permitId === 'string' && Number.isInteger(state.turnCount)
+          && state.turnCount >= 0 && Number.isFinite(state.playerHp) && Number.isFinite(state.playerMana)
+          && Number.isFinite(state.enemyHp) && ['active', 'victory', 'defeat'].includes(state.status)) {
+          throw new BattleTurnConflictError(state);
+        }
+      }
       const detail = await response.text().catch(() => '');
       throw new Error(`DEGEN API ${response.status}: ${detail || response.statusText}`);
     }
