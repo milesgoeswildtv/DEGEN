@@ -107,6 +107,13 @@ try {
     assert.equal(r.data.battleState.turnCount, 1);
     assert.equal(r.data.battleState.playerMana, 8);
   }
+  // A retry without a turn precondition must not become a second valid action.
+  const missingPrecondition = await act('concurrent', 'slash', undefined);
+  assert.equal(missingPrecondition.status, 400);
+  const nullPrecondition = await act('concurrent', 'slash', null);
+  assert.equal(nullPrecondition.status, 400);
+  const negativePrecondition = await act('concurrent', 'slash', -1);
+  assert.equal(negativePrecondition.status, 400);
   const stale = await act('concurrent', 'crack', 0);
   assert.equal(stale.status, 409);
   assert.equal(stale.data.battleState.turnCount, 1);

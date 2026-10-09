@@ -141,3 +141,14 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Reward authority: merged receipt/idempotency baseline retained; earned victory after permit expiry now integrated on this feature branch, **not merged/live**. No production D1 mutations or deployments. Tracked D1 migrations 0002–0005 remain applied before Worker deploy, existing binding unchanged.
 - Blockers: draft PR creation rejected twice for combined branch and twice for standalone earned branch; no PR. Mandatory expected-turn enforcement awaits compatible client deployment. Discord/Telegram identity bootstrap remains unauthenticated and can reassign identities; block public economy. Underpass cycle-generation race remains unfixed.
 - Best next task: obtain reviewed PR delivery of this green combined branch, verify exact final head CI, and fix authenticated platform identity before public economic gameplay. Do not merge/deploy without review.
+
+## 2026-10-09 — mandatory turn precondition hardening (feature branch)
+- Authority: main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/battle-turn-client-v01` at `b529d5f05e81031745a391fccfe1f7f1efb8eb9a` before this change; draft PR #9.
+- Scope: `worker/index.ts` rejects absent, null, negative or invalid `expectedTurnCount` with HTTP 400; stale but well-formed turns remain HTTP 409 with authoritative snapshot. Removed fallback CAS values that allowed old clients to issue additional actions on retry. `tests/worker-d1-turn-replay.mjs` adds real HTTP negative controls.
+- Mana: merged on main; server persists player Mana; zero-cost actions remain available at 0 Mana; no monster Mana or automatic reversion. No balance change.
+- Reward authority: PR #9 atomic defeat/reward recovery preserved. Client already sends `expectedTurnCount`; older clients omitting it must update before battle actions work.
+- Migration: existing tracked 0002–0005; no new migration, config, remote D1 operation, or deployment in this change. Workflow migrates before Worker deployment.
+- QA: pending fresh feature-head GitHub CI and real local Worker/D1 test after commit. No local repository clone available in this execution environment.
+- Miles blocker: public economy requires verified Discord/Telegram authentication and request-level authorization; unrelated staged auth changes are not merged.
+- Next: verify CI at exact new head and review PR #9 before merging; keep public economy gated.
+- Status: planned GitHub object commit; not MERGED/LIVE.
