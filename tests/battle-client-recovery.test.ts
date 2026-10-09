@@ -85,3 +85,27 @@ test('skipped authoritative turns are reconciled without fabricated ability dama
   assert.ok(engine.snapshot.log.some(line=>line.includes('synchronized with server')));
   assert.equal(engine.snapshot.log.some(line=>line.includes('Crack: 70 damage')),false);
 });
+
+test('Worker insufficient-Mana conflict synchronizes Mana without advancing or damage', async () => {
+  // PR #9 returns a 409 with battleState for unaffordable abilities.
+  const rejected = turn('active', 0, 57, 1);
+  const { api, BattleTurnConflictError } = apiWith(() => Response.json({
+    error: 'Not enough Mana for that ability.', battleState: rejected,
+  }, { status: 409 }));
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {});
+  engine.syncAuthoritativeState(turn('active', 8, 57, 1));
+  const before = engine.snapshot;
+  let conflict;
+  try {
+    await api.actUnderpass('p1', 'permit', 'crack', 1);
+  } catch (error) {
+    conflict = error;
+  }
+  assert.ok(conflict instanceof BattleTurnConflictError);
+  engine.syncAuthoritativeState(conflict.battleState);
+  assert.equal(engine.snapshot.turnCount, before.turnCount);
+  assert.equal(engine.snapshot.enemyHp, before.enemyHp);
+  assert.equal(engine.snapshot.playerHp, before.playerHp);
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.status, 'active');
+});

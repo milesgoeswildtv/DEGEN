@@ -94,3 +94,7 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Source: `src/app/AppController.ts` now ignores older success/failure responses after a newer world-event refresh begins, preserving the latest server result or fail-closed state. No new persistent state, D1 schema, gameplay rules, or economics.
 - Added two deferred-request ordering regressions to `tests/world-sync-authority.test.ts`. Narrow local controller fixture: 4/6 passed before generation guard; 6/6 passed afterward. Full repository/Worker CI not independently run on client-first branch.
 - Main remains `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #9 green/draft/unmerged; frontend-first deployment prerequisite unchanged. Production D1 untouched.
+
+### Client/Worker Mana 409 contract regression (PUSHED / no PR)
+- Added `tests/battle-client-recovery.test.ts` case matching PR #9's real unaffordable-action response shape: HTTP 409 with authoritative `battleState`. Client must synchronize Degen Mana to zero while leaving turn count, player HP, enemy HP, and battle status unchanged. No client-side damage or reward.
+- Full repository CI still pending a client-first PR; no live Worker/D1 assertion from this branch. No D1 or deployment changes. Next task remains client-first PR + full CI before Worker enforcement.
