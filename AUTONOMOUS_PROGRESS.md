@@ -115,3 +115,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - CI 37860877938 SUCCESS: 45 tests, local Wrangler/D1 reward and battle integration, npm run build, npm run check:worker. No remote D1 or mobile proof.
 - Mana merged; no monster Mana/reversion. Reward authority merged; atomic defeat separate green branch. Migrations and D1 binding unchanged. PR creation and platform authentication remain blockers; no Miles design blocker.
 - Best next task: reviewed PR delivery, reconcile atomic/client Worker changes, deploy client before mandatory expected-turn enforcement.
+
+## Integrated battle authority — 2026-10-08 EDT (PUSHED; CI pending)
+- Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Branch `automation/degen/battle-turn-client-v01`, integrated head `f41464cd9b93aea146cd85354d8e52a8f510ef92`; no PR/merge/deploy.
+- Changes: `worker/index.ts` now commits terminal defeat turn CAS and deterministic defeat history atomically, preserving optional expected-turn validation, conflict snapshots, exact Degen Mana, and no monster Mana. Imported `tests/worker-defeat-atomic.test.ts` and `tests/worker-d1-defeat-atomic.mjs`; updated `.github/workflows/ci.yml` to gate the real local Worker/D1 defeat test.
+- QA: existing atomic and client-first branch CI green separately. Fresh combined-head CI run `37879795313` queued at time of note; not yet claimed passing. Run `npm test`, `node tests/worker-d1-defeat-atomic.mjs`, `node tests/worker-d1-turn-replay.mjs`, `npm run build`, `npm run check:worker`.
+- Mana: COMPLETE/MERGED on main; no reversion at 0 Mana, zero-cost abilities remain usable. No balance or D1 schema changes.
+- Reward authority: merged receipt/idempotency baseline unchanged. Earned-victory expiry recovery separate branch `automation/degen/earned-victory-recovery-v01` head `4c4abcdbbe4b31ac8229f11a0cf64ef195dea001`, CI green, unmerged.
+- D1: existing `wrangler.toml` binding and migrations 0002–0005 remain authoritative; schema/migrations run before Worker deploy. No production D1 writes.
+- Blockers: GitHub draft PR creation rejected after independent retry; client expected-turn enforcement remains optional until compatible client rollout; Discord/Telegram identity bootstrap still trusts client identifiers.
+- Best next task: inspect combined CI, fix any failing Worker/D1 regression, deliver draft PR for review, then reconcile earned-victory branch on top without losing defeat/turn protections.
