@@ -155,3 +155,76 @@ test('an issued battle permit remains enterable when event closes during start',
   assert.equal(app.battlePermit.permitId, 'legal-entry');
   assert.deepEqual(routes, ['battle']);
 });
+
+test('1000 rapid Underpass taps issue only one pending permit', async () => {
+  let resolveStart;
+  let starts = 0;
+  const app = make({ enabled: true, startUnderpass: () => {
+    starts += 1;
+    return new Promise(resolve => { resolveStart = resolve; });
+  } });
+  app.underpassEvent = serverOpen;
+  const routes = [];
+  app.navigate = route => routes.push(route);
+  const pending = Array.from({ length: 1000 }, () => app.enterUnderpass());
+  assert.equal(starts, 1);
+  resolveStart({ permitId: 'single', cycleId: serverOpen.cycleId });
+  await Promise.all(pending);
+  assert.deepEqual(routes, ['battle']);
+  assert.equal(app.underpassEntryPending, false);
+});
+
+test('missing server permit releases Underpass entry lock for retry', async () => {
+  let attempts = 0;
+  const app = make({ enabled: true, getUnderpass: async () => serverOpen,
+    startUnderpass: async () => {
+      attempts += 1;
+      return attempts === 1 ? undefined : { permitId: 'recovered', cycleId: serverOpen.cycleId };
+    },
+  });
+  app.underpassEvent = serverOpen;
+  app.render = () => {};
+  const routes = [];
+  app.navigate = route => routes.push(route);
+  await app.enterUnderpass();
+  assert.equal(app.underpassEntryPending, false);
+  await app.enterUnderpass();
+  assert.equal(attempts, 2);
+  assert.deepEqual(routes, ['battle']);
+});
+
+test('stale Underpass click after battle navigation cannot issue another permit', async () => {
+  let starts = 0;
+  const app = make({ enabled: true, startUnderpass: async () => ({
+    permitId: `permit-${++starts}`, cycleId: serverOpen.cycleId,
+  }) });
+  app.route = 'underpass';
+  app.underpassEvent = serverOpen;
+  app.navigate = route => { app.route = route; };
+  await app.enterUnderpass();
+  assert.equal(app.route, 'battle');
+  await app.enterUnderpass();
+  assert.equal(starts, 1);
+});
+
+test('malformed Worker permit cannot enter battle; valid retry recovers', async () => {
+  let attempts = 0;
+  const app = make({ enabled: true, getUnderpass: async () => serverOpen,
+    startUnderpass: async () => {
+      attempts += 1;
+      return attempts === 1 ? {} : { permitId: 'valid-retry', cycleId: serverOpen.cycleId };
+    },
+  });
+  app.underpassEvent = serverOpen;
+  app.route = 'underpass';
+  app.render = () => {};
+  app.navigate = route => { app.route = route; };
+  await app.enterUnderpass();
+  assert.equal(app.route, 'underpass');
+  assert.equal(app.battlePermit, undefined);
+  assert.equal(app.underpassEntryPending, false);
+  await app.enterUnderpass();
+  assert.equal(attempts, 2);
+  assert.equal(app.route, 'battle');
+  assert.equal(app.battlePermit.permitId, 'valid-retry');
+});
