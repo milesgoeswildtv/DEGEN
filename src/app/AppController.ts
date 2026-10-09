@@ -120,7 +120,10 @@ export class AppController {
         ? await this.api.startUnderpass(this.store.snapshot.id, event.cycleId)
         : createPreviewPermit(event.cycleId);
 
-      if (!this.battlePermit) throw new Error('No battle permit returned.');
+      if (!this.battlePermit || typeof this.battlePermit.permitId !== 'string' || !this.battlePermit.permitId.trim()) {
+        this.battlePermit = undefined;
+        throw new Error('No valid battle permit returned.');
+      }
       this.navigate('battle');
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
