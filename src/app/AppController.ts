@@ -112,7 +112,7 @@ export class AppController {
 
   private async enterUnderpass(): Promise<void> {
     const event = this.underpassEvent;
-    if (!event || event.phase !== 'open' || this.underpassEntryPending) return;
+    if (this.route !== 'underpass' || !event || event.phase !== 'open' || this.underpassEntryPending) return;
     this.underpassEntryPending = true;
 
     try {
