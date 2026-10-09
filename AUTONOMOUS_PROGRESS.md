@@ -69,3 +69,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+## Earned-victory recovery — 2026-10-08 (PUSHED feature branch; CI pending)
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Branch: `automation/degen/earned-victory-recovery-v01`; Worker predicate commit `3ea23ed76e7a64f809a077a274be3f82800685ad`. No PR, merge, or live deployment.
+- Scope: permit-expired but server-resolved victory may reserve pending rewards; expired active/defeat, wrong owner, duplicate active claim, and awarded replay remain guarded. Combat action expiry unchanged. No balance or D1 schema change.
+- Files: `worker/index.ts`, `tests/reward-authority.test.ts`, `tests/worker-d1-concurrency.mjs`, `.github/workflows/ci.yml`, `AUTONOMOUS_PROGRESS.md`.
+- Mana: COMPLETE/MERGED on main; monsters have no Mana. Reward receipts/idempotency: merged baseline; earned-victory expiry fix feature-only. Atomic defeat and client turn recovery remain separately pushed and unmerged.
+- Verification: prior local SQLite models passed; feature branch npm test, Worker/D1 HTTP, build and dry-run awaiting branch CI. Migrations 0002–0005 are tracked and deployment applies schema/migrations before Worker; no remote D1 operation performed.
+- Blocker: GitHub draft PR creation has been rejected by safety checks. Best next task: inspect final-head CI and local Wrangler/D1, then deliver a reviewed PR; do not merge without it.

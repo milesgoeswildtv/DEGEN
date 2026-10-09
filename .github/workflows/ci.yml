@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'automation/degen/earned-victory-recovery-v01']
   pull_request:
     branches: [main]
 

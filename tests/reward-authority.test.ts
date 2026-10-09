@@ -29,7 +29,7 @@ test('reward receipt migration defaults existing permits to pending', () => {
   assert.deepEqual(Object.assign({}, row), { reward_state: 'pending', reward_clear_number: null });
 });
 
-test('claim predicate rejects expired and non-victory permits and locks duplicate live claims', () => {
+test('claim predicate settles earned victories after expiry but rejects non-victory and duplicate claims', () => {
   const db = makeDb();
   const insert = db.prepare(`INSERT INTO battle_permits
     (id, player_id, event_key, cycle_id, encounter_key, expires_at, battle_status)
@@ -41,11 +41,12 @@ test('claim predicate rejects expired and non-victory permits and locks duplicat
   const claim = db.prepare(`UPDATE battle_permits SET reward_state='claiming',
     reward_claim_token=?, reward_claimed_at=CURRENT_TIMESTAMP
     WHERE id=? AND player_id='player' AND battle_status='victory' AND
-    reward_state='pending' AND completed_at IS NULL AND datetime(expires_at)>CURRENT_TIMESTAMP
+    reward_state='pending' AND completed_at IS NULL
     RETURNING id`);
   assert.ok(claim.get('a', 'valid'));
   assert.equal(claim.get('b', 'valid'), undefined);
-  assert.equal(claim.get('c', 'expired'), undefined);
+  assert.ok(claim.get('c', 'expired'));
+  assert.equal(claim.get('c2', 'expired'), undefined);
   assert.equal(claim.get('d', 'defeat'), undefined);
 });
 
