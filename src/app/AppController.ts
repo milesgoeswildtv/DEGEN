@@ -20,6 +20,7 @@ export class AppController {
   private worldRefreshGeneration = 0;
   private battlePermit?: BattlePermit;
   private battleActionPending = false;
+  private underpassEntryPending = false;
   private rewardResolution: Promise<void> = Promise.resolve();
 
   constructor(
@@ -111,7 +112,8 @@ export class AppController {
 
   private async enterUnderpass(): Promise<void> {
     const event = this.underpassEvent;
-    if (!event || event.phase !== 'open') return;
+    if (!event || event.phase !== 'open' || this.underpassEntryPending) return;
+    this.underpassEntryPending = true;
 
     try {
       this.battlePermit = this.api.enabled
@@ -124,6 +126,8 @@ export class AppController {
       console.warn('Underpass entry rejected.', error);
       await this.refreshWorld();
       this.render();
+    } finally {
+      this.underpassEntryPending = false;
     }
   }
 

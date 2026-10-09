@@ -102,3 +102,56 @@ test('an older world refresh cannot overwrite a newer authoritative reward recei
   await staleRefresh;
   assert.equal(app.underpassEvent, receiptEvent);
 });
+
+
+test('double-tapping Underpass cannot create two concurrent battle permits', async () => {
+  let resolveStart;
+  let starts = 0;
+  const app = make({ enabled: true, startUnderpass: async () => {
+    starts += 1;
+    return new Promise(resolve => { resolveStart = resolve; });
+  } });
+  app.underpassEvent = serverOpen;
+  const routes = [];
+  app.navigate = route => routes.push(route);
+  const first = app.enterUnderpass();
+  const second = app.enterUnderpass();
+  assert.equal(starts, 1);
+  resolveStart({ permitId: 'issued', cycleId: serverOpen.cycleId });
+  await Promise.all([first, second]);
+  assert.deepEqual(routes, ['battle']);
+});
+
+test('rejected Underpass start releases the entry lock for a later retry', async () => {
+  let attempts = 0;
+  const app = make({ enabled: true, getUnderpass: async () => serverOpen,
+    startUnderpass: async () => {
+      attempts += 1;
+      if (attempts === 1) throw Error('temporary failure');
+      return { permitId: 'retry', cycleId: serverOpen.cycleId };
+    },
+  });
+  app.underpassEvent = serverOpen;
+  app.render = () => {};
+  const routes = [];
+  app.navigate = route => routes.push(route);
+  await app.enterUnderpass();
+  assert.equal(app.underpassEntryPending, false);
+  await app.enterUnderpass();
+  assert.equal(attempts, 2);
+  assert.deepEqual(routes, ['battle']);
+});
+
+test('an issued battle permit remains enterable when event closes during start', async () => {
+  let resolveStart;
+  const app = make({ enabled: true, startUnderpass: () => new Promise(resolve => { resolveStart = resolve; }) });
+  app.underpassEvent = serverOpen;
+  const routes = [];
+  app.navigate = route => routes.push(route);
+  const starting = app.enterUnderpass();
+  app.underpassEvent = { ...serverOpen, phase: 'sealed' };
+  resolveStart({ permitId: 'legal-entry', cycleId: serverOpen.cycleId });
+  await starting;
+  assert.equal(app.battlePermit.permitId, 'legal-entry');
+  assert.deepEqual(routes, ['battle']);
+});
