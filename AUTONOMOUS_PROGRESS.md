@@ -119,3 +119,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1/migrations: no schema, migration, binding or deploy config changes in this slice. `wrangler.toml` is source of truth; tracked migrations precede Worker deployment. Production D1 untouched.
 - Miles blockers: verified Discord/Telegram identity, server-owned sessions and per-request authorization before public economic gameplay. No new gameplay canon required.
 - Best next task: obtain a draft client-first PR, run full CI and actual local Worker/D1 + mobile QA, deploy compatible frontend first, then review PR #9.
+
+
+## 2026-10-09 — Stale Underpass navigation guard (LOCAL QA / PUSH TARGET)
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Existing branch: `automation/degen/battle-client-first-v01`; source head before this change: `0e3df8548fa11974c65f38bbcd713be5c826d33c`. Client-first PR creation rejected twice; do not claim PR delivery.
+- Fix: only initiate Underpass entry from the Underpass route; invalidate in-flight permit navigation after any intervening route change (including Home then back). Keep legally issued permits enterable across event closure if the player did not navigate away.
+- Files: `src/app/AppController.ts`, `tests/world-sync-authority.test.ts`, `AUTONOMOUS_PROGRESS.md`.
+- QA: isolated exact-method Node test harness passed 23/23; negative control failed the three newly added navigation regressions. Full `npm test`, `npm run build`, `npm run check:worker`, browser/mobile, and actual Worker/D1 not run in this environment (GitHub DNS unavailable).
+- Mana COMPLETE/MERGED on main; no monster Mana or forced reversion. Reward idempotency/recovery MERGED; PR #9 atomic defeat/turn enforcement draft and unmerged.
+- D1 migrations 0002–0005 tracked and deploy workflow applies schema/migrations before Worker. No D1/config changes and no remote deployment.
+- Public economy blocker: verified platform auth/authorization. Next task: obtain client-first PR and independent CI; verify frontend-first deployment before PR #9 Worker enforcement.

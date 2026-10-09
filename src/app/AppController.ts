@@ -21,6 +21,7 @@ export class AppController {
   private battlePermit?: BattlePermit;
   private battleActionPending = false;
   private underpassEntryPending = false;
+  private navigationGeneration = 0;
   private rewardResolution: Promise<void> = Promise.resolve();
 
   constructor(
@@ -39,6 +40,7 @@ export class AppController {
   }
 
   private navigate(route: RouteKey): void {
+    this.navigationGeneration += 1;
     if (route !== 'battle') this.destroyBattle();
     this.route = route;
     this.render();
@@ -112,7 +114,8 @@ export class AppController {
 
   private async enterUnderpass(): Promise<void> {
     const event = this.underpassEvent;
-    if (this.route === 'battle' || !event || event.phase !== 'open' || this.underpassEntryPending) return;
+    if (this.route !== 'underpass' || !event || event.phase !== 'open' || this.underpassEntryPending) return;
+    const entryGeneration = this.navigationGeneration;
     this.underpassEntryPending = true;
 
     try {
@@ -123,6 +126,11 @@ export class AppController {
       if (!this.battlePermit || typeof this.battlePermit.permitId !== 'string' || !this.battlePermit.permitId.trim()) {
         this.battlePermit = undefined;
         throw new Error('No valid battle permit returned.');
+      }
+      // A permit response must not redirect after the user navigated elsewhere.
+      if (this.route !== 'underpass' || this.navigationGeneration !== entryGeneration) {
+        this.battlePermit = undefined;
+        return;
       }
       this.navigate('battle');
     } catch (error) {

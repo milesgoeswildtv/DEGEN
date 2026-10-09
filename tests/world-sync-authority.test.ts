@@ -18,7 +18,11 @@ const AppController = runInNewContext(stripped + '\nAppController;', {
   localStorage: { getItem: () => null, setItem: () => {} },
 });
 const serverOpen = { ...preview, cycleId: 'server-cycle', source: 'server' };
-const make = (api) => new AppController({}, { snapshot: { id: 'p1' } }, api);
+const make = (api) => {
+  const app = new AppController({}, { snapshot: { id: 'p1' } }, api);
+  app.route = 'underpass';
+  return app;
+};
 
 test('server-backed sync failure never substitutes a local open event', async () => {
   previewCalls = 0;
@@ -227,4 +231,51 @@ test('malformed Worker permit cannot enter battle; valid retry recovers', async 
   assert.equal(attempts, 2);
   assert.equal(app.route, 'battle');
   assert.equal(app.battlePermit.permitId, 'valid-retry');
+});
+
+
+test('stale Home or Map entry callbacks never request a battle permit', async () => {
+  let starts = 0;
+  const app = make({ enabled: true, startUnderpass: async () => {
+    starts += 1;
+    return { permitId: 'unexpected' };
+  } });
+  app.underpassEvent = serverOpen;
+  app.route = 'home';
+  await app.enterUnderpass();
+  app.route = 'map';
+  await app.enterUnderpass();
+  assert.equal(starts, 0);
+  assert.equal(app.battlePermit, undefined);
+});
+
+test('navigating Home while permit is pending cannot redirect to battle', async () => {
+  let resolveStart;
+  const app = make({ enabled: true, startUnderpass: () => new Promise(resolve => { resolveStart = resolve; }) });
+  app.underpassEvent = serverOpen;
+  app.render = () => {};
+  app.destroyBattle = () => {};
+  const pending = app.enterUnderpass();
+  app.navigate('home');
+  resolveStart({ permitId: 'valid-but-abandoned', cycleId: serverOpen.cycleId });
+  await pending;
+  assert.equal(app.route, 'home');
+  assert.equal(app.battlePermit, undefined);
+  assert.equal(app.underpassEntryPending, false);
+});
+
+test('returning to Underpass during pending request does not revive old navigation intent', async () => {
+  let resolveStart;
+  const app = make({ enabled: true, startUnderpass: () => new Promise(resolve => { resolveStart = resolve; }) });
+  app.underpassEvent = serverOpen;
+  app.render = () => {};
+  app.destroyBattle = () => {};
+  const pending = app.enterUnderpass();
+  app.navigate('home');
+  app.navigate('underpass');
+  resolveStart({ permitId: 'valid-but-stale', cycleId: serverOpen.cycleId });
+  await pending;
+  assert.equal(app.route, 'underpass');
+  assert.equal(app.battlePermit, undefined);
+  assert.equal(app.underpassEntryPending, false);
 });
