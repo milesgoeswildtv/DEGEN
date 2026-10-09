@@ -78,3 +78,6 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - No D1/schema/config changes. Deployment migrations tracked before Worker; no production D1 or deployment operation.
 - Miles blocker: authenticated Discord/Telegram identity and economic-route authorization before public gameplay. Client-first release must precede mandatory Worker turn enforcement.
 - Best next task: open client-first PR when permitted, verify CI and deployed client behavior, then review/merge PR #9 only after compatible clients are live.
+
+### Client-first legacy Worker HTTP compatibility (STAGED/PUSH TARGET)
+- Added a seeded active permit and real local Worker/D1 action in `tests/worker-d1-concurrency.mjs` with `expectedTurnCount: 0`, verifying existing permissive Worker accepts the future client request and returns turn 1 / Mana 8. Requires independent PR CI; no deployed verification.
