@@ -78,3 +78,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana: COMPLETE/MERGED on main; monsters have no Mana. Reward receipts/idempotency: merged baseline; earned-victory expiry fix feature-only. Atomic defeat and client turn recovery remain separately pushed and unmerged.
 - Verification: prior local SQLite models passed; feature branch npm test, Worker/D1 HTTP, build and dry-run awaiting branch CI. Migrations 0002–0005 are tracked and deployment applies schema/migrations before Worker; no remote D1 operation performed.
 - Blocker: GitHub draft PR creation has been rejected by safety checks. Best next task: inspect final-head CI and local Wrangler/D1, then deliver a reviewed PR; do not merge without it.
+
+## Earned-victory final-head QA — 2026-10-08
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658` (unchanged). Feature head before this note: `840a79cfe6a724bac1c2e1e93fdf07984a3f822e`.
+- GitHub Actions CI run `37870206182`: SUCCESS on exact feature head. Verified jobs: `npm test`, real isolated local Worker/D1 reward concurrency harness, `npm run build`, `npm run check:worker`.
+- Local SQLite handoff: 11/11 tests passed; includes server-resolved expired victory, active/defeat rejection, duplicate claim lockout, rollback, and Mana invariants. These are models, distinct from CI Worker/D1 evidence.
+- Further HTTP scenario (real Worker killing blow, forced expiry, first claim, idempotent replay) was prepared but GitHub test-file write and independent retry were rejected. It is NOT in the green branch. PR creation and independent retry were also rejected.
+- Mana remains MERGED; no monster Mana or reversion. Reward expiry recovery is PUSHED/GREEN but NOT PR/MERGED/LIVE. No production D1 changes. Tracked migrations 0002–0005 unchanged; deploy workflow applies schema/migrations before Worker.
+- Best next task: obtain reviewed PR delivery, add real-killing-blow expiry HTTP coverage if write access permits, and integrate atomic defeat with client turn recovery before considering mandatory turn enforcement.
