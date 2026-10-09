@@ -15,6 +15,7 @@ const preview = { eventKey: 'underpass', cycleId: 'local-preview', phase: 'open'
 const AppController = runInNewContext(stripped + '\nAppController;', {
   getPreviewUnderpass: () => { previewCalls += 1; return preview; },
   console: { warn() {} },
+  localStorage: { getItem: () => null, setItem: () => {} },
 });
 const serverOpen = { ...preview, cycleId: 'server-cycle', source: 'server' };
 const make = (api) => new AppController({}, { snapshot: { id: 'p1' } }, api);
@@ -81,4 +82,23 @@ test('late older request failure cannot erase newer server state', async () => {
   requests[0].reject(Error('late failure'));
   await old;
   assert.equal(app.underpassEvent, serverOpen);
+});
+
+test('an older world refresh cannot overwrite a newer authoritative reward receipt', async () => {
+  let resolveWorld;
+  const receiptEvent = { ...serverOpen, fullRewardClears: 2, cycleId: 'reward-cycle' };
+  const api = {
+    enabled: true,
+    getUnderpass: () => new Promise(resolve => { resolveWorld = resolve; }),
+    completeUnderpass: async () => ({ player: { id: 'p1' }, worldEvent: receiptEvent }),
+  };
+  const store = { snapshot: { id: 'p1' }, replaceFromServer() {} };
+  const app = new AppController({}, store, api);
+  app.route = 'battle'; // Avoid unrelated DOM render during this state-only regression.
+  const staleRefresh = app.refreshWorld();
+  await app.queueRewardCompletion('permit');
+  assert.equal(app.underpassEvent, receiptEvent);
+  resolveWorld({ ...serverOpen, fullRewardClears: 0 });
+  await staleRefresh;
+  assert.equal(app.underpassEvent, receiptEvent);
 });

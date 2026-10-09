@@ -98,3 +98,8 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 ### Client/Worker Mana 409 contract regression (PUSHED / no PR)
 - Added `tests/battle-client-recovery.test.ts` case matching PR #9's real unaffordable-action response shape: HTTP 409 with authoritative `battleState`. Client must synchronize Degen Mana to zero while leaving turn count, player HP, enemy HP, and battle status unchanged. No client-side damage or reward.
 - Full repository CI still pending a client-first PR; no live Worker/D1 assertion from this branch. No D1 or deployment changes. Next task remains client-first PR + full CI before Worker enforcement.
+
+### Reward receipt / world refresh ordering (PUSHED / no PR)
+- Fixed a real asynchronous state race: an older world-event fetch could overwrite the authoritative cycle/clear count returned by successful `/api/battle/complete`. `queueRewardCompletion` now invalidates in-flight world refresh generations before applying the Worker reward receipt.
+- Added one regression to `tests/world-sync-authority.test.ts`; narrow local controller fixture reproduced 6/7 pass before the fix and 7/7 pass after. Full repo/Worker CI still unverified for client-first branch.
+- No change to reward amount, Degen Mana, D1, migration, authentication, or deployment. Main `33e7477961d2a6ab7b79bf52d78a93901e19f658` unchanged; PR #9 still green/draft/unmerged. Next task: reviewed client-first PR + CI and live frontend-first QA.

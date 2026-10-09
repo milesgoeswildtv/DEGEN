@@ -232,6 +232,7 @@ export class AppController {
         const result = await this.api.completeUnderpass(playerId, permitId);
         if (!result) throw new Error('Missing authoritative battle completion response.');
         this.store.replaceFromServer(result.player);
+        this.worldRefreshGeneration += 1; // Reward receipt supersedes in-flight world refreshes.
         this.underpassEvent = result.worldEvent;
         this.forgetPendingReward(permitId);
         if (this.battlePermit?.permitId === permitId) {
