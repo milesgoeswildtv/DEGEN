@@ -162,3 +162,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Miles blocker: platform-authenticated account identity and request-level authorization required before public economy.
 - Best next task: inspect exact-head PR #9 CI, repair any remaining failures, then review PR diff and deploy compatibility in safe order; do not merge until green.
 - Status: this note accompanies proposed feature-branch repair; not merged/live.
+
+## 2026-10-09 — PR #9 Worker/D1 fixture follow-up (feature branch)
+- Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/battle-turn-client-v01`, PR #9 draft.
+- Changed two isolated Worker/D1 integration fixtures to submit `expectedTurnCount: 0` for server-seeded turn-zero permits; no gameplay/economy/schema changes.
+- Prior CI on `3774b0c2`: deterministic 55/55 PASS; Worker/D1 concurrency FAIL 400 at action fixture; later jobs skipped. Exact new-head CI required to verify Worker/D1 concurrency, replay, atomic defeat, web build, Worker check.
+- Mana COMPLETE/MERGED on main; reward receipt/idempotency MERGED; atomic defeat and earned-victory recovery PR-only.
+- D1 schema/migrations remain tracked; no remote D1 operations or deployments in this run.
+- Miles blocker: public economic routes still need authenticated platform sessions; client-first deployment required for mandatory turn preconditions.
+- Best next task: inspect new-head CI, fix any real regression on same branch, then review PR #9 before merge.

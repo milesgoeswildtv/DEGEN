@@ -111,7 +111,7 @@ try {
   // the permit immediately after the authoritative victory transition.
   const actionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: 'integration-player', permitId: 'earned-live', abilityId: 'slash' }),
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'earned-live', abilityId: 'slash', expectedTurnCount: 0 }),
   });
   assert.equal(actionResponse.status, 200);
   const action = await actionResponse.json();
