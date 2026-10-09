@@ -125,3 +125,10 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1: existing `wrangler.toml` binding and migrations 0002–0005 remain authoritative; schema/migrations run before Worker deploy. No production D1 writes.
 - Blockers: GitHub draft PR creation rejected after independent retry; client expected-turn enforcement remains optional until compatible client rollout; Discord/Telegram identity bootstrap still trusts client identifiers.
 - Best next task: inspect combined CI, fix any failing Worker/D1 regression, deliver draft PR for review, then reconcile earned-victory branch on top without losing defeat/turn protections.
+
+### Integrated battle-authority CI — VERIFIED 2026-10-08 EDT
+- Head `b47bf5f0856bd1f692785864980561fc26c22ac6` (PUSHED feature branch only; not PR/merged/live). `tests/worker-battle-turn-precondition.test.ts` now models D1.batch with a real SQLite transaction and per-statement RETURNING rows, preserving race injection and rollback.
+- GitHub Actions run `37879858086` SUCCESS on this exact head: **55/55 Node tests**, isolated Worker/D1 reward concurrency, local Worker/D1 turn replay, local Worker/D1 atomic defeat expiry/rollback/retry, `npm run build`, and `npm run check:worker` all green.
+- Earlier intermediate heads failed because the isolated SQLite adapter lacked `DB.batch`; this is fixed on the green head. No production deployment, migration, or live D1 mutation.
+- Main remains `33e7477961d2a6ab7b79bf52d78a93901e19f658`; Mana complete/merged and player-only; rewards server-owned. Earned-victory expiry recovery is separate and green, not yet integrated. PR creation rejected after independent retry.
+- Best next task: reviewed PR delivery for this combined branch, then reconcile earned-victory reward recovery and retest all authority paths. Authenticated platform identity remains the public-economy blocker.
