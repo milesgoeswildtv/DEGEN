@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'automation/degen/identity-binding-immutability-v01']
   pull_request:
     branches: [main]
 
@@ -22,6 +22,8 @@ jobs:
         run: npm test
       - name: Exercise isolated local Worker/D1 reward concurrency
         run: node tests/worker-d1-concurrency.mjs
+      - name: Verify immutable platform binding on local Worker/D1
+        run: node tests/worker-d1-identity-binding.mjs
       - name: Build web app
         run: npm run build
       - name: Validate Cloudflare Worker

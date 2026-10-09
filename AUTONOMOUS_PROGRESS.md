@@ -69,3 +69,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+## Identity-binding regression delivery — 2026-10-09
+- Main SHA: 33e7477961d2a6ab7b79bf52d78a93901e19f658. Branch: automation/degen/identity-binding-immutability-v01 (feature branch only; not merged or live).
+- Files: worker/index.ts conditional platform identity upsert; tests/identity-binding.test.ts SQL ownership cases; tests/worker-d1-identity-binding.mjs isolated local HTTP/D1 race; .github/workflows/ci.yml adds identity gate.
+- QA: local SQL excerpt 3/3 passed; local harness syntax passed. Exact branch CI, full npm test/build/check:worker, and real Wrangler/D1 are pending at time of this entry.
+- Mana: complete and merged on main, player-only; no monster Mana or depletion reversion. Reward receipts/idempotency merged on main; combat recovery draft PR #9 unmerged.
+- D1: existing binding and tracked migrations unchanged; schema/migrations precede Worker deploy. No remote D1 writes.
+- Blocker: bootstrap still trusts client-provided player/platform IDs. Immutable binding is not authentication. Public economy must remain gated; no Miles design blocker.
+- Next: verify final-head CI and Worker/D1 test, open reviewed draft PR, then implement verified Discord/Telegram sessions and per-route authorization.
