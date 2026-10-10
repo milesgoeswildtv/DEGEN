@@ -151,3 +151,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Degen Mana COMPLETE/MERGED on main; no monster Mana or forced reversion. Reward receipt idempotency MERGED; PR #9 strict turn/atomic defeat draft/unmerged. No DB/config/deployment changes; migrations 0002–0005 tracked before Worker deploy.
 - Fresh CI on this new commit required before release. Browser/mobile with real Worker and signed Discord/Telegram authentication + per-request authorization remain blockers for public economy.
 - Best next task: verify fresh PR #10 full CI and real Worker-backed mobile behavior; reconcile PR #9 terminal-expiry recovery, then deploy compatible frontend before Worker enforcement.
+
+## 2026-10-09 — Client-first verified QA (PUSHED / PR #10)
+- Main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #10 `automation/degen/battle-client-first-v01` at `adc51252682bfc6d256b24df6f486e0f12fad5f3`, draft/unmerged. PR #9 draft/unmerged.
+- Implementation: account-bound detached-victory recovery and stale-permit guard in `src/app/AppController.ts`; seven new tests in `tests/world-sync-authority.test.ts`; two account-identity fixture corrections in `tests/client-reward-recovery.test.ts`.
+- GitHub CI `38017300270`: 55/55 tests, isolated Worker/D1 reward concurrency, `npm run build`, `npm run check:worker` all PASS. Cloudflare Pages preview check `114110389026` SUCCESS, not live mobile or Worker-backed browser proof.
+- Degen Mana COMPLETE/MERGED; no monster Mana or forced reversion. Reward receipt idempotency MERGED; PR #9 turn/defeat work pending. Local-only terminal-expiry recovery patch remains unpushed; 16/16 SQLite models pass, real Worker/D1 unverified.
+- D1 migrations 0002–0005 tracked; schema/migrations precede Worker deployment. No production D1 mutation, Worker deploy, main merge, or config change.
+- Blockers: production Pages CORS, real browser/mobile verification, signed platform identity and per-request authorization before public economy.
+- Next: review PR #10 and verify compatible frontend first; then reconcile PR #9 terminal-state recovery and Worker enforcement.
