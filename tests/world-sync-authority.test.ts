@@ -13,9 +13,14 @@ let previewCalls = 0;
 const preview = { eventKey: 'underpass', cycleId: 'local-preview', phase: 'open',
   source: 'preview', opensAt: '', closesAt: '', fullRewardClears: 0, fullRewardLimit: 3 };
 const pendingStorage = new Map();
+class BattleTurnConflictError extends Error {
+  constructor(battleState) { super('stale turn'); this.battleState = battleState; }
+}
 const AppController = runInNewContext(stripped + '\nAppController;', {
   getPreviewUnderpass: () => { previewCalls += 1; return preview; },
   console: { warn() {} },
+  window: { setTimeout: () => 1, clearTimeout: () => {} },
+  BattleTurnConflictError,
   localStorage: { getItem: key => pendingStorage.get(key) ?? null, setItem: (key, value) => pendingStorage.set(key, value) },
 });
 const serverOpen = { ...preview, cycleId: 'server-cycle', source: 'server' };
@@ -367,4 +372,176 @@ test('victory pending for A never submits A permit while B is active', async () 
   assert.equal(completions, 0);
   assert.deepEqual(JSON.parse(pendingStorage.get('degen.pending.reward-permits.v1:A')), ['permit-A']);
   assert.equal(pendingStorage.has('degen.pending.reward-permits.v1:B'), false);
+});
+
+
+test('late Worker-confirmed victory after Home navigation uses only server completion', async () => {
+  pendingStorage.clear();
+  let resolveAction, completed = 0, localActions = 0;
+  const state = { id: 'A' };
+  const app = new AppController({}, { snapshot: state, replaceFromServer() {} }, {
+    enabled: true,
+    actUnderpass: () => new Promise(resolve => { resolveAction = resolve; }),
+    completeUnderpass: async (playerId, permitId) => {
+      assert.equal(playerId, 'A');
+      assert.equal(permitId, 'permit-A');
+      completed += 1;
+      return { player: { id: 'A' }, worldEvent: serverOpen };
+    },
+  });
+  app.route = 'battle';
+  app.render = () => {};
+  app.setAbilityButtonsDisabled = () => {};
+  app.battlePermit = { permitId: 'permit-A' };
+  app.battlePlayerId = 'A';
+  app.battleEngine = { snapshot: { turnCount: 0, status: 'active' },
+    applyAuthoritativeAction: () => { localActions += 1; } };
+  const pending = app.useBattleAbility('ability');
+  app.navigate('home');
+  resolveAction({ permitId: 'permit-A', status: 'victory', turnCount: 1,
+    playerHp: 10, playerMana: 0, enemyHp: 0 });
+  await pending;
+  assert.equal(localActions, 0);
+  assert.equal(completed, 1);
+  assert.equal(app.route, 'home');
+  assert.deepEqual(JSON.parse(pendingStorage.get('degen.pending.reward-permits.v1:A')), []);
+});
+
+test('detached terminal turn conflict can recover a server-confirmed victory', async () => {
+  pendingStorage.clear();
+  let rejectAction, completed = 0;
+  const app = new AppController({}, { snapshot: { id: 'A' }, replaceFromServer() {} }, {
+    enabled: true,
+    actUnderpass: () => new Promise((resolve, reject) => { rejectAction = reject; }),
+    completeUnderpass: async () => {
+      completed += 1;
+      return { player: { id: 'A' }, worldEvent: serverOpen };
+    },
+  });
+  app.route = 'battle';
+  app.render = () => {};
+  app.setAbilityButtonsDisabled = () => {};
+  app.battlePermit = { permitId: 'permit-A' };
+  app.battlePlayerId = 'A';
+  app.battleEngine = { snapshot: { turnCount: 0, status: 'active' },
+    syncAuthoritativeState: () => { throw Error('detached engine cannot sync'); } };
+  const pending = app.useBattleAbility('ability');
+  app.navigate('home');
+  rejectAction(new BattleTurnConflictError({ permitId: 'permit-A', status: 'victory',
+    turnCount: 1, playerHp: 10, playerMana: 0, enemyHp: 0 }));
+  await pending;
+  assert.equal(completed, 1);
+});
+
+test('late account-A victory cannot claim a reward while account B is active', async () => {
+  pendingStorage.clear();
+  let resolveAction, completed = 0;
+  const state = { id: 'A' };
+  const app = new AppController({}, { snapshot: state }, {
+    enabled: true,
+    actUnderpass: () => new Promise(resolve => { resolveAction = resolve; }),
+    completeUnderpass: async () => { completed += 1; },
+  });
+  app.route = 'battle';
+  app.setAbilityButtonsDisabled = () => {};
+  app.battlePermit = { permitId: 'permit-A' };
+  app.battlePlayerId = 'A';
+  app.battleEngine = { snapshot: { turnCount: 0, status: 'active' },
+    applyAuthoritativeAction: () => { throw Error('wrong account'); } };
+  const pending = app.useBattleAbility('ability');
+  state.id = 'B';
+  resolveAction({ permitId: 'permit-A', status: 'victory', turnCount: 1,
+    playerHp: 10, playerMana: 0, enemyHp: 0 });
+  await pending;
+  assert.equal(completed, 0);
+  assert.deepEqual(JSON.parse(pendingStorage.get('degen.pending.reward-permits.v1:A')), ['permit-A']);
+  assert.equal(pendingStorage.has('degen.pending.reward-permits.v1:B'), false);
+});
+
+test('failed fresh Underpass entry clears a detached old battle permit', async () => {
+  const app = make({ enabled: true,
+    getUnderpass: async () => serverOpen,
+    startUnderpass: async () => { throw Error('temporary'); },
+  });
+  app.underpassEvent = serverOpen;
+  app.battlePermit = { permitId: 'old-battle' };
+  app.battlePlayerId = 'p1';
+  app.render = () => {};
+  await app.enterUnderpass();
+  assert.equal(app.battlePermit, undefined);
+  assert.equal(app.battlePlayerId, undefined);
+});
+
+test('detached non-victory response cannot trigger reward completion', async () => {
+  pendingStorage.clear();
+  let resolveAction, completed = 0;
+  const app = new AppController({}, { snapshot: { id: 'A' } }, {
+    enabled: true,
+    actUnderpass: () => new Promise(resolve => { resolveAction = resolve; }),
+    completeUnderpass: async () => { completed += 1; },
+  });
+  app.route = 'battle';
+  app.render = () => {};
+  app.setAbilityButtonsDisabled = () => {};
+  app.battlePermit = { permitId: 'permit-A' };
+  app.battlePlayerId = 'A';
+  app.battleEngine = { snapshot: { turnCount: 0, status: 'active' } };
+  const pending = app.useBattleAbility('ability');
+  app.navigate('home');
+  resolveAction({ permitId: 'permit-A', status: 'active', turnCount: 1,
+    playerHp: 10, playerMana: 0, enemyHp: 10 });
+  await pending;
+  assert.equal(completed, 0);
+  assert.equal(pendingStorage.has('degen.pending.reward-permits.v1:A'), false);
+});
+
+test('mismatched Worker permit response never queues a reward', async () => {
+  pendingStorage.clear();
+  let completed = 0;
+  const app = new AppController({}, { snapshot: { id: 'A' } }, {
+    enabled: true,
+    actUnderpass: async () => ({ permitId: 'another-permit', status: 'victory' }),
+    completeUnderpass: async () => { completed += 1; },
+  });
+  app.route = 'battle';
+  app.setAbilityButtonsDisabled = () => {};
+  app.battlePermit = { permitId: 'permit-A' };
+  app.battlePlayerId = 'A';
+  app.battleEngine = { snapshot: { turnCount: 0, status: 'active' } };
+  await app.useBattleAbility('ability');
+  assert.equal(completed, 0);
+  assert.equal(pendingStorage.has('degen.pending.reward-permits.v1:A'), false);
+});
+
+test('late old victory cannot overwrite a newer same-account battle', async () => {
+  pendingStorage.clear();
+  let resolveAction, completed = 0, newEngineApplied = 0;
+  const app = new AppController({}, { snapshot: { id: 'A' }, replaceFromServer() {} }, {
+    enabled: true,
+    actUnderpass: () => new Promise(resolve => { resolveAction = resolve; }),
+    completeUnderpass: async (playerId, permitId) => {
+      assert.equal(playerId, 'A');
+      assert.equal(permitId, 'old-permit');
+      completed += 1;
+      return { player: { id: 'A' }, worldEvent: serverOpen };
+    },
+  });
+  app.route = 'battle';
+  app.setAbilityButtonsDisabled = () => {};
+  app.battlePermit = { permitId: 'old-permit' };
+  app.battlePlayerId = 'A';
+  const oldEngine = { snapshot: { turnCount: 0, status: 'active' },
+    applyAuthoritativeAction: () => { throw Error('old engine must not apply'); } };
+  app.battleEngine = oldEngine;
+  const pending = app.useBattleAbility('ability');
+  app.battlePermit = { permitId: 'new-permit' };
+  app.battleEngine = { snapshot: { turnCount: 0, status: 'active' },
+    applyAuthoritativeAction: () => { newEngineApplied += 1; } };
+  resolveAction({ permitId: 'old-permit', status: 'victory', turnCount: 1,
+    playerHp: 10, playerMana: 0, enemyHp: 0 });
+  await pending;
+  assert.equal(completed, 1);
+  assert.equal(newEngineApplied, 0);
+  assert.equal(app.battlePermit.permitId, 'new-permit');
+  assert.deepEqual(JSON.parse(pendingStorage.get('degen.pending.reward-permits.v1:A')), []);
 });

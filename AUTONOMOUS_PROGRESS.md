@@ -143,3 +143,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Degen Mana COMPLETE/MERGED on main; monsters have no Mana or reversion. Reward idempotency MERGED; late killing-blow recovery and PR #9 strict-turn/atomic-defeat remain pending.
 - No D1/config changes; tracked migrations precede Worker deploy. No production D1 mutation.
 - Public economy blocker: verified Discord/Telegram sessions and per-request authorization. Next: green CI, finish late-action recovery, deploy client before PR #9 Worker enforcement.
+
+## 2026-10-09 — Client-first CI repair and detached battle victory recovery (PUSH TARGET)
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Draft PR #10 branch `automation/degen/battle-client-first-v01` at parent `59d49deb8bcce4048a1717e910d3c709c32a2fc0`; no merge or production deploy.
+- Prior test-only commit `59d49deb8bcce4048a1717e910d3c709c32a2fc0` corrected two mocked reward receipts to include the actual player ID. Exact CI run `38017193007` PASSED deterministic tests, isolated Worker/D1 integration, Vite build, and Worker validation.
+- This follow-up changes `src/app/AppController.ts` and `tests/world-sync-authority.test.ts`: preserve only Worker-confirmed victories after an in-flight battle action becomes detached; bind pending completion to original account; reject mismatched permit and nonterminal results; clear detached stale permit on new entry. Adds seven deterministic regressions.
+- Degen Mana COMPLETE/MERGED on main; no monster Mana or forced reversion. Reward receipt idempotency MERGED; PR #9 strict turn/atomic defeat draft/unmerged. No DB/config/deployment changes; migrations 0002–0005 tracked before Worker deploy.
+- Fresh CI on this new commit required before release. Browser/mobile with real Worker and signed Discord/Telegram authentication + per-request authorization remain blockers for public economy.
+- Best next task: verify fresh PR #10 full CI and real Worker-backed mobile behavior; reconcile PR #9 terminal-expiry recovery, then deploy compatible frontend before Worker enforcement.

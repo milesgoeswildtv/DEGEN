@@ -119,6 +119,9 @@ export class AppController {
     const entryGeneration = this.navigationGeneration;
     const playerId = this.store.snapshot.id;
     this.underpassEntryPending = true;
+    // A fresh entry must not leave a detached previous permit actionable.
+    this.battlePermit = undefined;
+    this.battlePlayerId = undefined;
 
     try {
       const permit = this.api.enabled
@@ -166,32 +169,48 @@ export class AppController {
     if (!this.battleEngine || !this.battlePermit || this.battleActionPending) return;
     const engine = this.battleEngine;
     const permitId = this.battlePermit.permitId;
+    const playerId = this.battlePlayerId ?? this.store.snapshot.id;
+    if (this.store.snapshot.id !== playerId) return;
 
     this.battleActionPending = true;
     this.setAbilityButtonsDisabled(true);
 
     try {
       if (this.api.enabled) {
-        const authoritative = await this.api.actUnderpass(this.store.snapshot.id, permitId, abilityId, engine.snapshot.turnCount);
-        if (this.battleEngine !== engine || this.battlePermit?.permitId !== permitId) return;
+        const authoritative = await this.api.actUnderpass(playerId, permitId, abilityId, engine.snapshot.turnCount);
         if (!authoritative || authoritative.permitId !== permitId) {
           throw new Error('Missing or mismatched authoritative battle action response.');
+        }
+        if (this.store.snapshot.id !== playerId || this.battleEngine !== engine || this.battlePermit?.permitId !== permitId) {
+          // A detached action cannot mutate the current battle. Only a Worker-confirmed
+          // victory may be queued for its original account's server-owned reward.
+          if (authoritative.status === 'victory') {
+            this.rememberPendingReward(permitId, playerId);
+            await this.queueRewardCompletion(permitId, playerId);
+          }
+          return;
         }
         engine.applyAuthoritativeAction(abilityId, authoritative);
       } else {
         engine.useAbility(abilityId);
       }
     } catch (error) {
-      if (error instanceof BattleTurnConflictError && error.battleState.permitId === permitId
-        && this.battleEngine === engine && this.battlePermit?.permitId === permitId) {
-        engine.syncAuthoritativeState(error.battleState);
+      if (error instanceof BattleTurnConflictError && error.battleState.permitId === permitId) {
+        if (this.store.snapshot.id === playerId && this.battleEngine === engine && this.battlePermit?.permitId === permitId) {
+          engine.syncAuthoritativeState(error.battleState);
+        } else if (error.battleState.status === 'victory') {
+          this.rememberPendingReward(permitId, playerId);
+          await this.queueRewardCompletion(permitId, playerId);
+        }
       } else {
         console.warn('Battle action rejected by authoritative server.', error);
       }
     } finally {
       if (this.battleEngine === engine) {
         this.battleActionPending = false;
-        if (engine.snapshot.status === 'active') this.setAbilityButtonsDisabled(false);
+        if (this.store.snapshot.id === playerId && engine.snapshot.status === 'active') {
+          this.setAbilityButtonsDisabled(false);
+        }
       }
     }
   }
