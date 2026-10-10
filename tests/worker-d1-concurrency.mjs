@@ -18,6 +18,13 @@ let logs = '';
 function cli(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
+  return r.stdout;
+}
+function sql(query) {
+  const raw = JSON.parse(cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--json', '--command=' + query]));
+  const row = Array.isArray(raw) ? raw[0] : raw;
+  return row?.results ?? row?.result?.[0]?.results ?? [];
 }
 async function complete(permitId, playerId = 'integration-player') {
   const r = await fetch(base + '/api/battle/complete', {
@@ -99,6 +106,10 @@ try {
   assert.equal((await complete('expired-active')).status, 409);
   assert.equal((await complete('missing-permit')).status, 409);
   assert.equal((await complete('client-first')).status, 409);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='expired-active'"),
+    [{player_hp:120,player_mana:12,enemy_hp:92,turn_count:0}]);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='client-first'"),
+    [{player_hp:110,player_mana:8,enemy_hp:57,turn_count:1}]);
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
