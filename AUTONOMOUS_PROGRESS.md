@@ -135,3 +135,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Fix: capture issuing player before Underpass request, install permit only after checking route, navigation generation, player identity, and valid permit ID. Legally issued permits remain valid across event closure. No gameplay/economy changes.
 - Changed `src/app/AppController.ts`, `tests/world-sync-authority.test.ts`, this log. Mana COMPLETE/MERGED; reward idempotency MERGED; PR #9 strict turn validation unmerged. No D1/config/deployment edits.
 - Required follow-up: full PR CI, Worker/D1, mobile QA, and platform-authenticated sessions before public economy. Client-first frontend must be live before strict Worker PR #9.
+
+## 2026-10-09 — Account-bound reward receipts (PUSH TARGET)
+- Main authority: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; draft PR #10 `automation/degen/battle-client-first-v01` parent `f58a020904f8157254570a08a1f460ec093e01da`.
+- Files: `src/app/AppController.ts`, `tests/world-sync-authority.test.ts`, this log. Bind pending reward storage, completion, and world-event refresh to issuing player; prevent late A receipts overwriting B; rerender Home on verified receipt. Server remains sole authority for XP/currency/loot.
+- Four new regression tests. Full CI, actual Worker/D1, build, Wrangler and mobile QA required on pushed commit; do not claim before results.
+- Degen Mana COMPLETE/MERGED on main; monsters have no Mana or reversion. Reward idempotency MERGED; late killing-blow recovery and PR #9 strict-turn/atomic-defeat remain pending.
+- No D1/config changes; tracked migrations precede Worker deploy. No production D1 mutation.
+- Public economy blocker: verified Discord/Telegram sessions and per-request authorization. Next: green CI, finish late-action recovery, deploy client before PR #9 Worker enforcement.

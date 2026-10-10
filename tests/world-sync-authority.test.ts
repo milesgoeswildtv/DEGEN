@@ -12,10 +12,11 @@ const stripped = stripTypeScriptTypes(source, { mode: 'transform' });
 let previewCalls = 0;
 const preview = { eventKey: 'underpass', cycleId: 'local-preview', phase: 'open',
   source: 'preview', opensAt: '', closesAt: '', fullRewardClears: 0, fullRewardLimit: 3 };
+const pendingStorage = new Map();
 const AppController = runInNewContext(stripped + '\nAppController;', {
   getPreviewUnderpass: () => { previewCalls += 1; return preview; },
   console: { warn() {} },
-  localStorage: { getItem: () => null, setItem: () => {} },
+  localStorage: { getItem: key => pendingStorage.get(key) ?? null, setItem: (key, value) => pendingStorage.set(key, value) },
 });
 const serverOpen = { ...preview, cycleId: 'server-cycle', source: 'server' };
 const make = (api) => {
@@ -297,4 +298,73 @@ test('account switch during permit issuance cannot enter another account battle'
   assert.equal(app.route, 'underpass');
   assert.equal(app.battlePermit, undefined);
   assert.equal(app.underpassEntryPending, false);
+});
+
+test('late reward for A cannot overwrite B and retains A retry permit', async () => {
+  pendingStorage.clear();
+  const state = { id: 'A' };
+  let resolveReceipt;
+  const receiptEvent = { ...serverOpen, cycleId: 'receipt-A' };
+  const applied = [];
+  const app = new AppController({}, { snapshot: state, replaceFromServer: player => applied.push(player) }, {
+    enabled: true, completeUnderpass: () => new Promise(resolve => { resolveReceipt = resolve; }),
+  });
+  app.route = 'home';
+  app.render = () => {};
+  app.rememberPendingReward('permit-A', 'A');
+  const pending = app.queueRewardCompletion('permit-A', 'A');
+  await Promise.resolve();
+  state.id = 'B';
+  resolveReceipt({ player: { id: 'A' }, worldEvent: receiptEvent });
+  await pending;
+  assert.equal(applied.length, 0);
+  assert.equal(app.underpassEvent, undefined);
+  assert.deepEqual(JSON.parse(pendingStorage.get('degen.pending.reward-permits.v1:A')), ['permit-A']);
+});
+
+test('late A world-event response cannot replace B event after account change', async () => {
+  let resolveEvent;
+  const state = { id: 'A' };
+  const app = new AppController({}, { snapshot: state }, {
+    enabled: true, getUnderpass: () => new Promise(resolve => { resolveEvent = resolve; }),
+  });
+  app.route = 'battle';
+  const pending = app.refreshWorld();
+  state.id = 'B';
+  resolveEvent(serverOpen);
+  await pending;
+  assert.equal(app.underpassEvent, undefined);
+});
+
+test('server-confirmed reward refreshes Home after successful completion', async () => {
+  pendingStorage.clear();
+  let renders = 0;
+  const state = { id: 'A' };
+  const receiptEvent = { ...serverOpen, cycleId: 'receipt-A' };
+  const app = new AppController({}, {
+    snapshot: state, replaceFromServer: player => { state.id = player.id; },
+  }, { enabled: true, completeUnderpass: async () => ({ player: { id: 'A' }, worldEvent: receiptEvent }) });
+  app.route = 'home';
+  app.render = () => { renders += 1; };
+  app.rememberPendingReward('permit-A', 'A');
+  await app.queueRewardCompletion('permit-A', 'A');
+  assert.equal(renders, 1);
+  assert.equal(app.underpassEvent, receiptEvent);
+  assert.deepEqual(JSON.parse(pendingStorage.get('degen.pending.reward-permits.v1:A')), []);
+});
+
+test('victory pending for A never submits A permit while B is active', async () => {
+  pendingStorage.clear();
+  const state = { id: 'B' };
+  let completions = 0;
+  const app = new AppController({}, { snapshot: state }, {
+    enabled: true, completeUnderpass: async () => { completions += 1; },
+  });
+  app.route = 'battle';
+  app.battlePermit = { permitId: 'permit-A' };
+  app.battlePlayerId = 'A';
+  await app.finishBattle('victory');
+  assert.equal(completions, 0);
+  assert.deepEqual(JSON.parse(pendingStorage.get('degen.pending.reward-permits.v1:A')), ['permit-A']);
+  assert.equal(pendingStorage.has('degen.pending.reward-permits.v1:B'), false);
 });

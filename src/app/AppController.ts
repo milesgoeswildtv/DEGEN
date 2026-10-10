@@ -22,6 +22,7 @@ export class AppController {
   private battleActionPending = false;
   private underpassEntryPending = false;
   private navigationGeneration = 0;
+  private battlePlayerId?: string;
   private rewardResolution: Promise<void> = Promise.resolve();
 
   constructor(
@@ -131,6 +132,7 @@ export class AppController {
       if (this.route !== 'underpass' || this.navigationGeneration !== entryGeneration
         || this.store.snapshot.id !== playerId) return;
       this.battlePermit = permit;
+      this.battlePlayerId = playerId;
       this.navigate('battle');
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
@@ -205,75 +207,82 @@ export class AppController {
     });
   }
 
-  private pendingRewardKey(): string {
-    return `degen.pending.reward-permits.v1:${this.store.snapshot.id}`;
+  private pendingRewardKey(playerId = this.store.snapshot.id): string {
+    return `degen.pending.reward-permits.v1:${playerId}`;
   }
 
   // Persist only permit identifiers for retry. Rewards and progression stay Worker-owned.
-  private pendingRewardPermits(): string[] {
+  private pendingRewardPermits(playerId = this.store.snapshot.id): string[] {
     try {
-      const parsed: unknown = JSON.parse(localStorage.getItem(this.pendingRewardKey()) ?? '[]');
+      const parsed: unknown = JSON.parse(localStorage.getItem(this.pendingRewardKey(playerId)) ?? '[]');
       return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
     } catch {
       return [];
     }
   }
 
-  private rememberPendingReward(permitId: string): void {
+  private rememberPendingReward(permitId: string, playerId = this.store.snapshot.id): void {
     try {
-      const ids = this.pendingRewardPermits();
-      if (!ids.includes(permitId)) localStorage.setItem(this.pendingRewardKey(), JSON.stringify([...ids, permitId]));
+      const ids = this.pendingRewardPermits(playerId);
+      if (!ids.includes(permitId)) localStorage.setItem(this.pendingRewardKey(playerId), JSON.stringify([...ids, permitId]));
     } catch (error) {
       console.warn('Unable to persist pending battle reward retry.', error);
     }
   }
 
-  private forgetPendingReward(permitId: string): void {
+  private forgetPendingReward(permitId: string, playerId = this.store.snapshot.id): void {
     try {
-      localStorage.setItem(this.pendingRewardKey(), JSON.stringify(
-        this.pendingRewardPermits().filter((id) => id !== permitId),
+      localStorage.setItem(this.pendingRewardKey(playerId), JSON.stringify(
+        this.pendingRewardPermits(playerId).filter((id) => id !== permitId),
       ));
     } catch (error) {
       console.warn('Unable to clear completed battle reward retry.', error);
     }
   }
 
-  private queueRewardCompletion(permitId: string): Promise<void> {
-    const playerId = this.store.snapshot.id;
-    // Serialize pending completions so an older response cannot replace a newer player snapshot.
+  private queueRewardCompletion(permitId: string, playerId = this.store.snapshot.id): Promise<void> {
     this.rewardResolution = this.rewardResolution.then(async () => {
+      if (this.store.snapshot.id !== playerId) return;
       try {
         const result = await this.api.completeUnderpass(playerId, permitId);
-        if (!result) throw new Error('Missing authoritative battle completion response.');
+        if (!result || !result.player || result.player.id !== playerId) {
+          throw new Error('Missing or mismatched authoritative battle completion response.');
+        }
+        // A late receipt must not overwrite a different account's progression.
+        if (this.store.snapshot.id !== playerId) return;
         this.store.replaceFromServer(result.player);
-        this.worldRefreshGeneration += 1; // Reward receipt supersedes in-flight world refreshes.
+        this.worldRefreshGeneration += 1;
         this.underpassEvent = result.worldEvent;
-        this.forgetPendingReward(permitId);
+        this.forgetPendingReward(permitId, playerId);
         if (this.battlePermit?.permitId === permitId) {
           this.battlePermit = undefined;
+          this.battlePlayerId = undefined;
           if (this.route === 'battle') {
             this.battleReturnTimer = window.setTimeout(() => this.navigate('underpass'), 1400);
           }
-        } else if (this.route !== 'battle') {
-          this.render();
         }
+        if (this.route !== 'battle') this.render();
       } catch (error) {
         console.warn('Server reward verification failed; retaining permit for retry.', error);
-        window.setTimeout(() => void this.queueRewardCompletion(permitId), 15_000);
+        if (this.store.snapshot.id === playerId) {
+          window.setTimeout(() => void this.queueRewardCompletion(permitId, playerId), 15_000);
+        }
       }
     });
     return this.rewardResolution;
   }
 
   private async finishBattle(status: 'victory' | 'defeat'): Promise<void> {
+    const playerId = this.battlePlayerId ?? this.store.snapshot.id;
     if (status === 'victory' && this.battlePermit) {
       if (this.api.enabled) {
         const permitId = this.battlePermit.permitId;
-        this.rememberPendingReward(permitId);
-        await this.queueRewardCompletion(permitId);
+        this.rememberPendingReward(permitId, playerId);
+        await this.queueRewardCompletion(permitId, playerId);
         return;
       }
 
+      if (this.store.snapshot.id !== playerId) return;
       const clearsBeforeThisFight = recordPreviewClear();
       const previewReward = underpassRewardForClear(
         clearsBeforeThisFight + 1,
@@ -284,20 +293,23 @@ export class AppController {
       this.underpassEvent = getPreviewUnderpass();
     }
 
+    if (this.store.snapshot.id !== playerId) return;
     this.battlePermit = undefined;
+    this.battlePlayerId = undefined;
     this.battleReturnTimer = window.setTimeout(() => this.navigate('underpass'), 1400);
   }
 
   private async refreshWorld(rerender = false): Promise<void> {
     const generation = ++this.worldRefreshGeneration;
+    const playerId = this.store.snapshot.id;
     try {
       const event = this.api.enabled
-        ? await this.api.getUnderpass(this.store.snapshot.id)
+        ? await this.api.getUnderpass(playerId)
         : getPreviewUnderpass();
-      if (generation !== this.worldRefreshGeneration) return;
+      if (generation !== this.worldRefreshGeneration || this.store.snapshot.id !== playerId) return;
       this.underpassEvent = event;
     } catch (error) {
-      if (generation !== this.worldRefreshGeneration) return;
+      if (generation !== this.worldRefreshGeneration || this.store.snapshot.id !== playerId) return;
       console.warn('World-event sync failed; keeping server-backed event unavailable.', error);
       this.underpassEvent = undefined;
     }
