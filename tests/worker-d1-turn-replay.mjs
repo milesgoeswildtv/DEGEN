@@ -44,18 +44,18 @@ async function start() {
   }
   throw Error('Worker did not start: ' + logs);
 }
-async function act(permitId, abilityId, expectedTurnCount) {
+async function act(permitId, abilityId, expectedTurnCount, playerId = 'qa-player') {
   const r = await fetch(origin + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: 'qa-player', permitId, abilityId, expectedTurnCount }),
+    body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
     signal: AbortSignal.timeout(15000),
   });
   return { status: r.status, data: await r.json() };
 }
-async function complete(permitId) {
+async function complete(permitId, playerId = 'qa-player') {
   const r = await fetch(origin + '/api/battle/complete', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: 'qa-player', permitId }),
+    body: JSON.stringify({ playerId, permitId }),
     signal: AbortSignal.timeout(15000),
   });
   return { status: r.status, data: await r.json() };
@@ -75,7 +75,30 @@ try {
   seed('defeat', 1, 0, 92);
   seed('race-complete', 5, 4, 20);
   seed('expired', 120, 12, 92);
+  seed('expired-victory', 5, 4, 20);
+  seed('expired-defeat', 1, 0, 92);
+  seed('cas-race-victory', 120, 12, 92);
+  seed('cas-race-defeat', 120, 12, 92);
   sql("UPDATE battle_permits SET expires_at=datetime('now','-2 minutes') WHERE id='expired'");
+  // Test-only triggers produce genuine terminal turns followed by expiry, and
+  // deterministic lost-CAS races. They operate only on isolated local D1.
+  sql(`CREATE TRIGGER qa_expire_terminal AFTER UPDATE OF battle_status ON battle_permits
+    WHEN (NEW.id='expired-victory' AND NEW.battle_status='victory')
+      OR (NEW.id='expired-defeat' AND NEW.battle_status='defeat')
+    BEGIN UPDATE battle_permits SET expires_at=datetime('now','-2 minutes')
+      WHERE id=NEW.id; END`);
+  sql(`CREATE TRIGGER qa_cas_terminal BEFORE UPDATE OF player_hp ON battle_permits
+    WHEN OLD.id IN ('cas-race-victory','cas-race-defeat') AND OLD.battle_status='active'
+    BEGIN
+      UPDATE battle_permits SET
+        battle_status=CASE WHEN OLD.id='cas-race-victory' THEN 'victory' ELSE 'defeat' END,
+        player_hp=CASE WHEN OLD.id='cas-race-victory' THEN 5 ELSE 0 END,
+        player_mana=0,
+        enemy_hp=CASE WHEN OLD.id='cas-race-victory' THEN 0 ELSE 40 END,
+        turn_count=1, completed_at=CURRENT_TIMESTAMP,
+        expires_at=datetime('now','-2 minutes') WHERE id=OLD.id;
+      SELECT RAISE(IGNORE);
+    END`);
   await start();
 
   // Exercise real Worker battle entry; the server initializes Degen Mana and HP.
@@ -173,6 +196,69 @@ try {
   assert.equal((await act('expired', 'slash', 0)).status, 409);
   assert.equal((await complete('expired')).status, 409);
 
+  // The Worker must recover a genuinely resolved win after its permit expires.
+  const earnedWin = await act('expired-victory', 'crack', 0);
+  assert.equal(earnedWin.status, 200);
+  assert.equal(earnedWin.data.status, 'victory');
+  assert.equal(earnedWin.data.playerMana, 0);
+  const terminal = await act('expired-victory', 'slash', 0);
+  assert.equal(terminal.status, 409);
+  assert.equal(terminal.data.battleState.status, 'victory');
+  assert.equal(terminal.data.battleState.turnCount, 1);
+  assert.equal(terminal.data.battleState.playerMana, 0);
+  const stolen = await act('expired-victory', 'slash', 0, 'wrong-player');
+  assert.equal(stolen.status, 409);
+  assert.equal(stolen.data.battleState, undefined);
+  assert.equal((await complete('expired-victory', 'wrong-player')).status, 409);
+
+  const earnedDefeat = await act('expired-defeat', 'slash', 0);
+  assert.equal(earnedDefeat.status, 200);
+  assert.equal(earnedDefeat.data.status, 'defeat');
+  const defeatReplay = await act('expired-defeat', 'slash', 0);
+  assert.equal(defeatReplay.status, 409);
+  assert.equal(defeatReplay.data.battleState.status, 'defeat');
+  assert.equal(defeatReplay.data.battleState.playerMana, 0);
+  assert.equal(defeatReplay.data.battleState.turnCount, 1);
+  assert.equal((await complete('expired-defeat')).status, 409);
+
+  // A competing transaction can resolve the battle after the action's first
+  // SELECT. The losing action returns that authoritative terminal state.
+  const casVictory = await act('cas-race-victory', 'slash', 0);
+  assert.equal(casVictory.status, 409);
+  assert.equal(casVictory.data.battleState.status, 'victory');
+  assert.equal(casVictory.data.battleState.turnCount, 1);
+  assert.equal(casVictory.data.battleState.playerMana, 0);
+  const casDefeat = await act('cas-race-defeat', 'slash', 0);
+  assert.equal(casDefeat.status, 409);
+  assert.equal(casDefeat.data.battleState.status, 'defeat');
+  assert.equal(casDefeat.data.battleState.turnCount, 1);
+  assert.equal(casDefeat.data.battleState.playerMana, 0);
+  const wrongCasOwner = await act('cas-race-victory', 'slash', 0, 'wrong-player');
+  assert.equal(wrongCasOwner.status, 409);
+  assert.equal(wrongCasOwner.data.battleState, undefined);
+
+  const recovered = await complete('expired-victory');
+  assert.equal(recovered.status, 200);
+  const replay = await complete('expired-victory');
+  assert.equal(replay.status, 200);
+  assert.deepEqual(replay.data.reward, recovered.data.reward);
+  assert.equal(replay.data.player.xp, recovered.data.player.xp);
+  const stateBefore = sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count,reward_state FROM battle_permits WHERE id='expired-victory'");
+  for (let retry = 0; retry < 5; retry += 1) {
+    const postAward = await act('expired-victory', 'slash', 0);
+    assert.equal(postAward.status, 409);
+    assert.equal(postAward.data.battleState.status, 'victory');
+    assert.equal(postAward.data.battleState.playerMana, 0);
+  }
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count,reward_state FROM battle_permits WHERE id='expired-victory'"), stateBefore);
+  const defeatBefore = sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='expired-defeat'");
+  for (let retry = 0; retry < 5; retry += 1) {
+    const postDefeat = await act('expired-defeat', 'slash', 0);
+    assert.equal(postDefeat.status, 409);
+    assert.equal(postDefeat.data.battleState.status, 'defeat');
+  }
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='expired-defeat'"), defeatBefore);
+
   const reward = await complete('victory');
   assert.equal(reward.status, 200);
   const duplicate = await complete('victory');
@@ -196,13 +282,24 @@ try {
     [{battle_status:'victory',turn_count:1,player_mana:0,reward_state:'awarded'}]);
   assert.deepEqual(sql("SELECT battle_status,turn_count,player_mana FROM battle_permits WHERE id='defeat'"),
     [{battle_status:'defeat',turn_count:1,player_mana:0}]);
-  assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='victory'").length,2);
+  assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='victory'").length,3);
   assert.equal(sql("SELECT id FROM battle_history WHERE id='race-complete:victory'").length,1);
   assert.deepEqual(sql("SELECT battle_status,reward_state FROM battle_permits WHERE id='race-complete'"),
     [{battle_status:'victory',reward_state:'awarded'}]);
   assert.deepEqual(sql("SELECT battle_status,turn_count FROM battle_permits WHERE id='expired'"),
     [{battle_status:'active',turn_count:0}]);
-  assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='defeat'").length,1);
+  assert.equal(sql("SELECT id FROM battle_history WHERE player_id='qa-player' AND result='defeat'").length,2);
+  assert.deepEqual(sql("SELECT battle_status,reward_state,turn_count,player_mana FROM battle_permits WHERE id='expired-victory'"),
+    [{battle_status:'victory',reward_state:'awarded',turn_count:1,player_mana:0}]);
+  assert.deepEqual(sql("SELECT battle_status,turn_count,player_mana FROM battle_permits WHERE id='expired-defeat'"),
+    [{battle_status:'defeat',turn_count:1,player_mana:0}]);
+  for (const [id,status] of [['cas-race-victory','victory'],['cas-race-defeat','defeat']]) {
+    const state = sql("SELECT battle_status,turn_count,player_mana,completed_at FROM battle_permits WHERE id='" + id + "'")[0];
+    assert.equal(state.battle_status, status);
+    assert.equal(state.turn_count, 1);
+    assert.equal(state.player_mana, 0);
+    assert.ok(state.completed_at);
+  }
   assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='" + serverPermitId + "'"),
     [{player_hp:110,player_mana:8,enemy_hp:57,turn_count:1}]);
   console.log('PASS local Worker/D1 server battle start, Mana, turn CAS, terminal replay, rewards and persisted state');
