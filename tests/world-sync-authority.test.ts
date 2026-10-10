@@ -147,6 +147,10 @@ test('rejected Underpass start releases the entry lock for a later retry', async
   app.navigate = route => routes.push(route);
   await app.enterUnderpass();
   assert.equal(app.underpassEntryPending, false);
+  assert.equal(app.underpassEvent, undefined);
+  // A rejected entry fails closed until the Worker confirms the event is open.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.underpassEvent?.phase, 'open');
   await app.enterUnderpass();
   assert.equal(attempts, 2);
   assert.deepEqual(routes, ['battle']);
@@ -198,6 +202,10 @@ test('missing server permit releases Underpass entry lock for retry', async () =
   app.navigate = route => routes.push(route);
   await app.enterUnderpass();
   assert.equal(app.underpassEntryPending, false);
+  assert.equal(app.underpassEvent, undefined);
+  // A rejected entry fails closed until the Worker confirms the event is open.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.underpassEvent?.phase, 'open');
   await app.enterUnderpass();
   assert.equal(attempts, 2);
   assert.deepEqual(routes, ['battle']);
@@ -233,6 +241,10 @@ test('malformed Worker permit cannot enter battle; valid retry recovers', async 
   assert.equal(app.route, 'underpass');
   assert.equal(app.battlePermit, undefined);
   assert.equal(app.underpassEntryPending, false);
+  assert.equal(app.underpassEvent, undefined);
+  // A rejected entry fails closed until the Worker confirms the event is open.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.underpassEvent?.phase, 'open');
   await app.enterUnderpass();
   assert.equal(attempts, 2);
   assert.equal(app.route, 'battle');
