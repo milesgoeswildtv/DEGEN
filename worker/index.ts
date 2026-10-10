@@ -222,6 +222,23 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === input.abilityId);
   if (!ability) return fail(request, env, 'Unknown ability.', 400);
 
+  // Read-only recovery of a resolved encounter, including an expired permit
+  // or an action that lost a concurrent compare-and-swap.
+  const recoverTerminal = async (): Promise<Response | undefined> => {
+    const terminal = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp,
+        player_mana, enemy_hp, battle_status, turn_count FROM battle_permits
+      WHERE id = ? AND player_id = ? AND battle_status IN ('victory', 'defeat')`)
+      .bind(input.permitId!, input.playerId!).first<BattlePermitStateRow>();
+    if (terminal && terminal.encounter_key === TUNNEL_MAW.id
+      && terminal.player_hp !== null && terminal.player_mana !== null && terminal.enemy_hp !== null) {
+      return json(request, env, { error: 'Battle has already resolved.', battleState: {
+        permitId: input.permitId, status: terminal.battle_status,
+        playerHp: terminal.player_hp, playerMana: terminal.player_mana,
+        enemyHp: terminal.enemy_hp, turnCount: terminal.turn_count,
+      } }, 409);
+    }
+  };
+
   const permit = await env.DB.prepare(`SELECT
       cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
     FROM battle_permits
@@ -229,7 +246,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     .bind(input.permitId, input.playerId)
     .first<BattlePermitStateRow>();
 
-  if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+  if (!permit) return (await recoverTerminal()) ?? fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
   if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
@@ -298,7 +315,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     if (latest && latest.player_hp !== null && latest.player_mana !== null && latest.enemy_hp !== null) {
       return conflict('Battle state changed; retry from the latest authoritative state.', latest);
     }
-    return fail(request, env, 'Battle state changed; permit is no longer active.', 409);
+    return (await recoverTerminal()) ?? fail(request, env, 'Battle state changed; permit is no longer active.', 409);
   }
 
   return json(request, env, {
