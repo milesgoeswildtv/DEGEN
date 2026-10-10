@@ -214,3 +214,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1: existing `wrangler.toml` binding remains source of truth; tracked schema and migrations are applied before Worker deployment by `deploy-worker.yml`. No remote D1 operation or deployment this run.
 - Blockers: production Pages CORS PR #7, real Worker-backed frontend/mobile QA, and signed Discord/Telegram identity with per-request authorization before public economy. No new Miles design decision required.
 - Best next task: verify PR #10's Vite frontend against isolated real Wrangler/D1 through an approved browser, then plan frontend-first integration with PR #9's mandatory turn enforcement without losing PR #10 protections.
+
+## 2026-10-10 — mobile portrait browser QA (PUSHED / PR #10 / CI GREEN)
+- Authority: main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #10 branch `automation/degen/battle-client-first-v01` head `2c5d498a14c3c2a9c8ff974e6e66ea019019b6e2`, draft/unmerged.
+- Task: `tests/browser-worker-vertical-slice.mjs` now sets Chromium 390x844 portrait metrics (DPR 2, touch emulation). Existing real isolated Vite + Wrangler/D1 gameplay, Mana, reward receipt, and trophy checks are retained. No runtime, Worker, schema, or config changes.
+- QA: GitHub Actions `38095560035` SUCCESS: 65/65 deterministic tests, local Worker/D1 HTTP, TypeScript/Vite build, mobile-viewport Chromium full game slice, Worker validation. DOM click scripting remains; physical touch and Telegram/Discord embedded QA unverified.
+- Mana: COMPLETE/MERGED on main, Degen-only; no monster Mana or depletion reversion. Battle authority/reward idempotency merged on main; PR #9 strict expected-turn enforcement remains draft/unmerged and must not deploy ahead of compatible client.
+- D1: `wrangler.toml` source of truth; tracked migrations `0002`–`0005` apply to local isolated D1 in CI and before Worker deploy in workflow. No remote D1 mutation, production deploy, or merge.
+- Blockers: production Pages CORS PR #7, deployed API-base verification, signed Discord/Telegram identity and per-request authorization before public economy.
+- Next task: add CDP touch-event navigation and mobile overflow assertions; verify Pages API/CORS release readiness.
