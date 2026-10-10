@@ -18,6 +18,7 @@ let socket;
 function command(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw Error('wrangler ' + args.join(' ') + ': ' + (r.error ?? '') + r.stdout + r.stderr);
+  return r.stdout;
 }
 function launch(name, exe, args, extra = {}) {
   const child = spawn(exe, args, { cwd: root, env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -124,6 +125,11 @@ try {
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await cdp.evaluate('document.querySelector("[data-route=home]").click()');
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
+  // Verify the browser produced a real server-settled receipt, not preview-only UI.
+  const query = "SELECT COUNT(*) AS awarded FROM battle_permits WHERE battle_status='victory' AND reward_state='awarded' AND player_mana=0 AND turn_count=3";
+  const raw = JSON.parse(command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--json', '--command=' + query]));
+  const rows = Array.isArray(raw) ? raw[0]?.results : raw?.results ?? raw?.result?.[0]?.results;
+  assert.equal(rows?.[0]?.awarded, 1, 'Browser victory must persist one authoritative D1 receipt');
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
