@@ -14,10 +14,19 @@ export class GameApi {
 
   async bootstrap(playerId: string, identity: PlatformIdentity): Promise<PlayerState | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<PlayerState>('/api/player/bootstrap', {
-      method: 'POST',
-      body: JSON.stringify({ playerId, displayName: identity.displayName, platform: identity.platform, platformUserId: identity.platformUserId }),
-    });
+    // Bootstrap must not leave the app blank indefinitely on a stalled connection.
+    // PlayerStore.initialize already handles failures by retaining local preview state.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+      return await this.request<PlayerState>('/api/player/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({ playerId, displayName: identity.displayName, platform: identity.platform, platformUserId: identity.platformUserId }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async saveHousing(playerId: string, housing: HousingState): Promise<void> {
@@ -51,10 +60,19 @@ export class GameApi {
 
   async completeUnderpass(playerId: string, permitId: string): Promise<BattleCompletionResult | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<BattleCompletionResult>('/api/battle/complete', {
-      method: 'POST',
-      body: JSON.stringify({ playerId, permitId }),
-    });
+    // A stalled completion fetch must not indefinitely block serialized reward recovery.
+    // The Worker owns reward settlement and replays authoritative receipts on retry.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    try {
+      return await this.request<BattleCompletionResult>('/api/battle/complete', {
+        method: 'POST',
+        body: JSON.stringify({ playerId, permitId }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async request<T = void>(path: string, init?: RequestInit): Promise<T> {

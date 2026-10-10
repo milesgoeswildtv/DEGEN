@@ -32,12 +32,15 @@ export class AppController {
   ) {}
 
   async start(): Promise<void> {
-    await this.refreshWorld();
+    // Make Home/map usable and resume earned rewards even if world sync stalls.
     this.render();
     if (this.api.enabled) {
       for (const permitId of this.pendingRewardPermits()) void this.queueRewardCompletion(permitId);
     }
     this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
+    // Do not block startup on a network request. Existing generation checks
+    // prevent a stale world response from replacing a newer reward receipt.
+    void this.refreshWorld(true).catch((error) => console.warn('Initial world refresh failed.', error));
   }
 
   private navigate(route: RouteKey): void {

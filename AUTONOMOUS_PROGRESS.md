@@ -168,3 +168,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana COMPLETE/MERGED, no monster Mana or reversion. Reward receipts/idempotency MERGED; PR #9 turn enforcement/atomic defeat still draft. Migrations 0002–0005 run before Worker; no production DB/deploy/config changes.
 - Blockers: reviewed frontend-first release and real Worker-backed mobile QA; Pages origin CORS; signed Discord/Telegram sessions and request-level authorization for public economy.
 - Next: verify frontend first, then reconcile PR #9 and its terminal-expiry recovery with actual Worker/D1 tests.
+
+## 2026-10-10 — Client startup and reward request liveness (FEATURE BRANCH / CI PENDING)
+- Authority: main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; existing draft PR #10 `automation/degen/battle-client-first-v01`, parent `7672f777d0a1b8f481dd40f57f4e9af130ae9674`.
+- Scope: `src/app/api.ts` 15s bootstrap and 20s reward-completion AbortController deadlines; `src/app/AppController.ts` renders Map/Home and starts account-bound pending reward recovery before asynchronous world refresh. No new game canon, Mana changes, D1 migration or deployment configuration changes.
+- QA: prior isolated portable Node/SQLite and Chromium mock checks passed in handoff; fresh GitHub CI, full npm test/build/check:worker, and actual Worker/D1/browser proof required on new commit.
+- Mana: complete on main; monsters have no Mana and zero Mana does not revert. Reward settlement remains Worker-owned and replay/idempotency remain in force. PR #9 strict Worker turn/CAS recovery draft/unmerged.
+- D1: tracked migrations 0002–0005 precede Worker deployment; current wrangler.toml binding is source of truth; no remote D1 mutation.
+- Public blocker: signed Discord/Telegram authentication and per-request authorization. Next: run full CI and real Worker-backed browser QA on this PR before PR #9 enforcement.
