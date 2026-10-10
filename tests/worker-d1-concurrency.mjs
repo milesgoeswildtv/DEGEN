@@ -61,7 +61,8 @@ try {
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
       ('client-first','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
-      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0);
+      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
+      ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -130,6 +131,90 @@ try {
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
   assert.equal((await complete('expired')).status, 409);
+
+  // Real local Worker/D1 HTTP vertical slice: no client-computed rewards.
+  const post = async (path, payload) => {
+    const r = await fetch(base + path, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return { status: r.status, data: await r.json() };
+  };
+  const pid = 'vertical-player';
+  const bootstrap = await post('/api/player/bootstrap', {
+    playerId: pid, displayName: 'Vertical', platform: 'browser', platformUserId: pid,
+  });
+  assert.equal(bootstrap.status, 200);
+  assert.equal(bootstrap.data.id, pid);
+  assert.equal(bootstrap.data.level, 1);
+  const worldResponse = await fetch(base + '/api/world/underpass?playerId=' + pid);
+  assert.equal(worldResponse.status, 200);
+  const world = await worldResponse.json();
+  assert.equal(world.source, 'server');
+  assert.equal(world.phase, 'open');
+  assert.equal(world.cycleId, 'integration-cycle');
+  const start = await post('/api/battle/start', {
+    playerId: pid, eventKey: 'underpass', cycleId: world.cycleId, encounterKey: 'tunnel-maw',
+  });
+  assert.equal(start.status, 200);
+  const permitId = start.data.permitId;
+  assert.ok(typeof permitId === 'string' && permitId.length > 0);
+  assert.equal((await complete(permitId, pid)).status, 409);
+  // A legitimate permit must remain playable after the world event closes.
+  sql("UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='integration-cycle'");
+  for (const [index, expected] of [
+    { playerHp: 110, playerMana: 8, enemyHp: 57, status: 'active' },
+    { playerHp: 100, playerMana: 4, enemyHp: 22, status: 'active' },
+    { playerHp: 100, playerMana: 0, enemyHp: 0, status: 'victory' },
+  ].entries()) {
+    const action = await post('/api/battle/action', {
+      playerId: pid, permitId, abilityId: 'crack', expectedTurnCount: index,
+    });
+    assert.equal(action.status, 200);
+    assert.equal(action.data.turnCount, index + 1);
+    assert.equal(action.data.permitId, permitId);
+    for (const [key, value] of Object.entries(expected)) assert.equal(action.data[key], value, key);
+    assert.equal('enemyMana' in action.data, false);
+  }
+  let receipt;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const result = await complete(permitId, pid);
+    if (result.status === 200) { receipt = result.data; break; }
+    assert.ok([409, 500].includes(result.status));
+    await sleep(100 + 50 * attempt);
+  }
+  assert.ok(receipt, 'Worker must eventually settle valid victory');
+  assert.equal(receipt.reward.tier, 'full');
+  assert.equal(receipt.player.xp, 75);
+  assert.equal(receipt.player.currency, 30);
+  assert.ok(receipt.player.inventory.includes('underpass-scrap'));
+  assert.ok(receipt.player.housing.inventory.includes('tunnel-trophy'));
+  assert.ok(receipt.player.defeatedBosses.includes('tunnel-maw'));
+  assert.equal(receipt.worldEvent.phase, 'sealed');
+  const replay = await complete(permitId, pid);
+  assert.equal(replay.status, 200);
+  assert.deepEqual(replay.data.player, receipt.player);
+  assert.deepEqual(replay.data.reward, receipt.reward);
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='" + permitId + ":victory'"), [{ count: 1 }]);
+  assert.deepEqual(sql("SELECT player_mana,turn_count,battle_status,reward_state FROM battle_permits WHERE id='" + permitId + "'"),
+    [{ player_mana: 0, turn_count: 3, battle_status: 'victory', reward_state: 'awarded' }]);
+
+  const denied = await post('/api/battle/action', {
+    playerId: 'integration-player', permitId: 'zero-mana', abilityId: 'crack', expectedTurnCount: 0,
+  });
+  assert.equal(denied.status, 409);
+  assert.deepEqual(sql("SELECT player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='zero-mana'"),
+    [{ player_mana: 0, enemy_hp: 92, turn_count: 0 }]);
+  const free = await post('/api/battle/action', {
+    playerId: 'integration-player', permitId: 'zero-mana', abilityId: 'slash', expectedTurnCount: 0,
+  });
+  assert.equal(free.status, 200);
+  assert.equal(free.data.playerMana, 0);
+  assert.equal(free.data.enemyHp, 63);
+  assert.equal(free.data.turnCount, 1);
+  assert.equal(free.data.status, 'active');
+  console.log('PASS local Worker/D1 HTTP: bootstrap, world, combat, Mana, event closure, reward replay');
+
   console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
 } finally {
   if (server && server.exitCode === null) {
