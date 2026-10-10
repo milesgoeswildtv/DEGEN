@@ -160,3 +160,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1 migrations 0002–0005 tracked; schema/migrations precede Worker deployment. No production D1 mutation, Worker deploy, main merge, or config change.
 - Blockers: production Pages CORS, real browser/mobile verification, signed platform identity and per-request authorization before public economy.
 - Next: review PR #10 and verify compatible frontend first; then reconcile PR #9 terminal-state recovery and Worker enforcement.
+
+## 2026-10-09 — Invalid-permit HTTP integration (PUSHED / PR #10)
+- Main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; draft PR #10 branch `automation/degen/battle-client-first-v01` implementation head `86e1b3853d2307847457672d0c894760b44e2d6c`, unmerged.
+- `tests/worker-d1-concurrency.mjs` now checks invalid, expired-active, wrong-account action permits and non-victory completion rejection against isolated local Worker/D1.
+- Exact GitHub CI `38017661280` PASS: 55 deterministic tests, real local Worker/D1 concurrency/replay, `npm run build`, `npm run check:worker`. Cloudflare Pages preview is static proof only.
+- Mana COMPLETE/MERGED, no monster Mana or reversion. Reward receipts/idempotency MERGED; PR #9 turn enforcement/atomic defeat still draft. Migrations 0002–0005 run before Worker; no production DB/deploy/config changes.
+- Blockers: reviewed frontend-first release and real Worker-backed mobile QA; Pages origin CORS; signed Discord/Telegram sessions and request-level authorization for public economy.
+- Next: verify frontend first, then reconcile PR #9 and its terminal-expiry recovery with actual Worker/D1 tests.
