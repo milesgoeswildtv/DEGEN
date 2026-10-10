@@ -191,10 +191,10 @@ try {
   assert.ok(receipt.player.housing.inventory.includes('tunnel-trophy'));
   assert.ok(receipt.player.defeatedBosses.includes('tunnel-maw'));
   assert.equal(receipt.worldEvent.phase, 'sealed');
-  const replay = await complete(permitId, pid);
-  assert.equal(replay.status, 200);
-  assert.deepEqual(replay.data.player, receipt.player);
-  assert.deepEqual(replay.data.reward, receipt.reward);
+  const verticalReplay = await complete(permitId, pid);
+  assert.equal(verticalReplay.status, 200);
+  assert.deepEqual(verticalReplay.data.player, receipt.player);
+  assert.deepEqual(verticalReplay.data.reward, receipt.reward);
   assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='" + permitId + ":victory'"), [{ count: 1 }]);
   assert.deepEqual(sql("SELECT player_mana,turn_count,battle_status,reward_state FROM battle_permits WHERE id='" + permitId + "'"),
     [{ player_mana: 0, turn_count: 3, battle_status: 'victory', reward_state: 'awarded' }]);
