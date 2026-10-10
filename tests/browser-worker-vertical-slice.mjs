@@ -104,6 +104,11 @@ try {
   socket = cdp.ws;
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  // Exercise the entire Worker-backed slice in mobile portrait; not physical-device QA.
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 390, height: 844, deviceScaleFactor: 2, mobile: true,
+  });
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
