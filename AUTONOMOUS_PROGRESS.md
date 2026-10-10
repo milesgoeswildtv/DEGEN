@@ -176,3 +176,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana: complete on main; monsters have no Mana and zero Mana does not revert. Reward settlement remains Worker-owned and replay/idempotency remain in force. PR #9 strict Worker turn/CAS recovery draft/unmerged.
 - D1: tracked migrations 0002–0005 precede Worker deployment; current wrangler.toml binding is source of truth; no remote D1 mutation.
 - Public blocker: signed Discord/Telegram authentication and per-request authorization. Next: run full CI and real Worker-backed browser QA on this PR before PR #9 enforcement.
+
+
+## 2026-10-10 — Underpass request liveness (PUSHED / PR #10; CI PENDING)
+- Authoritative main SHA: \`33e7477961d2a6ab7b79bf52d78a93901e19f658\`; feature branch \`automation/degen/battle-client-first-v01\`, PR #10, prior API implementation commit \`cfe25de7e80fd2f08aa076fac41211dd26788a8d\`. Main unchanged; no merge/live deployment.
+- Files changed: \`src/app/api.ts\` bounds world-event polling to 15 seconds and battle permit issuance to 20 seconds with per-request AbortController and finally timer cleanup. \`tests/world-entry-request-deadlines.test.ts\` covers aborts, Worker-only responses, independent signals, and cleanup. This log updated for continuity.
+- QA: local exact-blob source fixture passed 4/4 targeted tests. Prior portable world/entry suite passed 12/12, but that is isolated evidence, not new GitHub CI. Run \`npm test\`, \`npm run build\`, \`npm run check:worker\`, and Worker/D1 integration on this branch. Actual Worker-backed browser/mobile remains unverified.
+- Mana status: COMPLETE/MERGED on main; only Degens own Mana, zero Mana never forces reversion. Reward idempotency/recoverability: MERGED on main, with client account-bound receipt recovery in PR #10; PR #9 strict turn enforcement/atomic defeat remains draft and unmerged.
+- D1: current \`wrangler.toml\` binding is authoritative; tracked schema and migrations precede Worker deploy. No D1 schema change or remote DB operation this run.
+- Blockers: signed Discord/Telegram platform identity and request-level authorization for public economy; production Pages CORS (PR #7); actual Worker-backed frontend validation. Do not deploy optional battle-action timeout until strict Worker expected-turn enforcement is live.
+- Best next task: inspect fresh PR #10 CI and run real local Vite + Wrangler/D1 browser vertical slice; then reconcile PR #9 without losing PR #10's account isolation and fail-closed world navigation.
