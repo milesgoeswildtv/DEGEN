@@ -1,6 +1,6 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-08
+Updated: 2026-10-10
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
@@ -205,3 +205,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1: current `wrangler.toml` is source of truth. `db/schema.sql` and tracked migrations `0002`–`0005` apply to ephemeral local D1 before tests; deployment workflow migrates before Worker. No production D1 mutation or deploy this run.
 - Miles blocker: signed Discord/Telegram identity and request-level ownership before public economy; PR #7 production Pages CORS and real browser/Worker verification still outstanding.
 - One best next task: verify PR #10 frontend with real local Vite + Wrangler/D1 browser or approved nonproduction environment; then stage frontend-first release and reconcile PR #9 without losing PR #10 account isolation.
+
+## Mana UI Node-loader repair — 2026-10-10 (PUSHED / PR #10, CI GREEN)
+- Authority: `main` `33e7477961d2a6ab7b79bf52d78a93901e19f658` unchanged. Existing coherent feature branch `automation/degen/battle-client-first-v01`, draft PR #10. Repair commit `b3ca9c9e34e58ec0bbd629c90ad4e03144e3e0fc` PUSHED; not merged or deployed.
+- Exact task/files: `tests/mana-ui.test.ts` now executes the actual `src/ui/views.ts` via Node's TypeScript stripping and an isolated VM instead of directly importing Vite's extensionless browser module paths. Existing assertions cover displayed Degen Mana costs, 0-Mana free ability, disabled unaffordable abilities, and victory controls. No production source, Mana values, D1 schema, or Worker authority changed.
+- QA: GitHub Actions CI run `38092000340` completed SUCCESS on the repair commit: deterministic `npm test`, isolated local Worker/D1 HTTP concurrency, `npm run build`, and `npm run check:worker` all succeeded. This is repository CI, not real mobile/Telegram/Discord or deployed Worker-backed browser proof.
+- Mana: COMPLETE/MERGED on `main`, Degen-only; no monster Mana or depletion reversion. Battle authority/reward idempotency: server-resolved actions and idempotent receipt settlement merged on `main`; PR #9 stricter expected-turn/atomic defeat work remains draft/unmerged. Preserve PR #10 account-bound recovery when reconciling.
+- D1: existing `wrangler.toml` binding remains source of truth; tracked schema and migrations are applied before Worker deployment by `deploy-worker.yml`. No remote D1 operation or deployment this run.
+- Blockers: production Pages CORS PR #7, real Worker-backed frontend/mobile QA, and signed Discord/Telegram identity with per-request authorization before public economy. No new Miles design decision required.
+- Best next task: verify PR #10's Vite frontend against isolated real Wrangler/D1 through an approved browser, then plan frontend-first integration with PR #9's mandatory turn enforcement without losing PR #10 protections.
