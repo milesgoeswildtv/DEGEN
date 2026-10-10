@@ -545,3 +545,53 @@ test('late old victory cannot overwrite a newer same-account battle', async () =
   assert.equal(app.battlePermit.permitId, 'new-permit');
   assert.deepEqual(JSON.parse(pendingStorage.get('degen.pending.reward-permits.v1:A')), []);
 });
+
+
+
+test('timed-out Underpass entry unlocks before a stalled world resync finishes', async () => {
+  let resolveWorld;
+  let polls = 0;
+  const app = make({
+    enabled: true,
+    startUnderpass: async () => { throw Error('permit timeout'); },
+    getUnderpass: () => { polls += 1; return new Promise(resolve => { resolveWorld = resolve; }); },
+  });
+  app.underpassEvent = serverOpen;
+  let renders = 0;
+  app.render = () => { renders += 1; };
+  await app.enterUnderpass();
+  assert.equal(app.underpassEntryPending, false);
+  assert.equal(app.underpassEvent, undefined);
+  assert.equal(app.battlePermit, undefined);
+  assert.equal(polls, 1);
+  assert.equal(renders, 1);
+  resolveWorld(serverOpen);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.underpassEvent, serverOpen);
+  assert.equal(renders, 2);
+});
+
+test('late failed entry from a previous account cannot erase the current world event', async () => {
+  let rejectEntry;
+  let polls = 0;
+  const app = make({
+    enabled: true,
+    startUnderpass: () => new Promise((_resolve, reject) => { rejectEntry = reject; }),
+    getUnderpass: async () => { polls += 1; return serverOpen; },
+  });
+  app.underpassEvent = serverOpen;
+  let renders = 0;
+  app.render = () => { renders += 1; };
+  const pending = app.enterUnderpass();
+  app.store.snapshot.id = 'different-player';
+  app.route = 'home';
+  app.navigationGeneration += 1;
+  const otherAccountEvent = { ...serverOpen, cycleId: 'other-account-cycle' };
+  app.underpassEvent = otherAccountEvent;
+  rejectEntry(Error('late permit timeout'));
+  await pending;
+  assert.equal(app.underpassEvent, otherAccountEvent);
+  assert.equal(app.underpassEntryPending, false);
+  assert.equal(polls, 0);
+  assert.equal(renders, 0);
+});

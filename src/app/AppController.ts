@@ -142,8 +142,13 @@ export class AppController {
       this.navigate('battle');
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
-      await this.refreshWorld();
-      this.render();
+      if (this.store.snapshot.id === playerId && this.route === 'underpass'
+        && this.navigationGeneration === entryGeneration) {
+        // Reject stale entry immediately; refresh asynchronously without holding the lock.
+        this.underpassEvent = undefined;
+        this.render();
+        void this.refreshWorld(true).catch((refreshError) => console.warn('Underpass resync failed.', refreshError));
+      }
     } finally {
       this.underpassEntryPending = false;
     }

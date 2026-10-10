@@ -186,3 +186,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1: current \`wrangler.toml\` binding is authoritative; tracked schema and migrations precede Worker deploy. No D1 schema change or remote DB operation this run.
 - Blockers: signed Discord/Telegram platform identity and request-level authorization for public economy; production Pages CORS (PR #7); actual Worker-backed frontend validation. Do not deploy optional battle-action timeout until strict Worker expected-turn enforcement is live.
 - Best next task: inspect fresh PR #10 CI and run real local Vite + Wrangler/D1 browser vertical slice; then reconcile PR #9 without losing PR #10's account isolation and fail-closed world navigation.
+
+
+## 2026-10-10 — Underpass entry failure recovery (PUSHED / PR #10; fresh CI pending)
+- Main authority: \`33e7477961d2a6ab7b79bf52d78a93901e19f658\`; feature branch PR #10 parent \`406356c2ce114912306b2d62814fbf09b068aa5a\`. Previous API deadline commit and 4 new deterministic tests passed CI \`38080378713\`: 61/61, isolated Worker/D1, Vite build, Wrangler dry run.
+- Files: \`src/app/AppController.ts\` fails closed on rejected permit, releases the entry lock without awaiting a potentially stalled world refresh, and asynchronously rerenders after authoritative world recovery. Account/navigation generation guards prevent a late rejection from affecting another player or route. \`tests/world-sync-authority.test.ts\` adds actual-controller regressions for delayed refresh and account switching; this log updated.
+- QA: 4/4 local extracted controller regression tests passed (including a negative control of the original blocked lock). Fresh full CI and actual Worker-backed browser QA required for this new change; no claim of live verification.
+- Mana: COMPLETE/MERGED, Degen-only; no monster Mana or forced reversion. Rewards: Worker-owned idempotent settlement merged on main; PR #9 strict turn enforcement still unmerged. No schema/config/remote D1 changes. Tracked migrations run before Worker deployment.
+- Release gates: PR #10 frontend verified first, production Pages CORS, platform-signed Discord/Telegram authentication with per-request authorization. Do not add action deadline before PR #9 strict turn enforcement is live.
+- Next: inspect fresh PR #10 CI, verify local Vite + Wrangler/D1 full browser slice, and reconcile PR #9 without regressing client account isolation.
