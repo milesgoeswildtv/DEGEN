@@ -52,7 +52,13 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
+      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
+      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',70,0,30,3),
+      ('expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'defeat',0,0,30,3),
+      ('earned-live','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,1,0);
+    CREATE TRIGGER qa_expire_earned_victory AFTER UPDATE OF battle_status ON battle_permits
+    WHEN NEW.id = 'earned-live' AND NEW.battle_status = 'victory'
+    BEGIN UPDATE battle_permits SET expires_at = datetime('now','-20 minutes') WHERE id = NEW.id; END;
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -71,7 +77,9 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
-  assert.equal((await complete('expired')).status, 409);
+  assert.equal((await complete('expired-active')).status, 409);
+  assert.equal((await complete('expired-defeat')).status, 409);
+  assert.equal((await complete('expired', 'wrong-player')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
   assert.equal(a.reward.xp, 75);
@@ -90,8 +98,35 @@ try {
   assert.equal(final.player.currency, 93);
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
-  assert.equal((await complete('expired')).status, 409);
-  console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
+  const expired = await eventuallyComplete('expired');
+  assert.equal(expired.reward.tier, 'reduced');
+  assert.equal(expired.reward.xp, 10);
+  assert.equal(expired.worldEvent.fullRewardClears, 5);
+  const expiredReplay = await eventuallyComplete('expired');
+  assert.equal(expiredReplay.player.currency, 96);
+  assert.equal(expiredReplay.player.xp, 145);
+  assert.equal(expiredReplay.worldEvent.fullRewardClears, 5);
+  assert.equal(expiredReplay.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
+  // Resolve a killing blow on the Worker; a test-only SQLite trigger expires
+  // the permit immediately after the authoritative victory transition.
+  const actionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'earned-live', abilityId: 'slash', expectedTurnCount: 0 }),
+  });
+  assert.equal(actionResponse.status, 200);
+  const action = await actionResponse.json();
+  assert.equal(action.status, 'victory');
+  assert.equal(action.playerMana, 0);
+  assert.equal(action.turnCount, 1);
+  const earned = await eventuallyComplete('earned-live');
+  assert.equal(earned.reward.tier, 'reduced');
+  assert.equal(earned.player.currency, 99);
+  assert.equal(earned.player.xp, 155);
+  const earnedReplay = await eventuallyComplete('earned-live');
+  assert.equal(earnedReplay.player.currency, 99);
+  assert.equal(earnedReplay.player.xp, 155);
+  assert.equal(earnedReplay.worldEvent.fullRewardClears, 6);
+  console.log('PASS isolated Worker/D1: real victory after permit expiry, concurrency, replay, reward tiers, level-up');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');

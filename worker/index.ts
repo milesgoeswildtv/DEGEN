@@ -210,13 +210,34 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 }
 
 async function handleBattleAction(request: Request, env: Env): Promise<Response> {
-  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string }>(request);
+  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount?: number }>(request);
   if (!input.playerId || !input.permitId || !input.abilityId) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
   }
 
+  // Every action must identify its observed turn to prevent replay.
+  if (typeof input.expectedTurnCount !== 'number' || !Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0) {
+    return fail(request, env, 'expectedTurnCount must be a nonnegative safe integer.', 400);
+  }
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === input.abilityId);
   if (!ability) return fail(request, env, 'Unknown ability.', 400);
+
+  // Read-only recovery of a resolved encounter, including an expired permit
+  // or an action that lost a concurrent compare-and-swap.
+  const recoverTerminal = async (): Promise<Response | undefined> => {
+    const terminal = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp,
+        player_mana, enemy_hp, battle_status, turn_count FROM battle_permits
+      WHERE id = ? AND player_id = ? AND battle_status IN ('victory', 'defeat')`)
+      .bind(input.permitId!, input.playerId!).first<BattlePermitStateRow>();
+    if (terminal && terminal.encounter_key === TUNNEL_MAW.id
+      && terminal.player_hp !== null && terminal.player_mana !== null && terminal.enemy_hp !== null) {
+      return json(request, env, { error: 'Battle has already resolved.', battleState: {
+        permitId: input.permitId, status: terminal.battle_status,
+        playerHp: terminal.player_hp, playerMana: terminal.player_mana,
+        enemyHp: terminal.enemy_hp, turnCount: terminal.turn_count,
+      } }, 409);
+    }
+  };
 
   const permit = await env.DB.prepare(`SELECT
       cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
@@ -225,15 +246,24 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     .bind(input.permitId, input.playerId)
     .first<BattlePermitStateRow>();
 
-  if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+  if (!permit) return (await recoverTerminal()) ?? fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
-  if (permit.battle_status !== 'active') return fail(request, env, `Battle is already ${permit.battle_status}.`, 409);
   if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
   }
-  if (!canUseAbility(permit.player_mana, ability)) {
-    return fail(request, env, 'Not enough Mana for that ability.', 409);
+  const battleState = (row: BattlePermitStateRow) => ({
+    permitId: input.permitId,
+    status: row.battle_status,
+    playerHp: row.player_hp!, playerMana: row.player_mana!, enemyHp: row.enemy_hp!,
+    turnCount: row.turn_count,
+  });
+  const conflict = (message: string, row: BattlePermitStateRow) =>
+    json(request, env, { error: message, battleState: battleState(row) }, 409);
+  if (permit.battle_status !== 'active') return conflict(`Battle is already ${permit.battle_status}.`, permit);
+  if (permit.turn_count !== input.expectedTurnCount) {
+    return conflict('Stale battle turn.', permit);
   }
+  if (!canUseAbility(permit.player_mana, ability)) return conflict('Not enough Mana for that ability.', permit);
 
   const turn = resolveCombatTurn({
     playerHp: permit.player_hp,
@@ -245,25 +275,47 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   });
   const { playerHp, playerMana, enemyHp, status } = turn;
 
-  const updated = await env.DB.prepare(`UPDATE battle_permits
+  const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
       AND datetime(expires_at) > CURRENT_TIMESTAMP AND turn_count = ?
     RETURNING turn_count`)
-    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
-    .first<{ turn_count: number }>();
+    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, input.expectedTurnCount);
 
-  if (!updated) return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
-
+  let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
     const character = await env.DB.prepare(`SELECT level FROM characters WHERE player_id = ?`)
       .bind(input.playerId).first<{ level: number }>();
-    if (character) {
-      await env.DB.prepare(`INSERT INTO battle_history (
+    if (!character) return fail(request, env, 'Player character not found.', 404);
+    // Commit the terminal turn and deterministic history marker together.
+    // Permit expiry is checked by the action CAS; rechecking after it would
+    // risk losing the history for a legitimately authorized final turn.
+    const results = await env.DB.batch([
+      actionUpdate,
+      env.DB.prepare(`INSERT INTO battle_history (
         id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
-      ) VALUES (?, ?, ?, 'defeat', ?, 0, 0)`)
-        .bind(crypto.randomUUID(), input.playerId, TUNNEL_MAW.id, character.level).run();
+      ) SELECT ?, ?, ?, 'defeat', ?, 0, 0
+        WHERE EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
+          AND battle_status = 'defeat' AND turn_count = ?
+          AND completed_at IS NULL)
+        ON CONFLICT(id) DO NOTHING`)
+        .bind(`${input.permitId}:defeat`, input.playerId, TUNNEL_MAW.id, character.level,
+          input.permitId, input.playerId, (input.expectedTurnCount) + 1),
+    ]);
+    updated = results[0]?.results?.[0] as { turn_count: number } | undefined;
+  } else {
+    updated = await actionUpdate.first<{ turn_count: number }>();
+  }
+
+  if (!updated) {
+    const latest = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana,
+        enemy_hp, battle_status, turn_count FROM battle_permits
+      WHERE id = ? AND player_id = ? AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP`)
+      .bind(input.permitId, input.playerId).first<BattlePermitStateRow>();
+    if (latest && latest.player_hp !== null && latest.player_mana !== null && latest.enemy_hp !== null) {
+      return conflict('Battle state changed; retry from the latest authoritative state.', latest);
     }
+    return (await recoverTerminal()) ?? fail(request, env, 'Battle state changed; permit is no longer active.', 409);
   }
 
   return json(request, env, {
@@ -309,12 +361,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
-      (reward_state = 'pending' AND completed_at IS NULL AND (datetime(expires_at) > CURRENT_TIMESTAMP OR reward_clear_number IS NOT NULL))
+      (reward_state = 'pending' AND completed_at IS NULL)
       OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
-  if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
+  if (!claim) return fail(request, env, 'Battle reward is already being claimed or cannot be claimed.', 409);
 
   if (claim.reward_clear_number === null) {
     await env.DB.batch([
