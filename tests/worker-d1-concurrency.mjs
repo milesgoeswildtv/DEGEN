@@ -62,7 +62,8 @@ try {
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
       ('client-first','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
-      ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0);
+      ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0),
+      ('race-complete','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -207,6 +208,25 @@ try {
   assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='" + permitId + ":victory'"), [{ count: 1 }]);
   assert.deepEqual(sql("SELECT player_mana,turn_count,battle_status,reward_state FROM battle_permits WHERE id='" + permitId + "'"),
     [{ player_mana: 0, turn_count: 3, battle_status: 'victory', reward_state: 'awarded' }]);
+
+
+  // Completion racing a genuine killing blow cannot pay before victory.
+  const [raceAction, raceCompletion] = await Promise.all([
+    post('/api/battle/action', {
+      playerId: 'integration-player', permitId: 'race-complete', abilityId: 'crack', expectedTurnCount: 0,
+    }),
+    complete('race-complete'),
+  ]);
+  assert.equal(raceAction.status, 200);
+  assert.equal(raceAction.data.status, 'victory');
+  assert.equal(raceAction.data.playerMana, 0);
+  assert.ok([200, 409].includes(raceCompletion.status));
+  const raceReceipt = await eventuallyComplete('race-complete');
+  assert.equal(raceReceipt.reward.tier, 'reduced');
+  assert.equal(raceReceipt.player.currency, 96);
+  assert.equal(raceReceipt.player.level, 2);
+  assert.equal(raceReceipt.player.xp, 145);
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-complete:victory'"), [{ count: 1 }]);
 
   const denied = await post('/api/battle/action', {
     playerId: 'integration-player', permitId: 'zero-mana', abilityId: 'crack', expectedTurnCount: 0,
