@@ -180,6 +180,11 @@ try {
     for (const [key, value] of Object.entries(expected)) assert.equal(action.data[key], value, key);
     assert.equal('enemyMana' in action.data, false);
   }
+  // Concurrent completion of the same earned victory must never double-pay.
+  const competingClaims = await Promise.all(Array.from({ length: 8 }, () => complete(permitId, pid)));
+  assert.ok(competingClaims.every(({ status }) => [200, 409, 500].includes(status)));
+  const earlyHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='" + permitId + ":victory'");
+  assert.ok(earlyHistory[0].count <= 1, 'concurrent claims cannot duplicate victory history');
   let receipt;
   for (let attempt = 0; attempt < 10; attempt++) {
     const result = await complete(permitId, pid);
