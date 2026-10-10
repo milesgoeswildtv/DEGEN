@@ -162,6 +162,10 @@ try {
   assert.equal((await complete(permitId, pid)).status, 409);
   // A legitimate permit must remain playable after the world event closes.
   sql("UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='integration-cycle'");
+  const sealedEntry = await post('/api/battle/start', {
+    playerId: pid, eventKey: 'underpass', cycleId: world.cycleId, encounterKey: 'tunnel-maw',
+  });
+  assert.equal(sealedEntry.status, 409, 'closure blocks new entry but not issued permits');
   for (const [index, expected] of [
     { playerHp: 110, playerMana: 8, enemyHp: 57, status: 'active' },
     { playerHp: 100, playerMana: 4, enemyHp: 22, status: 'active' },
@@ -203,8 +207,8 @@ try {
     playerId: 'integration-player', permitId: 'zero-mana', abilityId: 'crack', expectedTurnCount: 0,
   });
   assert.equal(denied.status, 409);
-  assert.deepEqual(sql("SELECT player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='zero-mana'"),
-    [{ player_mana: 0, enemy_hp: 92, turn_count: 0 }]);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='zero-mana'"),
+    [{ player_hp: 120, player_mana: 0, enemy_hp: 92, turn_count: 0, battle_status: 'active' }]);
   const free = await post('/api/battle/action', {
     playerId: 'integration-player', permitId: 'zero-mana', abilityId: 'slash', expectedTurnCount: 0,
   });
