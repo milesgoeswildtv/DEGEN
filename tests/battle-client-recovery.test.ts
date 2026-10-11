@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { withBattleActionRetry } from '../src/app/battleActionRetry.ts';
 
 const src = readFileSync(new URL('../src/game/combat/engine.ts',import.meta.url),'utf8')
   .replace(/^import .*;\n/gm,'').replace('export class BattleEngine','class BattleEngine');
@@ -56,7 +57,7 @@ function apiWith(handler) {
   const calls=[];
   const classes=runInNewContext(stripTypeScriptTypes(apiSource,{mode:'transform'})+
     '\n({GameApi,BattleTurnConflictError});',
-    {Response,fetch:async(url,init)=>{calls.push({url,init});return handler(url,init);}});
+    {Response,withBattleActionRetry,fetch:async(url,init)=>{calls.push({url,init});return handler(url,init);}});
   return {api:new classes.GameApi(),calls,BattleTurnConflictError:classes.BattleTurnConflictError};
 }
 
@@ -65,6 +66,18 @@ test('client submits expected turn count to Worker',async()=>{
   await api.actUnderpass('p1','permit','crack',0);
   assert.deepEqual(JSON.parse(calls[0].init.body),
     {playerId:'p1',permitId:'permit',abilityId:'crack',expectedTurnCount:0});
+});
+
+test('API transport retry reuses the same expected turn',async()=>{
+  let attempts=0;
+  const {api,calls}=apiWith(()=>{
+    attempts+=1;
+    if(attempts===1) throw new TypeError('Failed to fetch');
+    return Response.json(turn('active',8,57,1));
+  });
+  await api.actUnderpass('p1','permit','crack',0);
+  assert.equal(calls.length,2);
+  assert.deepEqual(calls.map(({init})=>JSON.parse(init.body).expectedTurnCount),[0,0]);
 });
 
 test('409 with authoritative state is recoverable; Mana rejection is not',async()=>{
