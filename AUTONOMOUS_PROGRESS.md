@@ -253,3 +253,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1: existing binding/migration files unchanged. Existing deployment workflow applies tracked migrations before Worker; no production D1 action or deployment performed.
 - Blockers: production Pages/Worker API origin and exact CORS not yet verified live; PR #7 remains unmerged; platform-signed Discord/Telegram identity and per-request authorization remain required before public economic gameplay.
 - Best next task: verify fresh PR #10 CI and the live read-only Pages/Worker smoke check, then reconcile PR #7 and PR #9 in safe frontend-first order. Do not deploy strict Worker turn enforcement ahead of compatible client.
+
+## 2026-10-11 — Release checker method-token correctness (PR #10)
+- Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; feature branch: `automation/degen/battle-client-first-v01` / PR #10 (draft).
+- Files: `scripts/verify-pages-worker-readonly.mjs`, `tests/pages-worker-release-smoke.test.ts`, `AUTONOMOUS_PROGRESS.md`.
+- Exact-case CORS method checking: a lowercase `put` no longer satisfies required uppercase `PUT`; no gameplay, Worker, schema, economy, or balance changes.
+- LOCAL targeted test: 16/16 PASS under Node 22. Full repository `npm test`, `npm run build`, `npm run check:worker`, isolated Worker/D1 and Chromium touch CI are REQUIRED on the pushed head; not claimed here.
+- Mana: merged on main, unchanged, Degen-only; no monster Mana or zero-Mana reversion. Battle authority/reward idempotency unchanged; PR #9 stricter turn enforcement remains blocked behind client-first rollout.
+- D1: existing tracked migrations unchanged; no production migration or Worker deployment performed. Live Pages API/CORS and signed Discord/Telegram account ownership remain unverified public-release blockers.
+- Best next task: verify fresh PR #10 exact-head CI, then perform read-only live Pages/Worker API/CORS verification before any frontend-first release.

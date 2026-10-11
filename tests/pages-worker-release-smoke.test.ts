@@ -19,7 +19,7 @@ function fixture(options: Record<string, boolean> = {}) {
       const allow = origin === pages || options.reflectPreview;
       return new Response(null, { status: 204, headers: {
         'access-control-allow-origin': options.wildcardPreview && origin !== pages ? '*' : options.nullPreview && origin !== pages ? 'null' : allow ? origin! : 'https://milesgoeswildtv.github.io',
-        'access-control-allow-methods': options.noPost ? 'GET,PUT,OPTIONS' : options.noPut ? 'GET,POST,OPTIONS' : 'GET,POST,PUT,OPTIONS',
+        'access-control-allow-methods': options.noPost ? 'GET,PUT,OPTIONS' : options.noPut ? 'GET,POST,OPTIONS' : options.lowercaseMethods ? 'GET,POST,put,OPTIONS' : 'GET,POST,PUT,OPTIONS',
         'access-control-allow-headers': options.noContentType ? 'x-custom' : 'content-type',
       } });
     }
@@ -43,6 +43,7 @@ for (const [name, options, pattern] of [
   ['unhealthy Worker', { unhealthy: true }, /Worker health/],
   ['missing POST preflight', { noPost: true }, /POST must be allowed/],
   ['missing PUT preflight', { noPut: true }, /PUT must be allowed/],
+  ['lowercase PUT method token', { lowercaseMethods: true }, /PUT must be allowed/],
   ['missing content-type header', { noContentType: true }, /content-type request header/],
   ['reflected preview origin', { reflectPreview: true }, /Unapproved preview origin/],
   ['wildcard preview origin', { wildcardPreview: true }, /wildcard CORS/],

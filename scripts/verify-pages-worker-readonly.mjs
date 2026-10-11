@@ -50,7 +50,7 @@ export async function verifyPagesWorker({ pagesUrl, workerUrl, fetcher = fetch, 
     const allowed = await preflight(pages, path, method);
     assert.equal(allowed.status, 204, `Pages ${method} preflight must return 204`);
     assert.equal(allowed.headers.get('access-control-allow-origin'), pages, `Pages ${method} preflight CORS must match exactly`);
-    const methods = (allowed.headers.get('access-control-allow-methods') ?? '').split(',').map(value => value.trim().toUpperCase());
+    const methods = (allowed.headers.get('access-control-allow-methods') ?? '').split(',').map(value => value.trim());
     assert.ok(methods.includes(method), `${method} must be allowed`);
     const headers = (allowed.headers.get('access-control-allow-headers') ?? '').split(',').map(value => value.trim().toLowerCase());
     assert.ok(headers.includes('content-type'), 'content-type request header must be allowed');
