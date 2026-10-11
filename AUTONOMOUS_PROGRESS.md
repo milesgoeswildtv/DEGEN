@@ -69,3 +69,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+## 2026-10-11 — Millisecond-precise permit expiry (feature branch)
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/permit-millisecond-expiry-v02` (draft PR pending).
+- Changed `worker/index.ts` and added `tests/permit-expiry-precision.test.ts`; corrected exactly three action lookup, action CAS, and fresh reward-claim guards from whole-second SQLite comparison to `julianday(expires_at) > julianday('now')`.
+- Existing reserved clear recovery remains allowed after permit expiry; no change to rewards, balance, event closure semantics, player Mana, monster definitions, D1 schema, or migrations.
+- LOCAL test: 3/3 targeted SQLite precision contract tests pass (3,000 boundary assertions plus offset and invalid timestamps). Full repository npm tests, build, Worker validation, and isolated Worker/D1 CI are required on this branch; not yet claimed.
+- Mana is already merged on main and unchanged. Worker battle authority and reward idempotency remain in place. D1 migration assumptions unchanged; no production deployment or D1 mutation.
+- Release blocker: signed Discord/Telegram authentication and per-request ownership; PR #10 client-first rollout must precede PR #9 strict turn enforcement.
+- Best next task: obtain exact-head CI and isolated Worker/D1 verification of permit boundaries; review this draft PR without deploying.
