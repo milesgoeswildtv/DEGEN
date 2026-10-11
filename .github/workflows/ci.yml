@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, automation/degen/underpass-cycle-cas-v01]
+    branches: [main]
   pull_request:
     branches: [main]
 
