@@ -24,6 +24,8 @@ function makeStore(saveHousing: (id: string, housing: unknown) => Promise<void>,
   }) as new (api: unknown) => {
     placeFurniture(item: string, x: number, y: number): void;
     removeFurnitureAt(x: number, y: number): void;
+    readonly snapshot: any;
+    replaceFromServer(player: any): void;
   };
   return new Store({ enabled: true, saveHousing });
 }
@@ -84,4 +86,40 @@ test('100 rapid moves coalesce to first and final saves', async () => {
   calls[1]!.resolve();
   await flush();
   assert.equal(calls.length, 2);
+});
+
+
+test('a delayed housing save does not let an older reward receipt erase pending placements', async () => {
+  let finish!: () => void;
+  const store = makeStore(() => new Promise<void>((resolve) => { finish = resolve; }));
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  const remote = store.snapshot;
+  remote.currency = 777;
+  remote.housing.inventory.push('tunnel-trophy');
+  remote.housing.placements = [{ instanceId: 'starter-bed-placed', furnitureId: 'starter-bed', x: 1, y: 1 }];
+  store.replaceFromServer(remote);
+  assert.equal(store.snapshot.currency, 777, 'reward currency stays server-owned');
+  assert.ok(store.snapshot.housing.inventory.includes('tunnel-trophy'), 'reward inventory stays server-owned');
+  assert.ok(store.snapshot.housing.placements.some((p: any) => p.furnitureId === 'starter-chair'),
+    'newer in-flight placement must not disappear');
+  finish();
+  await flush();
+  store.replaceFromServer(remote);
+  assert.equal(store.snapshot.housing.placements.some((p: any) => p.furnitureId === 'starter-chair'), false,
+    'after save settles, the next server snapshot is authoritative');
+});
+
+test('an in-flight housing save cannot leak placements across player identities', async () => {
+  let finish!: () => void;
+  const store = makeStore(() => new Promise<void>((resolve) => { finish = resolve; }));
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  const other = { ...store.snapshot, id: 'different-account',
+    housing: { inventory: ['starter-lamp'], placements: [] } };
+  store.replaceFromServer(other);
+  assert.equal(store.snapshot.id, 'different-account');
+  assert.equal(store.snapshot.housing.placements.length, 0);
+  finish();
+  await flush();
 });

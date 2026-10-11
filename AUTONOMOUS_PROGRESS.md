@@ -127,3 +127,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Extended isolated Worker/D1 HTTP harness with two-player global placement-ID collision. A failed D1 batch must preserve both the original player's previous room and the other player's placement; explicit empty-room save still follows.
 - Prior exact-head PR #8 CI `38125559664` passed 39/39 and real housing HTTP. Fresh CI required for this additional rollback assertion. No production DB or schema change.
 - Mana, reward authority, platform-auth blockers and release order unchanged. Next: verify new CI and preserve both PR #8 and PR #10 harness tests at merge.
+
+## 2026-10-11 — In-flight housing edits vs authoritative reward snapshots (feature branch)
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #8 branch `automation/degen/housing-reliability-v01`. LOCAL/STAGED until the commit/ref is verified.
+- Changed `src/app/state.ts`, `tests/housing-save-order.test.ts`: preserve only same-account pending housing placements when an older server reward receipt arrives during an in-flight housing save. Server inventory, currency, XP, level, and other economic state remain authoritative; after the save settles, subsequent server snapshots win.
+- Targeted regressions: delayed reward snapshot while save pending; cross-account isolation; existing rapid-edit save ordering. Require exact-head CI, `npm test`, `npm run build`, `npm run check:worker`, and isolated Worker/D1 before merging. No visual/UI changes.
+- Degen Mana: COMPLETE/MERGED on main; no monster Mana or forced reversion. Reward authority/idempotency: MERGED on main; PR #9 recovery and mandatory turns remain draft. Tracked D1 migrations 0002–0005 precede Worker deployment; no DB/schema/config changes in this slice.
+- Public-release blockers: signed Discord/Telegram identity and per-request ownership; live Pages/Worker verification; PR #10 frontend-first before PR #9 Worker enforcement. No new Miles design blocker.
+- Best next task: verify CI for this housing fix and PR #8 real Worker/D1 housing tests, then review release integration without merging/deploying directly.

@@ -28,6 +28,7 @@ export class PlayerStore {
   private state: PlayerState;
   private listeners = new Set<(state: PlayerState) => void>();
   private housingSaveInFlight = false;
+  private housingSavePlayerId?: string;
   private pendingHousingSave?: { playerId: string; housing: PlayerState['housing'] };
 
   constructor(private readonly api: GameApi) {
@@ -75,7 +76,11 @@ export class PlayerStore {
   }
 
   replaceFromServer(player: PlayerState): void {
-    this.state = player;
+    // Preserve same-account placement edits while a save is pending; the
+    // receipt remains authoritative for inventory and all progression.
+    const saving = this.housingSavePlayerId === player.id || this.pendingHousingSave?.playerId === player.id;
+    const placements = saving && this.state.id === player.id ? structuredClone(this.state.housing.placements) : undefined;
+    this.state = placements ? { ...player, housing: { ...player.housing, placements } } : player;
     this.commitLocal();
   }
 
@@ -142,10 +147,13 @@ export class PlayerStore {
       while (this.pendingHousingSave) {
         const next = this.pendingHousingSave;
         this.pendingHousingSave = undefined;
+        this.housingSavePlayerId = next.playerId;
         try {
           await this.api.saveHousing(next.playerId, next.housing);
         } catch (error) {
           console.warn('Housing save failed; local copy retained.', error);
+        } finally {
+          this.housingSavePlayerId = undefined;
         }
       }
     } finally {
