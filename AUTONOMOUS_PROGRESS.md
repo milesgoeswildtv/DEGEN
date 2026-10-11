@@ -203,3 +203,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Miles blocker: verified Discord/Telegram identity and per-request player ownership before public economy; live Pages/Worker CORS remains unverified. PR #10 compatible frontend must deploy and be verified before PR #9 mandatory turn enforcement.
 - Best next task: inspect fresh CI, then reconcile PR #10/#9/#12 integration and release ordering; do not merge/deploy blindly.
 - Status: PUSHED / PR only; not MERGED/LIVE.
+
+## 2026-10-11 — Bounded battle-action transport recovery (PR #9)
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Branch `automation/degen/battle-turn-client-v01` / draft PR #9; prior head `31aa66eb83a2ceb42978f98540f5ed65d7b17a2f`.
+- Scope: `src/app/battleActionRetry.ts`, `src/app/api.ts`, `tests/battle-action-retry.test.ts`, and this progress note. Client action transport gets a 20-second timeout and at most one retry, always with the identical `expectedTurnCount`; authoritative HTTP 409/Mana errors are not retried. Worker CAS, reward authority, balance, and schema unchanged.
+- Local targeted QA: 6/6 tests PASS using Node 22 type stripping. Fresh full GitHub CI / isolated Worker-D1 / web build / Worker dry-run required on this commit; no live/mobile proof.
+- Mana: COMPLETE/MERGED on main; player-only, no monster Mana, no depletion reversion. Reward recoverability and turn CAS remain PR #9 only, not merged/live.
+- D1: existing `wrangler.toml` binding and migrations 0002–0005 unchanged; deployment migrates before Worker. No production DB operation.
+- Miles blocker: signed Discord/Telegram identity and per-request ownership still required before public economic gameplay. PR #10 compatible frontend must release before PR #9 mandatory turn enforcement.
+- Next: verify exact-head CI, then review PR #9 / PR #12 overlap and compatible release sequence. No direct main write or production deploy.
+- Status: PUSHED / DRAFT PR only once ref update succeeds; NOT MERGED/LIVE.
