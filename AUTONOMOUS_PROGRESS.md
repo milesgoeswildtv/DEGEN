@@ -85,3 +85,15 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 
 ## 2026-10-09 verifier tests
 Main 33e7477961d2a6ab7b79bf52d78a93901e19f658. Feature branch automation/degen/telegram-init-data-verifier-v01 at 3f6c6d9e2d8fea0d5590b8121e5e152de0df1c26 (PUSHED, not merged/live). Added four Telegram verification tests; CI on latest head pending. Existing 22 local verifier tests passed. Mana merged; rewards server-owned; combat PR #9 pending. No D1 migration or remote DB writes; tracked migrations precede Worker deploy. Blocker: platform authentication and session-bound economic authorization. Next: verify CI and deliver reviewed PR.
+
+## 2026-10-11 — Telegram verifier PR delivery
+- Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; Degen-only Mana COMPLETE/MERGED. The old sidekick Mana branch is diverged/superseded.
+- Branch: `automation/degen/telegram-init-data-verifier-v01`. Draft PR #13 OPEN/UNMERGED: https://github.com/milesgoeswildtv/DEGEN/pull/13. This helper is not wired to Worker routes.
+- PUSHED: `8ce597ddc6a60d9dab88727bcabd76c7253aca1c` restores normal PR CI triggers by removing the temporary feature-branch push trigger from `.github/workflows/ci.yml`.
+- CI: prior exact head `6a1fdd8e99dc1d1234bfb83dd1d09e4c3eb5c929` passed Actions run 38172884254 (26/26 deterministic tests, isolated Worker/D1 integration, web build, Worker dry-run). Fresh PR CI for new head pending.
+- LOCAL/STAGED only: independent signed Telegram boundary tests 5/5 PASS and deterministic 256-case tamper/property suite 2/2 PASS. Their test-file writes were rejected twice, so they are NOT included in GitHub CI. Verifier blob `3f4ea0fa8b37438c1050030d4eea80a3f878c6f7` matched local source; isolated TypeScript validation passed.
+- Battle/reward authority: main server-owned HP/Mana/rewards unchanged. PR #9 strict turn/recovery and PR #12 permit precision remain draft/unmerged; PR #10 compatible frontend must be deployed and verified before strict Worker enforcement.
+- D1: existing `DB` binding, migrations 0002–0005, and migration-before-Worker deployment order verified read-only. No schema change or production D1 mutation.
+- Public release blocker: current bootstrap accepts caller-chosen playerId/platform identity and can rebind an identity through `ON CONFLICT ... DO UPDATE`; in-memory SQLite reproduction confirmed it. Signed sessions and request-level ownership for Telegram/Discord are missing. No public economic release.
+- Miles design blocker: none. Repo write rejection for test file; preserve staged patch. No merge or deployment in this run.
+- Best next task: deliver staged Telegram boundary tests to PR #13, obtain fresh full PR-head CI, then implement verified platform sessions and per-request ownership in a separately reviewed coherent slice.
