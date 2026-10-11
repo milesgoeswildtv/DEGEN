@@ -144,3 +144,17 @@ test('a mismatched Worker reward owner never clears the original pending permit'
   assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '["mismatched-permit"]');
   assert.ok(fixture.timers.some(timer => timer.delay === 15_000));
 });
+
+test('late battle permits cannot enter combat after the account changes', async () => {
+  let resolvePermit!: (value: unknown) => void;
+  const fixture = setup(true);
+  fixture.api.startUnderpass = () => new Promise(done => { resolvePermit = done; });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.underpassEvent = { phase: 'open', cycleId: 'original-cycle' };
+  const pending = controller.enterUnderpass();
+  fixture.store.snapshot.id = 'other-player';
+  resolvePermit({ permitId: 'original-permit' });
+  await pending;
+  assert.equal(controller.battlePermit, undefined);
+  assert.equal(controller.route, 'map');
+});
