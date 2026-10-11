@@ -123,18 +123,18 @@ try {
     assert.equal(await cdp.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
       true, route + ' must not overflow horizontally');
   };
-  const assertCompactHeader = async () => {
+  const assertFitsCompact = async (route) => {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 2, mobile: true });
     const dimensions = await cdp.evaluate(`(() => {
       const label = document.querySelector('.player-chip span');
-      if (!label) return null;
-      const original = label.textContent;
-      label.textContent = 'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM';
+      const original = label?.textContent;
+      if (label) label.textContent = 'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM';
       const result = { width: window.innerWidth, scroll: document.documentElement.scrollWidth };
-      label.textContent = original;
+      if (label) label.textContent = original;
       return result;
     })()`);
-    assert.deepEqual(dimensions, { width: 320, scroll: 320 }, '320px long-name layout');
+    assert.equal(dimensions.width, 320, route + ' compact viewport width');
+    assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   };
   await cdp.send('Page.enable');
@@ -149,10 +149,11 @@ try {
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
-  await assertCompactHeader();
+  await assertFitsCompact('Map');
   await tap("[data-route=home]");
   await until('Home grid', () => cdp.evaluate('!!document.querySelector(".room-grid")'));
   await assertFitsMobile('Home');
+  await assertFitsCompact('Home');
   await tap("[data-route=map]");
   await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
   await tap("[data-route=underpass]");
@@ -161,6 +162,7 @@ try {
   await until('Manifested Degen abilities', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   assert.equal(await cdp.evaluate('document.querySelector("[data-ability=crack]")?.dataset.manaCost'), '4');
   await assertFitsMobile('Battle');
+  await assertFitsCompact('Battle');
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
     await tap("[data-ability=crack]");
