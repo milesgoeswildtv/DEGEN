@@ -78,3 +78,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana is already merged on main and unchanged. Worker battle authority and reward idempotency remain in place. D1 migration assumptions unchanged; no production deployment or D1 mutation.
 - Release blocker: signed Discord/Telegram authentication and per-request ownership; PR #10 client-first rollout must precede PR #9 strict turn enforcement.
 - Best next task: obtain exact-head CI and isolated Worker/D1 verification of permit boundaries; review this draft PR without deploying.
+
+## 2026-10-11 — Permit branch delivery state correction
+- Code commit `df0d1d68bfff82baa0f9c54bc6433385ac045e45` is PUSHED to `automation/degen/permit-millisecond-expiry-v02` from main `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- **NO PR CREATED**: two supported GitHub PR-creation attempts were rejected after verifying the branch head. Do not claim a PR, merge, or CI success; the CI workflow triggers only for `main` pushes and PRs.
+- Local precision tests 3/3 PASS. Full `npm test`, `npm run build`, `npm run check:worker`, isolated Worker/D1 and release verification remain pending.
+- No production D1 migration, Worker deployment, or change to Mana/battle balance. Best next task: open a reviewed PR when repository PR creation is authorized/available and run exact-head CI.
