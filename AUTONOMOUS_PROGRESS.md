@@ -243,3 +243,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - A proposed 20-second housing PUT timeout (`539e197`) was reverted in a new fast-forward commit (`bdc0f468c8d6574807ff64561ef06a4eda2b0c98`) before release. An aborted client request may still commit server-side after a newer layout; PR #8's serialized client saves alone cannot prevent that stale overwrite. Runtime/API and deadline test files now match prior green commit `6c207ae6a777d801431e71ac02042ab0e55c8c6b` exactly.
 - Local SQLite negative control reproduced out-of-order stale layout overwrite. A revision-CAS model prevented it but is not approved/implemented. Do not add an abort deadline without a server-side ordering guarantee.
 - Main unchanged; Mana and reward authority unchanged; no production D1, deploy or merge. Best next task remains Pages API/CORS release verification and compatible frontend-first rollout.
+
+
+## 2026-10-10 — Release-gate CORS coverage (PR #10)
+- Authority: main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; current feature branch `automation/degen/battle-client-first-v01` / PR #10 (draft, not merged). Parent head before this slice: `3e4730f42158d9572539c62b87d3511d4981164c`.
+- Scope: `scripts/verify-pages-worker-readonly.mjs` and `tests/pages-worker-release-smoke.test.ts` now assert housing PUT and content-type CORS preflights and reject wildcard or opaque-null CORS for unauthorized preview origins. No runtime combat, reward, database, or deployment configuration changes.
+- QA: 22/22 local read-only release-gate tests passed on the staged equivalent, including 1000 deterministic CORS permutations, redirect rejection, and request timeout. Repository `npm test`, `npm run build`, `npm run check:worker`, real Wrangler/D1 and GitHub CI must be checked on the resulting commit before marking this slice green.
+- Mana: COMPLETE/MERGED on main; Degen-only, no monster Mana or zero-Mana reversion. Battle authority and reward idempotency/recoverability remain merged on main; PR #9's stricter turn enforcement is still unmerged and must not precede the compatible frontend.
+- D1: existing binding/migration files unchanged. Existing deployment workflow applies tracked migrations before Worker; no production D1 action or deployment performed.
+- Blockers: production Pages/Worker API origin and exact CORS not yet verified live; PR #7 remains unmerged; platform-signed Discord/Telegram identity and per-request authorization remain required before public economic gameplay.
+- Best next task: verify fresh PR #10 CI and the live read-only Pages/Worker smoke check, then reconcile PR #7 and PR #9 in safe frontend-first order. Do not deploy strict Worker turn enforcement ahead of compatible client.

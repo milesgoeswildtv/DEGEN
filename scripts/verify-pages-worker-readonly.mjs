@@ -40,20 +40,27 @@ export async function verifyPagesWorker({ pagesUrl, workerUrl, fetcher = fetch, 
   assert.equal(health.status, 200, 'Worker health must return 200');
   assert.equal(health.headers.get('access-control-allow-origin'), pages, 'Worker health CORS must allow Pages origin');
   assert.equal((await health.json()).ok, true, 'Worker health payload must be ok');
-  const preflight = origin => request(worker + '/api/player/bootstrap', {
+  const preflight = (origin, path, method) => request(worker + path, {
     method: 'OPTIONS', headers: {
-      Origin: origin, 'Access-Control-Request-Method': 'POST',
+      Origin: origin, 'Access-Control-Request-Method': method,
       'Access-Control-Request-Headers': 'content-type',
     },
   });
-  const allowed = await preflight(pages);
-  assert.equal(allowed.status, 204, 'Pages preflight must return 204');
-  assert.equal(allowed.headers.get('access-control-allow-origin'), pages, 'Pages preflight CORS must match exactly');
-  assert.match(allowed.headers.get('access-control-allow-methods') ?? '', /\bPOST\b/, 'POST must be allowed');
+  for (const [path, method] of [['/api/player/bootstrap', 'POST'], ['/api/player/housing', 'PUT']]) {
+    const allowed = await preflight(pages, path, method);
+    assert.equal(allowed.status, 204, `Pages ${method} preflight must return 204`);
+    assert.equal(allowed.headers.get('access-control-allow-origin'), pages, `Pages ${method} preflight CORS must match exactly`);
+    const methods = (allowed.headers.get('access-control-allow-methods') ?? '').split(',').map(value => value.trim().toUpperCase());
+    assert.ok(methods.includes(method), `${method} must be allowed`);
+    const headers = (allowed.headers.get('access-control-allow-headers') ?? '').split(',').map(value => value.trim().toLowerCase());
+    assert.ok(headers.includes('content-type'), 'content-type request header must be allowed');
+  }
   const preview = pages.replace('://', '://preview-not-allowed.');
-  const denied = await preflight(preview);
+  const denied = await preflight(preview, '/api/player/bootstrap', 'POST');
   assert.notEqual(denied.headers.get('access-control-allow-origin'), preview, 'Unapproved preview origin must not be reflected');
-  return { status: 'PASS', mode: 'READ_ONLY', pages, worker, checked: ['published JS API base', 'Worker health', 'Pages preflight', 'preview-origin rejection'] };
+  assert.notEqual(denied.headers.get('access-control-allow-origin'), '*', 'Unapproved preview origin must not receive wildcard CORS');
+  assert.notEqual(denied.headers.get('access-control-allow-origin'), 'null', 'Unapproved preview origin must not receive opaque-origin CORS');
+  return { status: 'PASS', mode: 'READ_ONLY', pages, worker, checked: ['published JS API base', 'Worker health', 'bootstrap POST preflight', 'housing PUT preflight', 'content-type header', 'preview-origin rejection'] };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
