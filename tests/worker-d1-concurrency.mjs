@@ -52,6 +52,8 @@ try {
       VALUES('integration-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+      VALUES('closed-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -62,7 +64,13 @@ try {
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
       ('paid-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,30,0),
-      ('defeat-case','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,60,0);
+      ('defeat-case','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,60,0),
+      ('expired-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,4,30,0),
+      ('paid-nonlethal','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,8,60,0),
+      ('zero-cost-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,20,0),
+      ('parallel-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0),
+      ('closed-cycle-valid','integration-player','underpass','closed-cycle','tunnel-maw',datetime('now','+10 minutes'),'active',120,4,30,0);
+    UPDATE battle_permits SET started_at=datetime('now','-10 minutes') WHERE id='closed-cycle-valid';
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -112,7 +120,40 @@ try {
   assert.equal(defeat.status, 200, JSON.stringify(defeat));
   assert.equal(defeat.data.status, 'defeat');
   assert.equal((await complete('defeat-case')).status, 409);
-  console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, Mana authority and defeat');
+  assert.equal((await action('expired-action', 'slash')).status, 409);
+  assert.equal((await action('unknown-permit', 'slash')).status, 409);
+  const paidFirst = await action('paid-nonlethal', 'crack');
+  assert.equal(paidFirst.status, 200, JSON.stringify(paidFirst));
+  assert.deepEqual([paidFirst.data.status, paidFirst.data.playerHp, paidFirst.data.playerMana,
+    paidFirst.data.enemyHp, paidFirst.data.turnCount], ['active', 110, 4, 25, 1]);
+  const paidSecond = await action('paid-nonlethal', 'crack');
+  assert.equal(paidSecond.status, 200, JSON.stringify(paidSecond));
+  assert.deepEqual([paidSecond.data.status, paidSecond.data.playerHp, paidSecond.data.playerMana,
+    paidSecond.data.enemyHp, paidSecond.data.turnCount], ['victory', 110, 0, 0, 2]);
+  assert.equal((await eventuallyComplete('paid-nonlethal')).reward.tier, 'reduced');
+  assert.equal((await eventuallyComplete('paid-nonlethal')).reward.tier, 'reduced');
+  const freeKill = await action('zero-cost-kill', 'slash');
+  assert.equal(freeKill.status, 200, JSON.stringify(freeKill));
+  assert.deepEqual([freeKill.data.status, freeKill.data.playerHp, freeKill.data.playerMana,
+    freeKill.data.enemyHp, freeKill.data.turnCount], ['victory', 5, 0, 0, 1]);
+  const racing = await Promise.all(Array.from({ length: 4 }, () => action('parallel-action', 'crack')));
+  assert.equal(racing.filter(r => r.status === 200).length, 1, JSON.stringify(racing));
+  assert.equal(racing.filter(r => r.status === 409).length, 3, JSON.stringify(racing));
+  const accepted = racing.find(r => r.status === 200).data;
+  assert.deepEqual([accepted.playerHp, accepted.playerMana, accepted.enemyHp, accepted.turnCount], [110, 0, 57, 1]);
+  assert.equal((await action('parallel-action', 'crack')).status, 409);
+  const followup = await action('parallel-action', 'slash');
+  assert.equal(followup.status, 200, JSON.stringify(followup));
+  assert.deepEqual([followup.data.playerMana, followup.data.enemyHp, followup.data.turnCount], [0, 28, 2]);
+  const closed = await action('closed-cycle-valid', 'crack');
+  assert.equal(closed.status, 200, JSON.stringify(closed));
+  assert.deepEqual([closed.data.status, closed.data.playerHp, closed.data.playerMana,
+    closed.data.enemyHp, closed.data.turnCount], ['victory', 120, 0, 0, 1]);
+  const closedReward = await eventuallyComplete('closed-cycle-valid');
+  assert.equal(closedReward.reward.tier, 'full');
+  assert.equal(closedReward.worldEvent.cycleId, 'closed-cycle');
+  assert.equal(closedReward.worldEvent.phase, 'sealed');
+  console.log('PASS isolated Worker/D1: reward replay, authoritative Mana, action CAS, terminal outcomes, and legal closed-cycle permit');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');

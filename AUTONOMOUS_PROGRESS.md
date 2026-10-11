@@ -84,3 +84,11 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - **NO PR CREATED**: two supported GitHub PR-creation attempts were rejected after verifying the branch head. Do not claim a PR, merge, or CI success; the CI workflow triggers only for `main` pushes and PRs.
 - Local precision tests 3/3 PASS. Full `npm test`, `npm run build`, `npm run check:worker`, isolated Worker/D1 and release verification remain pending.
 - No production D1 migration, Worker deployment, or change to Mana/battle balance. Best next task: open a reviewed PR when repository PR creation is authorized/available and run exact-head CI.
+
+## 2026-10-11 — Permit integration expansion (feature branch, NOT merged/live)
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; current branch: `automation/degen/permit-millisecond-expiry-v02`, PR creation blocked by two independent attempts.
+- Changed `tests/worker-d1-concurrency.mjs` to exercise real Worker HTTP Mana rejection, paid and free actions, zero-Mana killing blow, terminal defeat, expired/invalid permits, duplicate completion, four concurrent actions with single CAS, and a legitimately issued permit spanning event closure. Original 4-permit full/reduced reward and level-up coverage preserved.
+- No Worker runtime, D1 schema, migrations, balance, or production configuration changed. Mana foundation remains MERGED on main; reward idempotency remains main, with post-expiry earned-victory recoverability still a PR #9 policy gap.
+- LOCAL/STAGED QA: exact test file Node syntax PASS; migrated main D1 schema + migrations seed PASS (13 permits, valid pre-closure start time, integrity ok, foreign keys ok); 41/41 local model/contract tests PASS. Full npm test/build/check:worker and actual Wrangler/D1 HTTP run NOT verified; require fresh CI.
+- D1 binding and tracked migrations unchanged. No production D1 mutation or deployment. Signed Discord/Telegram identity remains a release blocker.
+- Best next task: open this branch as draft PR, run exact-head CI with isolated Worker/D1 integration, then reconcile earned-victory reward recovery in PR #9 behind PR #10 client-first release.
