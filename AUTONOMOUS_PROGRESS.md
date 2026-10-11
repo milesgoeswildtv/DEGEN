@@ -117,3 +117,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Miles blocker: signed Discord/Telegram authentication and per-request ownership remain missing; live Pages/Worker connectivity/CORS unverified.
 - Best next task: inspect fresh PR #12 CI, reconcile PR #9 overlap, preserve release order; no direct main write.
 - Status: PUSHED / DRAFT PR; not MERGED/LIVE.
+
+## 2026-10-11 — Permit HTTP harness strict-turn compatibility (PR #12)
+- Main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #12 branch `automation/degen/permit-millisecond-expiry-v02` draft/unmerged.
+- `tests/worker-d1-concurrency.mjs` now includes `expectedTurnCount` on all action requests, with turn 1 on both valid follow-up actions; `tests/worker-d1-seed-contract.test.ts` guards the contract. PR #12's Worker ignores the extra field, but PR #9's strict-turn Worker requires it. No gameplay, Worker, D1, migration, or config changes.
+- Require exact-head CI and isolated Worker/D1; do not claim merged/live. Degen Mana merged on main; no monster Mana or reversion. Earned-victory recovery/strict turn CAS still PR #9. Signed platform auth and live Pages/Worker remain public-release blockers.
+- Best next task: reconcile PR #12's unique permit/Mana/closure tests into PR #9 Worker semantics after PR #10 compatible frontend rollout.

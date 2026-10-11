@@ -59,3 +59,11 @@ test('integration fixtures distinguish authoritative victory, defeat and zero Ma
     assert.deepEqual({ ...paid }, { player_mana: 8, enemy_hp: 60, battle_status: 'active' });
   } finally { db.close(); }
 });
+
+
+test('HTTP action fixtures carry strict expected-turn preconditions for PR #9 integration', () => {
+  assert.match(source, /async function action\(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0\)/);
+  assert.match(source, /JSON\.stringify\(\{ playerId, permitId, abilityId, expectedTurnCount \}\)/);
+  assert.match(source, /action\('paid-nonlethal', 'crack', 'integration-player', 1\)/);
+  assert.match(source, /action\('parallel-action', 'slash', 'integration-player', 1\)/);
+});

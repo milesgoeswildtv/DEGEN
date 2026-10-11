@@ -19,10 +19,10 @@ function cli(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
 }
-async function action(permitId, abilityId, playerId = 'integration-player') {
+async function action(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0) {
   const r = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId, permitId, abilityId }),
+    body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
   });
   return { status: r.status, data: await r.json() };
 }
@@ -126,7 +126,7 @@ try {
   assert.equal(paidFirst.status, 200, JSON.stringify(paidFirst));
   assert.deepEqual([paidFirst.data.status, paidFirst.data.playerHp, paidFirst.data.playerMana,
     paidFirst.data.enemyHp, paidFirst.data.turnCount], ['active', 110, 4, 25, 1]);
-  const paidSecond = await action('paid-nonlethal', 'crack');
+  const paidSecond = await action('paid-nonlethal', 'crack', 'integration-player', 1);
   assert.equal(paidSecond.status, 200, JSON.stringify(paidSecond));
   assert.deepEqual([paidSecond.data.status, paidSecond.data.playerHp, paidSecond.data.playerMana,
     paidSecond.data.enemyHp, paidSecond.data.turnCount], ['victory', 110, 0, 0, 2]);
@@ -142,7 +142,7 @@ try {
   const accepted = racing.find(r => r.status === 200).data;
   assert.deepEqual([accepted.playerHp, accepted.playerMana, accepted.enemyHp, accepted.turnCount], [110, 0, 57, 1]);
   assert.equal((await action('parallel-action', 'crack')).status, 409);
-  const followup = await action('parallel-action', 'slash');
+  const followup = await action('parallel-action', 'slash', 'integration-player', 1);
   assert.equal(followup.status, 200, JSON.stringify(followup));
   assert.deepEqual([followup.data.playerMana, followup.data.enemyHp, followup.data.turnCount], [0, 28, 2]);
   const closed = await action('closed-cycle-valid', 'crack');
