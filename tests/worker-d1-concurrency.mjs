@@ -45,6 +45,8 @@ try {
       VALUES('integration-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+      VALUES('old-closed-cycle','underpass',datetime('now','-4 hours'),datetime('now','-2 hours'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -55,7 +57,8 @@ try {
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',70,0,30,3),
       ('expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'defeat',0,0,30,3),
-      ('earned-live','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,1,0);
+      ('earned-live','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,1,0),
+      ('old-earned','integration-player','underpass','old-closed-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
     CREATE TRIGGER qa_expire_earned_victory AFTER UPDATE OF battle_status ON battle_permits
     WHEN NEW.id = 'earned-live' AND NEW.battle_status = 'victory'
     BEGIN UPDATE battle_permits SET expires_at = datetime('now','-20 minutes') WHERE id = NEW.id; END;
@@ -126,7 +129,23 @@ try {
   assert.equal(earnedReplay.player.currency, 99);
   assert.equal(earnedReplay.player.xp, 155);
   assert.equal(earnedReplay.worldEvent.fullRewardClears, 6);
-  console.log('PASS isolated Worker/D1: real victory after permit expiry, concurrency, replay, reward tiers, level-up');
+  // An earned win in a closed/expired cycle must settle against its original quota.
+  const oldEarned = await eventuallyComplete('old-earned');
+  const oldRace = await Promise.all(Array.from({ length: 16 }, () => complete('old-earned')));
+  assert.ok(oldRace.every(r => r.status === 200), JSON.stringify(oldRace));
+  assert.equal(oldEarned.reward.tier, 'full');
+  assert.equal(oldEarned.worldEvent.cycleId, 'old-closed-cycle');
+  assert.equal(oldEarned.worldEvent.phase, 'sealed');
+  assert.equal(oldEarned.worldEvent.fullRewardClears, 1);
+  const oldReplay = await eventuallyComplete('old-earned');
+  assert.deepEqual(oldReplay.reward, oldEarned.reward);
+  assert.equal(oldReplay.player.currency, oldEarned.player.currency);
+  const current = await fetch(base + '/api/world/underpass?playerId=integration-player');
+  assert.equal(current.status, 200);
+  const currentState = await current.json();
+  assert.equal(currentState.cycleId, 'integration-cycle');
+  assert.equal(currentState.fullRewardClears, 6);
+  console.log('PASS isolated Worker/D1: old-cycle recovery, real victory after permit expiry, concurrency, replay, reward tiers, level-up');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
