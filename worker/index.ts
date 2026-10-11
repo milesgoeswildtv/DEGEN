@@ -242,7 +242,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const permit = await env.DB.prepare(`SELECT
       cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
     FROM battle_permits
-    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP`)
+    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND julianday(expires_at) > julianday('now')`)
     .bind(input.permitId, input.playerId)
     .first<BattlePermitStateRow>();
 
@@ -278,7 +278,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
-      AND datetime(expires_at) > CURRENT_TIMESTAMP AND turn_count = ?
+      AND julianday(expires_at) > julianday('now') AND turn_count = ?
     RETURNING turn_count`)
     .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, input.expectedTurnCount);
 
@@ -310,7 +310,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (!updated) {
     const latest = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana,
         enemy_hp, battle_status, turn_count FROM battle_permits
-      WHERE id = ? AND player_id = ? AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP`)
+      WHERE id = ? AND player_id = ? AND completed_at IS NULL AND julianday(expires_at) > julianday('now')`)
       .bind(input.permitId, input.playerId).first<BattlePermitStateRow>();
     if (latest && latest.player_hp !== null && latest.player_mana !== null && latest.enemy_hp !== null) {
       return conflict('Battle state changed; retry from the latest authoritative state.', latest);

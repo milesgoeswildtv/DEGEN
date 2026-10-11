@@ -181,3 +181,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Client-first branch `automation/degen/battle-client-first-v01` PUSHED at `cf9c99763380f1f06b33a9b9ec68f04d26d4140c`, PR creation blocked twice. Client must deploy before mandatory Worker enforcement.
 - Miles blocker: verified Discord/Telegram sessions and economic-route authorization before public play.
 - Next: deliver client-first PR, verify browser requests/CI, then review PR #9 deployment order.
+
+## 2026-10-11 — Permit precision + earned-victory recovery (feature branch)
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #9 branch `automation/degen/battle-turn-client-v01` before this update: `0972598fa72e09f96ac621d6e0fe1376c3fb11a9`.
+- Scope: three Worker active-action expiry guards now use millisecond-precise `julianday` comparisons; preserve the existing server-earned victory recovery claim predicate. Added source-aware and deterministic SQLite boundary tests; updated existing action-CAS regression.
+- QA: staged expiry test 3/3 locally against patched source fixture, not a full checkout; fresh feature-head CI, `npm test`, Worker/D1 HTTP, build and `check:worker` pending. Existing PR #9 Worker/D1 tests still need to run at new head.
+- Mana: COMPLETE/MERGED on main; no monster Mana, reversion, or combat rebalance. Reward recovery: PR #9 only, unmerged; no production economic trust change.
+- D1: tracked schema/migrations 0002–0005 unchanged, migration-before-Worker deploy order unchanged; no remote D1 operations or deployment.
+- Miles blocker: signed Discord/Telegram authentication and per-request ownership remain required for public release. Client-first PR #10 must deploy before PR #9 mandatory turn enforcement.
+- Best next task: obtain fresh green PR #9 CI and real isolated Worker/D1 reward-recovery coverage, then reconcile with permit branch; do not merge before compatible frontend deployment.
+- Status: feature-branch candidate; not MERGED/LIVE.
