@@ -107,3 +107,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - PR creation was rejected twice; branch is PUSHED with exact-head CI, **no PR/merge/live deployment**. Production Pages/Worker CORS and signed Discord/Telegram authorization remain release blockers.
 - D1 tracked migrations 0002–0005 remain unchanged and deploy before Worker; no production D1 writes.
 - Best next task: open draft PR for this now-CI-green permit branch, reconcile its precision fix with PR #9's earned-victory recovery, and remove temporary CI branch trigger before merge. PR #10 compatible frontend must deploy before PR #9 strict Worker turn enforcement.
+
+## 2026-10-11 — Permit precision draft PR opened and CI verified
+- Authoritative `main`: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Existing `automation/degen/permit-millisecond-expiry-v02` branch now has draft PR #12; prior head `e641c3d70b1edeb5e973c3a32904d3f12fa26c43`.
+- Scope: no gameplay rebalance or new schema. Prior Worker millisecond expiry correction, deterministic Mana/permit tests, and isolated Worker/D1 regression remain on PR #12. Removed temporary push-branch CI trigger after opening the draft PR; CI now uses the standard pull_request event.
+- QA: exact-head PR #12 run `38152031993` SUCCESS at `e641c3d`: deterministic tests, isolated Worker/D1 reward integration, `npm run build`, `npm run check:worker`. Local standalone SQLite recovery/expiry models 9/9 PASS; not a substitute for Wrangler/D1 HTTP.
+- Mana: COMPLETE/MERGED on main; no monster Mana or automatic reversion. Reward authority and completion stay server-owned. D1 `DB` binding, tracked migrations 0002–0005, and migration-before-Worker deploy unchanged; no production D1 write or deployment.
+- Integration caution: PR #9 overlaps on permit checks and tests and preserves earned-victory reward recovery. PR #10 compatible client must deploy before PR #9 mandatory-turn enforcement. Do not merge duplicate changes without review.
+- Miles blocker: signed Discord/Telegram authentication and per-request ownership remain missing; live Pages/Worker connectivity/CORS unverified.
+- Best next task: inspect fresh PR #12 CI, reconcile PR #9 overlap, preserve release order; no direct main write.
+- Status: PUSHED / DRAFT PR; not MERGED/LIVE.
