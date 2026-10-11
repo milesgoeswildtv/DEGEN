@@ -4,30 +4,35 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-function strictOrigin(value, label) {
+function strictUrl(value, label, allowDirectory = false) {
   const url = new URL(value);
   assert.ok(url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)), `${label}: HTTPS required except loopback`);
   assert.equal(url.username, '', `${label}: credentials prohibited`);
   assert.equal(url.password, '', `${label}: credentials prohibited`);
-  assert.equal(url.pathname, '/', `${label}: origin only`);
+  if (allowDirectory) assert.ok(url.pathname.endsWith('/'), `${label}: directory URL must end with /`);
+  else assert.equal(url.pathname, '/', `${label}: origin only`);
   assert.equal(url.search, '', `${label}: query prohibited`);
   assert.equal(url.hash, '', `${label}: fragment prohibited`);
-  return url.origin;
+  return url;
 }
 
 export async function verifyPagesWorker({ pagesUrl, workerUrl, fetcher = fetch, timeoutMs = 15000 }) {
-  const pages = strictOrigin(pagesUrl, 'PAGES_URL');
-  const worker = strictOrigin(workerUrl, 'WORKER_URL');
+  const pagesBase = strictUrl(pagesUrl, 'PAGES_URL', true);
+  const pages = pagesBase.origin;
+  const worker = strictUrl(workerUrl, 'WORKER_URL').origin;
   assert.ok(Number.isSafeInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 60000, 'timeoutMs must be 1000–60000');
   const request = (url, init = {}) => fetcher(url, {
     redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(timeoutMs), ...init,
   });
-  const page = await request(pages + '/');
+  const page = await request(pagesBase.href);
   assert.equal(page.status, 200, 'Pages homepage must return 200');
   const html = await page.text();
   const scriptUrls = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/g)]
-    .map(match => new URL(match[1], pages).href)
-    .filter(url => new URL(url).origin === pages);
+    .map(match => new URL(match[1], pagesBase).href)
+    .filter(url => {
+      const asset = new URL(url);
+      return asset.origin === pages && asset.pathname.startsWith(pagesBase.pathname);
+    });
   assert.ok(scriptUrls.length, 'Pages must serve its own JS bundle');
   let hasApiBase = false;
   for (const asset of scriptUrls.slice(0, 10)) {
@@ -60,7 +65,7 @@ export async function verifyPagesWorker({ pagesUrl, workerUrl, fetcher = fetch, 
   assert.notEqual(denied.headers.get('access-control-allow-origin'), preview, 'Unapproved preview origin must not be reflected');
   assert.notEqual(denied.headers.get('access-control-allow-origin'), '*', 'Unapproved preview origin must not receive wildcard CORS');
   assert.notEqual(denied.headers.get('access-control-allow-origin'), 'null', 'Unapproved preview origin must not receive opaque-origin CORS');
-  return { status: 'PASS', mode: 'READ_ONLY', pages, worker, checked: ['published JS API base', 'Worker health', 'bootstrap POST preflight', 'housing PUT preflight', 'content-type header', 'preview-origin rejection'] };
+  return { status: 'PASS', mode: 'READ_ONLY', pages, pagesBase: pagesBase.href, worker, checked: ['published JS API base', 'Worker health', 'bootstrap POST preflight', 'housing PUT preflight', 'content-type header', 'preview-origin rejection'] };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

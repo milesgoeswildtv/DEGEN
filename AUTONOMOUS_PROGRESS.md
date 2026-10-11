@@ -262,3 +262,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana: merged on main, unchanged, Degen-only; no monster Mana or zero-Mana reversion. Battle authority/reward idempotency unchanged; PR #9 stricter turn enforcement remains blocked behind client-first rollout.
 - D1: existing tracked migrations unchanged; no production migration or Worker deployment performed. Live Pages API/CORS and signed Discord/Telegram account ownership remain unverified public-release blockers.
 - Best next task: verify fresh PR #10 exact-head CI, then perform read-only live Pages/Worker API/CORS verification before any frontend-first release.
+
+## 2026-10-11 — Pages project-subpath read-only release gate (PR #10)
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Feature branch: `automation/degen/battle-client-first-v01`, PR #10 (draft, unmerged); prior head `cefa6f4bbd2a393fb1fc6764d7ff6247db0f396b`.
+- Scope: `scripts/verify-pages-worker-readonly.mjs`, `tests/pages-worker-release-smoke.test.ts`, `tests/pages-worker-release-http.test.ts`, this progress log. Support Pages project directory `/DEGEN/` and relative JS bundle resolution while continuing to validate Worker CORS against the Pages **origin**, not path. Reject JS assets outside the project path and unsafe URL components. No gameplay, balance, Worker, DB, schema, or deployment configuration changes.
+- QA: 26/26 targeted tests passed locally under Node 22 on staged candidate including real loopback HTTP. Fresh GitHub CI on the pushed exact head is required for full `npm test`, `npm run build`, `npm run check:worker`, isolated Worker/D1 and touch-driven Chromium vertical slice. LOCAL test proof is not production proof.
+- Mana: COMPLETE/MERGED on main, Degen-only; 0 Mana never reverts and monsters have no Mana. Server-owned battle authority/reward idempotency are unchanged; PR #9 mandatory turn enforcement must follow compatible frontend release.
+- D1: Existing binding and migrations `0002`–`0005` unchanged. Deployment workflow applies migrations before Worker. No remote D1 operation, merge, or production deployment performed.
+- Blockers: live Pages/Worker API/CORS verification and signed Discord/Telegram identity plus request ownership remain unverified; no Miles design decision required for this narrow fix.
+- Best next task: inspect exact-head CI, then read-only check live Pages/Worker with `PAGES_URL=https://milesgoeswildtv.github.io/DEGEN/` and `WORKER_URL=https://degen-api.afterdarklabs.workers.dev` before frontend-first rollout.

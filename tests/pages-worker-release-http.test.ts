@@ -43,3 +43,39 @@ test('real loopback HTTP rejects preview origin reflection',async()=>{
     await assert.rejects(verifyPagesWorker({pagesUrl:f.pages.origin,workerUrl:f.worker.origin,timeoutMs:5000}),/Unapproved preview origin/);
   }finally{await f.close()}
 });
+ 
+test('real loopback HTTP supports GitHub Pages-style project subpaths', async () => {
+  let workerOrigin;
+  const pages = await server((req, res) => {
+    if (req.url === '/DEGEN/') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<script type="module" crossorigin src="./assets/app.js"></script>');
+    } else if (req.url === '/DEGEN/assets/app.js') {
+      res.writeHead(200, { 'content-type': 'application/javascript' });
+      res.end(`const api="${workerOrigin}";`);
+    } else {
+      res.writeHead(404); res.end();
+    }
+  });
+  const worker = await server((req, res) => {
+    if (req.url === '/api/health') {
+      res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': pages.origin });
+      res.end('{"ok":true}');
+    } else {
+      res.writeHead(204, { 'access-control-allow-origin': pages.origin,
+        'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
+        'access-control-allow-headers': 'content-type' });
+      res.end();
+    }
+  });
+  workerOrigin = worker.origin;
+  try {
+    const result = await verifyPagesWorker({ pagesUrl: pages.origin + '/DEGEN/', workerUrl: worker.origin, timeoutMs: 5000 });
+    assert.equal(result.pages, pages.origin);
+    assert.equal(result.pagesBase, pages.origin + '/DEGEN/');
+    assert.deepEqual(pages.requests.map(r => r.url), ['/DEGEN/', '/DEGEN/assets/app.js']);
+    assert.deepEqual(worker.requests.map(r => r.method), ['GET', 'OPTIONS', 'OPTIONS', 'OPTIONS']);
+  } finally {
+    await pages.close(); await worker.close();
+  }
+});
