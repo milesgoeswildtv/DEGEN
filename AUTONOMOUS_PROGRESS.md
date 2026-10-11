@@ -98,3 +98,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Verifies 13 seeded permits and two cycles against tracked main D1 schema/migrations, empty foreign-key violations, SQLite integrity, a legally entered pre-closure battle whose permit remains unexpired, and authoritative Mana/victory fixture states.
 - LOCAL: 3/3 new seed tests PASS plus 21/21 adapted combat/expiry/reward model tests PASS. Actual Wrangler/D1 HTTP, full npm test/build/check:worker and exact-head CI remain pending because no PR could be created.
 - Mana complete/merged on main, no monster Mana/reversion; reward authority unchanged. No deployment, remote D1 operation, migration or configuration change. Best next task remains draft PR + fresh exact-head CI.
+
+## 2026-10-11 — Exact-head permit CI VERIFIED (feature branch only)
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; feature branch `automation/degen/permit-millisecond-expiry-v02` at runtime/test/CI-trigger commit `0eb558f21d001c7b2b8db846763ebc034328bc24`.
+- Added a **temporary branch-specific push trigger** to `.github/workflows/ci.yml` to obtain real CI despite blocked PR creation; remove this extra branch trigger during reviewed integration/merge. No deployment workflow, D1 binding, migration or production config changed.
+- **GitHub Actions run `38137059245` SUCCESS:** 24/24 deterministic tests, actual isolated local Wrangler/D1 HTTP reward/Mana/defeat/concurrent-action/closed-cycle-quota integration, TypeScript/Vite build, and `npm run check:worker` all green. The Worker/D1 log explicitly reports the legal closed-cycle permit and reward isolation pass.
+- Degen-only Mana remains COMPLETE/MERGED on main; monsters have no Mana and 0 Mana never reverts Degen. Reward authority remains server-owned; earned-victory recovery after expiry is in draft PR #9 and must be preserved.
+- PR creation was rejected twice; branch is PUSHED with exact-head CI, **no PR/merge/live deployment**. Production Pages/Worker CORS and signed Discord/Telegram authorization remain release blockers.
+- D1 tracked migrations 0002–0005 remain unchanged and deploy before Worker; no production D1 writes.
+- Best next task: open draft PR for this now-CI-green permit branch, reconcile its precision fix with PR #9's earned-victory recovery, and remove temporary CI branch trigger before merge. PR #10 compatible frontend must deploy before PR #9 strict Worker turn enforcement.
