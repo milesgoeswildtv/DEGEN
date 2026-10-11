@@ -29,7 +29,9 @@ export class PlayerStore {
   private listeners = new Set<(state: PlayerState) => void>();
   private housingSaveInFlight = false;
   private housingSavePlayerId?: string;
-  private pendingHousingSave?: { playerId: string; housing: PlayerState['housing'] };
+  // Coalesce per player, not globally: a pending save for one account must not
+  // be discarded when another account edits housing before the first resolves.
+  private pendingHousingSaves = new Map<string, PlayerState['housing']>();
 
   constructor(private readonly api: GameApi) {
     this.state = this.load();
@@ -78,7 +80,7 @@ export class PlayerStore {
   replaceFromServer(player: PlayerState): void {
     // Preserve same-account placement edits while a save is pending; the
     // receipt remains authoritative for inventory and all progression.
-    const saving = this.housingSavePlayerId === player.id || this.pendingHousingSave?.playerId === player.id;
+    const saving = this.housingSavePlayerId === player.id || this.pendingHousingSaves.has(player.id);
     const placements = saving && this.state.id === player.id ? structuredClone(this.state.housing.placements) : undefined;
     this.state = placements ? { ...player, housing: { ...player.housing, placements } } : player;
     this.commitLocal();
@@ -140,16 +142,18 @@ export class PlayerStore {
   private async persistHousing(): Promise<void> {
     // Serialize requests to prevent an older response from overwriting a newer layout.
     // Coalesce intermediate edits while retaining the latest immutable snapshot.
-    this.pendingHousingSave = { playerId: this.state.id, housing: structuredClone(this.state.housing) };
+    this.pendingHousingSaves.set(this.state.id, structuredClone(this.state.housing));
     if (this.housingSaveInFlight) return;
     this.housingSaveInFlight = true;
     try {
-      while (this.pendingHousingSave) {
-        const next = this.pendingHousingSave;
-        this.pendingHousingSave = undefined;
-        this.housingSavePlayerId = next.playerId;
+      while (this.pendingHousingSaves.size > 0) {
+        const next = this.pendingHousingSaves.entries().next().value;
+        if (!next) break;
+        const [playerId, housing] = next;
+        this.pendingHousingSaves.delete(playerId);
+        this.housingSavePlayerId = playerId;
         try {
-          await this.api.saveHousing(next.playerId, next.housing);
+          await this.api.saveHousing(playerId, housing);
         } catch (error) {
           console.warn('Housing save failed; local copy retained.', error);
         } finally {

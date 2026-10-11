@@ -123,3 +123,37 @@ test('an in-flight housing save cannot leak placements across player identities'
   finish();
   await flush();
 });
+
+
+test('queued housing edits for separate accounts cannot overwrite each other in the save queue', async () => {
+  const calls: Array<{ playerId: string; housing: any; resolve: () => void }> = [];
+  const store = makeStore((playerId, housing) => new Promise<void>((resolve) => {
+    calls.push({ playerId, housing: structuredClone(housing), resolve });
+  }));
+  const firstPlayerId = store.snapshot.id;
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(calls.length, 1);
+
+  store.replaceFromServer({ ...store.snapshot, id: 'second-account',
+    housing: { inventory: ['starter-chair'], placements: [] } });
+  store.placeFurniture('starter-chair', 3, 3);
+  store.replaceFromServer({ ...store.snapshot, id: firstPlayerId,
+    housing: { inventory: ['starter-chair'], placements: [] } });
+  store.placeFurniture('starter-chair', 4, 4);
+  assert.equal(calls.length, 1, 'saves must be serialized');
+
+  calls[0]!.resolve();
+  await flush();
+  assert.equal(calls.length, 2, 'second account pending save must survive first-account edits');
+  assert.equal(calls[1]!.playerId, 'second-account');
+  assert.equal(calls[1]!.housing.placements[0].x, 3);
+  calls[1]!.resolve();
+  await flush();
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2]!.playerId, firstPlayerId);
+  assert.equal(calls[2]!.housing.placements[0].x, 4);
+  calls[2]!.resolve();
+  await flush();
+  assert.equal(calls.length, 3);
+});
