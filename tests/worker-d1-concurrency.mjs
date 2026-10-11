@@ -19,6 +19,13 @@ function cli(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
 }
+async function action(permitId, abilityId, playerId = 'integration-player') {
+  const r = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId, permitId, abilityId }),
+  });
+  return { status: r.status, data: await r.json() };
+}
 async function complete(permitId, playerId = 'integration-player') {
   const r = await fetch(base + '/api/battle/complete', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -52,7 +59,10 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
+      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
+      ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
+      ('paid-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,30,0),
+      ('defeat-case','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,60,0);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -91,7 +101,18 @@ try {
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
   assert.equal((await complete('expired')).status, 409);
-  console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
+  assert.equal((await action('zero-mana', 'crack')).status, 409);
+  const free = await action('zero-mana', 'slash');
+  assert.equal(free.status, 200, JSON.stringify(free));
+  assert.deepEqual([free.data.playerHp, free.data.playerMana, free.data.enemyHp, free.data.turnCount], [110, 0, 31, 1]);
+  const paid = await action('paid-kill', 'crack');
+  assert.equal(paid.status, 200, JSON.stringify(paid));
+  assert.deepEqual([paid.data.status, paid.data.playerHp, paid.data.playerMana, paid.data.enemyHp, paid.data.turnCount], ['victory', 120, 0, 0, 1]);
+  const defeat = await action('defeat-case', 'slash');
+  assert.equal(defeat.status, 200, JSON.stringify(defeat));
+  assert.equal(defeat.data.status, 'defeat');
+  assert.equal((await complete('defeat-case')).status, 409);
+  console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, Mana authority and defeat');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
