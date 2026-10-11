@@ -108,12 +108,12 @@ test('a reward resolved after an account switch never replaces the active player
   resolve({ player: { id: 'test-player' }, worldEvent: { cycleId: 'old-cycle' } });
   await pending;
   assert.equal(fixture.store.replaced, 0);
-  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '[]');
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '["old-permit"]');
   assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:other-player'), undefined);
   assert.equal(fixture.timers.some(timer => timer.delay === 1400), false);
 });
 
-test('a retry remains owned by the original account after switching players', async () => {
+test('inactive account retains pending reward until it returns', async () => {
   const owners: string[] = [];
   const fixture = setup(true, async (playerId: string) => {
     owners.push(playerId);
@@ -123,14 +123,18 @@ test('a retry remains owned by the original account after switching players', as
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   controller.battlePermit = { permitId: 'old-permit' };
   controller.battlePlayerId = 'test-player';
-  fixture.store.snapshot.id = 'other-player';
   await controller.finishBattle('victory');
   const retry = fixture.timers.find(timer => timer.delay === 15_000);
   assert.ok(retry);
+  fixture.store.snapshot.id = 'other-player';
   retry.callback();
   await new Promise(done => setImmediate(done));
+  assert.deepEqual(owners, ['test-player']);
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '["old-permit"]');
+  fixture.store.snapshot.id = 'test-player';
+  await controller.start();
+  await new Promise(done => setImmediate(done));
   assert.deepEqual(owners, ['test-player', 'test-player']);
-  assert.equal(fixture.store.replaced, 0);
   assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '[]');
   assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:other-player'), undefined);
 });

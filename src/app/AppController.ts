@@ -233,6 +233,7 @@ export class AppController {
   private queueRewardCompletion(permitId: string, playerId = this.store.snapshot.id): Promise<void> {
     // Serialize pending completions so an older response cannot replace a newer player snapshot.
     this.rewardResolution = this.rewardResolution.then(async () => {
+      if (this.store.snapshot.id !== playerId) return;
       try {
         const result = await this.api.completeUnderpass(playerId, permitId);
         if (!result || result.player?.id !== playerId) {
@@ -240,8 +241,8 @@ export class AppController {
         }
         // Always settle the originating account's pending key, even if another
         // account became active while this Worker request was in flight.
-        this.forgetPendingReward(permitId, playerId);
         if (this.store.snapshot.id !== playerId) return;
+        this.forgetPendingReward(permitId, playerId);
         this.store.replaceFromServer(result.player);
         this.underpassEvent = result.worldEvent;
         if (this.battlePermit?.permitId === permitId) {
@@ -254,7 +255,9 @@ export class AppController {
         }
       } catch (error) {
         console.warn('Server reward verification failed; retaining permit for retry.', error);
-        window.setTimeout(() => void this.queueRewardCompletion(permitId, playerId), 15_000);
+        if (this.store.snapshot.id === playerId) {
+          window.setTimeout(() => void this.queueRewardCompletion(permitId, playerId), 15_000);
+        }
       }
     });
     return this.rewardResolution;

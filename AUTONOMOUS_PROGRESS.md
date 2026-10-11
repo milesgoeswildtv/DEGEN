@@ -224,3 +224,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Blocker: signed platform authentication and per-route authorization remain required before public economy.
 - Next: inspect exact-head CI and merge/deploy compatible PR #10 client before PR #9 Worker enforcement; reconcile PR #12 permit coverage.
 - Status: feature-branch-only candidate; NOT MERGED/LIVE.
+
+## 2026-10-11 — Inactive reward owner reconciliation (PR #9)
+- Main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; draft PR #9, feature branch only.
+- Align with PR #10: inactive account pending permits remain stored until that account returns; never call completion while another account is active; ignore late receipts after account changes. `src/app/AppController.ts` and `tests/client-reward-recovery.test.ts` updated.
+- Require fresh exact-head CI, isolated Worker/D1, build, and Worker validation. No production D1, deploy, or migration changes. Mana remains complete/merged on main, Degen-only; no monster Mana or forced reversion. Reward authority stays Worker-owned.
+- Public release blocker: signed Discord/Telegram identity and per-request authorization. Next: reconcile PR #10 client and PR #9, then PR #12 tests, preserving release order.
