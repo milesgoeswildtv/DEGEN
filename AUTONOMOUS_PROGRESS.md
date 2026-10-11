@@ -232,3 +232,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1: existing `wrangler.toml` binding and tracked migrations `0002`–`0005` are unchanged; deployment workflow applies schema/migrations before Worker. CI tests use isolated local D1 only; no remote D1 changes.
 - Blockers: production Pages exact-origin CORS PR #7 and API-base verification, signed Discord/Telegram identity plus per-request authorization before public economy. No Miles design decision needed for this QA slice.
 - Best next task: verify production Pages API base and exact-origin CORS safely, then plan frontend-first release before PR #9 Worker enforcement. Do not claim live gameplay from local CI.
+
+### 2026-10-10 — 320px route coverage (PUSHED / CI GREEN)
+- Main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #10 draft/unmerged. Commit `1937478316df13bd68d22fef8043d8ebcddebe03` adds Map/Home/Battle 320x568 overflow checks with a long player name to the existing touch-driven browser test.
+- CI `38098973346` SUCCESS: deterministic tests, isolated Worker/D1 HTTP, Vite build, Chromium touch vertical slice, Worker dry-run. No runtime/UI, Mana, rewards, D1, config, or production changes.
+- Mana and reward idempotency remain merged on main. PR #9 strict turn enforcement remains draft. Existing D1 migrations precede Worker deployment; no remote D1 operations.
+- Blockers: production Pages CORS/API-base verification and signed platform identity with per-request authorization. Best next task: frontend-first release readiness verification.
