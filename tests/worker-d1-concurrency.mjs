@@ -153,6 +153,14 @@ try {
   assert.equal(closedReward.reward.tier, 'full');
   assert.equal(closedReward.worldEvent.cycleId, 'closed-cycle');
   assert.equal(closedReward.worldEvent.phase, 'sealed');
+  assert.equal(closedReward.worldEvent.fullRewardClears, 1,
+    'closed cycle must count its own reward independently');
+  const currentWorldResponse = await fetch(base + '/api/world/underpass?playerId=integration-player');
+  assert.equal(currentWorldResponse.status, 200);
+  const currentWorld = await currentWorldResponse.json();
+  assert.equal(currentWorld.cycleId, 'integration-cycle');
+  assert.equal(currentWorld.fullRewardClears, 5,
+    'settling an old-cycle victory must not consume the current cycle reward quota');
   console.log('PASS isolated Worker/D1: reward replay, authoritative Mana, action CAS, terminal outcomes, and legal closed-cycle permit');
 } finally {
   if (server && server.exitCode === null) {
