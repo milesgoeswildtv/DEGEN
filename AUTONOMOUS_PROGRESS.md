@@ -122,3 +122,8 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - The harness uses isolated scratch D1 state and never production. Existing reward concurrency checks remain intact. CI must prove this branch head; no new schema, migration, Mana, or gameplay rules.
 - Previous CI `38125445102` failure was a test-harness mismatch; reconciled in `da031f21...`. This addition requires fresh exact-head CI.
 - Best next task: confirm isolated HTTP and full CI green, then review PR #8 alongside platform authorization and housing mobile UX before merge.
+
+## 2026-10-11 — D1 housing transaction rollback regression (PR #8)
+- Extended isolated Worker/D1 HTTP harness with two-player global placement-ID collision. A failed D1 batch must preserve both the original player's previous room and the other player's placement; explicit empty-room save still follows.
+- Prior exact-head PR #8 CI `38125559664` passed 39/39 and real housing HTTP. Fresh CI required for this additional rollback assertion. No production DB or schema change.
+- Mana, reward authority, platform-auth blockers and release order unchanged. Next: verify new CI and preserve both PR #8 and PR #10 harness tests at merge.
