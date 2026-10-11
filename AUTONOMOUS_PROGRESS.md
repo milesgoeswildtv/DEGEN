@@ -69,3 +69,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+
+## Underpass cycle CAS — 2026-10-09 (PUSHED / CI PENDING)
+- Main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; feature branch `automation/degen/underpass-cycle-cas-v01`; code/test head `c807c0a5b60f328441080540719cc0d0caaf2104`, no PR or deployment.
+- Files: `worker/index.ts` conditionally inserts an Underpass cycle with atomic SQLite INSERT/RETURNING; concurrent losers reload the existing cycle. `tests/underpass-cycle-race.test.ts` executes SQL extracted from Worker source, testing stale concurrent reads, rollover, fractional expiry and other event types. `.github/workflows/ci.yml` temporarily gates feature-branch pushes.
+- QA: equivalent local SQLite tests 4/4 PASS; full CI run `37884407278` pending at time of writing. No claim of live Worker or remote D1 verification.
+- Mana COMPLETE/MERGED on main, Degen-only, no depletion reversion; reward idempotency/battle authority unchanged by this world-event fix. Existing D1 binding/migrations unchanged, no schema or production DB changes.
+- Blockers: combined-combat draft PR creation rejected after independent retry; Discord/Telegram authenticated identity still required before public economy. An intermediate incomplete-tree CI commit was corrected by fast-forward restoration; verify final head only.
+- Next: verify exact-head CI, fix any regression, obtain reviewed PR; continue platform authentication and combat PR delivery.

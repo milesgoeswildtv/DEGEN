@@ -125,9 +125,22 @@ async function ensureUnderpassCycle(db: D1Database): Promise<CycleRow> {
     opens_at: iso(opensAt),
     closes_at: iso(opensAt + openMinutes * 60_000),
   };
-  await db.prepare(`INSERT INTO world_event_cycles (id, event_key, opens_at, closes_at) VALUES (?, ?, ?, ?)`)
-    .bind(cycle.id, cycle.event_key, cycle.opens_at, cycle.closes_at).run();
-  return cycle;
+  // Serialize cycle creation in SQLite rather than trusting the earlier read.
+  const inserted = await db.prepare(`INSERT INTO world_event_cycles (id, event_key, opens_at, closes_at)
+    SELECT ?, 'underpass', ?, ?
+    WHERE NOT EXISTS (
+      SELECT 1 FROM world_event_cycles
+      WHERE event_key = 'underpass' AND julianday(closes_at) > julianday(?)
+    )
+    RETURNING id, event_key, opens_at, closes_at`)
+    .bind(cycle.id, cycle.opens_at, cycle.closes_at, iso(now)).first<CycleRow>();
+  if (inserted) return inserted;
+
+  const concurrent = await db.prepare(`SELECT id, event_key, opens_at, closes_at FROM world_event_cycles
+    WHERE event_key = 'underpass' AND julianday(closes_at) > julianday(?)
+    ORDER BY closes_at DESC LIMIT 1`).bind(iso(now)).first<CycleRow>();
+  if (concurrent) return concurrent;
+  throw new Error('Unable to resolve the current Underpass cycle.');
 }
 
 function phaseFor(cycle: CycleRow): 'sealed' | 'warning' | 'open' {
