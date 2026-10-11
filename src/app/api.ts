@@ -31,10 +31,18 @@ export class GameApi {
 
   async saveHousing(playerId: string, housing: HousingState): Promise<void> {
     if (!this.enabled) return;
-    await this.request('/api/player/housing', {
-      method: 'PUT',
-      body: JSON.stringify({ playerId, housing }),
-    });
+    // A stalled PUT must not block the housing save queue from sending newer layouts.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    try {
+      await this.request('/api/player/housing', {
+        method: 'PUT',
+        body: JSON.stringify({ playerId, housing }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async getUnderpass(playerId: string): Promise<WorldEventSnapshot | undefined> {
