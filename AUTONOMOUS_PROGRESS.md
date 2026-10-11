@@ -116,3 +116,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Updated legacy housing tests to expect fail-closed 400 for overquantity/duplicate layouts and preservation of the prior saved layout. Explicit empty-room and valid two-copy saves remain accepted.
 - Prior PR #8 CI `38125445102` failed 4 tests because the old harness omitted the new import and expected partial acceptance; fresh CI required on this commit. No production deployment or D1 changes.
 - Main, Mana, battle authority, reward idempotency, migrations, and platform release gates unchanged. Next: require green CI, then isolated real Worker/D1 housing HTTP test.
+
+## 2026-10-11 — Isolated Worker/D1 housing HTTP release gate (PR #8)
+- Extended `tests/worker-d1-concurrency.mjs` to exercise actual local Wrangler Worker/D1 HTTP housing PUT and bootstrap reload: valid furniture, overquantity, spoofed inventory, duplicate cells, missing placements, and explicit empty room.
+- The harness uses isolated scratch D1 state and never production. Existing reward concurrency checks remain intact. CI must prove this branch head; no new schema, migration, Mana, or gameplay rules.
+- Previous CI `38125445102` failure was a test-harness mismatch; reconciled in `da031f21...`. This addition requires fresh exact-head CI.
+- Best next task: confirm isolated HTTP and full CI green, then review PR #8 alongside platform authorization and housing mobile UX before merge.

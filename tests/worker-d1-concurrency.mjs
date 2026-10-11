@@ -91,6 +91,39 @@ try {
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
   assert.equal((await complete('expired')).status, 409);
+
+  // Real HTTP against this isolated Wrangler Worker/D1 database, never production.
+  const bootstrapHousing = async () => {
+    const response = await fetch(base + '/api/player/bootstrap', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: 'integration-player', displayName: 'Integration' }),
+    });
+    assert.equal(response.status, 200);
+    return (await response.json()).housing.placements;
+  };
+  const saveHousing = (housing) => fetch(base + '/api/player/housing', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', housing }),
+  });
+  const originalHousing = await bootstrapHousing();
+  assert.deepEqual(originalHousing, [], 'pre-seeded character must not receive new starter placement');
+  const bed = { instanceId: 'integration-housing-bed', furnitureId: 'starter-bed', x: 3, y: 2 };
+  assert.equal((await saveHousing({ placements: [bed] })).status, 204);
+  assert.deepEqual((await bootstrapHousing()).map(item => [item.instanceId,item.x,item.y]),
+    [['integration-housing-bed',3,2]], 'valid placement must persist');
+  const expectedHousing = await bootstrapHousing();
+  for (const invalid of [
+    {},
+    { placements: [bed, { ...bed, instanceId: 'extra-bed', x: 4 }] },
+    { placements: [{ ...bed, furnitureId: 'unowned-furniture' }], inventory: ['unowned-furniture'] },
+    { placements: [bed, { instanceId: 'chair-duplicate-cell', furnitureId: 'starter-chair', x: 3, y: 2 }] },
+  ]) {
+    assert.equal((await saveHousing(invalid)).status, 400, 'malformed/overquantity save must reject');
+    assert.deepEqual(await bootstrapHousing(), expectedHousing, 'rejected save must preserve prior layout');
+  }
+  assert.equal((await saveHousing({ placements: [] })).status, 204);
+  assert.deepEqual(await bootstrapHousing(), [], 'explicit empty room must persist through bootstrap');
+  console.log('PASS isolated Worker/D1 HTTP housing: valid save, invalid rejection, persistence, empty-room reload');
   console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
 } finally {
   if (server && server.exitCode === null) {
