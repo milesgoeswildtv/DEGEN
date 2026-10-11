@@ -4,13 +4,14 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { validateHousingPlacements } from '../worker/housingQuantityGuard.ts';
 
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
 const { ensurePlayer, handleHousing } = runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ ensurePlayer, handleHousing });',
-  { crypto, console, Request, Response, URL, Uint32Array },
+  { crypto, console, Request, Response, URL, Uint32Array, validateHousingPlacements },
 ) as {
   ensurePlayer: (db: unknown, playerId: string, displayName: string) => Promise<void>;
   handleHousing: (request: Request, env: unknown) => Promise<Response>;
@@ -124,16 +125,16 @@ function housingRequest(playerId: string, placements: Array<{ instanceId: string
   });
 }
 
-test('server cannot duplicate one owned furniture item across two cells', async () => {
+test('server rejects an overquantity layout without replacing existing furniture', async () => {
   const { db, adapter } = makeDb();
   await ensurePlayer(adapter, 'quantity-owner', 'Owner');
   const response = await handleHousing(housingRequest('quantity-owner', [
     { instanceId: 'bed-one', furnitureId: 'starter-bed', x: 0, y: 0 },
     { instanceId: 'bed-two', furnitureId: 'starter-bed', x: 1, y: 1 },
   ]), { DB: adapter });
-  assert.equal(response.status, 204);
+  assert.equal(response.status, 400);
   const saved = db.prepare("SELECT id FROM housing_placements WHERE player_id='quantity-owner' ORDER BY id").all();
-  assert.deepEqual(saved.map(row => row.id), ['bed-one']);
+  assert.deepEqual(saved.map(row => row.id), ['quantity-owner:starter-bed-placed']);
   db.close();
 });
 
@@ -150,7 +151,7 @@ test('server respects actual inventory quantity when two copies are owned', asyn
   db.close();
 });
 
-test('server skips duplicate cell and placement identifiers without rolling back valid items', async () => {
+test('server rejects duplicate cell and placement identifiers without replacing saved items', async () => {
   const { db, adapter } = makeDb();
   await ensurePlayer(adapter, 'duplicates', 'Dupes');
   const response = await handleHousing(housingRequest('duplicates', [
@@ -159,8 +160,8 @@ test('server skips duplicate cell and placement identifiers without rolling back
     { instanceId: 'bed-one', furnitureId: 'starter-lamp', x: 1, y: 1 },
     { instanceId: 'rug-one', furnitureId: 'starter-rug', x: 2, y: 2 },
   ]), { DB: adapter });
-  assert.equal(response.status, 204);
+  assert.equal(response.status, 400);
   const saved = db.prepare("SELECT id FROM housing_placements WHERE player_id='duplicates' ORDER BY id").all();
-  assert.deepEqual(saved.map(row => row.id), ['bed-one', 'rug-one']);
+  assert.deepEqual(saved.map(row => row.id), ['duplicates:starter-bed-placed']);
   db.close();
 });

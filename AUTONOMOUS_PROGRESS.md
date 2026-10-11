@@ -110,3 +110,9 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana foundation already merged on main, unchanged. Battle authority and reward idempotency unchanged; D1 schema/migrations unchanged. No production D1 operation or Worker deployment.
 - Public release remains blocked by platform-signed identity and per-request ownership; this validation is NOT authentication. PR #10 frontend-first and PR #9 turn enforcement ordering remains unchanged.
 - Best next task: require exact-head PR #8 CI, Worker/D1 integration, and housing reload/mobile verification before merge.
+
+## 2026-10-11 — PR #8 housing test harness reconciliation
+- PR #8 Worker now imports `validateHousingPlacements`; existing VM-extracted handler tests must inject that helper into their sandbox rather than strip the import and silently test a ReferenceError.
+- Updated legacy housing tests to expect fail-closed 400 for overquantity/duplicate layouts and preservation of the prior saved layout. Explicit empty-room and valid two-copy saves remain accepted.
+- Prior PR #8 CI `38125445102` failed 4 tests because the old harness omitted the new import and expected partial acceptance; fresh CI required on this commit. No production deployment or D1 changes.
+- Main, Mana, battle authority, reward idempotency, migrations, and platform release gates unchanged. Next: require green CI, then isolated real Worker/D1 housing HTTP test.
