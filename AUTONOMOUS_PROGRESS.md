@@ -238,3 +238,8 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - CI `38098973346` SUCCESS: deterministic tests, isolated Worker/D1 HTTP, Vite build, Chromium touch vertical slice, Worker dry-run. No runtime/UI, Mana, rewards, D1, config, or production changes.
 - Mana and reward idempotency remain merged on main. PR #9 strict turn enforcement remains draft. Existing D1 migrations precede Worker deployment; no remote D1 operations.
 - Blockers: production Pages CORS/API-base verification and signed platform identity with per-request authorization. Best next task: frontend-first release readiness verification.
+
+### Housing request ordering review — 2026-10-10
+- A proposed 20-second housing PUT timeout (`539e197`) was reverted in a new fast-forward commit (`bdc0f468c8d6574807ff64561ef06a4eda2b0c98`) before release. An aborted client request may still commit server-side after a newer layout; PR #8's serialized client saves alone cannot prevent that stale overwrite. Runtime/API and deadline test files now match prior green commit `6c207ae6a777d801431e71ac02042ab0e55c8c6b` exactly.
+- Local SQLite negative control reproduced out-of-order stale layout overwrite. A revision-CAS model prevented it but is not approved/implemented. Do not add an abort deadline without a server-side ordering guarantee.
+- Main unchanged; Mana and reward authority unchanged; no production D1, deploy or merge. Best next task remains Pages API/CORS release verification and compatible frontend-first rollout.
