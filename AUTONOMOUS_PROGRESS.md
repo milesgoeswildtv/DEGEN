@@ -101,3 +101,12 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Degen-only Mana/reward authority merged on main; no monster Mana/reversion. Atomic defeat and client-first recovery remain separate green feature branches; server replay and platform identity remain unresolved.
 - No schema/config/migration change; D1 tracked 0002–0005, no remote writes. PR #8 description update rejected twice; no Miles design blocker.
 - Best next task: review PR #8 furniture placement semantics and verify mobile reload; obtain approval before merge.
+
+## 2026-10-11 — Housing saves fail closed (PR #8 feature branch)
+- Main SHA `33e7477961d2a6ab7b79bf52d78a93901e19f658`; PR #8 branch `automation/degen/housing-reliability-v01`, draft/unmerged.
+- Changed `worker/index.ts`, added `worker/housingQuantityGuard.ts`, `tests/housingQuantityGuard.test.ts`, and updated this progress log.
+- Server-owned inventory quantity and placement geometry are checked before D1 DELETE/INSERT; missing/malformed layouts reject rather than silently clear rooms; explicit empty layout remains valid.
+- LOCAL evidence: 31/31 source-extracted migrated SQLite handler/pure-validator tests passed on the candidate; committed deterministic regression suite requires fresh CI. No visual UI changes.
+- Mana foundation already merged on main, unchanged. Battle authority and reward idempotency unchanged; D1 schema/migrations unchanged. No production D1 operation or Worker deployment.
+- Public release remains blocked by platform-signed identity and per-request ownership; this validation is NOT authentication. PR #10 frontend-first and PR #9 turn enforcement ordering remains unchanged.
+- Best next task: require exact-head PR #8 CI, Worker/D1 integration, and housing reload/mobile verification before merge.
