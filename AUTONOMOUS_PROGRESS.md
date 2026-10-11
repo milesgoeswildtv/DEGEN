@@ -191,3 +191,15 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Miles blocker: signed Discord/Telegram authentication and per-request ownership remain required for public release. Client-first PR #10 must deploy before PR #9 mandatory turn enforcement.
 - Best next task: obtain fresh green PR #9 CI and real isolated Worker/D1 reward-recovery coverage, then reconcile with permit branch; do not merge before compatible frontend deployment.
 - Status: feature-branch candidate; not MERGED/LIVE.
+
+## 2026-10-11 — Cross-cycle Worker/D1 recovery regression (PR #9)
+- Authoritative `main`: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/battle-turn-client-v01`, prior head `e0de723337633076d7c5cf722879375b0dde333c`. Draft PR #9, not merged or live.
+- Implemented: `tests/worker-d1-concurrency.mjs` now seeds an expired, server-earned victory from a closed prior Underpass cycle, verifies its original-cycle full-tier settlement, runs 16 concurrent awarded replays, and checks the active cycle's reward quota remains unchanged. No Worker gameplay or economy changes in this test slice.
+- Exact-head CI run `38151999364` SUCCESS on `e0de7233`: 58/58 deterministic Node tests; isolated Worker/D1 reward concurrency, turn replay and atomic defeat; web build and Worker dry-run. Additional local standalone SQLite models 9/9 PASS; those models are not Wrangler/D1 HTTP.
+- CI housekeeping: removed temporary PR #9 push-branch trigger now the draft PR exists. Preserve the extra Worker/D1 replay/defeat jobs. Fresh CI required for this housekeeping commit.
+- Mana: COMPLETE/MERGED on `main`; player-only Mana, exact deductions, zero-cost at zero, no monster Mana, no reversion. Battle/reward authority remains Worker-owned. Earned-victory recovery and mandatory turn enforcement are PR #9 only.
+- D1: existing `DB` binding and tracked migrations 0002–0005 unchanged; migration-before-Worker deployment preserved. No production D1 writes or deployment.
+- PR #12 permit-precision branch is now a draft PR, CI `38152031993` GREEN at `e641c3d`; reconcile its overlapping Worker/test changes without losing PR #9 earned-victory recovery.
+- Miles blocker: verified Discord/Telegram identity and per-request player ownership before public economy; live Pages/Worker CORS remains unverified. PR #10 compatible frontend must deploy and be verified before PR #9 mandatory turn enforcement.
+- Best next task: inspect fresh CI, then reconcile PR #10/#9/#12 integration and release ordering; do not merge/deploy blindly.
+- Status: PUSHED / PR only; not MERGED/LIVE.
