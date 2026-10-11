@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'automation/degen/permit-millisecond-expiry-v02']
+    branches: [main]
   pull_request:
     branches: [main]
 
