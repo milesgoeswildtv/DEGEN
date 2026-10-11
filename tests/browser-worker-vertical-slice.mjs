@@ -102,6 +102,41 @@ try {
   });
   const cdp = cdpClient(target.webSocketDebuggerUrl);
   socket = cdp.ws;
+  // Use actual mobile touch events, not DOM click simulation.
+  const tap = async (selector) => {
+    const point = await cdp.evaluate(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!element || element.disabled) return null;
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      const box = element.getBoundingClientRect();
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return hit && (hit === element || element.contains(hit)) ? { x, y } : null;
+    })()`);
+    assert.ok(point && point.x >= 0 && point.x < 390 && point.y >= 0 && point.y < 844,
+      'Touch target must be visible and unobstructed: ' + selector);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  const assertFitsMobile = async route => {
+    assert.equal(await cdp.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
+      true, route + ' must not overflow horizontally');
+  };
+  const assertCompactHeader = async () => {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 2, mobile: true });
+    const dimensions = await cdp.evaluate(`(() => {
+      const label = document.querySelector('.player-chip span');
+      if (!label) return null;
+      const original = label.textContent;
+      label.textContent = 'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM';
+      const result = { width: window.innerWidth, scroll: document.documentElement.scrollWidth };
+      label.textContent = original;
+      return result;
+    })()`);
+    assert.deepEqual(dimensions, { width: 320, scroll: 320 }, '320px long-name layout');
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  };
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   // Exercise the entire Worker-backed slice in mobile portrait; not physical-device QA.
@@ -113,22 +148,26 @@ try {
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
-  await cdp.evaluate('document.querySelector("[data-route=home]").click()');
+  await assertFitsMobile('Map');
+  await assertCompactHeader();
+  await tap("[data-route=home]");
   await until('Home grid', () => cdp.evaluate('!!document.querySelector(".room-grid")'));
-  await cdp.evaluate('document.querySelector("[data-route=map]").click()');
+  await assertFitsMobile('Home');
+  await tap("[data-route=map]");
   await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
-  await cdp.evaluate('document.querySelector("[data-route=underpass]").click()');
+  await tap("[data-route=underpass]");
   await until('Worker-authorized Underpass entry', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
-  await cdp.evaluate('document.querySelector("[data-start-battle]").click()');
+  await tap("[data-start-battle]");
   await until('Manifested Degen abilities', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   assert.equal(await cdp.evaluate('document.querySelector("[data-ability=crack]")?.dataset.manaCost'), '4');
+  await assertFitsMobile('Battle');
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
-    await cdp.evaluate('document.querySelector("[data-ability=crack]").click()');
+    await tap("[data-ability=crack]");
     if (turn < 3) await until('Authoritative action ' + turn, () => cdp.evaluate('(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + turn));
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
-  await cdp.evaluate('document.querySelector("[data-route=home]").click()');
+  await tap("[data-route=home]");
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
   // Verify the browser produced a real server-settled receipt, not preview-only UI.
   const query = "SELECT COUNT(*) AS awarded FROM battle_permits WHERE battle_status='victory' AND reward_state='awarded' AND player_mana=0 AND turn_count=3";
