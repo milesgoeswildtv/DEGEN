@@ -18,6 +18,7 @@ export class AppController {
   private worldRefreshTimer?: number;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
+  private battlePlayerId?: string;
   private battleActionPending = false;
   private rewardResolution: Promise<void> = Promise.resolve();
 
@@ -113,11 +114,16 @@ export class AppController {
     if (!event || event.phase !== 'open') return;
 
     try {
-      this.battlePermit = this.api.enabled
-        ? await this.api.startUnderpass(this.store.snapshot.id, event.cycleId)
+      const playerId = this.store.snapshot.id;
+      const permit = this.api.enabled
+        ? await this.api.startUnderpass(playerId, event.cycleId)
         : createPreviewPermit(event.cycleId);
 
-      if (!this.battlePermit) throw new Error('No battle permit returned.');
+      // A late permit must not open an encounter under a different account.
+      if (this.store.snapshot.id !== playerId) return;
+      if (!permit) throw new Error('No battle permit returned.');
+      this.battlePermit = permit;
+      this.battlePlayerId = playerId;
       this.navigate('battle');
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
@@ -146,7 +152,8 @@ export class AppController {
   }
 
   private async useBattleAbility(abilityId: string): Promise<void> {
-    if (!this.battleEngine || !this.battlePermit || this.battleActionPending) return;
+    if (!this.battleEngine || !this.battlePermit || this.battleActionPending
+      || (this.battlePlayerId && this.battlePlayerId !== this.store.snapshot.id)) return;
     const engine = this.battleEngine;
     const permitId = this.battlePermit.permitId;
 
@@ -190,49 +197,53 @@ export class AppController {
     });
   }
 
-  private pendingRewardKey(): string {
-    return `degen.pending.reward-permits.v1:${this.store.snapshot.id}`;
+  private pendingRewardKey(playerId = this.store.snapshot.id): string {
+    return `degen.pending.reward-permits.v1:${playerId}`;
   }
 
   // Persist only permit identifiers for retry. Rewards and progression stay Worker-owned.
-  private pendingRewardPermits(): string[] {
+  private pendingRewardPermits(playerId = this.store.snapshot.id): string[] {
     try {
-      const parsed: unknown = JSON.parse(localStorage.getItem(this.pendingRewardKey()) ?? '[]');
+      const parsed: unknown = JSON.parse(localStorage.getItem(this.pendingRewardKey(playerId)) ?? '[]');
       return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
     } catch {
       return [];
     }
   }
 
-  private rememberPendingReward(permitId: string): void {
+  private rememberPendingReward(permitId: string, playerId = this.store.snapshot.id): void {
     try {
-      const ids = this.pendingRewardPermits();
-      if (!ids.includes(permitId)) localStorage.setItem(this.pendingRewardKey(), JSON.stringify([...ids, permitId]));
+      const ids = this.pendingRewardPermits(playerId);
+      if (!ids.includes(permitId)) localStorage.setItem(this.pendingRewardKey(playerId), JSON.stringify([...ids, permitId]));
     } catch (error) {
       console.warn('Unable to persist pending battle reward retry.', error);
     }
   }
 
-  private forgetPendingReward(permitId: string): void {
+  private forgetPendingReward(permitId: string, playerId = this.store.snapshot.id): void {
     try {
-      localStorage.setItem(this.pendingRewardKey(), JSON.stringify(
-        this.pendingRewardPermits().filter((id) => id !== permitId),
+      localStorage.setItem(this.pendingRewardKey(playerId), JSON.stringify(
+        this.pendingRewardPermits(playerId).filter((id) => id !== permitId),
       ));
     } catch (error) {
       console.warn('Unable to clear completed battle reward retry.', error);
     }
   }
 
-  private queueRewardCompletion(permitId: string): Promise<void> {
-    const playerId = this.store.snapshot.id;
+  private queueRewardCompletion(permitId: string, playerId = this.store.snapshot.id): Promise<void> {
     // Serialize pending completions so an older response cannot replace a newer player snapshot.
     this.rewardResolution = this.rewardResolution.then(async () => {
       try {
         const result = await this.api.completeUnderpass(playerId, permitId);
-        if (!result) throw new Error('Missing authoritative battle completion response.');
+        if (!result || result.player?.id !== playerId) {
+          throw new Error('Missing or mismatched authoritative reward owner.');
+        }
+        // Always settle the originating account's pending key, even if another
+        // account became active while this Worker request was in flight.
+        this.forgetPendingReward(permitId, playerId);
+        if (this.store.snapshot.id !== playerId) return;
         this.store.replaceFromServer(result.player);
         this.underpassEvent = result.worldEvent;
-        this.forgetPendingReward(permitId);
         if (this.battlePermit?.permitId === permitId) {
           this.battlePermit = undefined;
           if (this.route === 'battle') {
@@ -243,7 +254,7 @@ export class AppController {
         }
       } catch (error) {
         console.warn('Server reward verification failed; retaining permit for retry.', error);
-        window.setTimeout(() => void this.queueRewardCompletion(permitId), 15_000);
+        window.setTimeout(() => void this.queueRewardCompletion(permitId, playerId), 15_000);
       }
     });
     return this.rewardResolution;
@@ -253,8 +264,9 @@ export class AppController {
     if (status === 'victory' && this.battlePermit) {
       if (this.api.enabled) {
         const permitId = this.battlePermit.permitId;
-        this.rememberPendingReward(permitId);
-        await this.queueRewardCompletion(permitId);
+        const playerId = this.battlePlayerId ?? this.store.snapshot.id;
+        this.rememberPendingReward(permitId, playerId);
+        await this.queueRewardCompletion(permitId, playerId);
         return;
       }
 
@@ -293,6 +305,7 @@ export class AppController {
     this.battleGame?.destroy(true);
     this.battleGame = undefined;
     this.battleEngine = undefined;
+    this.battlePlayerId = undefined;
     this.battleActionPending = false;
   }
 }

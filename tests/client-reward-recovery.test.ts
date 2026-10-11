@@ -24,7 +24,7 @@ const setup = (enabled: boolean, completeUnderpass?: () => Promise<unknown>) => 
   };
   const api = {
     enabled,
-    completeUnderpass: completeUnderpass ?? (async () => ({ player: {}, worldEvent: {} })),
+    completeUnderpass: completeUnderpass ?? (async () => ({ player: { id: 'test-player' }, worldEvent: {} })),
     getUnderpass: async () => ({}),
   };
   const root = { innerHTML: '', querySelectorAll: () => [] };
@@ -56,7 +56,7 @@ test('failed Worker completion retains the permit and persists retry across cont
   const fixture = setup(true, async () => {
     attempts += 1;
     if (attempts === 1) throw new Error('transient D1 failure');
-    return { player: {}, worldEvent: {} };
+    return { player: { id: 'test-player' }, worldEvent: {} };
   });
   const first = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   first.battlePermit = { permitId: 'permit-1' };
@@ -95,4 +95,52 @@ test('offline preview still applies its local non-economic reward', async () => 
   await controller.finishBattle('victory');
   assert.equal(fixture.store.localRewards, 1);
   assert.equal(fixture.store.replaced, 0);
+});
+
+test('a reward resolved after an account switch never replaces the active player', async () => {
+  let resolve!: (value: unknown) => void;
+  const fixture = setup(true, () => new Promise(done => { resolve = done; }));
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'old-permit' };
+  const pending = controller.finishBattle('victory');
+  await new Promise(done => setImmediate(done));
+  fixture.store.snapshot.id = 'other-player';
+  resolve({ player: { id: 'test-player' }, worldEvent: { cycleId: 'old-cycle' } });
+  await pending;
+  assert.equal(fixture.store.replaced, 0);
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '[]');
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:other-player'), undefined);
+  assert.equal(fixture.timers.some(timer => timer.delay === 1400), false);
+});
+
+test('a retry remains owned by the original account after switching players', async () => {
+  const owners: string[] = [];
+  const fixture = setup(true, async (playerId: string) => {
+    owners.push(playerId);
+    if (owners.length === 1) throw new Error('temporary database error');
+    return { player: { id: 'test-player' }, worldEvent: {} };
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'old-permit' };
+  controller.battlePlayerId = 'test-player';
+  fixture.store.snapshot.id = 'other-player';
+  await controller.finishBattle('victory');
+  const retry = fixture.timers.find(timer => timer.delay === 15_000);
+  assert.ok(retry);
+  retry.callback();
+  await new Promise(done => setImmediate(done));
+  assert.deepEqual(owners, ['test-player', 'test-player']);
+  assert.equal(fixture.store.replaced, 0);
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '[]');
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:other-player'), undefined);
+});
+
+test('a mismatched Worker reward owner never clears the original pending permit', async () => {
+  const fixture = setup(true, async () => ({ player: { id: 'other-player' }, worldEvent: {} }));
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'mismatched-permit' };
+  await controller.finishBattle('victory');
+  assert.equal(fixture.store.replaced, 0);
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '["mismatched-permit"]');
+  assert.ok(fixture.timers.some(timer => timer.delay === 15_000));
 });

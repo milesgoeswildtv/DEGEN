@@ -213,3 +213,14 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Miles blocker: signed Discord/Telegram identity and per-request ownership still required before public economic gameplay. PR #10 compatible frontend must release before PR #9 mandatory turn enforcement.
 - Next: verify exact-head CI, then review PR #9 / PR #12 overlap and compatible release sequence. No direct main write or production deploy.
 - Status: PUSHED / DRAFT PR only once ref update succeeds; NOT MERGED/LIVE.
+
+## 2026-10-11 — Reward completion account isolation (PR #9)
+- Main `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/battle-turn-client-v01`, draft PR #9.
+- Files: `src/app/AppController.ts`, `tests/client-reward-recovery.test.ts`, and this continuity entry.
+- Capture encounter owner before asynchronous battle entry. Ignore late permits for a different active account; block cross-account battle actions. Reward retry/settlement retains its originating player ID, verifies the Worker receipt owner, and cannot overwrite the currently active account's snapshot or pending key. Existing server reward/economy authority unchanged.
+- QA: targeted source-level tests added for switched-account completion, retry, and mismatched receipt; exact-head GitHub CI required. No local browser or live production claim.
+- Mana COMPLETE/MERGED on main; no monster Mana/reversion. Reward idempotency/turn enforcement still PR #9 only.
+- D1 config/schema/migrations unchanged; no remote D1 writes or deployment.
+- Blocker: signed platform authentication and per-route authorization remain required before public economy.
+- Next: inspect exact-head CI and merge/deploy compatible PR #10 client before PR #9 Worker enforcement; reconcile PR #12 permit coverage.
+- Status: feature-branch-only candidate; NOT MERGED/LIVE.
