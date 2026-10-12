@@ -24,8 +24,8 @@ function database(): DatabaseSync {
 test('Worker/D1 integration seed respects all tracked migrations and foreign keys', () => {
   const db = database();
   try {
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM battle_permits').get()?.n, 13);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM world_event_cycles').get()?.n, 2);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM battle_permits').get()?.n, 14);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM world_event_cycles').get()?.n, 3);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
     assert.equal(db.prepare('PRAGMA integrity_check').get()?.integrity_check, 'ok');
   } finally { db.close(); }
@@ -66,4 +66,24 @@ test('HTTP action fixtures carry strict expected-turn preconditions for PR #9 in
   assert.match(source, /JSON\.stringify\(\{ playerId, permitId, abilityId, expectedTurnCount \}\)/);
   assert.match(source, /action\('paid-nonlethal', 'crack', 'integration-player', 1\)/);
   assert.match(source, /action\('parallel-action', 'slash', 'integration-player', 1\)/);
+});
+
+
+test('expired server-recorded victory fixture remains distinct from an expired active permit', () => {
+  const db = database();
+  try {
+    const victory = db.prepare(`SELECT p.battle_status, p.reward_state, p.reward_clear_number,
+      julianday(p.started_at) < julianday(c.closes_at) AS entered_before_close,
+      julianday(c.closes_at) < julianday('now') AS event_closed,
+      julianday(p.expires_at) < julianday('now') AS permit_expired
+      FROM battle_permits p JOIN world_event_cycles c ON c.id = p.cycle_id
+      WHERE p.id = 'expired-victory'`).get();
+    assert.deepEqual({ ...victory }, {
+      battle_status: 'victory', reward_state: 'pending', reward_clear_number: null,
+      entered_before_close: 1, event_closed: 1, permit_expired: 1,
+    });
+    const active = db.prepare(`SELECT battle_status, julianday(expires_at) < julianday('now') AS permit_expired
+      FROM battle_permits WHERE id = 'expired'`).get();
+    assert.deepEqual({ ...active }, { battle_status: 'active', permit_expired: 1 });
+  } finally { db.close(); }
 });

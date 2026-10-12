@@ -135,6 +135,8 @@ try {
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('closed-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+      VALUES('expired-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -142,7 +144,8 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
+      ('expired','integration-player','underpass','expired-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,4,30,0),
+      ('expired-victory','integration-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
       ('paid-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,30,0),
       ('defeat-case','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,60,0),
@@ -151,7 +154,8 @@ try {
       ('zero-cost-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,20,0),
       ('parallel-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0),
       ('closed-cycle-valid','integration-player','underpass','closed-cycle','tunnel-maw',datetime('now','+10 minutes'),'active',120,4,30,0);
-    UPDATE battle_permits SET started_at=datetime('now','-10 minutes') WHERE id='closed-cycle-valid';
+    UPDATE battle_permits SET started_at=datetime('now','-30 minutes') WHERE id='expired';
+    UPDATE battle_permits SET started_at=datetime('now','-10 minutes') WHERE id IN ('closed-cycle-valid','expired-victory');
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -170,7 +174,17 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
-  assert.equal((await complete('expired')).status, 409);
+  assert.equal((await complete('expired')).status, 409,
+    'an expired active encounter is not a server-recorded victory');
+  const recoveredExpiredVictory = await complete('expired-victory');
+  assert.equal(recoveredExpiredVictory.status, 200, JSON.stringify(recoveredExpiredVictory));
+  assert.equal(recoveredExpiredVictory.data.reward.tier, 'full');
+  assert.equal(recoveredExpiredVictory.data.worldEvent.cycleId, 'expired-cycle');
+  assert.equal(recoveredExpiredVictory.data.worldEvent.fullRewardClears, 1);
+  const replayedExpiredVictory = await complete('expired-victory');
+  assert.equal(replayedExpiredVictory.status, 200, JSON.stringify(replayedExpiredVictory));
+  assert.equal(replayedExpiredVictory.data.worldEvent.fullRewardClears, 1,
+    'expired-victory recovery must replay the persisted receipt without duplicating the clear');
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
 
   // Race two completion requests for the same server-earned victory. A losing

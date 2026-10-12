@@ -29,24 +29,27 @@ test('reward receipt migration defaults existing permits to pending', () => {
   assert.deepEqual(Object.assign({}, row), { reward_state: 'pending', reward_clear_number: null });
 });
 
-test('claim predicate rejects expired and non-victory permits and locks duplicate live claims', () => {
+test('claim predicate recovers expired server-recorded victories but rejects expired active permits and duplicate claims', () => {
   const db = makeDb();
   const insert = db.prepare(`INSERT INTO battle_permits
     (id, player_id, event_key, cycle_id, encounter_key, expires_at, battle_status)
     VALUES (?, 'player', 'underpass', 'cycle', 'tunnel-maw', ?, ?)`);
   insert.run('valid', new Date(Date.now() + 300000).toISOString(), 'victory');
   insert.run('expired', new Date(Date.now() - 300000).toISOString(), 'victory');
+  insert.run('expired-active', new Date(Date.now() - 300000).toISOString(), 'active');
   insert.run('defeat', new Date(Date.now() + 300000).toISOString(), 'defeat');
 
   const claim = db.prepare(`UPDATE battle_permits SET reward_state='claiming',
     reward_claim_token=?, reward_claimed_at=CURRENT_TIMESTAMP
-    WHERE id=? AND player_id='player' AND battle_status='victory' AND
-    reward_state='pending' AND completed_at IS NULL AND datetime(expires_at)>CURRENT_TIMESTAMP
-    RETURNING id`);
+    WHERE id=? AND player_id='player' AND battle_status='victory' AND (
+      (reward_state='pending' AND completed_at IS NULL)
+      OR (reward_state='claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
+    ) RETURNING id`);
   assert.ok(claim.get('a', 'valid'));
   assert.equal(claim.get('b', 'valid'), undefined);
-  assert.equal(claim.get('c', 'expired'), undefined);
-  assert.equal(claim.get('d', 'defeat'), undefined);
+  assert.ok(claim.get('c', 'expired'), 'persisted victory remains recoverable after permit expiry');
+  assert.equal(claim.get('d', 'expired-active'), undefined, 'expiry cannot turn an active encounter into a victory');
+  assert.equal(claim.get('e', 'defeat'), undefined);
 });
 
 test('stale claim recovery preserves assigned clear number and awarded receipts are terminal', () => {

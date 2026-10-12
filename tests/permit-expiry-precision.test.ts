@@ -9,11 +9,13 @@ const worker = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf
 const precise = "julianday(expires_at) > julianday('now')";
 const checks = worker.split(precise).length - 1;
 
-test('all three permit-expiry guards preserve millisecond precision', () => {
-  assert.equal(checks, 3, 'action lookup, action CAS, and new reward claim must agree');
+test('active-action expiry guards preserve millisecond precision while earned victories remain recoverable', () => {
+  assert.equal(checks, 2, 'action lookup and action CAS must use exact expiry precision');
   assert.doesNotMatch(worker, /datetime\(expires_at\)\s*>\s*CURRENT_TIMESTAMP/);
-  assert.ok(worker.includes(`(${precise} OR reward_clear_number IS NOT NULL)`),
-    'a previously reserved clear remains recoverable after expiry');
+  assert.match(worker, /WHERE id = \? AND player_id = \? AND battle_status = 'victory' AND \(/,
+    'reward claims must require a Worker-recorded victory');
+  assert.ok(worker.includes(`(reward_state = 'pending' AND completed_at IS NULL)`),
+    'a pending server-recorded victory remains claimable after permit expiry');
 });
 
 test('active permit is valid until the exact millisecond, then expires', () => {
