@@ -130,6 +130,10 @@ test('turn resolution rejects a paid ability when the Degen lacks Mana', () => {
   }), /Insufficient Mana/);
 });
 
+test('monster definitions do not expose Degen Mana fields', () => {
+  assert.deepEqual(Object.keys(TUNNEL_MAW).filter((key) => /mana/i.test(key)), []);
+});
+
 test('Underpass rewards are full for the first three clears and reduced after', () => {
   for (let clear = 1; clear <= UNDERPASS_FULL_REWARD_LIMIT; clear += 1) {
     const reward = underpassRewardForClear(clear);
