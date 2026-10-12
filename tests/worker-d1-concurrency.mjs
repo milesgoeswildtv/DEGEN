@@ -4,7 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -18,6 +18,37 @@ let logs = '';
 function cli(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
+}
+
+function resolveSharedTurns(cases) {
+  const dataUrl = pathToFileURL(join(root, 'src/data/combatPrototype.ts')).href;
+  const rulesUrl = pathToFileURL(join(root, 'src/game/combat/rules.ts')).href;
+  const script = `
+    import { TEST_DEGEN, TUNNEL_MAW } from ${JSON.stringify(dataUrl)};
+    import { resolveCombatTurn } from ${JSON.stringify(rulesUrl)};
+    const cases = ${JSON.stringify(cases)};
+    const results = cases.map(({ name, abilityId, ...input }) => {
+      const ability = TEST_DEGEN.abilities.find(candidate => candidate.id === abilityId);
+      if (!ability) throw new Error('Unknown ability ' + abilityId);
+      return resolveCombatTurn({ ...input, ability, degen: TEST_DEGEN, enemy: TUNNEL_MAW });
+    });
+    console.log(JSON.stringify(results));
+  `;
+  const result = spawnSync(process.execPath, [
+    '--experimental-strip-types', '--input-type=module', '-e', script,
+  ], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
+  if (result.error || result.status !== 0) {
+    throw new Error(`shared combat resolver failed: ${result.error ?? ''} ${result.stdout} ${result.stderr}`);
+  }
+  return JSON.parse(result.stdout.trim());
+}
+
+function assertMatchesSharedTurn(actual, expected, turnCount) {
+  assert.deepEqual([
+    actual.status, actual.playerHp, actual.playerMana, actual.enemyHp, actual.turnCount,
+  ], [
+    expected.status, expected.playerHp, expected.playerMana, expected.enemyHp, turnCount,
+  ]);
 }
 
 function permitState(permitId) {
@@ -80,6 +111,19 @@ async function eventuallyComplete(id) {
   throw new Error('Reward retry exhausted for ' + id);
 }
 try {
+  const mathCases = [
+    { name: 'zeroManaFree', playerHp: 120, playerMana: 0, enemyHp: 60, abilityId: 'slash' },
+    { name: 'paidKill', playerHp: 120, playerMana: 4, enemyHp: 30, abilityId: 'crack' },
+    { name: 'defeat', playerHp: 1, playerMana: 0, enemyHp: 60, abilityId: 'slash' },
+    { name: 'paidNonlethalFirst', playerHp: 120, playerMana: 8, enemyHp: 60, abilityId: 'crack' },
+    { name: 'paidNonlethalSecond', playerHp: 110, playerMana: 4, enemyHp: 25, abilityId: 'crack' },
+    { name: 'zeroCostKill', playerHp: 5, playerMana: 0, enemyHp: 20, abilityId: 'slash' },
+    { name: 'parallelFirst', playerHp: 120, playerMana: 4, enemyHp: 92, abilityId: 'crack' },
+    { name: 'parallelFollowup', playerHp: 110, playerMana: 0, enemyHp: 57, abilityId: 'slash' },
+    { name: 'closedCycleKill', playerHp: 120, playerMana: 4, enemyHp: 30, abilityId: 'crack' },
+  ];
+  const sharedResults = resolveSharedTurns(mathCases);
+  const sharedMath = Object.fromEntries(mathCases.map((input, index) => [input.name, sharedResults[index]]));
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
   const seed = join(scratch, 'seed.sql');
@@ -168,43 +212,39 @@ try {
     'rejected unaffordable action must not damage either side, spend Mana, or advance the turn');
   const free = await action('zero-mana', 'slash');
   assert.equal(free.status, 200, JSON.stringify(free));
-  assert.deepEqual([free.data.playerHp, free.data.playerMana, free.data.enemyHp, free.data.turnCount], [110, 0, 31, 1]);
+  assertMatchesSharedTurn(free.data, sharedMath.zeroManaFree, 1);
   const paid = await action('paid-kill', 'crack');
   assert.equal(paid.status, 200, JSON.stringify(paid));
-  assert.deepEqual([paid.data.status, paid.data.playerHp, paid.data.playerMana, paid.data.enemyHp, paid.data.turnCount], ['victory', 120, 0, 0, 1]);
+  assertMatchesSharedTurn(paid.data, sharedMath.paidKill, 1);
   const defeat = await action('defeat-case', 'slash');
   assert.equal(defeat.status, 200, JSON.stringify(defeat));
-  assert.equal(defeat.data.status, 'defeat');
+  assertMatchesSharedTurn(defeat.data, sharedMath.defeat, 1);
   assert.equal((await complete('defeat-case')).status, 409);
   assert.equal((await action('expired-action', 'slash')).status, 409);
   assert.equal((await action('unknown-permit', 'slash')).status, 409);
   const paidFirst = await action('paid-nonlethal', 'crack');
   assert.equal(paidFirst.status, 200, JSON.stringify(paidFirst));
-  assert.deepEqual([paidFirst.data.status, paidFirst.data.playerHp, paidFirst.data.playerMana,
-    paidFirst.data.enemyHp, paidFirst.data.turnCount], ['active', 110, 4, 25, 1]);
+  assertMatchesSharedTurn(paidFirst.data, sharedMath.paidNonlethalFirst, 1);
   const paidSecond = await action('paid-nonlethal', 'crack', 'integration-player', 1);
   assert.equal(paidSecond.status, 200, JSON.stringify(paidSecond));
-  assert.deepEqual([paidSecond.data.status, paidSecond.data.playerHp, paidSecond.data.playerMana,
-    paidSecond.data.enemyHp, paidSecond.data.turnCount], ['victory', 110, 0, 0, 2]);
+  assertMatchesSharedTurn(paidSecond.data, sharedMath.paidNonlethalSecond, 2);
   assert.equal((await eventuallyComplete('paid-nonlethal')).reward.tier, 'reduced');
   assert.equal((await eventuallyComplete('paid-nonlethal')).reward.tier, 'reduced');
   const freeKill = await action('zero-cost-kill', 'slash');
   assert.equal(freeKill.status, 200, JSON.stringify(freeKill));
-  assert.deepEqual([freeKill.data.status, freeKill.data.playerHp, freeKill.data.playerMana,
-    freeKill.data.enemyHp, freeKill.data.turnCount], ['victory', 5, 0, 0, 1]);
+  assertMatchesSharedTurn(freeKill.data, sharedMath.zeroCostKill, 1);
   const racing = await Promise.all(Array.from({ length: 4 }, () => action('parallel-action', 'crack')));
   assert.equal(racing.filter(r => r.status === 200).length, 1, JSON.stringify(racing));
   assert.equal(racing.filter(r => r.status === 409).length, 3, JSON.stringify(racing));
   const accepted = racing.find(r => r.status === 200).data;
-  assert.deepEqual([accepted.playerHp, accepted.playerMana, accepted.enemyHp, accepted.turnCount], [110, 0, 57, 1]);
+  assertMatchesSharedTurn(accepted, sharedMath.parallelFirst, 1);
   assert.equal((await action('parallel-action', 'crack')).status, 409);
   const followup = await action('parallel-action', 'slash', 'integration-player', 1);
   assert.equal(followup.status, 200, JSON.stringify(followup));
-  assert.deepEqual([followup.data.playerMana, followup.data.enemyHp, followup.data.turnCount], [0, 28, 2]);
+  assertMatchesSharedTurn(followup.data, sharedMath.parallelFollowup, 2);
   const closed = await action('closed-cycle-valid', 'crack');
   assert.equal(closed.status, 200, JSON.stringify(closed));
-  assert.deepEqual([closed.data.status, closed.data.playerHp, closed.data.playerMana,
-    closed.data.enemyHp, closed.data.turnCount], ['victory', 120, 0, 0, 1]);
+  assertMatchesSharedTurn(closed.data, sharedMath.closedCycleKill, 1);
   const closedReward = await eventuallyComplete('closed-cycle-valid');
   assert.equal(closedReward.reward.tier, 'full');
   assert.equal(closedReward.worldEvent.cycleId, 'closed-cycle');
