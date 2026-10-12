@@ -19,6 +19,43 @@ function cli(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
 }
+
+function permitState(permitId) {
+  const sql = `SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count
+    FROM battle_permits WHERE id = '${permitId}'`;
+  const r = spawnSync(wrangler, [
+    'd1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--command', sql, '--json',
+  ], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  if (r.error || r.status !== 0) {
+    throw new Error(`wrangler state read failed: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
+  }
+  const payload = JSON.parse(r.stdout);
+  const rows = [];
+  const visit = value => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    if (Object.hasOwn(value, 'player_hp') && Object.hasOwn(value, 'player_mana')
+      && Object.hasOwn(value, 'battle_status') && Object.hasOwn(value, 'turn_count')) {
+      rows.push(value);
+      return;
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(payload);
+  if (rows.length !== 1) throw new Error(`Expected one permit state row for ${permitId}; got ${rows.length}: ${r.stdout}`);
+  const row = rows[0];
+  return {
+    player_hp: row.player_hp,
+    player_mana: row.player_mana,
+    enemy_hp: row.enemy_hp,
+    battle_status: row.battle_status,
+    turn_count: row.turn_count,
+  };
+}
 async function action(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0) {
   const r = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -109,7 +146,14 @@ try {
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
   assert.equal((await complete('expired')).status, 409);
-  assert.equal((await action('zero-mana', 'crack')).status, 409);
+  const zeroManaBefore = permitState('zero-mana');
+  assert.deepEqual(zeroManaBefore, {
+    player_hp: 120, player_mana: 0, enemy_hp: 60, battle_status: 'active', turn_count: 0,
+  });
+  const unaffordable = await action('zero-mana', 'crack');
+  assert.equal(unaffordable.status, 409, JSON.stringify(unaffordable));
+  assert.deepEqual(permitState('zero-mana'), zeroManaBefore,
+    'rejected unaffordable action must not damage either side, spend Mana, or advance the turn');
   const free = await action('zero-mana', 'slash');
   assert.equal(free.status, 200, JSON.stringify(free));
   assert.deepEqual([free.data.playerHp, free.data.playerMana, free.data.enemyHp, free.data.turnCount], [110, 0, 31, 1]);
