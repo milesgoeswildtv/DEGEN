@@ -128,6 +128,18 @@ try {
   assert.ok(ready, 'Worker did not start: ' + logs);
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
+
+  // Race two completion requests for the same server-earned victory. A losing
+  // claim may receive 409; replay must converge on the single persisted receipt.
+  const duplicateCompletionRace = await Promise.all([
+    complete('permit-a'),
+    complete('permit-a'),
+  ]);
+  assert.ok(duplicateCompletionRace.every(result => result.status === 200 || result.status === 409),
+    JSON.stringify(duplicateCompletionRace));
+  assert.ok(duplicateCompletionRace.some(result => result.status === 200),
+    JSON.stringify(duplicateCompletionRace));
+
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
   assert.equal(a.reward.xp, 75);
   assert.equal(b.reward.xp, 75);
