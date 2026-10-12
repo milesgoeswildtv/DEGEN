@@ -1,11 +1,11 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-08
+Updated: 2026-10-12
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
 - Integration branch: `main`
-- Authoritative main SHA at this run: `2df79a123a022212721634c048147d8bf935566a`.
+- Authoritative main SHA at this run: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
 - Stack: TypeScript + Vite + Phaser + DOM/CSS; Cloudflare Worker + D1.
 - Core vertical slice: Map -> Home -> Underpass -> Battle -> Loot -> Home.
 
@@ -144,6 +144,16 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Regression coverage updated in `tests/reward-authority.test.ts`, `tests/permit-expiry-precision.test.ts`, `tests/worker-d1-concurrency.mjs`, and `tests/worker-d1-seed-contract.test.ts`; integration seed distinguishes expired-active rejection from an expired, legally-entered server-recorded victory with no reserved clear. Duplicate recovery must replay one receipt and one cycle clear.
 - Degen Mana remains COMPLETE/MERGED on main. No monster Mana, zero-Mana reversion, balance changes, D1 schema/migration edits, remote D1 writes, or deployments. Existing `DB`/DEGEN binding and migrations 0002–0005 unchanged.
 - Battle authority: action expiry/CAS and server-owned victory remain enforced; reward recovery is not a permit-only grant. Idempotency continues through the persisted claim/receipt state. PR #10 client-first compatibility still precedes PR #9 mandatory-turn enforcement.
-- QA status at edit time: tests are added/updated but fresh exact-head CI and real isolated Wrangler/D1 HTTP execution are **pending**. No pass is claimed for this patch yet.
+- QA status at edit time: deterministic tests passed 27/27 on exact head, but isolated Worker/D1 HTTP integration failed on fixture contamination (expired-victory reward changed integration-player XP from expected 50 to actual 125). Full CI is not green; build and Worker validation were skipped.
 - Blockers: signed Discord/Telegram authentication, per-request account ownership, and verified production Pages/Worker connectivity remain public-release gates. No new Miles design decision is needed.
 - Best next task: inspect the new exact-head CI and isolated Worker/D1 results, fix any regression, then reconcile PR #12 with PR #9/#10 without violating frontend-first release order. Status: local patch prepared; branch update/CI pending.
+
+
+## 2026-10-12 — Isolate expired-victory recovery fixture (PR #12)
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; continuing `automation/degen/permit-millisecond-expiry-v02`, PR #12 (draft). Parent head inspected before this correction: `e796167691d9a3bd6c0ff83e3d9012b11a6b978c`.
+- Exact-head CI run `38273193002`: `npm test` passed 27/27; isolated Wrangler/D1 HTTP harness failed at `tests/worker-d1-concurrency.mjs:206` because the newly recovered expired victory awarded 75 XP to the same integration player used by later level-up assertions (125 actual vs 50 expected). Build and Worker dry-run were skipped.
+- Corrective test-only change: seed a separate `expired-player` character and use it for both the expired-active rejection and expired-server-victory recovery/replay. This preserves the recovery assertions while isolating XP/currency from the four-permit progression baseline. Production Worker/reward behavior is unchanged.
+- Mana remains COMPLETE/MERGED on main; no monster Mana or zero-Mana reversion. No D1 schema/migration, binding, deployment config, remote DB operation, or deployment changed. Reward recovery still requires Worker-recorded victory; client victory and permit possession alone do not grant rewards.
+- Current status before this correction is PUSHED/PR; this fixture correction is being committed to the same PR branch. Fresh exact-head CI is required before any merge. PR #10 client-first compatibility must precede PR #9 strict-turn enforcement.
+- Remaining release blockers: signed Discord/Telegram identity, per-request ownership enforcement, and verified production Pages/Worker connectivity/CORS. No new Miles design decision required.
+- Best next task: inspect CI on the corrected PR #12 head; require isolated Worker/D1 HTTP, `npm test`, `npm run build`, and `npm run check:worker` all green, then reconcile overlapping PR #9/#10 changes without merging out of order.

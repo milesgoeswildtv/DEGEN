@@ -128,9 +128,10 @@ try {
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, `
-    INSERT INTO players(id,display_name) VALUES('integration-player','Integration');
+    INSERT INTO players(id,display_name) VALUES
+      ('integration-player','Integration'),('expired-player','Expired Victory');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
-      VALUES('integration-player',1,0,0,'test-degen');
+      VALUES('integration-player',1,0,0,'test-degen'),('expired-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
@@ -144,8 +145,8 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('expired','integration-player','underpass','expired-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,4,30,0),
-      ('expired-victory','integration-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3),
+      ('expired','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,4,30,0),
+      ('expired-victory','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
       ('paid-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,30,0),
       ('defeat-case','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,60,0),
@@ -174,14 +175,14 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
-  assert.equal((await complete('expired')).status, 409,
+  assert.equal((await complete('expired', 'expired-player')).status, 409,
     'an expired active encounter is not a server-recorded victory');
-  const recoveredExpiredVictory = await complete('expired-victory');
+  const recoveredExpiredVictory = await complete('expired-victory', 'expired-player');
   assert.equal(recoveredExpiredVictory.status, 200, JSON.stringify(recoveredExpiredVictory));
   assert.equal(recoveredExpiredVictory.data.reward.tier, 'full');
   assert.equal(recoveredExpiredVictory.data.worldEvent.cycleId, 'expired-cycle');
   assert.equal(recoveredExpiredVictory.data.worldEvent.fullRewardClears, 1);
-  const replayedExpiredVictory = await complete('expired-victory');
+  const replayedExpiredVictory = await complete('expired-victory', 'expired-player');
   assert.equal(replayedExpiredVictory.status, 200, JSON.stringify(replayedExpiredVictory));
   assert.equal(replayedExpiredVictory.data.worldEvent.fullRewardClears, 1,
     'expired-victory recovery must replay the persisted receipt without duplicating the clear');
@@ -215,7 +216,7 @@ try {
   assert.equal(final.player.currency, 93);
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
-  assert.equal((await complete('expired')).status, 409);
+  assert.equal((await complete('expired', 'expired-player')).status, 409);
   const zeroManaBefore = permitState('zero-mana');
   assert.deepEqual(zeroManaBefore, {
     player_hp: 120, player_mana: 0, enemy_hp: 60, battle_status: 'active', turn_count: 0,
