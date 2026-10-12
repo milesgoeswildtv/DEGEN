@@ -69,3 +69,41 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+
+## Build worker 2026-10-09 — Telegram verifier helper
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- PUSHED branch: `automation/degen/telegram-init-data-verifier-v01`, commit `c6adc8a97a052ac123a999bab2d4b64a1f31f87e`; no PR, merge or deploy.
+- Added isolated `worker/auth/telegramInitData.ts` (57 lines). No Worker route invokes it, no secrets/config changed, no client authentication enabled.
+- Exact pushed verifier blob `3f4ea0fa8b37438c1050030d4eea80a3f878c6f7` was byte-matched locally; 22/22 verifier tests passed, plus 77/77 combined LOCAL tests across staged authentication/HTTP/SQLite models (includes negative controls proving unresolved vulnerabilities). Strict TS 5.8.3 passed. New verifier tests are NOT pushed. Feature-branch CI runs `37913205071` and `37913391821` SUCCESS (final tested head `2eb562c6`): 18/18 existing Node tests, isolated local Worker/D1 reward integration, production web build and Worker dry-run. CI did NOT run new verifier tests. Actual authenticated Worker/D1 login and mobile remain unverified. GitHub PR creation and test writes rejected after independent retries.
+- Mana foundation: COMPLETE/MERGED on main, no monster Mana or forced reversion.
+- Battle/rewards: server-owned state/receipts merged; atomic defeat/turn recovery/earned-victory settlement remain draft PR #9, unmerged.
+- D1: `wrangler.toml` binding and tracked migrations unchanged; schema+migrations precede Worker deployment. No production D1 mutation.
+- Critical blocker: Worker still trusts client-supplied player IDs; signed sessions and server-owned verified platform provisioning are absent.
+- Additional staged-only finding: 15-minute bearer sessions can expire while a 20-minute battle permit is still valid and the original Telegram initData is older than 10 minutes. Design safe renewal/re-authentication before public rollout.
+- Next: add verifier regression tests to branch, run CI and open reviewed PR, then integrate verified platform sessions and fail-closed client startup.
+
+## 2026-10-09 verifier tests
+Main 33e7477961d2a6ab7b79bf52d78a93901e19f658. Feature branch automation/degen/telegram-init-data-verifier-v01 at 3f6c6d9e2d8fea0d5590b8121e5e152de0df1c26 (PUSHED, not merged/live). Added four Telegram verification tests; CI on latest head pending. Existing 22 local verifier tests passed. Mana merged; rewards server-owned; combat PR #9 pending. No D1 migration or remote DB writes; tracked migrations precede Worker deploy. Blocker: platform authentication and session-bound economic authorization. Next: verify CI and deliver reviewed PR.
+
+## 2026-10-11 — Telegram verifier PR delivery
+- Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; Degen-only Mana COMPLETE/MERGED. The old sidekick Mana branch is diverged/superseded.
+- Branch: `automation/degen/telegram-init-data-verifier-v01`. Draft PR #13 OPEN/UNMERGED: https://github.com/milesgoeswildtv/DEGEN/pull/13. This helper is not wired to Worker routes.
+- PUSHED: `8ce597ddc6a60d9dab88727bcabd76c7253aca1c` restores normal PR CI triggers by removing the temporary feature-branch push trigger from `.github/workflows/ci.yml`.
+- CI: prior exact head `6a1fdd8e99dc1d1234bfb83dd1d09e4c3eb5c929` passed Actions run 38172884254 (26/26 deterministic tests, isolated Worker/D1 integration, web build, Worker dry-run). Fresh PR CI for new head pending.
+- LOCAL/STAGED only: independent signed Telegram boundary tests 5/5 PASS and deterministic 256-case tamper/property suite 2/2 PASS. Their test-file writes were rejected twice, so they are NOT included in GitHub CI. Verifier blob `3f4ea0fa8b37438c1050030d4eea80a3f878c6f7` matched local source; isolated TypeScript validation passed.
+- Battle/reward authority: main server-owned HP/Mana/rewards unchanged. PR #9 strict turn/recovery and PR #12 permit precision remain draft/unmerged; PR #10 compatible frontend must be deployed and verified before strict Worker enforcement.
+- D1: existing `DB` binding, migrations 0002–0005, and migration-before-Worker deployment order verified read-only. No schema change or production D1 mutation.
+- Public release blocker: current bootstrap accepts caller-chosen playerId/platform identity and can rebind an identity through `ON CONFLICT ... DO UPDATE`; in-memory SQLite reproduction confirmed it. Signed sessions and request-level ownership for Telegram/Discord are missing. No public economic release.
+- Miles design blocker: none. Repo write rejection for test file; preserve staged patch. No merge or deployment in this run.
+- Best next task: deliver staged Telegram boundary tests to PR #13, obtain fresh full PR-head CI, then implement verified platform sessions and per-request ownership in a separately reviewed coherent slice.
+
+## 2026-10-11 — Telegram HMAC CI repair and isolated session follow-up
+- Authoritative main: `33e7477961d2a6ab7b79bf52d78a93901e19f658` (MERGED main unchanged).
+- PR #13: `automation/degen/telegram-init-data-verifier-v01`; commit `fbfebb2b7080bdc4ff8d6fc19ae421ff77a0cde5` PUSHED, draft, UNMERGED. Repaired `tests/telegram-optional-signature.test.ts` to independently sign a valid first-party HMAC with the optional signature included, then reject tampering. Existing source `worker/auth/telegramInitData.ts` unchanged in this run.
+- CI run `38188520980` SUCCESS on exact PR head: deterministic tests, isolated Worker/D1 reward concurrency, web build, Worker dry-run all passed. Local targeted optional-signature test 1/1 PASS.
+- Degen-only Mana COMPLETE/MERGED on main; no monster Mana, forced reversion, or combat balance changes. Battle/reward authority remains server-owned; PR #9 strict turn/recovery and PR #12 permit precision still draft/unmerged. PR #10 compatible frontend must be deployed/verified before strict Worker turn enforcement.
+- Session follow-up: new feature branch `automation/degen/verified-session-store-v01` created from exact main; tracked `db/migrations/0006_player_sessions.sql` PUSHED at `f6baafa8a0768a9fc3314127eafaf46fb121a007`. Session-store source writes were rejected through both supported paths; branch is INCOMPLETE, no PR. Existing isolated staged session implementation passed 10/10 Node/SQLite tests, but is LOCAL ONLY, not on branch.
+- D1 binding/config unchanged; schema and tracked migrations deploy before Worker code. Migration 0006 NOT applied to production. No Worker/Pages deployment or live browser QA in this run.
+- Public release blocker: signed platform credentials are not yet connected to server-owned sessions or per-request account authorization; bootstrap still accepts caller-supplied identities. No new design blocker from Miles.
+- Best next task: finish the isolated session-store implementation and tests on its existing branch (not a competing branch), obtain full CI and draft PR; then wire verified platform account ownership fail-closed before public economic gameplay.
