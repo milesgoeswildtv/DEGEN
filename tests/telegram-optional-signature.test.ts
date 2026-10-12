@@ -1,8 +1,19 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import test from 'node:test';
 import { verifyTelegramInitData as verify } from '../worker/auth/telegramInitData.ts';
-const raw='auth_date=1791510000&signature=x&user=%7B%22id%22%3A42%7D&hash=1a9ea3e1d8d30d863ca20f7ff8d0516660a8c4e5e1f03c0150fe14da35b3cd92';
-test('optional signature is excluded from bot HMAC',async()=>{
-  assert.equal((await verify(raw,'test',1791510000))?.platformUserId,'42');
-  assert.equal((await verify(raw.replace('signature=x','signature=y'),'test',1791510000))?.platformUserId,'42');
+
+function signWithSignature(signature: string): string {
+  const fields = new URLSearchParams({ auth_date: '1791510000', signature, user: '{"id":42}' });
+  const data = [...fields].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, value]) => `${key}=${value}`).join('\n');
+  const secret = createHmac('sha256', 'WebAppData').update('test').digest();
+  fields.set('hash', createHmac('sha256', secret).update(data).digest('hex'));
+  return fields.toString();
+}
+
+test('optional signature is included in first-party bot-token HMAC', async () => {
+  const raw = signWithSignature('fixture-ed25519-signature');
+  assert.equal((await verify(raw, 'test', 1791510000))?.platformUserId, '42');
+  assert.equal(await verify(raw.replace('fixture-ed25519-signature', 'tampered-signature'), 'test', 1791510000), null);
 });
