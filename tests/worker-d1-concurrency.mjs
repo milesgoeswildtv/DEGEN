@@ -101,9 +101,16 @@ async function complete(permitId, playerId = 'integration-player') {
   });
   return { status: r.status, data: await r.json() };
 }
-async function eventuallyComplete(id) {
+async function post(path, payload) {
+  const r = await fetch(base + path, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return { status: r.status, data: await r.json() };
+}
+async function eventuallyComplete(id, playerId = 'integration-player') {
   for (let n = 0; n < 10; n++) {
-    const r = await complete(id);
+    const r = await complete(id, playerId);
     if (r.status === 200) return r.data;
     if (r.status !== 409 && r.status !== 500) throw new Error(id + ': ' + JSON.stringify(r));
     await sleep(100 + 50 * n);
@@ -121,6 +128,9 @@ try {
     { name: 'parallelFirst', playerHp: 120, playerMana: 4, enemyHp: 92, abilityId: 'crack' },
     { name: 'parallelFollowup', playerHp: 110, playerMana: 0, enemyHp: 57, abilityId: 'slash' },
     { name: 'closedCycleKill', playerHp: 120, playerMana: 4, enemyHp: 30, abilityId: 'crack' },
+    { name: 'verticalFirst', playerHp: 120, playerMana: 12, enemyHp: 92, abilityId: 'crack' },
+    { name: 'verticalSecond', playerHp: 110, playerMana: 8, enemyHp: 57, abilityId: 'crack' },
+    { name: 'verticalThird', playerHp: 100, playerMana: 4, enemyHp: 22, abilityId: 'crack' },
   ];
   const sharedResults = resolveSharedTurns(mathCases);
   const sharedMath = Object.fromEntries(mathCases.map((input, index) => [input.name, sharedResults[index]]));
@@ -129,9 +139,9 @@ try {
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES
-      ('integration-player','Integration'),('expired-player','Expired Victory');
+      ('integration-player','Integration'),('expired-player','Expired Victory'),('vertical-player','Vertical Slice');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
-      VALUES('integration-player',1,0,0,'test-degen'),('expired-player',1,0,0,'test-degen');
+      VALUES('integration-player',1,0,0,'test-degen'),('expired-player',1,0,0,'test-degen'),('vertical-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
@@ -175,6 +185,43 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  // Exercise the full server-backed spine against isolated Worker/D1: bootstrap,
+  // world snapshot, permit issuance, three authoritative turns, and reward receipt.
+  const bootstrap = await post('/api/player/bootstrap', {
+    playerId: 'vertical-player', displayName: 'Vertical Slice', platform: 'browser', platformUserId: 'vertical-player',
+  });
+  assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap));
+  assert.equal(bootstrap.data.id, 'vertical-player');
+  assert.equal(bootstrap.data.level, 1);
+  const worldResponse = await fetch(base + '/api/world/underpass?playerId=vertical-player');
+  assert.equal(worldResponse.status, 200);
+  const world = await worldResponse.json();
+  assert.equal(world.source, 'server');
+  assert.equal(world.phase, 'open');
+  assert.equal(world.cycleId, 'integration-cycle');
+  const started = await post('/api/battle/start', {
+    playerId: 'vertical-player', eventKey: 'underpass', cycleId: world.cycleId, encounterKey: 'tunnel-maw',
+  });
+  assert.equal(started.status, 200, JSON.stringify(started));
+  const verticalPermit = started.data.permitId;
+  assert.ok(typeof verticalPermit === 'string' && verticalPermit.length > 0);
+  const verticalFirst = await action(verticalPermit, 'crack', 'vertical-player', 0);
+  assert.equal(verticalFirst.status, 200, JSON.stringify(verticalFirst));
+  assertMatchesSharedTurn(verticalFirst.data, sharedMath.verticalFirst, 1);
+  const verticalSecond = await action(verticalPermit, 'crack', 'vertical-player', 1);
+  assert.equal(verticalSecond.status, 200, JSON.stringify(verticalSecond));
+  assertMatchesSharedTurn(verticalSecond.data, sharedMath.verticalSecond, 2);
+  const verticalThird = await action(verticalPermit, 'crack', 'vertical-player', 2);
+  assert.equal(verticalThird.status, 200, JSON.stringify(verticalThird));
+  assertMatchesSharedTurn(verticalThird.data, sharedMath.verticalThird, 3);
+  const verticalReceipt = await eventuallyComplete(verticalPermit, 'vertical-player');
+  assert.equal(verticalReceipt.reward.tier, 'full');
+  assert.equal(verticalReceipt.player.xp, 75);
+  assert.equal(verticalReceipt.player.currency, 30);
+  assert.ok(verticalReceipt.player.inventory.includes('underpass-scrap'));
+  assert.equal(verticalReceipt.worldEvent.fullRewardClears, 1);
+
   assert.equal((await complete('expired', 'expired-player')).status, 409,
     'an expired active encounter is not a server-recorded victory');
   const recoveredExpiredVictory = await complete('expired-victory', 'expired-player');
