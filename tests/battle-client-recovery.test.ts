@@ -98,3 +98,24 @@ test('skipped authoritative turns are reconciled without fabricated ability dama
   assert.ok(engine.snapshot.log.some(line=>line.includes('synchronized with server')));
   assert.equal(engine.snapshot.log.some(line=>line.includes('Crack: 70 damage')),false);
 });
+
+
+test('authoritative battle start seeds client HP, Mana, enemy HP, and turn exactly', () => {
+  const initialState = {
+    permitId: 'permit-start',
+    status: 'active',
+    playerHp: 99,
+    playerMana: 0,
+    enemyHp: 75,
+    turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {}, initialState);
+  assert.deepEqual(
+    [engine.snapshot.playerHp, engine.snapshot.playerMana, engine.snapshot.enemyHp, engine.snapshot.turnCount],
+    [99, 0, 75, 0],
+  );
+  engine.useAbility('slash');
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(engine.snapshot.status, 'active');
+});
