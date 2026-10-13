@@ -1,5 +1,5 @@
 import type { BattleActionResult, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
-import { canUseAbility, resolveCombatTurn } from './rules';
+import { canUseAbility, resolveCombatTurn } from './rules.ts';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
 
