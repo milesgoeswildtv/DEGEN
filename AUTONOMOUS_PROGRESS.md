@@ -208,3 +208,14 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1 assumptions: `wrangler.toml` defines `DB` / `DEGEN` and `db/migrations`. No production D1 mutation, migration execution, Worker deploy, or deployment-config change.
 - Release order: do not merge/deploy mandatory-turn enforcement until the compatible client-first rollout in PR #10 is deployed and verified. Signed Discord/Telegram identity and per-request player ownership, production Pages/Worker connectivity/CORS, and real mobile QA remain release blockers.
 - Best next task: run exact-head CI; if green, review PR #12 with PR #9/#10/#11 for non-overlapping semantics and preserve frontend-first rollout ordering.
+
+## 2026-10-14 — concurrent action/completion race coverage (PUSHED/PR pending)
+- Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Current task branch: `automation/degen/permit-millisecond-expiry-v02`, draft PR #12; previous head `ba5f69d041db5cb06aecc4c744331f2566a3bb50` passed CI run `38432233659`.
+- Gap: existing isolated Worker/D1 coverage tested duplicate completion and concurrent actions separately, but not a killing-blow action racing completion for the same permit.
+- Proposed test adds an isolated player/permit, races `/api/battle/action` with `/api/battle/complete`, then verifies retry convergence and exactly one victory receipt/history row, one scrap, 75 XP, 30 currency, and one full clear. The seed preflight permit count is updated accordingly.
+- Files: `tests/worker-d1-concurrency.mjs`, `tests/worker-d1-seed-contract.test.ts`, this file. New test CI is pending; do not treat the prior green run as proof for these changes.
+- Mana is COMPLETE/MERGED on main; player Mana is authoritative, paid abilities deduct once, zero-cost abilities work at zero, and there is no monster Mana or Mana-triggered reversion.
+- Reward receipt/idempotency is merged on main. PR #12's millisecond expiry, expected-turn CAS, atomic defeat/history, expired server-earned victory recovery, and cycle reservation remain PR-only.
+- D1 source verified: migrations 0002–0005 are tracked; deploy workflow applies schema, migrations, then Worker. No production D1 mutation or deployment was performed.
+- Release blockers: compatible client PR #10 and production Pages CORS PR #7 remain unmerged; verified Discord/Telegram identity and request authorization are still required before public economic gameplay.
+- Next: run fresh full CI and isolated Wrangler/D1 integration on the new head; then reconcile PR #12 with PR #9/#10/#11 and preserve client-first release ordering.

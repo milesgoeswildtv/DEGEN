@@ -155,6 +155,7 @@ try {
   const mathCases = [
     { name: 'zeroManaFree', playerHp: 120, playerMana: 0, enemyHp: 60, abilityId: 'slash' },
     { name: 'paidKill', playerHp: 120, playerMana: 4, enemyHp: 30, abilityId: 'crack' },
+    { name: 'actionCompleteRace', playerHp: 120, playerMana: 4, enemyHp: 30, abilityId: 'crack' },
     { name: 'defeat', playerHp: 1, playerMana: 0, enemyHp: 60, abilityId: 'slash' },
     { name: 'paidNonlethalFirst', playerHp: 120, playerMana: 8, enemyHp: 60, abilityId: 'crack' },
     { name: 'paidNonlethalSecond', playerHp: 110, playerMana: 4, enemyHp: 25, abilityId: 'crack' },
@@ -173,9 +174,11 @@ try {
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES
-      ('integration-player','Integration'),('expired-player','Expired Victory'),('vertical-player','Vertical Slice');
+      ('integration-player','Integration'),('expired-player','Expired Victory'),('vertical-player','Vertical Slice'),
+      ('race-player','Action Completion Race');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
-      VALUES('integration-player',1,0,0,'test-degen'),('expired-player',1,0,0,'test-degen'),('vertical-player',1,0,0,'test-degen');
+      VALUES('integration-player',1,0,0,'test-degen'),('expired-player',1,0,0,'test-degen'),
+        ('vertical-player',1,0,0,'test-degen'),('race-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
@@ -189,6 +192,7 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('action-complete-race','race-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,30,0),
       ('expired','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,4,30,0),
       ('expired-victory','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
@@ -297,6 +301,24 @@ try {
     JSON.stringify(duplicateCompletionRace));
   assert.ok(duplicateCompletionRace.some(result => result.status === 200),
     JSON.stringify(duplicateCompletionRace));
+
+  const [raceAction, raceCompletion] = await Promise.all([
+    action('action-complete-race', 'crack', 'race-player', 0),
+    complete('action-complete-race', 'race-player'),
+  ]);
+  assert.equal(raceAction.status, 200, JSON.stringify(raceAction));
+  assertMatchesSharedTurn(raceAction.data, sharedMath.actionCompleteRace, 1);
+  assert.ok(raceCompletion.status === 200 || raceCompletion.status === 409, JSON.stringify(raceCompletion));
+  const raceReceipt = await eventuallyComplete('action-complete-race', 'race-player');
+  assert.equal(raceReceipt.reward.tier, 'full');
+  assert.deepEqual([raceReceipt.player.level, raceReceipt.player.xp, raceReceipt.player.currency], [1, 75, 30]);
+  assert.equal(raceReceipt.player.inventory.filter(item => item === 'underpass-scrap').length, 1);
+  assert.equal(raceReceipt.worldEvent.fullRewardClears, 1);
+  const raceReplay = await eventuallyComplete('action-complete-race', 'race-player');
+  assert.deepEqual([raceReplay.player.level, raceReplay.player.xp, raceReplay.player.currency], [1, 75, 30]);
+  assert.equal(raceReplay.player.inventory.filter(item => item === 'underpass-scrap').length, 1);
+  assert.equal(raceReplay.worldEvent.fullRewardClears, 1);
+  assert.equal(battleHistoryRows('action-complete-race:victory').length, 1);
 
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
   assert.equal(a.reward.xp, 75);
