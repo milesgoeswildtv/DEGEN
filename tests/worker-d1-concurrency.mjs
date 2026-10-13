@@ -384,8 +384,18 @@ try {
   const beforeInvalidTurn = permitState('parallel-action');
   assert.equal((await action('parallel-action', 'crack', 'integration-player', -1)).status, 400);
   assert.equal((await action('parallel-action', 'crack', 'integration-player', 0.5)).status, 400);
+  for (const invalidPayload of [
+    { playerId: 'integration-player', permitId: 'parallel-action', abilityId: 'crack' },
+    { playerId: 'integration-player', permitId: 'parallel-action', abilityId: 'crack', expectedTurnCount: null },
+    { playerId: 'integration-player', permitId: 'parallel-action', abilityId: 'crack', expectedTurnCount: '0' },
+  ]) {
+    assert.equal((await post('/api/battle/action', invalidPayload)).status, 400,
+      JSON.stringify(invalidPayload));
+  }
+  assert.equal((await action('parallel-action', 'crack', 'expired-player', 0)).status, 409,
+    'a different player cannot act on another player\'s permit');
   assert.deepEqual(permitState('parallel-action'), beforeInvalidTurn,
-    'invalid turn preconditions must not mutate the permit');
+    'invalid turn preconditions and wrong-owner actions must not mutate the permit');
   const racing = await Promise.all(Array.from({ length: 4 }, () => action('parallel-action', 'crack')));
   assert.equal(racing.filter(r => r.status === 200).length, 1, JSON.stringify(racing));
   assert.equal(racing.filter(r => r.status === 409).length, 3, JSON.stringify(racing));
