@@ -22,6 +22,8 @@ jobs:
         run: npm test
       - name: Exercise isolated local Worker/D1 reward concurrency
         run: node tests/worker-d1-concurrency.mjs
+      - name: Exercise isolated local Worker/D1 Underpass cycle concurrency
+        run: node tests/worker-d1-cycle-race.mjs
       - name: Build web app
         run: npm run build
       - name: Validate Cloudflare Worker
