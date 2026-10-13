@@ -35,13 +35,16 @@ export class BattleEngine {
     degen: DegenDefinition,
     enemy: EnemyDefinition,
     onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
+    initialState?: BattleActionResult,
   ) {
     this.degen = degen;
     this.enemy = enemy;
     this.onComplete = onComplete;
-    this.playerHp = degen.maxHp;
-    this.playerMana = degen.maxMana;
-    this.enemyHp = enemy.maxHp;
+    this.playerHp = initialState?.playerHp ?? degen.maxHp;
+    this.playerMana = initialState?.playerMana ?? degen.maxMana;
+    this.enemyHp = initialState?.enemyHp ?? enemy.maxHp;
+    this.turnCount = initialState?.turnCount ?? 0;
+    this.status = initialState?.status ?? 'active';
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
   }
 

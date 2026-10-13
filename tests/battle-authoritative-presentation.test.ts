@@ -69,6 +69,25 @@ test('out-of-order Worker responses synchronize to authoritative state and ignor
   assert.deepEqual(engine.snapshot, synchronized, 'a stale response cannot roll back HP, Mana, enemy HP, or turn count');
 });
 
+test('server-issued battle-start state initializes the client without assuming local Mana', () => {
+  const initialState: BattleActionResult = {
+    permitId: 'permit-test',
+    status: 'active',
+    playerHp: 87,
+    playerMana: 5,
+    enemyHp: 61,
+    turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initialState);
+
+  assert.deepEqual(
+    [engine.snapshot.status, engine.snapshot.playerHp, engine.snapshot.playerMana,
+      engine.snapshot.enemyHp, engine.snapshot.turnCount],
+    ['active', 87, 5, 61, 0],
+  );
+  assert.equal(engine.snapshot.playerMaxMana, TEST_DEGEN.maxMana);
+});
+
 test('zero-Mana free action keeps the Degen manifested and the encounter active', () => {
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined);
   const result = serverResult(1, resolve('slash', { playerHp: 120, playerMana: 0, enemyHp: 60 }));

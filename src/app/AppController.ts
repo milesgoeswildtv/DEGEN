@@ -134,6 +134,15 @@ export class AppController {
       if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()) {
         throw new Error('No valid battle permit returned.');
       }
+      if (this.api.enabled) {
+        const state = permit.initialState;
+        if (!state || state.permitId !== permit.permitId || state.status !== 'active' || state.turnCount !== 0
+          || !Number.isInteger(state.playerHp) || state.playerHp <= 0 || state.playerHp > TEST_DEGEN.maxHp
+          || !Number.isInteger(state.playerMana) || state.playerMana < 0 || state.playerMana > TEST_DEGEN.maxMana
+          || !Number.isInteger(state.enemyHp) || state.enemyHp <= 0 || state.enemyHp > TUNNEL_MAW.maxHp) {
+          throw new Error('Missing or invalid authoritative battle start state.');
+        }
+      }
       // A legal permit survives event closure, but cannot be used under another account.
       if (this.route !== 'underpass' || this.navigationGeneration !== entryGeneration
         || this.store.snapshot.id !== playerId) return;
@@ -158,9 +167,12 @@ export class AppController {
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     if (!parent || !this.battlePermit) return;
 
-    this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
-      void this.finishBattle(status);
-    });
+    this.battleEngine = new BattleEngine(
+      TEST_DEGEN,
+      TUNNEL_MAW,
+      (status) => { void this.finishBattle(status); },
+      this.api.enabled ? this.battlePermit.initialState : undefined,
+    );
 
     this.battleEngine.subscribe(updateBattleDom);
     this.battleGame = createBattleGame(parent, this.battleEngine);
