@@ -195,3 +195,16 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - PR #12 remains PUSHED / DRAFT, not merged/live. Preview deployment was reported by the deploy bot, but browser access to the preview failed; no visual/mobile QA is claimed.
 - Remaining release blocker: signed Discord/Telegram identity and per-request player ownership are not enforced by the Worker.
 - Best next task: combine PR #12's Worker/D1 harness with PR #10's browser/release tests, then reconcile PR #9 strict-turn/defeat behavior and rerun full exact-head CI before merge.
+
+
+## 2026-10-13 — Strict battle-turn preconditions and atomic defeat history (PUSHED / PR; exact-head CI pending)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Continuing `automation/degen/permit-millisecond-expiry-v02` / draft PR #12 from parent `df303304a184c9b2a9779061a9c98a94fcab9b8f`; no duplicate branch or PR created.
+- Worker action requests now require a nonnegative safe-integer `expectedTurnCount`. Stale turn requests return the current server-owned HP/Mana/enemy HP/status/turn snapshot and do not resolve another action. A lost terminal response can be recovered from the persisted victory/defeat state.
+- Defeat state and the permit-scoped deterministic `battle_history` row are written in one D1 batch. The isolated integration harness adds invalid-turn no-mutation, stale replay no-mutation, initial response-vs-permit equality, and exactly-once defeat history/replay checks. A Worker start-handler test asserts authoritative HP/Mana initialization and absence of monster Mana.
+- Exact-head CI: pending. Do not infer test success from the parent run.
+- Mana remains COMPLETE / MERGED on main: shared `maxMana`/`manaCost`, authoritative persisted `player_mana`, rejection without state advance, exact paid deduction, zero-cost use at zero Mana, and no monster Mana/no reversion. Migration `0003_degen_mana.sql` remains tracked; deployment workflow applies schema then migrations before Worker deployment.
+- Battle/reward authority: rewards still require Worker-recorded victory and persisted receipt/claim-token state; duplicate completion/reward protection remains in place. PR #12 remains DRAFT / not merged or live.
+- D1 assumptions: `wrangler.toml` defines `DB` / `DEGEN` and `db/migrations`. No production D1 mutation, migration execution, Worker deploy, or deployment-config change.
+- Release order: do not merge/deploy mandatory-turn enforcement until the compatible client-first rollout in PR #10 is deployed and verified. Signed Discord/Telegram identity and per-request player ownership, production Pages/Worker connectivity/CORS, and real mobile QA remain release blockers.
+- Best next task: run exact-head CI; if green, review PR #12 with PR #9/#10/#11 for non-overlapping semantics and preserve frontend-first rollout ordering.

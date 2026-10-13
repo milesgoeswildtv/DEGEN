@@ -87,6 +87,40 @@ function permitState(permitId) {
     turn_count: row.turn_count,
   };
 }
+function battleHistoryRows(id) {
+  const escapedId = id.replaceAll("'", "''");
+  const sql = `SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
+    FROM battle_history WHERE id = '${escapedId}'`;
+  const r = spawnSync(wrangler, [
+    'd1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--command', sql, '--json',
+  ], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  if (r.error || r.status !== 0) {
+    throw new Error(`wrangler history read failed: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
+  }
+  const payload = JSON.parse(r.stdout);
+  const rows = [];
+  const visit = value => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    if (Object.hasOwn(value, 'player_level') && Object.hasOwn(value, 'xp_awarded')
+      && Object.hasOwn(value, 'currency_awarded') && Object.hasOwn(value, 'encounter_key')) {
+      rows.push({
+        id: value.id, player_id: value.player_id, encounter_key: value.encounter_key,
+        result: value.result, player_level: value.player_level,
+        xp_awarded: value.xp_awarded, currency_awarded: value.currency_awarded,
+      });
+      return;
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(payload);
+  return rows;
+}
+
 async function action(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0) {
   const r = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -206,6 +240,24 @@ try {
   assert.equal(started.status, 200, JSON.stringify(started));
   const verticalPermit = started.data.permitId;
   assert.ok(typeof verticalPermit === 'string' && verticalPermit.length > 0);
+  const expectedInitial = mathCases.find(({ name }) => name === 'verticalFirst');
+  assert.ok(expectedInitial, 'vertical-slice initial combat fixture must exist');
+  const initialState = started.data.initialState;
+  assert.deepEqual(initialState, {
+    permitId: verticalPermit,
+    status: 'active',
+    playerHp: expectedInitial.playerHp,
+    playerMana: expectedInitial.playerMana,
+    enemyHp: expectedInitial.enemyHp,
+    turnCount: 0,
+  });
+  assert.deepEqual(permitState(verticalPermit), {
+    player_hp: initialState.playerHp,
+    player_mana: initialState.playerMana,
+    enemy_hp: initialState.enemyHp,
+    battle_status: initialState.status,
+    turn_count: initialState.turnCount,
+  }, 'server-issued initial state must match the D1 permit before the first action');
   const verticalFirst = await action(verticalPermit, 'crack', 'vertical-player', 0);
   assert.equal(verticalFirst.status, 200, JSON.stringify(verticalFirst));
   assertMatchesSharedTurn(verticalFirst.data, sharedMath.verticalFirst, 1);
@@ -282,6 +334,18 @@ try {
   assert.equal(defeat.status, 200, JSON.stringify(defeat));
   assertMatchesSharedTurn(defeat.data, sharedMath.defeat, 1);
   assert.equal((await complete('defeat-case')).status, 409);
+  const defeatHistory = battleHistoryRows('defeat-case:defeat');
+  assert.equal(defeatHistory.length, 1, 'defeat turn and history must commit together exactly once');
+  assert.deepEqual(defeatHistory[0], {
+    id: 'defeat-case:defeat', player_id: 'integration-player', encounter_key: 'tunnel-maw',
+    result: 'defeat', player_level: 1, xp_awarded: 0, currency_awarded: 0,
+  });
+  const defeatState = permitState('defeat-case');
+  const duplicateDefeat = await action('defeat-case', 'slash', 'integration-player', 1);
+  assert.equal(duplicateDefeat.status, 409);
+  assert.equal(duplicateDefeat.data.battleState.status, 'defeat');
+  assert.deepEqual(permitState('defeat-case'), defeatState);
+  assert.equal(battleHistoryRows('defeat-case:defeat').length, 1, 'terminal retries cannot duplicate history');
   assert.equal((await action('expired-action', 'slash')).status, 409);
   assert.equal((await action('unknown-permit', 'slash')).status, 409);
   const paidFirst = await action('paid-nonlethal', 'crack');
@@ -295,12 +359,23 @@ try {
   const freeKill = await action('zero-cost-kill', 'slash');
   assert.equal(freeKill.status, 200, JSON.stringify(freeKill));
   assertMatchesSharedTurn(freeKill.data, sharedMath.zeroCostKill, 1);
+  const beforeInvalidTurn = permitState('parallel-action');
+  assert.equal((await action('parallel-action', 'crack', 'integration-player', -1)).status, 400);
+  assert.equal((await action('parallel-action', 'crack', 'integration-player', 0.5)).status, 400);
+  assert.deepEqual(permitState('parallel-action'), beforeInvalidTurn,
+    'invalid turn preconditions must not mutate the permit');
   const racing = await Promise.all(Array.from({ length: 4 }, () => action('parallel-action', 'crack')));
   assert.equal(racing.filter(r => r.status === 200).length, 1, JSON.stringify(racing));
   assert.equal(racing.filter(r => r.status === 409).length, 3, JSON.stringify(racing));
   const accepted = racing.find(r => r.status === 200).data;
   assertMatchesSharedTurn(accepted, sharedMath.parallelFirst, 1);
   assert.equal((await action('parallel-action', 'crack')).status, 409);
+  const beforeStaleTurn = permitState('parallel-action');
+  const staleReplay = await action('parallel-action', 'crack', 'integration-player', 0);
+  assert.equal(staleReplay.status, 409, JSON.stringify(staleReplay));
+  assert.equal(staleReplay.data.battleState.turnCount, 1);
+  assert.deepEqual(permitState('parallel-action'), beforeStaleTurn,
+    'replaying a stale expected turn must not apply a second action');
   const followup = await action('parallel-action', 'slash', 'integration-player', 1);
   assert.equal(followup.status, 200, JSON.stringify(followup));
   assertMatchesSharedTurn(followup.data, sharedMath.parallelFollowup, 2);
