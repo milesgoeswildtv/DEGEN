@@ -338,7 +338,7 @@ try {
   assert.equal(defeatHistory.length, 1, 'defeat turn and history must commit together exactly once');
   assert.deepEqual(defeatHistory[0], {
     id: 'defeat-case:defeat', player_id: 'integration-player', encounter_key: 'tunnel-maw',
-    result: 'defeat', player_level: 1, xp_awarded: 0, currency_awarded: 0,
+    result: 'defeat', player_level: 2, xp_awarded: 0, currency_awarded: 0,
   });
   const defeatState = permitState('defeat-case');
   const duplicateDefeat = await action('defeat-case', 'slash', 'integration-player', 1);
