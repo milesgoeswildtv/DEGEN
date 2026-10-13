@@ -24,7 +24,7 @@ const setup = (enabled: boolean, completeUnderpass?: () => Promise<unknown>) => 
   };
   const api = {
     enabled,
-    completeUnderpass: completeUnderpass ?? (async () => ({ player: {}, worldEvent: {} })),
+    completeUnderpass: completeUnderpass ?? (async () => ({ player: { id: 'test-player' }, worldEvent: {} })),
     getUnderpass: async () => ({}),
   };
   const root = { innerHTML: '', querySelectorAll: () => [] };
@@ -56,7 +56,7 @@ test('failed Worker completion retains the permit and persists retry across cont
   const fixture = setup(true, async () => {
     attempts += 1;
     if (attempts === 1) throw new Error('transient D1 failure');
-    return { player: {}, worldEvent: {} };
+    return { player: { id: 'test-player' }, worldEvent: {} };
   });
   const first = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   first.battlePermit = { permitId: 'permit-1' };
@@ -86,6 +86,22 @@ test('successful Worker completion returns from victory only after authoritative
   assert.equal(fixture.store.replaced, 1);
   assert.equal(fixture.store.localRewards, 0);
   assert.ok(fixture.timers.some((timer) => timer.delay === 1400));
+});
+
+test('mismatched Worker receipt cannot overwrite another account and remains retryable', async () => {
+  const fixture = setup(true, async () => ({ player: { id: 'other-player' }, worldEvent: {} }));
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-wrong-account' };
+  controller.route = 'battle';
+  await controller.finishBattle('victory');
+
+  assert.equal(fixture.store.replaced, 0);
+  assert.equal(fixture.store.localRewards, 0);
+  assert.equal(controller.battlePermit?.permitId, 'permit-wrong-account');
+  assert.equal(
+    fixture.storage.get('degen.pending.reward-permits.v1:test-player'),
+    '["permit-wrong-account"]',
+  );
 });
 
 test('offline preview still applies its local non-economic reward', async () => {
