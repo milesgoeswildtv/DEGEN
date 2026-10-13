@@ -87,3 +87,16 @@ test('expired server-recorded victory fixture remains distinct from an expired a
     assert.deepEqual({ ...active }, { battle_status: 'active', permit_expired: 1 });
   } finally { db.close(); }
 });
+
+
+test('expired recovery fixtures use a dedicated player so rewards cannot contaminate baseline progression', () => {
+  const db = database();
+  try {
+    const rows = db.prepare("SELECT id, player_id FROM battle_permits WHERE id IN ('expired', 'expired-victory') ORDER BY id").all();
+    assert.deepEqual(rows.map(row => row.player_id), ['expired-player', 'expired-player']);
+    assert.ok(source.includes("complete('expired', 'expired-player')"));
+    assert.ok(source.includes("complete('expired-victory', 'expired-player')"));
+    assert.equal(source.includes("complete('expired')"), false);
+    assert.equal(source.includes("complete('expired-victory')"), false);
+  } finally { db.close(); }
+});
