@@ -182,3 +182,16 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1 assumptions rechecked: `wrangler.toml` still defines binding `DB`, database `DEGEN`, and `db/migrations`; deploy workflow applies schema and migrations before Worker. No remote D1 write, production Worker deploy, migration execution, or deployment-config change in this run.
 - Remaining release blocker: signed Discord/Telegram identity and per-request player ownership are not yet enforced by the Worker. Live production Pages/Worker connectivity and real mobile QA remain unverified.
 - Best next task: reconcile the overlapping PR #12 permit/recovery/cycle tests with PRs #9/#10/#11, preserve PR #10 client compatibility before PR #9 strict-turn enforcement, then rerun exact-head CI before deciding merge readiness.
+
+
+## 2026-10-13 — Worker/D1 vertical slice and Mana UI QA (PR #12)
+
+- Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; code head validated: `217451b18423539b54c1c322ec04c492ae15b32e`.
+- Added five authoritative battle-presentation tests and `tests/mana-ui.test.ts` for Mana labels, affordability, zero-cost availability, and terminal disabling.
+- Extended isolated Wrangler/D1 HTTP integration through bootstrap -> server world snapshot -> battle permit -> three Worker-resolved paid turns -> authoritative reward receipt. Existing cases cover insufficient-Mana rejection without state mutation, zero-cost action at 0 Mana, duplicate/concurrent completion, full/reduced clears, expiry recovery, and legal closed-cycle permits.
+- Exact-head CI run `38353024738` GREEN: 40/40 deterministic tests, Worker/D1 reward/action integration, 60-request cycle-race harness, web build, and Worker validation passed. This is isolated local D1 evidence only, not production D1/deployment proof.
+- PR #12 `AppController.ts`, `api.ts`, and `styles.css` match PR #10 byte-for-byte. PR #12 does not include PR #9 strict-turn/atomic-defeat Worker changes; it includes PR #11 cycle reservation. Keep the frontend-first release order and reconcile distinct browser/release coverage before merge.
+- Mana is COMPLETE / MERGED on main; migration `0003_degen_mana.sql` remains tracked in the migration-before-Worker workflow. No monster Mana or 0-Mana reversion. No remote D1 writes or production deploy.
+- PR #12 remains PUSHED / DRAFT, not merged/live. Preview deployment was reported by the deploy bot, but browser access to the preview failed; no visual/mobile QA is claimed.
+- Remaining release blocker: signed Discord/Telegram identity and per-request player ownership are not enforced by the Worker.
+- Best next task: combine PR #12's Worker/D1 harness with PR #10's browser/release tests, then reconcile PR #9 strict-turn/defeat behavior and rerun full exact-head CI before merge.
