@@ -1,6 +1,6 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-12
+Updated: 2026-10-13
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
@@ -169,3 +169,16 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1 assumptions: `wrangler.toml` remains authoritative (`DB` / `DEGEN`); tracked migrations 0002–0005 apply before Worker deploy. No remote D1 mutation, deployment, or config change.
 - Blocker: signed Discord/Telegram identity and per-request ownership remain required before public economic gameplay; production Pages/Worker connectivity/CORS and real mobile verification are not proven.
 - Best next task: run fresh exact-head CI, fix any remaining failing test on this branch, then reconcile the overlapping Worker/client PRs in frontend-first release order.
+
+
+## 2026-10-13 — Authoritative battle presentation tests (PR #12)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Continuing the existing `automation/degen/permit-millisecond-expiry-v02` branch / draft PR #12; no duplicate feature branch created.
+- Added `tests/battle-authoritative-presentation.test.ts` with five deterministic cases: apply Worker HP/Mana/enemy HP once; ignore duplicate responses; sync to a skipped authoritative turn and reject stale rollback; keep a Degen manifested at 0 Mana; and handle authoritative killing blow/defeat without supplying client-computed rewards.
+- Refactored `src/game/combat/engine.ts` constructor parameter properties to explicit fields and made the shared rules import explicit as `./rules.ts`; `tsconfig.json` enables `allowImportingTsExtensions` under existing `noEmit`. This makes the actual presentation engine testable under Node 22's native TypeScript stripping without changing combat math.
+- Exact-head CI run `38352501843` passed on code head `4687c6c6cc9cf6bf3c4578dd9f215a8929a20fca`: deterministic tests, isolated local Wrangler/D1 reward/action concurrency, isolated 60-request Underpass cycle race, Vite/TypeScript build, and Worker dry-run all green. This is CI-local D1 evidence, not production D1 or deployment evidence.
+- Mana remains COMPLETE / MERGED on main: shared `maxMana`/`manaCost`, authoritative persisted `player_mana`, no-state-change insufficient-Mana rejection, exact paid deduction, zero-cost use at zero Mana, and no monster Mana/no automatic reversion. Tracked migration `0003_degen_mana.sql` remains in the existing migration-before-Worker deployment path.
+- Battle/reward authority and persisted receipts are merged on main. PR #12 remains DRAFT / PUSHED, not merged or live. It overlaps PR #9's strict-turn/defeat work, PR #10's broader client-first hardening, and PR #11's cycle reservation fix; keep the frontend-first release order (PR #10 before strict-turn enforcement) and reconcile overlaps before merging.
+- D1 assumptions rechecked: `wrangler.toml` still defines binding `DB`, database `DEGEN`, and `db/migrations`; deploy workflow applies schema and migrations before Worker. No remote D1 write, production Worker deploy, migration execution, or deployment-config change in this run.
+- Remaining release blocker: signed Discord/Telegram identity and per-request player ownership are not yet enforced by the Worker. Live production Pages/Worker connectivity and real mobile QA remain unverified.
+- Best next task: reconcile the overlapping PR #12 permit/recovery/cycle tests with PRs #9/#10/#11, preserve PR #10 client compatibility before PR #9 strict-turn enforcement, then rerun exact-head CI before deciding merge readiness.
