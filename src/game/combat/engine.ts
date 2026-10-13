@@ -19,6 +19,9 @@ export interface BattleSnapshot {
 }
 
 export class BattleEngine {
+  readonly degen: DegenDefinition;
+  readonly enemy: EnemyDefinition;
+  private readonly onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void;
   private playerHp: number;
   private playerMana: number;
   private enemyHp: number;
@@ -29,10 +32,13 @@ export class BattleEngine {
   private completionSent = false;
 
   constructor(
-    readonly degen: DegenDefinition,
-    readonly enemy: EnemyDefinition,
-    private readonly onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
+    degen: DegenDefinition,
+    enemy: EnemyDefinition,
+    onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
   ) {
+    this.degen = degen;
+    this.enemy = enemy;
+    this.onComplete = onComplete;
     this.playerHp = degen.maxHp;
     this.playerMana = degen.maxMana;
     this.enemyHp = enemy.maxHp;
