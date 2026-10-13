@@ -122,6 +122,15 @@ export class AppController {
       // A late permit must not open an encounter under a different account.
       if (this.store.snapshot.id !== playerId) return;
       if (!permit) throw new Error('No battle permit returned.');
+      if (this.api.enabled) {
+        const state = permit.initialState;
+        if (!state || state.permitId !== permit.permitId || state.status !== 'active' || state.turnCount !== 0
+          || !Number.isInteger(state.playerHp) || state.playerHp <= 0 || state.playerHp > TEST_DEGEN.maxHp
+          || !Number.isInteger(state.playerMana) || state.playerMana < 0 || state.playerMana > TEST_DEGEN.maxMana
+          || !Number.isInteger(state.enemyHp) || state.enemyHp <= 0 || state.enemyHp > TUNNEL_MAW.maxHp) {
+          throw new Error('Missing or invalid authoritative battle start state.');
+        }
+      }
       this.battlePermit = permit;
       this.battlePlayerId = playerId;
       this.navigate('battle');
@@ -136,9 +145,12 @@ export class AppController {
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     if (!parent || !this.battlePermit) return;
 
-    this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
-      void this.finishBattle(status);
-    });
+    this.battleEngine = new BattleEngine(
+      TEST_DEGEN,
+      TUNNEL_MAW,
+      (status) => { void this.finishBattle(status); },
+      this.api.enabled ? this.battlePermit.initialState : undefined,
+    );
 
     this.battleEngine.subscribe(updateBattleDom);
     this.battleGame = createBattleGame(parent, this.battleEngine);
