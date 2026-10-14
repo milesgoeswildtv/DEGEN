@@ -95,6 +95,37 @@ test('stale-turn 409 is surfaced as the exact Worker-owned state for client sync
   );
 });
 
+test('insufficient-Mana conflict returns the unchanged Worker state for safe client synchronization', async () => {
+  const state = {
+    permitId: 'permit-mana', status: 'active', playerHp: 110, playerMana: 0,
+    enemyHp: 57, turnCount: 2,
+  };
+  const { GameApi, BattleTurnConflictError } = createApi(async (input, init) => {
+    assert.equal(String(input), 'https://degen-api.example/api/battle/action');
+    assert.deepEqual(JSON.parse(String(init?.body)), {
+      playerId: 'player-1', permitId: 'permit-mana', abilityId: 'crack', expectedTurnCount: 2,
+    });
+    return new Response(JSON.stringify({
+      error: 'Not enough Mana for that ability.', battleState: state,
+    }), { status: 409, headers: { 'content-type': 'application/json' } });
+  });
+
+  let caught: (Error & { battleState?: typeof state }) | undefined;
+  try {
+    await new GameApi().actUnderpass('player-1', 'permit-mana', 'crack', 2);
+  } catch (error) {
+    caught = error as Error & { battleState?: typeof state };
+  }
+
+  assert.ok(caught);
+  assert.ok(caught instanceof BattleTurnConflictError);
+  assert.deepEqual(
+    [caught.battleState?.permitId, caught.battleState?.status, caught.battleState?.playerHp,
+      caught.battleState?.playerMana, caught.battleState?.enemyHp, caught.battleState?.turnCount],
+    ['permit-mana', 'active', 110, 0, 57, 2],
+  );
+});
+
 test('malformed conflict payload is rejected instead of being treated as authoritative state', async () => {
   const { GameApi } = createApi(async () => new Response(JSON.stringify({
     error: 'Conflict', battleState: { permitId: 'permit-3', status: 'active', turnCount: -1 },
