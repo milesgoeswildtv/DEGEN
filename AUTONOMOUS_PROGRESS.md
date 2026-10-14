@@ -219,3 +219,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1 source verified: migrations 0002–0005 are tracked; deploy workflow applies schema, migrations, then Worker. No production D1 mutation or deployment was performed.
 - Release blockers: compatible client PR #10 and production Pages CORS PR #7 remain unmerged; verified Discord/Telegram identity and request authorization are still required before public economic gameplay.
 - Next: reconcile PR #12 with PR #9/#10/#11, preserve client-first release ordering, and keep public economy gated until signed platform identity and request-level authorization are implemented.
+
+## 2026-10-14 — Zero-Mana no-reversion regression (PUSHED / PR #12)
+
+- Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/permit-millisecond-expiry-v02`; PR #12 remains draft, not merged/live.
+- Commit `87771da5249d072a486c0ecbb79df622c9154a2b` adds an engine-level regression in `tests/combat-progression.test.ts`: three paid actions exhaust Mana, the Degen stays manifested/active, and a zero-cost action still resolves at 0 Mana without terminal completion.
+- Exact-head CI run `38523681675` was in progress at the last check. Previous head `d1ce8a6a9037354c2a02cdd363433c9bbe677347` passed run `38507526032`: deterministic tests, isolated local Worker/D1 reward and cycle concurrency, build, Worker dry run. Verify the new run before claiming the new test green.
+- Mana is complete/merged on main: shared `maxMana`/`manaCost`, authoritative `player_mana`, no-state-change rejection, exact paid deduction, zero-cost at 0, no monster Mana/reversion. Migration `0003_degen_mana.sql` and migration-before-Worker order test are tracked.
+- Reward receipts/idempotency are merged on main; PR #12's precise expiry, turn CAS, defeat/history atomicity, expired server-earned victory recovery, and expanded Worker/D1 coverage remain PR-only. D1 source remains `DB` / `DEGEN` / `db/migrations`; no production D1 mutation or deployment.
+- Blockers: PR #10 compatible client and PR #7 production Pages CORS are not live; signed platform identity/request ownership and real mobile/browser QA remain unverified. Keep strict-turn Worker enforcement behind compatible client rollout.
+- Next: verify run `38523681675`, then reconcile PR #12 overlaps with PRs #9/#10/#11 before any merge.
