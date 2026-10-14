@@ -30,9 +30,9 @@ Updated: 2026-10-14
 
 - Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658` (verified against the live branch ref).
 - Reward receipt/idempotency work from PR #5 is **MERGED into main**. Reward state is server-owned; claim-token-guarded D1 batches and persisted receipts protect retries from duplicate grants.
-- Current integration candidate: PR #12, branch `automation/degen/permit-millisecond-expiry-v02`, currently at `87f097f8bcdb18b1c25f7c5c4cb7bafa4abf5166` (**PUSHED / DRAFT**, not merged or deployed).
+- Current integration candidate: PR #12, branch `automation/degen/permit-millisecond-expiry-v02` (**PUSHED / DRAFT**, not merged or deployed). Latest CI-verified head: `17d0662ab9f7b65c8a309655f3b285852865ac17`; the current follow-up is continuity documentation only.
 - PR #12 carries millisecond-precise permit expiry, expected-turn CAS, authoritative initial battle state, atomic defeat/history writes, earned-victory recovery after expiry, Underpass cycle reservation, and Worker/D1 concurrency + vertical-slice coverage. It overlaps PRs #9, #10, and #11; do not merge it blindly.
-- Exact-head CI on prior PR #12 head `a639b4bb839fa35bff942bdad1039ba0bda8c629` passed run `38529914408`: deterministic tests, isolated local Wrangler/D1 reward/action integration, isolated 60-request cycle-race integration, TypeScript/Vite build, and Wrangler Worker dry run. The latest commit's CI run `38565545387` was still in progress at this update; no pass is claimed for that new head yet.
+- Exact-head CI runs `38565545387` on code/test commit `87f097f8bcdb18b1c25f7c5c4cb7bafa4abf5166` and `38565825497` on continuity commit `17d0662ab9f7b65c8a309655f3b285852865ac17` both completed SUCCESS. All nine CI steps passed: deterministic tests, isolated local Wrangler/D1 reward/action integration, isolated 60-request cycle-race integration, TypeScript/Vite build, and Wrangler Worker dry run.
 
 ## Battle authority / reward idempotency
 
@@ -254,10 +254,10 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 
 ## 2026-10-14 — Insufficient-Mana authoritative conflict contract (PUSHED / PR #12)
 
-- Authoritative main SHA remains `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/permit-millisecond-expiry-v02`, commit `87f097f8bcdb18b1c25f7c5c4cb7bafa4abf5166`, draft PR #12.
+- Authoritative main SHA remains `33e7477961d2a6ab7b79bf52d78a93901e19f658`; draft PR #12 branch `automation/degen/permit-millisecond-expiry-v02`. The insufficient-Mana test commit was `87f097f8bcdb18b1c25f7c5c4cb7bafa4abf5166`; latest CI-verified head is `17d0662ab9f7b65c8a309655f3b285852865ac17`.
 - Changed `tests/battle-api-turn-contract.test.ts`: added a regression proving that an insufficient-Mana 409 is parsed as `BattleTurnConflictError` only when it includes the exact Worker-owned state, preserving HP, Mana=0, enemy HP, and turn count without sending client-computed state.
 - Changed `AUTONOMOUS_PROGRESS.md` to correct stale PR #5 status (now merged), record the current main SHA/PR #12 head, distinguish previous-head green CI from current-head pending CI, and list verified migrations and release blockers.
-- Prior head CI run `38529914408` passed all nine CI steps. New-head CI run `38565545387` was in progress when this entry was written; do not claim this new test passed until that run completes.
+- CI run `38565545387` passed after the new test commit; run `38565825497` also passed all nine steps at `17d0662ab9f7b65c8a309655f3b285852865ac17`. The latest change in this file is continuity-only and does not alter tested runtime or test logic.
 - Mana remains COMPLETE / MERGED; no monster Mana or zero-Mana reversion. Battle authority and reward idempotency remain server-owned. D1 migrations 0002–0005 are tracked and deployment order is schema → migrations → Worker. No production DB writes/deployment.
 - Release blockers: PR #9/#10/#11 integration order, signed Discord/Telegram identity and per-request ownership, production Pages CORS/API connectivity, and real browser/mobile/platform QA.
 - Best next task: verify exact-head CI, then perform a line-by-line integration review of PR #12 against #9/#10/#11 before any merge; do not begin Shield until this reliability slice is integrated safely.
