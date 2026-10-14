@@ -78,3 +78,15 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Mana COMPLETE/MERGED on main, Degen-only, no depletion reversion; reward idempotency/battle authority unchanged by this world-event fix. Existing D1 binding/migrations unchanged, no schema or production DB changes.
 - Blockers: combined-combat draft PR creation rejected after independent retry; Discord/Telegram authenticated identity still required before public economy. An intermediate incomplete-tree CI commit was corrected by fast-forward restoration; verify final head only.
 - Next: verify exact-head CI, fix any regression, obtain reviewed PR; continue platform authentication and combat PR delivery.
+
+
+## 2026-10-14 — Underpass cycle reservation and integration evidence
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Current delivery: PR #11, branch `automation/degen/underpass-cycle-cas-v01`, code head `237585befbdf3204a37167e3923d30fa3f03bdc8`; open draft, not merged or live.
+- Scoped files: `worker/index.ts` reserves the active Underpass cycle with a conditional SQLite `INSERT ... SELECT ... WHERE NOT EXISTS ... RETURNING`; concurrent losers reload the winning cycle. Added source-extracted SQL tests, a 60-request isolated Wrangler/D1 HTTP race test, and a CI gate for that integration test.
+- Exact code-head CI run `38109013799` succeeded: deterministic tests, isolated Worker/D1 reward concurrency, isolated Worker/D1 cycle concurrency, Vite/TypeScript build, and Wrangler Worker dry run. This documentation-only follow-up still needs exact-head CI before the PR is marked ready.
+- Mana remains COMPLETE / MERGED on main: Degen-only max Mana/costs, authoritative persisted player Mana, rejection without state advance, exact paid deduction, zero-cost use at zero, and no reversion or monster Mana. Reward receipt/idempotency is also merged on main; PR #12 holds broader permit/action/completion integration work but overlaps the client-first and strict-turn branches.
+- D1 assumptions: existing `DB` binding and `DEGEN` database in `wrangler.toml`; tracked migrations 0002–0005 run after schema application and before Worker deployment. This slice adds no migration, performs no remote D1 write, and does not claim a production deployment.
+- Miles blocker unchanged: signed Discord/Telegram identity and per-request ownership remain required before public economic gameplay; live Pages/Worker behavior is not verified.
+- Best next task: review and sequence PR #10's compatible client before PR #9's strict expected-turn enforcement, then reconcile overlapping integration tests rather than merging cumulative PR #12 blindly.
