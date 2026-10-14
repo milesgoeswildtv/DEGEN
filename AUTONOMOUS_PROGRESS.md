@@ -92,12 +92,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Best next task: review and sequence PR #10's compatible client before PR #9's strict expected-turn enforcement, then reconcile overlapping integration tests rather than merging cumulative PR #12 blindly.
 
 
-## 2026-10-14 — Concurrent Underpass rollover follow-up (PUSHED / PR; CI pending)
+## 2026-10-14 — Concurrent Underpass rollover follow-up (PUSHED / PR; CI GREEN)
 - Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
-- Current delivery: PR #11, branch `automation/degen/underpass-cycle-cas-v01`, based on inspected head `705e804cf72912cb71e2f284965610a4822bf956`; this follow-up adds a separate rollover integration case without changing Worker runtime code.
-- Files: `.github/workflows/ci.yml` adds the rollover harness after the existing cycle-race harness; `tests/worker-d1-cycle-rollover.mjs` seeds an expired Underpass cycle in isolated local D1, sends 60 simultaneous Worker HTTP world requests, and asserts one new shared cycle, two historical rows, and exactly one active cycle.
+- Current delivery: PR #11, branch `automation/degen/underpass-cycle-cas-v01`, exact tested head `c5de4d0694390295eec5833f3a29affbf9694eac`; open draft, not merged or live.
+- Files changed in this follow-up: `.github/workflows/ci.yml` adds the rollover harness to the CI gate; `tests/worker-d1-cycle-rollover.mjs` seeds an expired Underpass cycle in isolated local D1, sends 60 simultaneous Worker HTTP world requests, and asserts every response converges on one successor with exactly two historical rows and one active cycle; this file records the verified outcome.
+- Exact-head GitHub Actions CI run `38625346808` succeeded on 2026-10-14: deterministic tests, isolated local Worker/D1 reward concurrency, initial cycle-creation race, expired-cycle rollover race, TypeScript/Vite production build, and Wrangler Worker dry run all PASS.
 - Mana remains COMPLETE / MERGED on main: Degen-only max Mana/costs, authoritative persisted player Mana, unaffordable-action rejection without turn advance, exact paid deduction, zero-cost use at zero, and no monster Mana or depletion reversion.
-- Battle authority and reward receipt/idempotency remain merged on main. This follow-up does not change battle/reward code.
-- D1 assumptions: existing `DB` binding, `DEGEN` database, and tracked migrations 0002–0005 remain unchanged; the test uses Wrangler local persistence only. No remote D1 write or deployment.
-- Miles blocker: signed Discord/Telegram identity and per-request ownership remain required before public economic gameplay; live Pages/Worker behavior is not verified.
-- Best next task: inspect exact-head CI for the new rollover harness; if green, record its run/head and then review the client-first PR #10 before strict-turn PR #9.
+- Battle authority and reward receipt/idempotency remain merged on main. This follow-up changes no combat, reward, or economic runtime code.
+- D1 assumptions: existing `DB` binding, `DEGEN` database, and tracked migrations 0002–0005 remain unchanged; the harness uses Wrangler local persistence only. No remote D1 write or deployment.
+- Miles blocker: signed Discord/Telegram identity and per-request ownership remain required before public economic gameplay; deployed Pages/Worker browser behavior remains unverified.
+- Best next task: review PR #10's client-first compatibility and its exact-head CI, then sequence PR #9's strict expected-turn enforcement only after the compatible frontend release gates are satisfied. Do not merge overlapping PR #12 cumulatively without reconciling its differing expiry/recovery expectations.
