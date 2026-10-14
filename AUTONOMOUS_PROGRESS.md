@@ -1,6 +1,6 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-13
+Updated: 2026-10-14
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
@@ -26,30 +26,30 @@ Updated: 2026-10-13
 - D1 migration for authoritative battle Mana/state is tracked and deploy ordering applies schema + migrations before Worker code.
 - Client and Worker share one deterministic turn resolver.
 
-## Current slice — PUSHED / PR
-- PR #5: `automation/degen/reward-authority-v22` -> `main`.
-- Reward lifecycle is persisted as pending/claiming/awarded with a 60-second stale-claim lease.
-- Fresh claims require an unexpired server-resolved victory; recovery reuses the persisted clear number.
-- Award writes are claim-token guarded and batched; victory history uses permit ID deterministically; awarded retries replay the persisted receipt.
-- `db/migrations/0004_reward_receipt.sql` is tracked; no production D1 migration has been executed from this branch.
-- Permit expiry hardening is now folded into PR #5 by fast-forward: all three authoritative checks use `datetime(expires_at) > CURRENT_TIMESTAMP`.
-- `tests/reward-authority.test.ts` covers migration defaults, expired/non-victory rejection, duplicate live-claim rejection, stale-claim recovery, preserved clear number, and terminal awarded receipts; Node 22 SQLite rows are normalized before deep equality.
-- Current PR head before this continuity commit: `55d1152373d6602696593a39d26fda7793fa10a8`.
-- CI status: fresh PR-head CI is required after folding the expiry commits into PR #5. Do not merge until `npm test`, `npm run build`, and `npm run check:worker` are green.
+## Current release slice — PUSHED / DRAFT PR
+
+- Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658` (verified against the live branch ref).
+- Reward receipt/idempotency work from PR #5 is **MERGED into main**. Reward state is server-owned; claim-token-guarded D1 batches and persisted receipts protect retries from duplicate grants.
+- Current integration candidate: PR #12, branch `automation/degen/permit-millisecond-expiry-v02`, currently at `87f097f8bcdb18b1c25f7c5c4cb7bafa4abf5166` (**PUSHED / DRAFT**, not merged or deployed).
+- PR #12 carries millisecond-precise permit expiry, expected-turn CAS, authoritative initial battle state, atomic defeat/history writes, earned-victory recovery after expiry, Underpass cycle reservation, and Worker/D1 concurrency + vertical-slice coverage. It overlaps PRs #9, #10, and #11; do not merge it blindly.
+- Exact-head CI on prior PR #12 head `a639b4bb839fa35bff942bdad1039ba0bda8c629` passed run `38529914408`: deterministic tests, isolated local Wrangler/D1 reward/action integration, isolated 60-request cycle-race integration, TypeScript/Vite build, and Wrangler Worker dry run. The latest commit's CI run `38565545387` was still in progress at this update; no pass is claimed for that new head yet.
 
 ## Battle authority / reward idempotency
-- Mana authority: COMPLETE / MERGED on main.
-- Reward recoverability/idempotency: PUSHED / PR, not merged or live.
-- Permit expiry format regression: fixed on PR branch, awaiting fresh CI.
-- Remaining coverage priority: concurrent action/completion attempts, duplicate completion at endpoint level, invalid permits, and full/reduced clear + level-up integration.
+
+- Mana authority: **COMPLETE / MERGED on main**.
+- Reward completion/idempotency/recoverability: **MERGED on main** through PR #5; PR #12 adds broader exact-expiry, action-CAS, defeat-history, and real local Worker/D1 regression coverage but remains draft.
+- The Worker owns battle HP/Mana/enemy HP/status/turn count, victory eligibility, reward clear numbering, XP, currency, inventory, and victory history. Client requests carry the ability and observed turn only; they do not submit combat state or reward amounts.
+- Remaining integration gaps are release sequencing across PRs #9/#10/#11/#12 and live browser/platform verification, not a missing Mana foundation.
 
 ## Deployment / persistence
-- No production D1 mutation or deployment was performed by this slice.
-- `deploy-worker.yml` applies D1 schema, then tracked migrations, then deploys Worker code.
-- `wrangler.toml` remains the source of truth for the existing D1 binding/config; no deployment config was changed.
+
+- D1 migration files `0002_authoritative_battle_state.sql`, `0003_degen_mana.sql`, `0004_reward_receipt.sql`, and `0005_reward_claim_character_guard.sql` are tracked on main.
+- The deployment workflow applies `db/schema.sql`, then `wrangler d1 migrations apply DEGEN`, then deploys Worker code. `wrangler.toml` remains the authoritative DB binding/config; no binding or DB ID was changed.
+- No production D1 mutation or deployment was performed by this run. Isolated Wrangler/D1 HTTP tests are local CI evidence, not proof of production persistence or platform gameplay.
 
 ## Best next task
-Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and merge only if authority/idempotency invariants remain intact. If CI fails, fix the smallest failing regression on the same branch. After reward authority is merged, add endpoint-level concurrency/duplicate-completion integration coverage before generic Shield work.
+
+Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client-before-strict-turn rollout order, and keep draft until that review and current-head CI are green. After the integration slice is merged safely, move to generic temporary Shield support before the universal status engine.
 
 ## Latest verified run — 2026-10-08
 - Main SHA: `2df79a123a022212721634c048147d8bf935566a`.
@@ -251,3 +251,13 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Battle authority/reward idempotency are merged on main; PR #12's millisecond expiry, expected-turn CAS, atomic defeat/history, earned-victory expiry recovery, cycle reservation, and broader integration tests are PUSHED / DRAFT PR only. PRs #9/#10/#11 overlap; PR #12 must not be merged blindly. Keep compatible client rollout ahead of strict Worker turn enforcement. No production D1 mutation or deployment occurred.
 - Remaining release blockers: signed Discord/Telegram identity and per-request ownership, target-host CORS/connectivity verification, and real browser/mobile/Telegram/Discord gameplay QA. CI-local Wrangler/D1 evidence is not production evidence.
 - Best next task: reconcile PR #12 against PRs #9/#10/#11 into a release-safe frontend-first sequence, verify the deployed compatible client, then gate strict-turn Worker rollout; retain the draft state until that review is complete.
+
+## 2026-10-14 — Insufficient-Mana authoritative conflict contract (PUSHED / PR #12)
+
+- Authoritative main SHA remains `33e7477961d2a6ab7b79bf52d78a93901e19f658`; branch `automation/degen/permit-millisecond-expiry-v02`, commit `87f097f8bcdb18b1c25f7c5c4cb7bafa4abf5166`, draft PR #12.
+- Changed `tests/battle-api-turn-contract.test.ts`: added a regression proving that an insufficient-Mana 409 is parsed as `BattleTurnConflictError` only when it includes the exact Worker-owned state, preserving HP, Mana=0, enemy HP, and turn count without sending client-computed state.
+- Changed `AUTONOMOUS_PROGRESS.md` to correct stale PR #5 status (now merged), record the current main SHA/PR #12 head, distinguish previous-head green CI from current-head pending CI, and list verified migrations and release blockers.
+- Prior head CI run `38529914408` passed all nine CI steps. New-head CI run `38565545387` was in progress when this entry was written; do not claim this new test passed until that run completes.
+- Mana remains COMPLETE / MERGED; no monster Mana or zero-Mana reversion. Battle authority and reward idempotency remain server-owned. D1 migrations 0002–0005 are tracked and deployment order is schema → migrations → Worker. No production DB writes/deployment.
+- Release blockers: PR #9/#10/#11 integration order, signed Discord/Telegram identity and per-request ownership, production Pages CORS/API connectivity, and real browser/mobile/platform QA.
+- Best next task: verify exact-head CI, then perform a line-by-line integration review of PR #12 against #9/#10/#11 before any merge; do not begin Shield until this reliability slice is integrated safely.
