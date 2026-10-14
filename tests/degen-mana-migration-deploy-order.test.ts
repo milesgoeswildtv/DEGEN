@@ -10,11 +10,11 @@ const packageJson = JSON.parse(read('../package.json')) as { scripts: Record<str
 const domainTypes = read('../src/domain/types.ts');
 
 test('Degen Mana migration adds only the player-owned Mana column', () => {
-  const addedColumns = [...manaMigration.matchAll(/\\bADD\\s+COLUMN\\s+([a-z_][a-z0-9_]*)/gi)]
+  const addedColumns = [...manaMigration.matchAll(/\bADD\s+COLUMN\s+([a-z_][a-z0-9_]*)/gi)]
     .map((match) => match[1]?.toLowerCase());
   assert.deepEqual(addedColumns, ['player_mana']);
-  assert.equal((manaMigration.match(/\\bALTER\\s+TABLE\\b/gi) ?? []).length, 1);
-  assert.doesNotMatch(manaMigration, /CREATE\\s+TABLE/i);
+  assert.equal((manaMigration.match(/\bALTER\s+TABLE\b/gi) ?? []).length, 1);
+  assert.doesNotMatch(manaMigration, /CREATE\s+TABLE/i);
 });
 
 test('Worker deployment applies schema and migrations before Worker code', () => {
@@ -24,9 +24,9 @@ test('Worker deployment applies schema and migrations before Worker code', () =>
   assert.ok(schemaStep >= 0, 'deployment must apply the base D1 schema');
   assert.ok(migrationStep > schemaStep, 'tracked migrations must run after the base schema');
   assert.ok(workerDeployStep > migrationStep, 'Worker code must deploy after D1 migrations');
-  assert.match(wranglerConfig, /binding\\s*=\\s*\"DB\"/);
-  assert.match(wranglerConfig, /database_name\\s*=\\s*\"DEGEN\"/);
-  assert.match(wranglerConfig, /migrations_dir\\s*=\\s*\"db\\/migrations\"/);
+  assert.match(wranglerConfig, /binding\s*=\s*\"DB\"/);
+  assert.match(wranglerConfig, /database_name\s*=\s*\"DEGEN\"/);
+  assert.match(wranglerConfig, /migrations_dir\s*=\s*\"db\/migrations\"/);
   assert.match(packageJson.scripts['db:migrate'], /wrangler d1 migrations apply DEGEN/);
 });
 
@@ -34,5 +34,5 @@ test('enemy definitions do not expose a Mana-equivalent resource', () => {
   const start = domainTypes.indexOf('export interface EnemyDefinition');
   const end = domainTypes.indexOf('export interface LocationDefinition', start);
   assert.ok(start >= 0 && end > start, 'EnemyDefinition type must remain explicit');
-  assert.doesNotMatch(domainTypes.slice(start, end), /\\b(?:mana|maxMana|currentMana|energy|stamina)\\s*:/i);
+  assert.doesNotMatch(domainTypes.slice(start, end), /\b(?:mana|maxMana|currentMana|energy|stamina)\s*:/i);
 });
