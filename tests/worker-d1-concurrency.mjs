@@ -94,6 +94,35 @@ try {
   assert.equal(clientFirstAction.turnCount, 1);
   assert.equal(clientFirstAction.playerMana, 8);
   assert.equal(clientFirstAction.status, 'active');
+
+  // Insufficient Mana must be a pure rejection; a free bespoke ability remains legal at zero.
+  const zeroManaBefore = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='zero-mana'");
+  assert.deepEqual(zeroManaBefore, [{
+    player_hp: 120, player_mana: 0, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+  }]);
+  const unaffordable = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'zero-mana',
+      abilityId: 'crack', expectedTurnCount: 0 }),
+  });
+  assert.equal(unaffordable.status, 409);
+  assert.deepEqual(sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='zero-mana'"),
+    zeroManaBefore, 'rejected paid action must not change HP, Mana, enemy HP, status, or turn count');
+
+  const freeResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'zero-mana',
+      abilityId: 'slash', expectedTurnCount: 0 }),
+  });
+  assert.equal(freeResponse.status, 200);
+  const freeAction = await freeResponse.json();
+  assert.deepEqual([
+    freeAction.status, freeAction.playerHp, freeAction.playerMana, freeAction.enemyHp, freeAction.turnCount,
+  ], ['active', 110, 0, 63, 1]);
+  assert.deepEqual(sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='zero-mana'"), [{
+    player_hp: 110, player_mana: 0, enemy_hp: 63, battle_status: 'active', turn_count: 1,
+  }]);
+
   // A bad, expired, or wrong-account permit cannot authorize an action.
   const rejectAction = async (permitId, playerId = 'integration-player') => {
     const response = await fetch(base + '/api/battle/action', {
