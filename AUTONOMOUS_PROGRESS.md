@@ -229,3 +229,14 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - Reward receipts/idempotency are merged on main; PR #12's precise expiry, turn CAS, defeat/history atomicity, expired server-earned victory recovery, and expanded Worker/D1 coverage remain PR-only. D1 source remains `DB` / `DEGEN` / `db/migrations`; no production D1 mutation or deployment.
 - Blockers: PR #10 compatible client and PR #7 production Pages CORS are not live; signed platform identity/request ownership and real mobile/browser QA remain unverified. Keep strict-turn Worker enforcement behind compatible client rollout.
 - Next: verify run `38523681675`, then reconcile PR #12 overlaps with PRs #9/#10/#11 before any merge.
+
+
+## 2026-10-14 — Zero-Mana regression assertion stabilized (PUSHED / PR #12)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; continuing `automation/degen/permit-millisecond-expiry-v02`, PR #12 (draft).
+- CI runs `38523681675` and `38523738458` exposed one test-only failure: the no-reversion test expected the initial `manifests` log line after four actions, but the battle log intentionally retains only the latest six entries. Mana depletion, active battle state, zero-cost action, and Worker/D1 checks passed in those runs.
+- Changed `tests/combat-progression.test.ts` to assert stable snapshot identity (`playerName`) and the Degen's `playerMaxMana` instead of depending on a bounded presentation log. No gameplay, Worker authority, reward, D1, migration, or deployment configuration changes.
+- Mana remains COMPLETE / MERGED on main: shared maxMana/manaCost, persisted authoritative player Mana, no-state-change rejection, exact paid deduction, zero-cost actions at 0 Mana, no monster Mana and no reversion. Migration `0003_degen_mana.sql` remains tracked and deploy ordering applies migrations before Worker code.
+- Battle/reward authority and reward receipts are merged on main. PR #12's permit precision, turn CAS, atomic defeat/history, expired server-earned victory recovery, and cycle reservation remain PUSHED / DRAFT PR only. No production D1 write or deployment.
+- CI exact-head verification is required after this test fix. Signed Discord/Telegram identity and per-request ownership, production Pages/Worker connectivity, and real mobile/browser verification remain release blockers.
+- Best next task: verify fresh PR #12 CI, then reconcile its Worker/test overlaps with PRs #9/#10/#11 while preserving the client-first rollout gate.

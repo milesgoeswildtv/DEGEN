@@ -181,6 +181,9 @@ test('depleting Degen Mana never reverts combat and zero-cost actions still reso
   assert.equal(battle.snapshot.enemyHp, 66);
   assert.equal(battle.snapshot.playerHp, 80);
   assert.equal(battle.snapshot.turnCount, 4);
-  assert.match(battle.snapshot.log.join(' '), /TEST_DEGEN manifests/);
+  // The battle log is intentionally bounded, so the opening manifestation line may be trimmed.
+  // The active snapshot still identifies the manifested Degen after Mana reaches zero.
+  assert.equal(battle.snapshot.playerName, TEST_DEGEN.name);
+  assert.equal(battle.snapshot.playerMaxMana, TEST_DEGEN.maxMana);
   assert.equal(completed.length, 0);
 });
