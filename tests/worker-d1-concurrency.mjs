@@ -257,20 +257,16 @@ try {
   assert.equal(raceReceipt.player.xp, 145);
   assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-complete:victory'"), [{ count: 1 }]);
 
+  const zeroManaAfterFree = sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='zero-mana'");
+  assert.deepEqual(zeroManaAfterFree, [{
+    player_hp: 110, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active',
+  }]);
   const denied = await post('/api/battle/action', {
     playerId: 'integration-player', permitId: 'zero-mana', abilityId: 'crack', expectedTurnCount: 0,
   });
   assert.equal(denied.status, 409);
   assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='zero-mana'"),
-    [{ player_hp: 120, player_mana: 0, enemy_hp: 92, turn_count: 0, battle_status: 'active' }]);
-  const free = await post('/api/battle/action', {
-    playerId: 'integration-player', permitId: 'zero-mana', abilityId: 'slash', expectedTurnCount: 0,
-  });
-  assert.equal(free.status, 200);
-  assert.equal(free.data.playerMana, 0);
-  assert.equal(free.data.enemyHp, 63);
-  assert.equal(free.data.turnCount, 1);
-  assert.equal(free.data.status, 'active');
+    zeroManaAfterFree, 'rejected paid action must not change the already-resolved battle state');
   console.log('PASS local Worker/D1 HTTP: bootstrap, world, combat, Mana, event closure, reward replay');
 
   console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
