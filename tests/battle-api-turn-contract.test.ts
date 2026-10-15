@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
+import { withBattleActionRetry } from '../src/app/battleActionRetry.ts';
 
 // Exercise the real API adapter with a deterministic fetch stub. This verifies
 // the client/Worker turn contract without pretending to run a browser or Worker.
@@ -20,6 +21,7 @@ function createApi(fetchImpl: typeof fetch) {
     AbortController,
     setTimeout,
     clearTimeout,
+    withBattleActionRetry,
   }) as {
     GameApi: new () => {
       actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<{

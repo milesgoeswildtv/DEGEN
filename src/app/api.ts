@@ -1,4 +1,5 @@
 import type { BattleActionResult, BattleCompletionResult, BattlePermit, HousingState, PlatformIdentity, PlayerState, WorldEventSnapshot } from '../domain/types';
+import { withBattleActionRetry } from './battleActionRetry';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
@@ -67,10 +68,12 @@ export class GameApi {
 
   async actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<BattleActionResult | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<BattleActionResult>('/api/battle/action', {
-      method: 'POST',
-      body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
-    });
+    return withBattleActionRetry(expectedTurnCount, (turnCount, signal) =>
+      this.request<BattleActionResult>('/api/battle/action', {
+        method: 'POST',
+        signal,
+        body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount: turnCount }),
+      }));
   }
 
   async completeUnderpass(playerId: string, permitId: string): Promise<BattleCompletionResult | undefined> {
