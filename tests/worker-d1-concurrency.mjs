@@ -228,16 +228,20 @@ try {
   // Exercise the real Worker HTTP route inside the final fractional second.
   // Whole-second datetime() rejects this still-live permit; julianday() must
   // accept it until the exact ISO millisecond expiry.
-  const fractionalExpiryBoundary = Math.floor(Date.now() / 1000) * 1000 + 12_000;
+  const fractionalExpiryBoundary = Math.floor(Date.now() / 1000) * 1000 + 25_000;
   const fractionalExpiry = new Date(fractionalExpiryBoundary + 990).toISOString();
   const fractionalExpirySql = join(scratch, 'fractional-expiry.sql');
   writeFileSync(fractionalExpirySql,
     `UPDATE battle_permits SET expires_at='${fractionalExpiry}' WHERE id='fractional-expiry';`);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + fractionalExpirySql]);
-  await sleep(Math.max(0, fractionalExpiryBoundary - Date.now() + 10));
-  assert.ok(Date.now() < Date.parse(fractionalExpiry), 'fractional-expiry fixture must still be live');
+  // Read D1 before the narrow timing window: Wrangler CLI startup can consume
+  // the final fractional second and turn a valid request into a false expiry.
   const fractionalBefore = permitState('fractional-expiry');
   assert.equal(fractionalBefore.turn_count, 0);
+  await sleep(Math.max(0, Date.parse(fractionalExpiry) - Date.now() - 800));
+  assert.ok(Date.now() < Date.parse(fractionalExpiry), 'fractional-expiry fixture must still be live');
+  assert.ok(Date.parse(fractionalExpiry) - Date.now() < 1000,
+    'the action must begin during the final fractional second before expiry');
   const fractionalAction = await action('fractional-expiry', 'crack', 'integration-player', 0);
   assert.equal(fractionalAction.status, 200, JSON.stringify(fractionalAction));
   assertMatchesSharedTurn(fractionalAction.data, sharedMath.parallelFirst, 1);
