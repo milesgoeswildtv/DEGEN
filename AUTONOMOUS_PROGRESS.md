@@ -78,3 +78,16 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1: existing binding and tracked migrations unchanged; schema/migrations precede Worker deploy. No remote D1 writes.
 - Blocker: bootstrap still trusts client-provided player/platform IDs. Immutable binding is not authentication. Public economy must remain gated; no Miles design blocker.
 - Next: verify final-head CI and Worker/D1 test, open reviewed draft PR, then implement verified Discord/Telegram sessions and per-route authorization.
+
+
+## Identity bootstrap race hardening — 2026-10-15
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Branch: `automation/degen/identity-binding-immutability-v01`, based on main and three commits ahead before this follow-up; current prior head `afa206c3776e8f86fdbfffc53f0040b3af49aded`. This work remains feature-branch-only until reviewed and merged.
+- Task: close the race where concurrent first-time platform identity requests could create player/character/bootstrap rows before one identity upsert lost with HTTP 409.
+- Changed: `worker/index.ts` applies the same conditional identity-ownership predicate to every bootstrap insert/upsert inside one D1 batch, conditionally inserts the identity row, and returns conflict when the requested binding is not owned by that player. Starter housing insert is idempotent. `tests/identity-binding.test.ts` now exercises the guarded SQL shape. `tests/worker-d1-identity-binding.mjs` asserts an eight-way first-binding race leaves exactly one player's character, starter inventory, locations, and housing. No schema/migration change.
+- QA status: patch prepared for branch delivery; no test/build/Worker-D1 result is claimed until exact-head CI returns. Required gates: `npm test`, isolated local Worker/D1 reward and identity harnesses, `npm run build`, and `npm run check:worker`.
+- Mana: complete/merged on main; player-only Mana authority and no 0-Mana reversion unchanged.
+- Battle/reward authority: reward receipt/idempotency is merged on main; stricter client/Worker turn-recovery work remains in unmerged PRs. No client-computed reward path introduced.
+- D1/deploy assumptions: existing platform identity primary key and player foreign key remain the source of truth; the fix uses D1 batch atomicity and adds no migration. Deploy workflow applies schema/migrations before Worker code. No remote D1 mutation or deployment.
+- Security blocker: platform/player IDs remain client supplied; immutable binding is not platform authentication. Keep public economic gameplay gated until verified Discord/Telegram identity and per-request authorization exist.
+- Best next task: inspect exact-head CI and local Worker/D1 no-orphan assertion, then continue verified-session authorization without enabling public economy prematurely.

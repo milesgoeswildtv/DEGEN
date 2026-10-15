@@ -83,7 +83,15 @@ try {
     ['telegram', 'uid', 'other-player'],
   ]);
   assert.equal(rows.find(row => row.platform === 'discord' && row.platform_user_id === 'uid').display_name, 'Renamed');
-  console.log('PASS local Worker/D1: immutable binding, retry, namespace isolation, 8-way first-binding race');
+
+  const accountOutput = cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=SELECT (SELECT COUNT(*) FROM players WHERE id LIKE 'racer-%' OR id = 'late-attacker') AS players, (SELECT COUNT(*) FROM characters WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS characters, (SELECT COUNT(*) FROM player_inventory WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS inventory, (SELECT COUNT(*) FROM unlocked_locations WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS locations, (SELECT COUNT(*) FROM housing_placements WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS housing", '--json']);
+  const accountParsed = JSON.parse(accountOutput);
+  const accountRows = Array.isArray(accountParsed) ? accountParsed[0]?.results : accountParsed.results;
+  assert.ok(Array.isArray(accountRows), 'D1 must return bootstrap side-effect counts');
+  assert.deepEqual({ ...accountRows[0] }, { players: 1, characters: 1, inventory: 4, locations: 3, housing: 1 },
+    'losing first-binding requests must not leave orphan player, character, inventory, location, or housing rows');
+  console.log('PASS local Worker/D1: immutable binding, retry, namespace isolation, 8-way first-binding race, no orphan bootstrap rows');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');

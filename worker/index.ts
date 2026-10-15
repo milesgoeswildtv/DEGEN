@@ -55,20 +55,65 @@ type BattlePermitStateRow = {
   turn_count: number;
 };
 
-async function ensurePlayer(db: D1Database, playerId: string, displayName: string): Promise<void> {
-  await db.batch([
-    db.prepare(`INSERT INTO players (id, display_name) VALUES (?, ?)
-      ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP`).bind(playerId, displayName.slice(0, 32)),
-    db.prepare(`INSERT OR IGNORE INTO characters (player_id, level, xp, currency, degen_key) VALUES (?, 1, 0, 0, 'test-degen')`).bind(playerId),
-    ...STARTER_LOCATIONS.map((location) => db.prepare(`INSERT OR IGNORE INTO unlocked_locations (player_id, location_key) VALUES (?, ?)`).bind(playerId, location)),
-    ...STARTER_FURNITURE.map((item) => db.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES (?, ?, ?, 'furniture', 1)`).bind(`${playerId}:furniture:${item}`, playerId, item)),
-  ]);
+type PlatformIdentity = { platform: 'discord' | 'telegram'; platformUserId: string };
 
-  const housing = await db.prepare(`SELECT COUNT(*) AS count FROM housing_placements WHERE player_id = ?`).bind(playerId).first<{ count: number }>();
+async function ensurePlayer(
+  db: D1Database,
+  playerId: string,
+  displayName: string,
+  identity?: PlatformIdentity,
+): Promise<boolean> {
+  const normalizedName = displayName.slice(0, 32);
+  // Every bootstrap side effect shares the same identity-ownership predicate.
+  // D1 batch is atomic: a competing first-bind transaction that loses the
+  // identity race sees the winner here and performs no player bootstrap writes.
+  const guard = identity
+    ? `NOT EXISTS (SELECT 1 FROM platform_identities
+        WHERE platform = ? AND platform_user_id = ? AND player_id <> ?)`
+    : '1 = 1';
+  const guardValues = identity ? [identity.platform, identity.platformUserId, playerId] : [];
+  const statements: D1PreparedStatement[] = [
+    db.prepare(`INSERT INTO players (id, display_name) SELECT ?, ? WHERE ${guard}
+      ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP`)
+      .bind(playerId, normalizedName, ...guardValues),
+    db.prepare(`INSERT OR IGNORE INTO characters (player_id, level, xp, currency, degen_key)
+      SELECT ?, 1, 0, 0, 'test-degen' WHERE ${guard}`).bind(playerId, ...guardValues),
+    ...STARTER_LOCATIONS.map((location) => db.prepare(`INSERT OR IGNORE INTO unlocked_locations (player_id, location_key)
+      SELECT ?, ? WHERE ${guard}`).bind(playerId, location, ...guardValues)),
+    ...STARTER_FURNITURE.map((item) => db.prepare(`INSERT OR IGNORE INTO player_inventory
+      (id, player_id, item_key, item_type, quantity)
+      SELECT ?, ?, ?, 'furniture', 1 WHERE ${guard}`)
+      .bind(`${playerId}:furniture:${item}`, playerId, item, ...guardValues)),
+  ];
+
+  if (identity) {
+    statements.push(db.prepare(`INSERT INTO platform_identities
+      (platform, platform_user_id, player_id, display_name)
+      SELECT ?, ?, ?, ? WHERE ${guard}
+      ON CONFLICT(platform, platform_user_id) DO UPDATE SET display_name = excluded.display_name
+      WHERE platform_identities.player_id = excluded.player_id
+      RETURNING player_id`)
+      .bind(identity.platform, identity.platformUserId, playerId, normalizedName, ...guardValues));
+  }
+
+  await db.batch(statements);
+
+  if (identity) {
+    const linked = await db.prepare(`SELECT player_id FROM platform_identities
+      WHERE platform = ? AND platform_user_id = ? AND player_id = ?`)
+      .bind(identity.platform, identity.platformUserId, playerId).first<{ player_id: string }>();
+    if (!linked) return false;
+  }
+
+  const housing = await db.prepare(`SELECT COUNT(*) AS count FROM housing_placements WHERE player_id = ?`)
+    .bind(playerId).first<{ count: number }>();
   if ((housing?.count ?? 0) === 0) {
-    await db.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, 'starter-bed', 1, 1, 0)`)
+    await db.prepare(`INSERT OR IGNORE INTO housing_placements
+      (id, player_id, furniture_key, grid_x, grid_y, rotation)
+      VALUES (?, ?, 'starter-bed', 1, 1, 0)`)
       .bind(`${playerId}:starter-bed-placed`, playerId).run();
   }
+  return true;
 }
 
 async function loadPlayer(db: D1Database, playerId: string) {
@@ -160,28 +205,13 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
   if (!input.playerId) return fail(request, env, 'playerId is required');
   const platform = input.platform;
   const platformUserId = input.platformUserId;
-  const hasPlatformIdentity = (platform === 'discord' || platform === 'telegram') && !!platformUserId;
-  if (hasPlatformIdentity) {
-    const linked = await env.DB.prepare(`SELECT player_id FROM platform_identities
-      WHERE platform = ? AND platform_user_id = ?`)
-      .bind(platform, platformUserId).first<{ player_id: string }>();
-    if (linked && linked.player_id !== input.playerId) {
-      return fail(request, env, 'Platform identity is already linked to another player.', 409);
-    }
-  }
-  await ensurePlayer(env.DB, input.playerId, input.displayName || 'Player');
+  const identity = (platform === 'discord' || platform === 'telegram')
+    && typeof platformUserId === 'string' && platformUserId.length > 0
+    ? { platform, platformUserId } as PlatformIdentity
+    : undefined;
 
-  if (hasPlatformIdentity) {
-    // Guard identity ownership atomically against concurrent bootstrap requests.
-    // Platform credentials are NOT authenticated here; verification is a separate requirement.
-    const linked = await env.DB.prepare(`INSERT INTO platform_identities (platform, platform_user_id, player_id, display_name) VALUES (?, ?, ?, ?)
-      ON CONFLICT(platform, platform_user_id) DO UPDATE SET display_name = excluded.display_name
-      WHERE platform_identities.player_id = excluded.player_id
-      RETURNING player_id`)
-      .bind(platform, platformUserId, input.playerId, (input.displayName || 'Player').slice(0, 32))
-      .first<{ player_id: string }>();
-    if (!linked) return fail(request, env, 'Platform identity is already linked to another player.', 409);
-  }
+  const accepted = await ensurePlayer(env.DB, input.playerId, input.displayName || 'Player', identity);
+  if (!accepted) return fail(request, env, 'Platform identity is already linked to another player.', 409);
 
   const player = await loadPlayer(env.DB, input.playerId);
   return json(request, env, player);
