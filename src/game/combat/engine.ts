@@ -10,6 +10,7 @@ export interface BattleSnapshot {
   playerMaxHp: number;
   playerMana: number;
   playerMaxMana: number;
+  playerShield: number;
   enemyName: string;
   enemyLevel: number;
   enemyHp: number;
@@ -20,6 +21,7 @@ export interface BattleSnapshot {
 export class BattleEngine {
   private playerHp: number;
   private playerMana: number;
+  private playerShield = 0;
   private enemyHp: number;
   private status: BattleStatus = 'active';
   private log: string[] = [];
@@ -45,6 +47,7 @@ export class BattleEngine {
       playerMaxHp: this.degen.maxHp,
       playerMana: this.playerMana,
       playerMaxMana: this.degen.maxMana,
+      playerShield: this.playerShield,
       enemyName: this.enemy.name,
       enemyLevel: this.enemy.level,
       enemyHp: this.enemyHp,
@@ -68,11 +71,15 @@ export class BattleEngine {
     const playerDamage = Math.max(0, this.enemyHp - result.enemyHp);
     const retaliationDamage = Math.max(0, this.playerHp - result.playerHp);
     const manaSpent = Math.max(0, this.playerMana - result.playerMana);
+    const shieldGained = Math.max(0, result.playerShield + result.shieldAbsorbed - this.playerShield);
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
+    this.playerShield = result.playerShield;
     this.enemyHp = result.enemyHp;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${playerDamage} damage.`);
     if (manaSpent > 0) this.log.push(`Mana -${manaSpent}.`);
+    if (shieldGained > 0) this.log.push(`Shield +${shieldGained}.`);
+    if (result.shieldAbsorbed > 0) this.log.push(`Shield absorbs ${result.shieldAbsorbed}.`);
 
     if (result.status === 'victory') {
       this.status = 'victory';
@@ -111,23 +118,29 @@ export class BattleEngine {
       return;
     }
 
+    const previousShield = this.playerShield;
     const result = resolveCombatTurn({
       playerHp: this.playerHp,
       playerMana: this.playerMana,
+      playerShield: this.playerShield,
       enemyHp: this.enemyHp,
       ability,
       degen: this.degen,
       enemy: this.enemy,
     });
 
+    const shieldGained = Math.max(0, result.playerShield + result.shieldAbsorbed - previousShield);
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
+    this.playerShield = result.playerShield;
     this.enemyHp = result.enemyHp;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${result.playerDamage} damage.`);
 
     if (ability.manaCost > 0) {
       this.log.push(`Mana -${ability.manaCost}.`);
     }
+    if (shieldGained > 0) this.log.push(`Shield +${shieldGained}.`);
+    if (result.shieldAbsorbed > 0) this.log.push(`Shield absorbs ${result.shieldAbsorbed}.`);
 
     if (result.status === 'victory') {
       this.trimLog();
