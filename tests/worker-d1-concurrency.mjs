@@ -202,7 +202,8 @@ try {
       ('paid-nonlethal','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,8,60,0),
       ('zero-cost-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,20,0),
       ('parallel-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0),
-      ('closed-cycle-valid','integration-player','underpass','closed-cycle','tunnel-maw',datetime('now','+10 minutes'),'active',120,4,30,0);
+      ('closed-cycle-valid','integration-player','underpass','closed-cycle','tunnel-maw',datetime('now','+10 minutes'),'active',120,4,30,0),
+      ('fractional-expiry','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0);
     UPDATE battle_permits SET started_at=datetime('now','-30 minutes') WHERE id='expired';
     UPDATE battle_permits SET started_at=datetime('now','-10 minutes') WHERE id IN ('closed-cycle-valid','expired-victory');
   `);
@@ -223,6 +224,36 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  // Exercise the real Worker HTTP route inside the final fractional second.
+  // Whole-second datetime() rejects this still-live permit; julianday() must
+  // accept it until the exact ISO millisecond expiry.
+  const fractionalExpiryBoundary = Math.floor(Date.now() / 1000) * 1000 + 12_000;
+  const fractionalExpiry = new Date(fractionalExpiryBoundary + 990).toISOString();
+  const fractionalExpirySql = join(scratch, 'fractional-expiry.sql');
+  writeFileSync(fractionalExpirySql,
+    `UPDATE battle_permits SET expires_at='${fractionalExpiry}' WHERE id='fractional-expiry';`);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + fractionalExpirySql]);
+  await sleep(Math.max(0, fractionalExpiryBoundary - Date.now() + 10));
+  assert.ok(Date.now() < Date.parse(fractionalExpiry), 'fractional-expiry fixture must still be live');
+  const fractionalBefore = permitState('fractional-expiry');
+  assert.equal(fractionalBefore.turn_count, 0);
+  const fractionalAction = await action('fractional-expiry', 'crack', 'integration-player', 0);
+  assert.equal(fractionalAction.status, 200, JSON.stringify(fractionalAction));
+  assertMatchesSharedTurn(fractionalAction.data, sharedMath.parallelFirst, 1);
+  const fractionalAfter = permitState('fractional-expiry');
+  assert.deepEqual(fractionalAfter, {
+    player_hp: fractionalAction.data.playerHp,
+    player_mana: fractionalAction.data.playerMana,
+    enemy_hp: fractionalAction.data.enemyHp,
+    battle_status: fractionalAction.data.status,
+    turn_count: 1,
+  }, 'the near-expiry action must persist exactly one authoritative turn');
+  await sleep(Math.max(0, Date.parse(fractionalExpiry) - Date.now() + 30));
+  const expiredFractionalAction = await action('fractional-expiry', 'slash', 'integration-player', 1);
+  assert.equal(expiredFractionalAction.status, 409, 'an action after exact expiry must be rejected');
+  assert.deepEqual(permitState('fractional-expiry'), fractionalAfter,
+    'an expired action must not change HP, Mana, enemy HP, status, or turn count');
 
   // Exercise the full server-backed spine against isolated Worker/D1: bootstrap,
   // world snapshot, permit issuance, three authoritative turns, and reward receipt.
