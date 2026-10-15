@@ -352,6 +352,14 @@ try {
   const paid = await action('paid-kill', 'crack');
   assert.equal(paid.status, 200, JSON.stringify(paid));
   assertMatchesSharedTurn(paid.data, sharedMath.paidKill, 1);
+  const paidKillState = permitState('paid-kill');
+  assert.deepEqual(paidKillState, {
+    player_hp: 120, player_mana: 0, enemy_hp: 0, battle_status: 'victory', turn_count: 1,
+  }, 'paid killing blow must persist one exact Mana deduction and one terminal turn');
+  const duplicatePaidKill = await action('paid-kill', 'crack', 'integration-player', 1);
+  assert.equal(duplicatePaidKill.status, 409, 'a terminal paid action cannot be applied twice');
+  assert.deepEqual(permitState('paid-kill'), paidKillState,
+    'a duplicate terminal action must not deduct Mana or advance the turn again');
   const defeat = await action('defeat-case', 'slash');
   assert.equal(defeat.status, 200, JSON.stringify(defeat));
   assertMatchesSharedTurn(defeat.data, sharedMath.defeat, 1);
@@ -381,6 +389,14 @@ try {
   const freeKill = await action('zero-cost-kill', 'slash');
   assert.equal(freeKill.status, 200, JSON.stringify(freeKill));
   assertMatchesSharedTurn(freeKill.data, sharedMath.zeroCostKill, 1);
+  const freeKillState = permitState('zero-cost-kill');
+  assert.deepEqual(freeKillState, {
+    player_hp: 5, player_mana: 0, enemy_hp: 0, battle_status: 'victory', turn_count: 1,
+  }, 'zero-cost killing blow must work at zero Mana and persist no phantom resource change');
+  const duplicateFreeKill = await action('zero-cost-kill', 'slash', 'integration-player', 1);
+  assert.equal(duplicateFreeKill.status, 409, 'a terminal zero-cost action cannot be applied twice');
+  assert.deepEqual(permitState('zero-cost-kill'), freeKillState,
+    'zero-Mana terminal retries must leave the persisted battle state unchanged');
   const beforeInvalidTurn = permitState('parallel-action');
   assert.equal((await action('parallel-action', 'crack', 'integration-player', -1)).status, 400);
   assert.equal((await action('parallel-action', 'crack', 'integration-player', 0.5)).status, 400);
