@@ -261,3 +261,16 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - Mana remains COMPLETE / MERGED; no monster Mana or zero-Mana reversion. Battle authority and reward idempotency remain server-owned. D1 migrations 0002–0005 are tracked and deployment order is schema → migrations → Worker. No production DB writes/deployment.
 - Release blockers: PR #9/#10/#11 integration order, signed Discord/Telegram identity and per-request ownership, production Pages CORS/API connectivity, and real browser/mobile/platform QA.
 - Best next task: verify exact-head CI, then perform a line-by-line integration review of PR #12 against #9/#10/#11 before any merge; do not begin Shield until this reliability slice is integrated safely.
+
+## 2026-10-15 — Persisted Mana deduction and terminal replay assertions (PUSHED / PR #12; CI pending)
+
+- Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Current delivery: draft PR #12, branch `automation/degen/permit-millisecond-expiry-v02`; new test commit `de8929476988307948addf3be2927a3f4307f888` follows previously CI-green head `d1352ad135962b2dcaf575d024b646a579ff3542`.
+- Changed only `tests/worker-d1-concurrency.mjs`: after a paid killing blow, assert the persisted D1 permit is exactly HP 120, Mana 0, enemy HP 0, victory, turn 1; replay the terminal paid action and assert 409 plus byte-for-byte-equivalent state. Repeat for a zero-cost killing blow starting at 0 Mana (HP 5, Mana 0, enemy HP 0, victory, turn 1). These checks validate persisted Worker/D1 state, not only response math.
+- Previous exact-head CI run `38566798629` passed on `d1352ad135962b2dcaf575d024b646a579ff3542`. The new test commit has been pushed; fresh CI for `de8929476988307948addf3be2927a3f4307f888` is required before claiming these assertions pass. No local npm test/build/Worker dry run is claimed because no repository checkout is available in this runtime.
+- Mana remains COMPLETE / MERGED on main: authoritative initial/persisted player Mana, shared deterministic turn resolution, insufficient-Mana rejection without state mutation, exact paid deduction, zero-cost use at zero, no monster Mana and no Mana-triggered reversion. Prototype values remain scaffolding.
+- Battle authority and reward-receipt idempotency are merged on main. PR #12 remains draft and overlaps PRs #9/#10/#11; do not merge cumulatively or bypass the client-first-before-strict-turn sequence.
+- D1 assumptions verified from source: tracked migrations `0002_authoritative_battle_state.sql` through `0005_reward_claim_character_guard.sql`; Worker deploy workflow applies schema, then migrations, then Worker. No schema/migration, binding, remote D1, or deployment change in this slice.
+- Miles blocker/release gates unchanged: signed Discord/Telegram identity and per-request player ownership are not wired into main routes; production Pages origin/CORS/API connectivity and real browser/mobile/platform gameplay remain unverified.
+- Best next task: inspect fresh exact-head CI for this commit, then reconcile PR #12 with #9/#10/#11 into a release-safe frontend-first sequence before beginning generic temporary Shield support.
+
