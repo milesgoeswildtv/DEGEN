@@ -63,7 +63,8 @@ try {
       ('client-first','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0),
-      ('race-complete','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0);
+      ('race-complete','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0),
+      ('race-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -256,6 +257,24 @@ try {
   assert.equal(raceReceipt.player.level, 2);
   assert.equal(raceReceipt.player.xp, 145);
   assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-complete:victory'"), [{ count: 1 }]);
+
+  // Concurrent submissions against the same observed turn must apply exactly once.
+  const competingActions = await Promise.all(Array.from({ length: 8 }, () => post('/api/battle/action', {
+    playerId: 'integration-player', permitId: 'race-action', abilityId: 'crack', expectedTurnCount: 0,
+  })));
+  const acceptedActions = competingActions.filter(({ status }) => status === 200);
+  assert.equal(acceptedActions.length, 1, 'only one action may win the permit turn-count CAS');
+  assert.ok(competingActions.every(({ status }) => [200, 409].includes(status)));
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='race-action'"),
+    [{ player_hp: 120, player_mana: 0, enemy_hp: 0, turn_count: 1, battle_status: 'victory' }],
+    'losing concurrent actions must not spend Mana or advance combat twice');
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-action:victory'"), [{ count: 0 }],
+    'a killing blow must not grant rewards before completion');
+  const raceActionReceipt = await eventuallyComplete('race-action');
+  assert.equal(raceActionReceipt.reward.tier, 'reduced');
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-action:victory'"), [{ count: 1 }]);
+  assert.deepEqual(sql("SELECT player_mana,turn_count,battle_status,reward_state FROM battle_permits WHERE id='race-action'"),
+    [{ player_mana: 0, turn_count: 1, battle_status: 'victory', reward_state: 'awarded' }]);
 
   const zeroManaAfterFree = sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='zero-mana'");
   assert.deepEqual(zeroManaAfterFree, [{
