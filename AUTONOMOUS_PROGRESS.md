@@ -1,55 +1,47 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-08
+Updated: 2026-10-16
 
 ## Authoritative runtime
-- Repository: `milesgoeswildtv/DEGEN`
-- Integration branch: `main`
-- Authoritative main SHA at this run: `2df79a123a022212721634c048147d8bf935566a`.
+- Repository: `milesgoeswildtv/DEGEN`; protected integration branch: `main`.
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
 - Stack: TypeScript + Vite + Phaser + DOM/CSS; Cloudflare Worker + D1.
-- Core vertical slice: Map -> Home -> Underpass -> Battle -> Loot -> Home.
+- Core vertical slice: Map -> Home -> Underpass -> Degen-only Battle -> server-owned Loot/XP -> Home.
 
-## Locked product / engineering constraints
-- Combat is Degen-only; NPCs never have Degens.
-- Stability/Break is retired and must not return.
-- Monsters never use Mana or a renamed universal resource.
-- Glitchrat LEAK is Degen-specific and unavailable to monsters.
-- World navigation is map/location based, not open-world traversal.
-- Server owns persistent progression, rewards, world events, permits, housing, and other economic truth.
+## Locked canon and completed gameplay foundation
+- Stability/Break is retired. Combat is Degen-only; NPCs never have Degens.
+- Degen-only Mana is COMPLETE / MERGED on main: `maxMana`, ability `manaCost`, server-owned permit Mana, authoritative action results, pure rejection of unaffordable abilities, exact paid deduction, free actions at 0 Mana, and no Mana-triggered reversion.
+- Monsters have no Mana or universal equivalent resource. Prototype Mana values are scaffolding, not final balance.
+- Main contains Worker-resolved battle state and idempotent/recoverable reward receipts. Rewards/economy remain server-owned.
+- Reward lifecycle hardening and migrations `0004_reward_receipt.sql` / `0005_reward_claim_character_guard.sql` are merged on main.
+- Endpoint-level integration expansion is PUSHED / PR #10 (draft, unmerged); its latest observed CI run `38910917930` completed successfully on branch head `4d0fff55db1284de1369a012e08465701c3a7f8b`. This is branch CI, not a merge or production proof.
 
-## Completed production milestones
-- Stability/Break removed from prototype combat engine, types, data, and battle UI.
-- Underpass combat actions are server-validated through `POST /api/battle/action`.
-- Battle permits persist authoritative player HP, enemy HP, battle status, turn count, and Degen Mana.
-- `/api/battle/complete` requires a server-resolved victory before granting rewards.
-- Degen-only Mana foundation is merged on `main`: Degen max Mana and ability costs are shared across client/Worker rules; unaffordable actions reject without advancing state; successful paid abilities deduct once; zero-cost abilities remain usable at 0 Mana; monsters have no Mana field; 0 Mana does not revert the Degen.
-- D1 migration for authoritative battle Mana/state is tracked and deploy ordering applies schema + migrations before Worker code.
-- Client and Worker share one deterministic turn resolver.
+## Current slice — PUSHED / PR #14 (DRAFT, UNMERGED)
+- Branch: `automation/degen/verified-session-store-v01`.
+- Scope: `db/migrations/0006_player_sessions.sql`, `worker/auth/sessionStore.ts`, and new `tests/player-session-store.test.ts`.
+- Session helper stores only SHA-256 token digests, issues bounded-lifetime opaque bearer tokens, resolves only unexpired/unrevoked sessions, and supports idempotent revocation. It is NOT wired into Worker routes; do not treat it as production authentication.
+- Test commit before this continuity update: `0e824e51a7d6900f628415d9b4fe9839f7c0521b`.
+- LOCAL targeted evidence: 6/6 session-store tests PASS in an isolated Node 22.16.0 + SQLite fixture using the exact helper, migration, and test source. This is not full repository CI.
+- Fresh GitHub Actions CI on the new test commit is pending. The prior helper-only CI run `38707094319` passed before these tests existed; it does not validate the new test file.
+- Repository clone/full-suite execution was unavailable in this environment because `github.com` DNS resolution failed. No claim that full `npm test`, build, or Worker checks passed on this head.
 
-## Current slice — PUSHED / PR
-- PR #5: `automation/degen/reward-authority-v22` -> `main`.
-- Reward lifecycle is persisted as pending/claiming/awarded with a 60-second stale-claim lease.
-- Fresh claims require an unexpired server-resolved victory; recovery reuses the persisted clear number.
-- Award writes are claim-token guarded and batched; victory history uses permit ID deterministically; awarded retries replay the persisted receipt.
-- `db/migrations/0004_reward_receipt.sql` is tracked; no production D1 migration has been executed from this branch.
-- Permit expiry hardening is now folded into PR #5 by fast-forward: all three authoritative checks use `datetime(expires_at) > CURRENT_TIMESTAMP`.
-- `tests/reward-authority.test.ts` covers migration defaults, expired/non-victory rejection, duplicate live-claim rejection, stale-claim recovery, preserved clear number, and terminal awarded receipts; Node 22 SQLite rows are normalized before deep equality.
-- Current PR head before this continuity commit: `55d1152373d6602696593a39d26fda7793fa10a8`.
-- CI status: fresh PR-head CI is required after folding the expiry commits into PR #5. Do not merge until `npm test`, `npm run build`, and `npm run check:worker` are green.
+## Battle authority, reward reliability, and D1 assumptions
+- Worker owns player/enemy HP, Degen Mana, battle status, turn count, victory validation, reward tier, XP, currency, inventory, and reward receipt state.
+- Main includes reward idempotency/recovery; PR #10 adds real isolated Worker/D1 HTTP coverage for invalid/expired permits, same-turn replay, concurrent actions/completions, event closure, full/reduced clears, level-up math, and expired-victory recovery.
+- PR #9, #11, and #12 remain open drafts; reconcile overlapping Worker changes rather than deploying stricter expected-turn enforcement before compatible client rollout.
+- Main's `wrangler.toml` is the D1 binding/config source of truth. `deploy-worker.yml` applies `db/schema.sql` and tracked migrations before Worker deploy.
+- Migration `0006_player_sessions.sql` exists only on PR #14. It has NOT been merged or applied to production. No production D1 mutation, Worker deployment, or Pages deployment occurred in this run.
 
-## Battle authority / reward idempotency
-- Mana authority: COMPLETE / MERGED on main.
-- Reward recoverability/idempotency: PUSHED / PR, not merged or live.
-- Permit expiry format regression: fixed on PR branch, awaiting fresh CI.
-- Remaining coverage priority: concurrent action/completion attempts, duplicate completion at endpoint level, invalid permits, and full/reduced clear + level-up integration.
-
-## Deployment / persistence
-- No production D1 mutation or deployment was performed by this slice.
-- `deploy-worker.yml` applies D1 schema, then tracked migrations, then deploys Worker code.
-- `wrangler.toml` remains the source of truth for the existing D1 binding/config; no deployment config was changed.
+## Release/security blockers
+- PR #14 is a storage/helper slice only: no Telegram/Discord identity verification, session issuance route, bearer authorization middleware, or per-player route ownership is wired.
+- PR #13's Telegram initData verifier remains separate and unintegrated; Discord verification still needs an approved verified identity path.
+- Current Worker bootstrap accepts caller-supplied player identifiers/platform identity. Do not expose public economic gameplay until verified platform provisioning and per-request ownership are enforced.
+- Live Pages-to-Worker requests and embedded Telegram/Discord gameplay were not verified in this run.
 
 ## Best next task
-Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and merge only if authority/idempotency invariants remain intact. If CI fails, fix the smallest failing regression on the same branch. After reward authority is merged, add endpoint-level concurrency/duplicate-completion integration coverage before generic Shield work.
+Integrate verified platform identity and hashed-session primitives into a narrow Worker authentication slice, with fail-closed per-request player ownership tests. Preserve browser preview mode without allowing unauthenticated server-backed economic actions; do not deploy or apply migrations until reviewed and explicitly released.
+
+## Historical record
 
 ## Latest verified run — 2026-10-08
 - Main SHA: `2df79a123a022212721634c048147d8bf935566a`.
