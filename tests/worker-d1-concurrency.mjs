@@ -33,6 +33,14 @@ async function complete(permitId, playerId = 'integration-player') {
   });
   return { status: r.status, data: await r.json() };
 }
+
+const post = async (path, payload) => {
+  const r = await fetch(base + path, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return { status: r.status, data: await r.json() };
+};
 async function eventuallyComplete(id) {
   for (let n = 0; n < 10; n++) {
     const r = await complete(id);
@@ -198,13 +206,6 @@ try {
   assert.equal((await complete('expired')).status, 409);
 
   // Real local Worker/D1 HTTP vertical slice: no client-computed rewards.
-  const post = async (path, payload) => {
-    const r = await fetch(base + path, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    return { status: r.status, data: await r.json() };
-  };
   const pid = 'vertical-player';
   const bootstrap = await post('/api/player/bootstrap', {
     playerId: pid, displayName: 'Vertical', platform: 'browser', platformUserId: pid,
