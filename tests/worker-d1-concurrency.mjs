@@ -259,9 +259,14 @@ try {
   assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-complete:victory'"), [{ count: 1 }]);
 
   // Concurrent submissions against the same observed turn must apply exactly once.
-  const competingActions = await Promise.all(Array.from({ length: 8 }, () => post('/api/battle/action', {
-    playerId: 'integration-player', permitId: 'race-action', abilityId: 'crack', expectedTurnCount: 0,
-  })));
+  let competingActions;
+  try {
+    competingActions = await Promise.all(Array.from({ length: 8 }, () => post('/api/battle/action', {
+      playerId: 'integration-player', permitId: 'race-action', abilityId: 'crack', expectedTurnCount: 0,
+    })));
+  } catch (error) {
+    throw new Error(`Concurrent action request failed: ${error instanceof Error ? error.message : String(error)}\\nWorker logs:\\n${logs}`);
+  }
   const acceptedActions = competingActions.filter(({ status }) => status === 200);
   assert.equal(acceptedActions.length, 1, 'only one action may win the permit turn-count CAS');
   assert.ok(competingActions.every(({ status }) => [200, 409].includes(status)));
