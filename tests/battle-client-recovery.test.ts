@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { withBattleActionRetry } from '../src/app/battleActionRetry.ts';
 
 const src = readFileSync(new URL('../src/game/combat/engine.ts',import.meta.url),'utf8')
   .replace(/^import .*;\n/gm,'').replace('export class BattleEngine','class BattleEngine');
@@ -56,7 +57,7 @@ function apiWith(handler) {
   const calls=[];
   const classes=runInNewContext(stripTypeScriptTypes(apiSource,{mode:'transform'})+
     '\n({GameApi,BattleTurnConflictError});',
-    {Response,fetch:async(url,init)=>{calls.push({url,init});return handler(url,init);}});
+    {Response,AbortController,DOMException,setTimeout,clearTimeout,withBattleActionRetry,fetch:async(url,init)=>{calls.push({url,init});return handler(url,init);}});
   return {api:new classes.GameApi(),calls,BattleTurnConflictError:classes.BattleTurnConflictError};
 }
 
