@@ -60,6 +60,7 @@ try {
       VALUES('integration-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('expired-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -73,7 +74,8 @@ try {
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0),
       ('race-complete','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0),
-      ('race-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0);
+      ('race-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0),
+      ('expired-victory','integration-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -339,7 +341,18 @@ try {
   assert.equal(denied.status, 409);
   assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='zero-mana'"),
     zeroManaAfterFree, 'rejected paid action must not change the already-resolved battle state');
-  console.log('PASS local Worker/D1 HTTP: bootstrap, world, combat, Mana, event closure, reward replay');
+  const currentCycleClearsBeforeRecovery = sql("SELECT full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='integration-cycle'");
+  const recoveredExpiredVictory = await eventuallyComplete('expired-victory');
+  assert.equal(recoveredExpiredVictory.reward.tier, 'full');
+  assert.equal(recoveredExpiredVictory.worldEvent.cycleId, 'expired-cycle');
+  assert.equal(recoveredExpiredVictory.worldEvent.phase, 'sealed');
+  assert.deepEqual(sql("SELECT reward_state,reward_clear_number FROM battle_permits WHERE id='expired-victory'"), [{reward_state:'awarded',reward_clear_number:1}]);
+  assert.deepEqual(sql("SELECT full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='integration-cycle'"),
+    currentCycleClearsBeforeRecovery, 'old-cycle victory recovery must not consume the current cycle quota');
+  const recoveredReplay = await complete('expired-victory');
+  assert.equal(recoveredReplay.status, 200);
+  assert.deepEqual(recoveredReplay.data.reward, recoveredExpiredVictory.reward);
+  console.log('PASS local Worker/D1 HTTP: bootstrap, world, combat, Mana, expired victory recovery, reward replay');
 
   console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
 } finally {
