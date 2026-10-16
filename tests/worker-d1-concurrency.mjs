@@ -18,6 +18,13 @@ let logs = '';
 function cli(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
+  return r.stdout;
+}
+function sql(query) {
+  const raw = JSON.parse(cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--json', '--command=' + query]));
+  const row = Array.isArray(raw) ? raw[0] : raw;
+  return row?.results ?? row?.result?.[0]?.results ?? [];
 }
 async function complete(permitId, playerId = 'integration-player') {
   const r = await fetch(base + '/api/battle/complete', {
@@ -26,6 +33,14 @@ async function complete(permitId, playerId = 'integration-player') {
   });
   return { status: r.status, data: await r.json() };
 }
+
+const post = async (path, payload) => {
+  const r = await fetch(base + path, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return { status: r.status, data: await r.json() };
+};
 async function eventuallyComplete(id) {
   for (let n = 0; n < 10; n++) {
     const r = await complete(id);
@@ -45,6 +60,7 @@ try {
       VALUES('integration-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('expired-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -52,7 +68,14 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
+      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',70,0,20,3),
+      ('client-first','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
+      ('legacy-client','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
+      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
+      ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0),
+      ('race-complete','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0),
+      ('race-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0),
+      ('expired-victory','integration-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -71,6 +94,98 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+  // The currently deployed permissive Worker must accept the future client's
+  // turn precondition before the strict Worker release is allowed.
+  const clientFirstResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'client-first',
+      abilityId: 'crack', expectedTurnCount: 0 }),
+  });
+  assert.equal(clientFirstResponse.status, 200);
+  const clientFirstAction = await clientFirstResponse.json();
+  assert.equal(clientFirstAction.turnCount, 1);
+  assert.equal(clientFirstAction.playerMana, 8);
+  assert.equal(clientFirstAction.status, 'active');
+
+  // A lost response may retry the same observed turn, but must not spend Mana or
+  // damage the enemy twice. The Worker returns its latest state for reconciliation.
+  const afterClientFirst = sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='client-first'");
+  const replayResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'client-first',
+      abilityId: 'crack', expectedTurnCount: 0 }),
+  });
+  assert.equal(replayResponse.status, 409);
+  const replayState = await replayResponse.json();
+  assert.deepEqual(replayState.battleState, {
+    permitId: 'client-first', status: 'active', playerHp: 110, playerMana: 8,
+    enemyHp: 57, turnCount: 1,
+  });
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='client-first'"),
+    afterClientFirst, 'stale retry must not change persisted battle state');
+  const invalidPrecondition = await post('/api/battle/action', {
+    playerId: 'integration-player', permitId: 'client-first', abilityId: 'crack', expectedTurnCount: -1,
+  });
+  assert.equal(invalidPrecondition.status, 400);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='client-first'"),
+    afterClientFirst, 'invalid turn preconditions must not mutate combat');
+
+  // A legacy client that omits expectedTurnCount remains compatible during rollout.
+  const legacyResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'legacy-client', abilityId: 'crack' }),
+  });
+  assert.equal(legacyResponse.status, 200);
+  const legacyAction = await legacyResponse.json();
+  assert.equal(legacyAction.turnCount, 1);
+  assert.equal(legacyAction.playerMana, 8);
+
+  // Insufficient Mana must be a pure rejection; a free bespoke ability remains legal at zero.
+  const zeroManaBefore = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='zero-mana'");
+  assert.deepEqual(zeroManaBefore, [{
+    player_hp: 120, player_mana: 0, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+  }]);
+  const unaffordable = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'zero-mana',
+      abilityId: 'crack', expectedTurnCount: 0 }),
+  });
+  assert.equal(unaffordable.status, 409);
+  assert.deepEqual(sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='zero-mana'"),
+    zeroManaBefore, 'rejected paid action must not change HP, Mana, enemy HP, status, or turn count');
+
+  const freeResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'zero-mana',
+      abilityId: 'slash', expectedTurnCount: 0 }),
+  });
+  assert.equal(freeResponse.status, 200);
+  const freeAction = await freeResponse.json();
+  assert.deepEqual([
+    freeAction.status, freeAction.playerHp, freeAction.playerMana, freeAction.enemyHp, freeAction.turnCount,
+  ], ['active', 110, 0, 63, 1]);
+  assert.deepEqual(sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='zero-mana'"), [{
+    player_hp: 110, player_mana: 0, enemy_hp: 63, battle_status: 'active', turn_count: 1,
+  }]);
+
+  // A bad, expired, or wrong-account permit cannot authorize an action.
+  const rejectAction = async (permitId, playerId = 'integration-player') => {
+    const response = await fetch(base + '/api/battle/action', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId, permitId, abilityId: 'crack', expectedTurnCount: 0 }),
+    });
+    return response.status;
+  };
+  assert.equal(await rejectAction('missing-permit'), 409);
+  assert.equal(await rejectAction('expired-active'), 409);
+  assert.equal(await rejectAction('client-first', 'wrong-player'), 409);
+  assert.equal((await complete('expired-active')).status, 409);
+  assert.equal((await complete('missing-permit')).status, 409);
+  assert.equal((await complete('client-first')).status, 409);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='expired-active'"),
+    [{player_hp:120,player_mana:12,enemy_hp:92,turn_count:0}]);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='client-first'"),
+    [{player_hp:110,player_mana:8,enemy_hp:57,turn_count:1}]);
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
@@ -91,6 +206,154 @@ try {
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
   assert.equal((await complete('expired')).status, 409);
+
+  // Real local Worker/D1 HTTP vertical slice: no client-computed rewards.
+  const pid = 'vertical-player';
+  const bootstrap = await post('/api/player/bootstrap', {
+    playerId: pid, displayName: 'Vertical', platform: 'browser', platformUserId: pid,
+  });
+  assert.equal(bootstrap.status, 200);
+  assert.equal(bootstrap.data.id, pid);
+  assert.equal(bootstrap.data.level, 1);
+  const worldResponse = await fetch(base + '/api/world/underpass?playerId=' + pid);
+  assert.equal(worldResponse.status, 200);
+  const world = await worldResponse.json();
+  assert.equal(world.source, 'server');
+  assert.equal(world.phase, 'open');
+  assert.equal(world.cycleId, 'integration-cycle');
+  const start = await post('/api/battle/start', {
+    playerId: pid, eventKey: 'underpass', cycleId: world.cycleId, encounterKey: 'tunnel-maw',
+  });
+  assert.equal(start.status, 200);
+  const permitId = start.data.permitId;
+  assert.ok(typeof permitId === 'string' && permitId.length > 0);
+  assert.equal((await complete(permitId, pid)).status, 409);
+  // A legitimate permit must remain playable after the world event closes.
+  sql("UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='integration-cycle'");
+  const sealedEntry = await post('/api/battle/start', {
+    playerId: pid, eventKey: 'underpass', cycleId: world.cycleId, encounterKey: 'tunnel-maw',
+  });
+  assert.equal(sealedEntry.status, 409, 'closure blocks new entry but not issued permits');
+  for (const [index, expected] of [
+    { playerHp: 110, playerMana: 8, enemyHp: 57, status: 'active' },
+    { playerHp: 100, playerMana: 4, enemyHp: 22, status: 'active' },
+    { playerHp: 100, playerMana: 0, enemyHp: 0, status: 'victory' },
+  ].entries()) {
+    const action = await post('/api/battle/action', {
+      playerId: pid, permitId, abilityId: 'crack', expectedTurnCount: index,
+    });
+    assert.equal(action.status, 200);
+    assert.equal(action.data.turnCount, index + 1);
+    assert.equal(action.data.permitId, permitId);
+    for (const [key, value] of Object.entries(expected)) assert.equal(action.data[key], value, key);
+    assert.equal('enemyMana' in action.data, false);
+  }
+  // A retry after a lost killing-blow response receives the terminal Worker state,
+  // not another action or a fabricated client-side victory.
+  const terminalBeforeRetry = sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='" + permitId + "'");
+  const terminalRetry = await post('/api/battle/action', {
+    playerId: pid, permitId, abilityId: 'crack', expectedTurnCount: 2,
+  });
+  assert.equal(terminalRetry.status, 409);
+  assert.deepEqual(terminalRetry.data.battleState, {
+    permitId, status: 'victory', playerHp: 100, playerMana: 0, enemyHp: 0, turnCount: 3,
+  });
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='" + permitId + "'"),
+    terminalBeforeRetry, 'terminal retry must not mutate the killing blow');
+
+  // Concurrent completion of the same earned victory must never double-pay.
+  const competingClaims = await Promise.all(Array.from({ length: 8 }, () => complete(permitId, pid)));
+  assert.ok(competingClaims.every(({ status }) => [200, 409, 500].includes(status)));
+  const earlyHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='" + permitId + ":victory'");
+  assert.ok(earlyHistory[0].count <= 1, 'concurrent claims cannot duplicate victory history');
+  let receipt;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const result = await complete(permitId, pid);
+    if (result.status === 200) { receipt = result.data; break; }
+    assert.ok([409, 500].includes(result.status));
+    await sleep(100 + 50 * attempt);
+  }
+  assert.ok(receipt, 'Worker must eventually settle valid victory');
+  assert.equal(receipt.reward.tier, 'full');
+  assert.equal(receipt.player.xp, 75);
+  assert.equal(receipt.player.currency, 30);
+  assert.ok(receipt.player.inventory.includes('underpass-scrap'));
+  assert.ok(receipt.player.housing.inventory.includes('tunnel-trophy'));
+  assert.ok(receipt.player.defeatedBosses.includes('tunnel-maw'));
+  assert.equal(receipt.worldEvent.phase, 'sealed');
+  const verticalReplay = await complete(permitId, pid);
+  assert.equal(verticalReplay.status, 200);
+  assert.deepEqual(verticalReplay.data.player, receipt.player);
+  assert.deepEqual(verticalReplay.data.reward, receipt.reward);
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='" + permitId + ":victory'"), [{ count: 1 }]);
+  assert.deepEqual(sql("SELECT player_mana,turn_count,battle_status,reward_state FROM battle_permits WHERE id='" + permitId + "'"),
+    [{ player_mana: 0, turn_count: 3, battle_status: 'victory', reward_state: 'awarded' }]);
+
+
+  // Completion racing a genuine killing blow cannot pay before victory.
+  const [raceAction, raceCompletion] = await Promise.all([
+    post('/api/battle/action', {
+      playerId: 'integration-player', permitId: 'race-complete', abilityId: 'crack', expectedTurnCount: 0,
+    }),
+    complete('race-complete'),
+  ]);
+  assert.equal(raceAction.status, 200);
+  assert.equal(raceAction.data.status, 'victory');
+  assert.equal(raceAction.data.playerMana, 0);
+  assert.ok([200, 409].includes(raceCompletion.status));
+  const raceReceipt = await eventuallyComplete('race-complete');
+  assert.equal(raceReceipt.reward.tier, 'reduced');
+  assert.equal(raceReceipt.player.currency, 96);
+  assert.equal(raceReceipt.player.level, 2);
+  assert.equal(raceReceipt.player.xp, 145);
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-complete:victory'"), [{ count: 1 }]);
+
+  // Concurrent submissions against the same observed turn must apply exactly once.
+  let competingActions;
+  try {
+    competingActions = await Promise.all(Array.from({ length: 8 }, () => post('/api/battle/action', {
+      playerId: 'integration-player', permitId: 'race-action', abilityId: 'crack', expectedTurnCount: 0,
+    })));
+  } catch (error) {
+    throw new Error(`Concurrent action request failed: ${error instanceof Error ? error.message : String(error)}\\nWorker logs:\\n${logs}`);
+  }
+  const acceptedActions = competingActions.filter(({ status }) => status === 200);
+  assert.equal(acceptedActions.length, 1, 'only one action may win the permit turn-count CAS');
+  assert.ok(competingActions.every(({ status }) => [200, 409].includes(status)));
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='race-action'"),
+    [{ player_hp: 120, player_mana: 0, enemy_hp: 0, turn_count: 1, battle_status: 'victory' }],
+    'losing concurrent actions must not spend Mana or advance combat twice');
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-action:victory'"), [{ count: 0 }],
+    'a killing blow must not grant rewards before completion');
+  const raceActionReceipt = await eventuallyComplete('race-action');
+  assert.equal(raceActionReceipt.reward.tier, 'reduced');
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='race-action:victory'"), [{ count: 1 }]);
+  assert.deepEqual(sql("SELECT player_mana,turn_count,battle_status,reward_state FROM battle_permits WHERE id='race-action'"),
+    [{ player_mana: 0, turn_count: 1, battle_status: 'victory', reward_state: 'awarded' }]);
+
+  const zeroManaAfterFree = sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='zero-mana'");
+  assert.deepEqual(zeroManaAfterFree, [{
+    player_hp: 110, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active',
+  }]);
+  const denied = await post('/api/battle/action', {
+    playerId: 'integration-player', permitId: 'zero-mana', abilityId: 'crack', expectedTurnCount: 0,
+  });
+  assert.equal(denied.status, 409);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='zero-mana'"),
+    zeroManaAfterFree, 'rejected paid action must not change the already-resolved battle state');
+  const currentCycleClearsBeforeRecovery = sql("SELECT full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='integration-cycle'");
+  const recoveredExpiredVictory = await eventuallyComplete('expired-victory');
+  assert.equal(recoveredExpiredVictory.reward.tier, 'full');
+  assert.equal(recoveredExpiredVictory.worldEvent.cycleId, 'expired-cycle');
+  assert.equal(recoveredExpiredVictory.worldEvent.phase, 'sealed');
+  assert.deepEqual(sql("SELECT reward_state,reward_clear_number FROM battle_permits WHERE id='expired-victory'"), [{reward_state:'awarded',reward_clear_number:1}]);
+  assert.deepEqual(sql("SELECT full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='integration-cycle'"),
+    currentCycleClearsBeforeRecovery, 'old-cycle victory recovery must not consume the current cycle quota');
+  const recoveredReplay = await complete('expired-victory');
+  assert.equal(recoveredReplay.status, 200);
+  assert.deepEqual(recoveredReplay.data.reward, recoveredExpiredVictory.reward);
+  console.log('PASS local Worker/D1 HTTP: bootstrap, world, combat, Mana, expired victory recovery, reward replay');
+
   console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
 } finally {
   if (server && server.exitCode === null) {

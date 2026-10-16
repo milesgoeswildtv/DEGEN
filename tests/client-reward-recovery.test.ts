@@ -24,7 +24,7 @@ const setup = (enabled: boolean, completeUnderpass?: () => Promise<unknown>) => 
   };
   const api = {
     enabled,
-    completeUnderpass: completeUnderpass ?? (async () => ({ player: {}, worldEvent: {} })),
+    completeUnderpass: completeUnderpass ?? (async () => ({ player: { id: 'test-player' }, worldEvent: {} })),
     getUnderpass: async () => ({}),
   };
   const root = { innerHTML: '', querySelectorAll: () => [] };
@@ -56,7 +56,7 @@ test('failed Worker completion retains the permit and persists retry across cont
   const fixture = setup(true, async () => {
     attempts += 1;
     if (attempts === 1) throw new Error('transient D1 failure');
-    return { player: {}, worldEvent: {} };
+    return { player: { id: 'test-player' }, worldEvent: {} };
   });
   const first = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   first.battlePermit = { permitId: 'permit-1' };

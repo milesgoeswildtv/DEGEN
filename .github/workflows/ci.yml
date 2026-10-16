@@ -24,5 +24,7 @@ jobs:
         run: node tests/worker-d1-concurrency.mjs
       - name: Build web app
         run: npm run build
+      - name: Exercise real browser with isolated Vite and Wrangler/D1
+        run: node tests/browser-worker-vertical-slice.mjs
       - name: Validate Cloudflare Worker
         run: npm run check:worker
