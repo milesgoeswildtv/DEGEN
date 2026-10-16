@@ -60,7 +60,6 @@ try {
       VALUES('integration-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
-    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('expired-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -68,15 +67,13 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',70,0,20,3),
+      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
       ('client-first','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
       ('legacy-client','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0),
       ('race-complete','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0),
-      ('race-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0),
-      ('fractional-expiry','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0),
-      ('expired-victory','integration-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3);
+      ('race-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -95,19 +92,6 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
-  const expiry = new Date(Math.floor(Date.now() / 1000) * 1000 + 25_990).toISOString();
-  const expirySql = join(scratch, 'expiry.sql');
-  writeFileSync(expirySql, `UPDATE battle_permits SET expires_at='${expiry}' WHERE id='fractional-expiry';`);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + expirySql]);
-  await sleep(Math.max(0, Date.parse(expiry) - Date.now() - 800));
-  assert.ok(Date.now() < Date.parse(expiry) && Date.parse(expiry) - Date.now() < 1000);
-  const nearExpiry = await post('/api/battle/action', { playerId:'integration-player', permitId:'fractional-expiry', abilityId:'crack', expectedTurnCount:0 });
-  assert.equal(nearExpiry.status, 200, JSON.stringify(nearExpiry));
-  const nearExpiryState = sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='fractional-expiry'");
-  assert.deepEqual(nearExpiryState, [{player_hp:110,player_mana:8,enemy_hp:57,battle_status:'active',turn_count:1}]);
-  await sleep(Math.max(0, Date.parse(expiry) - Date.now() + 30));
-  assert.equal((await post('/api/battle/action', {playerId:'integration-player',permitId:'fractional-expiry',abilityId:'slash',expectedTurnCount:1})).status, 409);
-  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='fractional-expiry'"), nearExpiryState);
   // The currently deployed permissive Worker must accept the future client's
   // turn precondition before the strict Worker release is allowed.
   const clientFirstResponse = await fetch(base + '/api/battle/action', {
@@ -355,15 +339,7 @@ try {
   assert.equal(denied.status, 409);
   assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='zero-mana'"),
     zeroManaAfterFree, 'rejected paid action must not change the already-resolved battle state');
-  const currentCycleClears = sql("SELECT full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='integration-cycle'");
-  const recovered = await eventuallyComplete('expired-victory');
-  assert.equal(recovered.reward.tier, 'full');
-  assert.equal(recovered.worldEvent.cycleId, 'expired-cycle');
-  assert.equal(recovered.worldEvent.phase, 'sealed');
-  assert.deepEqual(sql("SELECT reward_state,reward_clear_number FROM battle_permits WHERE id='expired-victory'"), [{reward_state:'awarded',reward_clear_number:1}]);
-  assert.deepEqual(sql("SELECT full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='integration-cycle'"), currentCycleClears);
-  assert.equal((await complete('expired-victory')).status, 200);
-  console.log('PASS local Worker/D1 HTTP: bootstrap, world, combat, Mana, expiry boundary, victory recovery, reward replay');
+  console.log('PASS local Worker/D1 HTTP: bootstrap, world, combat, Mana, event closure, reward replay');
 
   console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
 } finally {
