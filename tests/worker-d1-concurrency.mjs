@@ -113,6 +113,12 @@ try {
   });
   assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='client-first'"),
     afterClientFirst, 'stale retry must not change persisted battle state');
+  const invalidPrecondition = await post('/api/battle/action', {
+    playerId: 'integration-player', permitId: 'client-first', abilityId: 'crack', expectedTurnCount: -1,
+  });
+  assert.equal(invalidPrecondition.status, 400);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='client-first'"),
+    afterClientFirst, 'invalid turn preconditions must not mutate combat');
 
   // A legacy client that omits expectedTurnCount remains compatible during rollout.
   const legacyResponse = await fetch(base + '/api/battle/action', {
@@ -239,6 +245,19 @@ try {
     for (const [key, value] of Object.entries(expected)) assert.equal(action.data[key], value, key);
     assert.equal('enemyMana' in action.data, false);
   }
+  // A retry after a lost killing-blow response receives the terminal Worker state,
+  // not another action or a fabricated client-side victory.
+  const terminalBeforeRetry = sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='" + permitId + "'");
+  const terminalRetry = await post('/api/battle/action', {
+    playerId: pid, permitId, abilityId: 'crack', expectedTurnCount: 2,
+  });
+  assert.equal(terminalRetry.status, 409);
+  assert.deepEqual(terminalRetry.data.battleState, {
+    permitId, status: 'victory', playerHp: 100, playerMana: 0, enemyHp: 0, turnCount: 3,
+  });
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='" + permitId + "'"),
+    terminalBeforeRetry, 'terminal retry must not mutate the killing blow');
+
   // Concurrent completion of the same earned victory must never double-pay.
   const competingClaims = await Promise.all(Array.from({ length: 8 }, () => complete(permitId, pid)));
   assert.ok(competingClaims.every(({ status }) => [200, 409, 500].includes(status)));
