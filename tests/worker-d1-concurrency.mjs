@@ -67,7 +67,7 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
+      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',70,0,20,3),
       ('client-first','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
       ('legacy-client','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
