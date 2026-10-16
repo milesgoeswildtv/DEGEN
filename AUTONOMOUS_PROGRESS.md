@@ -20,10 +20,11 @@ Updated: 2026-10-16
 - Branch: `automation/degen/verified-session-store-v01`.
 - Scope: `db/migrations/0006_player_sessions.sql`, `worker/auth/sessionStore.ts`, and new `tests/player-session-store.test.ts`.
 - Session helper stores only SHA-256 token digests, issues bounded-lifetime opaque bearer tokens, resolves only unexpired/unrevoked sessions, and supports idempotent revocation. It is NOT wired into Worker routes; do not treat it as production authentication.
-- Test commit before this continuity update: `0e824e51a7d6900f628415d9b4fe9839f7c0521b`.
-- LOCAL targeted evidence: 6/6 session-store tests PASS in an isolated Node 22.16.0 + SQLite fixture using the exact helper, migration, and test source. This is not full repository CI.
-- Fresh GitHub Actions CI on the new test commit is pending. The prior helper-only CI run `38707094319` passed before these tests existed; it does not validate the new test file.
-- Repository clone/full-suite execution was unavailable in this environment because `github.com` DNS resolution failed. No claim that full `npm test`, build, or Worker checks passed on this head.
+- Test commit: `0e824e51a7d6900f628415d9b4fe9839f7c0521b`; exact CI-green branch head before this progress refresh: `844b38400468b780f23a03433e4389b2c3763208`.
+- LOCAL targeted evidence: 6/6 session-store tests PASS in an isolated Node 22.16.0 + SQLite fixture using the exact helper, migration, and test source.
+- GitHub Actions CI run `38977378910` PASS on exact head `844b38400468b780f23a03433e4389b2c3763208`: `npm test` (including the six new session tests), isolated local Worker/D1 reward-concurrency HTTP integration, `npm run build`, and `npm run check:worker` all succeeded.
+- Cloudflare Pages preview check `117230090011` SUCCESS for the static preview build only; this is not a production deployment or Worker-backed browser proof.
+- Full-repository local execution was unavailable because `github.com` DNS resolution failed; full-suite evidence is from GitHub Actions, not a local checkout.
 
 ## Battle authority, reward reliability, and D1 assumptions
 - Worker owns player/enemy HP, Degen Mana, battle status, turn count, victory validation, reward tier, XP, currency, inventory, and reward receipt state.
