@@ -51,14 +51,35 @@ function setup(overrides: { expiresAt?: string; playerHp?: number; playerMana?: 
   return { db, act, state };
 }
 
-test('paid ability consumes exactly its cost and persists one turn', async () => {
+test('paid ability persists exactly the shared deterministic combat result and spends its cost once', async () => {
   const { db, act, state } = setup();
-  const cost = TEST_DEGEN.abilities.find((a) => a.id === 'crack')!.manaCost;
-  const result = await act('crack');
+  const ability = TEST_DEGEN.abilities.find((a) => a.id === 'crack')!;
+  const expected = resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  const result = await act(ability.id);
   assert.equal(result.status, 200);
-  assert.equal(result.data.playerMana, TEST_DEGEN.maxMana - cost);
-  assert.equal(result.data.turnCount, 1);
-  assert.equal(state().player_mana, TEST_DEGEN.maxMana - cost);
+  assert.deepEqual({
+    status: result.data.status,
+    playerHp: result.data.playerHp,
+    playerMana: result.data.playerMana,
+    enemyHp: result.data.enemyHp,
+    turnCount: result.data.turnCount,
+  }, {
+    status: expected.status,
+    playerHp: expected.playerHp,
+    playerMana: expected.playerMana,
+    enemyHp: expected.enemyHp,
+    turnCount: 1,
+  });
+  assert.equal(state().player_hp, expected.playerHp);
+  assert.equal(state().player_mana, TEST_DEGEN.maxMana - ability.manaCost);
+  assert.equal(state().enemy_hp, expected.enemyHp);
   assert.equal(state().turn_count, 1);
   db.close();
 });
