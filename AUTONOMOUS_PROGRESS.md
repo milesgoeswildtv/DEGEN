@@ -282,3 +282,14 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - D1 assumptions verified read-only: migrations `0003_degen_mana.sql`, `0004_reward_receipt.sql`, and `0005_reward_claim_character_guard.sql` are tracked; `deploy-worker.yml` applies schema then migrations before Worker deployment. No remote D1 mutation, merge, or deployment in this run.
 - Release blockers unchanged: signed Discord/Telegram identity and request-level ownership remain unverified; production Pages-to-Worker CORS/browser requests and mobile/Telegram/Discord gameplay are not proven by CI.
 - Best next task: inspect exact-head PR #10 CI after this continuity commit; if green, continue read-only Pages/Worker origin and browser release checks before any client-first rollout.
+
+## 2026-10-16 — Same-turn uncertain-action recovery moved into client-first release branch
+
+- Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Existing client-first branch / draft PR #10: `automation/degen/battle-client-first-v01`, parent head `9ae3c834795212d0379965102edc68782a9b9f01`.
+- **LOCAL/branch mutation prepared for PR #10:** ported the bounded retry wrapper from the already-CI-green PR #12 candidate into the compatible client-first branch. A transport failure retries at most once with the identical Worker-observed `expectedTurnCount`; HTTP/gameplay conflicts are not retried, and a lost response cannot make the client invent a second turn.
+- Files: `src/app/api.ts`, new `src/app/battleActionRetry.ts`, new `tests/battle-action-retry.test.ts`, new `tests/battle-api-turn-contract.test.ts`, and this continuity entry. No Worker, reward, combat balance, D1 schema/migration, or deployment configuration changes.
+- Source comparison before mutation confirmed the integrated PR #12 API differed from PR #10 only by the retry helper import and wrapping `actUnderpass`; other client-first API behavior is unchanged. PR #12 exact head `c1830e097d55292c5a440613c85460e221133376` has CI run `38789146492` SUCCESS; this PR #10 head requires fresh CI after the port.
+- Mana: COMPLETE / MERGED on main; no monster Mana, no Mana-triggered reversion. Battle/reward authority remains Worker-owned. Client sends ability + observed turn only; it never submits HP/Mana/reward/economy state.
+- D1 binding/migrations unchanged; tracked migrations remain applied before Worker deployment. No production D1 operation or deployment.
+- Release gates remain: verify fresh PR #10 CI and actual Pages/Worker CORS/API/browser path; deploy compatible client before PR #9 strict-turn Worker enforcement; signed Discord/Telegram identity and request-level ownership are still not wired into main.
+- Best next task: inspect exact-head PR #10 CI, then continue the frontend-first release verification before integrating strict-turn Worker changes.
