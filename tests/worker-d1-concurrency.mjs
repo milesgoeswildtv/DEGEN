@@ -61,6 +61,7 @@ try {
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
       ('client-first','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
+      ('legacy-client','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,12,92,0),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,92,0),
       ('race-complete','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,20,0),
@@ -95,6 +96,33 @@ try {
   assert.equal(clientFirstAction.turnCount, 1);
   assert.equal(clientFirstAction.playerMana, 8);
   assert.equal(clientFirstAction.status, 'active');
+
+  // A lost response may retry the same observed turn, but must not spend Mana or
+  // damage the enemy twice. The Worker returns its latest state for reconciliation.
+  const afterClientFirst = sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='client-first'");
+  const replayResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'client-first',
+      abilityId: 'crack', expectedTurnCount: 0 }),
+  });
+  assert.equal(replayResponse.status, 409);
+  const replayState = await replayResponse.json();
+  assert.deepEqual(replayState.battleState, {
+    permitId: 'client-first', status: 'active', playerHp: 110, playerMana: 8,
+    enemyHp: 57, turnCount: 1,
+  });
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,battle_status,turn_count FROM battle_permits WHERE id='client-first'"),
+    afterClientFirst, 'stale retry must not change persisted battle state');
+
+  // A legacy client that omits expectedTurnCount remains compatible during rollout.
+  const legacyResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'legacy-client', abilityId: 'crack' }),
+  });
+  assert.equal(legacyResponse.status, 200);
+  const legacyAction = await legacyResponse.json();
+  assert.equal(legacyAction.turnCount, 1);
+  assert.equal(legacyAction.playerMana, 8);
 
   // Insufficient Mana must be a pure rejection; a free bespoke ability remains legal at zero.
   const zeroManaBefore = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='zero-mana'");
