@@ -91,7 +91,7 @@ test('action CAS rejects expired, stale, terminal, and wrong-player turns withou
   const action = db.prepare(`UPDATE battle_permits SET
     player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
-      AND datetime(expires_at) > CURRENT_TIMESTAMP AND turn_count = ?
+      AND julianday(expires_at) > julianday('now') AND turn_count = ?
     RETURNING turn_count`);
   const state = db.prepare('SELECT player_hp, player_mana, enemy_hp, turn_count, battle_status FROM battle_permits WHERE id = ?');
   for (const id of ['expired', 'completed', 'defeated', 'missing']) {
