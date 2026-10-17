@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { BattleEngine } from '../src/game/combat/engine.ts';
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
   advanceLevel,
@@ -130,6 +131,10 @@ test('turn resolution rejects a paid ability when the Degen lacks Mana', () => {
   }), /Insufficient Mana/);
 });
 
+test('monster definitions do not expose Degen Mana fields', () => {
+  assert.deepEqual(Object.keys(TUNNEL_MAW).filter((key) => /mana/i.test(key)), []);
+});
+
 test('Underpass rewards are full for the first three clears and reduced after', () => {
   for (let clear = 1; clear <= UNDERPASS_FULL_REWARD_LIMIT; clear += 1) {
     const reward = underpassRewardForClear(clear);
@@ -151,4 +156,34 @@ test('level progression preserves overflow XP across one or more levels', () => 
 
   assert.deepEqual(advanceLevel(1, 90, 75), { level: 2, xp: 65 });
   assert.deepEqual(advanceLevel(1, 90, 400), { level: 3, xp: 215 });
+});
+
+
+test('depleting Degen Mana never reverts combat and zero-cost actions still resolve', () => {
+  const enemy = { ...TUNNEL_MAW, maxHp: 200 };
+  const completed: string[] = [];
+  const battle = new BattleEngine(TEST_DEGEN, enemy, (status) => completed.push(status));
+
+  battle.useAbility('crack');
+  battle.useAbility('crack');
+  battle.useAbility('crack');
+
+  assert.equal(battle.snapshot.playerMana, 0);
+  assert.equal(battle.snapshot.status, 'active');
+  assert.equal(battle.snapshot.enemyHp, 95);
+  assert.equal(battle.snapshot.playerHp, 90);
+  assert.equal(completed.length, 0);
+
+  battle.useAbility('slash');
+
+  assert.equal(battle.snapshot.playerMana, 0);
+  assert.equal(battle.snapshot.status, 'active');
+  assert.equal(battle.snapshot.enemyHp, 66);
+  assert.equal(battle.snapshot.playerHp, 80);
+  assert.equal(battle.snapshot.turnCount, 4);
+  // The battle log is intentionally bounded, so the opening manifestation line may be trimmed.
+  // The active snapshot still identifies the manifested Degen after Mana reaches zero.
+  assert.equal(battle.snapshot.playerName, TEST_DEGEN.name);
+  assert.equal(battle.snapshot.playerMaxMana, TEST_DEGEN.maxMana);
+  assert.equal(completed.length, 0);
 });
