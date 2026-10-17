@@ -335,3 +335,14 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - D1 assumptions: `wrangler.toml` binds `DB` to `DEGEN`; tracked migrations `0002`–`0005` deploy after schema and before Worker code. Migration `0003_degen_mana.sql` adds nullable `player_mana`; no production D1 write, migration execution, or deployment occurred.
 - Release blockers: reconcile overlapping PRs #9/#10/#11/#12 and keep the compatible client ahead of strict expected-turn enforcement. Signed Discord/Telegram identity and per-request player ownership remain unconnected to production routes.
 - Best next task: require fresh exact-head CI for this regression, then reconcile PR #9–#12 as a release-safe sequence before any merge or Shield work.
+
+## 2026-10-17 — Permit seed-count regression corrected (PUSHED / draft PR #12; exact-head CI running)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Continued `automation/degen/permit-millisecond-expiry-v02`; corrected commit: `221b7e1654ffc6ee82d3dce2ab0871113dbc501b`.
+- Re-read `tests/worker-d1-seed-contract.test.ts` and changed only the stale `battle_permits` seed count from 16 to 18, matching the two added legacy NULL-Mana permit fixtures. The contents API write was blocked; the scoped Git Data blob/tree/commit path succeeded with a non-force expected-head update.
+- Exact-head Actions run `39059015812` started on the corrected code commit. At the continuity update, deterministic tests passed; isolated Worker/D1 reward concurrency was still running; cycle race, rollover race, build, Chromium vertical slice, and Wrangler Worker validation were pending. Do not claim the full suite green until the run finishes.
+- No runtime code, migration, schema, reward/economy logic, or deployment configuration changed in this correction. Mana remains COMPLETE / MERGED on main; legacy NULL-Mana fallback/regression and permit reliability hardening remain PR-only. No production D1 operation or deployment.
+- Battle authority/reward receipts remain merged on main. PRs #9–#12 remain open drafts with overlapping Worker/client/test changes. PR #12 currently contains strict expected-turn validation plus the compatible client, but merge should wait for exact-head CI and explicit release-gate review; production CORS and signed Discord/Telegram identity/request ownership remain unresolved.
+- D1 source-of-truth: `wrangler.toml` binds `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and the deploy workflow applies schema/migrations before Worker code. No production migration run.
+- Best next task: finish and verify exact-head CI, then consolidate the overlapping #9/#10/#11/#12 changes into one release-safe sequence without bypassing CORS/platform-auth gates or beginning Shield work.
+
