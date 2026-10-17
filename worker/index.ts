@@ -288,12 +288,12 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
 
   if (permit.battle_status !== 'active') return conflict(`Battle is already ${permit.battle_status}.`, permit);
   if (permit.turn_count !== input.expectedTurnCount) return conflict('Stale battle turn.', permit);
-  const playerMana = resolveMana(permit.player_mana);
-  if (!canUseAbility(playerMana, ability)) return conflict('Not enough Mana for that ability.', permit);
+  const currentMana = resolveMana(permit.player_mana);
+  if (!canUseAbility(currentMana, ability)) return conflict('Not enough Mana for that ability.', permit);
 
   const turn = resolveCombatTurn({
     playerHp: permit.player_hp,
-    playerMana,
+    playerMana: currentMana,
     enemyHp: permit.enemy_hp,
     ability,
     degen: TEST_DEGEN,
