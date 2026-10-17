@@ -323,3 +323,15 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - Release blockers: reconcile overlapping PRs #9/#10/#11/#12 and preserve client-first before strict-turn enforcement; signed Discord/Telegram identity + request ownership, production Pages/Worker CORS/connectivity, and physical/mobile platform QA remain unverified.
 - Best next task: add the preserved legacy-permit HTTP regression on PR #12 through a supported write path, rerun exact-head CI, then complete release-order review before any merge or Shield work.
 
+
+
+## 2026-10-17 — Legacy NULL Mana Worker/D1 regression added (PUSHED / draft PR #12; CI pending)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Continued the existing coherent branch `automation/degen/permit-millisecond-expiry-v02`; PR #12 head before this commit was `4c27c10c25870b12e0578a33c7b99496cbe23c19`.
+- Changed `tests/worker-d1-concurrency.mjs`: added an active pre-migration permit with `player_mana NULL`, compared the paid action to the shared deterministic resolver at the authoritative Degen max Mana, and asserted exact persisted HP/Mana/enemy HP/status/turn count. Added an expired terminal victory with NULL Mana; its 409 must expose server-derived Mana without mutating the historical row.
+- These are isolated local Wrangler/D1 HTTP integration assertions. They are committed to the feature branch by this change, but fresh exact-head CI has not yet run; do not count the prior green run as proof of these new assertions. No local checkout/dependencies are available in this runtime to execute the npm scripts here.
+- Mana status: COMPLETE / MERGED on main. The legacy fallback is in PR #12; this commit adds the previously missing regression coverage. No monster Mana, client-supplied Mana, or Mana-triggered reversion.
+- Battle authority/reward idempotency: server-owned turn resolution and reward receipt/idempotency are merged on main; PR #12's expiry precision, expected-turn CAS, atomic defeat/history, earned-victory recovery, and Worker/D1 integration remain PUSHED / DRAFT, not merged/live.
+- D1 assumptions: `wrangler.toml` binds `DB` to `DEGEN`; tracked migrations `0002`–`0005` deploy after schema and before Worker code. Migration `0003_degen_mana.sql` adds nullable `player_mana`; no production D1 write, migration execution, or deployment occurred.
+- Release blockers: reconcile overlapping PRs #9/#10/#11/#12 and keep the compatible client ahead of strict expected-turn enforcement. Signed Discord/Telegram identity and per-request player ownership remain unconnected to production routes.
+- Best next task: require fresh exact-head CI for this regression, then reconcile PR #9–#12 as a release-safe sequence before any merge or Shield work.

@@ -164,6 +164,8 @@ try {
     { name: 'parallelFollowup', playerHp: 110, playerMana: 0, enemyHp: 57, abilityId: 'slash' },
     { name: 'closedCycleKill', playerHp: 120, playerMana: 4, enemyHp: 30, abilityId: 'crack' },
     { name: 'verticalFirst', playerHp: 120, playerMana: 12, enemyHp: 92, abilityId: 'crack' },
+    // A pre-0003 permit with NULL Mana resolves from the authoritative Degen kit.
+    { name: 'legacyNullMana', playerHp: 120, playerMana: 12, enemyHp: 92, abilityId: 'crack' },
     { name: 'verticalSecond', playerHp: 110, playerMana: 8, enemyHp: 57, abilityId: 'crack' },
     { name: 'verticalThird', playerHp: 100, playerMana: 4, enemyHp: 22, abilityId: 'crack' },
   ];
@@ -203,7 +205,9 @@ try {
       ('zero-cost-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,20,0),
       ('parallel-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0),
       ('closed-cycle-valid','integration-player','underpass','closed-cycle','tunnel-maw',datetime('now','+10 minutes'),'active',120,4,30,0),
-      ('fractional-expiry','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0);
+      ('fractional-expiry','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0),
+      ('legacy-null-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,NULL,92,0),
+      ('legacy-terminal-null-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,NULL,0,3);
     UPDATE battle_permits SET started_at=datetime('now','-30 minutes') WHERE id='expired';
     UPDATE battle_permits SET started_at=datetime('now','-10 minutes') WHERE id IN ('closed-cycle-valid','expired-victory');
   `);
@@ -224,6 +228,38 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  // A legacy active permit initializes Mana from the server-owned Degen kit and
+  // persists exactly one resolver-approved paid turn.
+  const legacyBefore = permitState('legacy-null-mana');
+  assert.deepEqual(legacyBefore, {
+    player_hp: 120, player_mana: null, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+  });
+  const legacyAction = await action('legacy-null-mana', 'crack', 'integration-player', 0);
+  assert.equal(legacyAction.status, 200, JSON.stringify(legacyAction));
+  assertMatchesSharedTurn(legacyAction.data, sharedMath.legacyNullMana, 1);
+  assert.deepEqual(permitState('legacy-null-mana'), {
+    player_hp: sharedMath.legacyNullMana.playerHp,
+    player_mana: sharedMath.legacyNullMana.playerMana,
+    enemy_hp: sharedMath.legacyNullMana.enemyHp,
+    battle_status: sharedMath.legacyNullMana.status,
+    turn_count: 1,
+  }, 'legacy paid action persists one authoritative turn and the exact Mana deduction');
+
+  // Expired terminal recovery exposes server-derived Mana without mutating the
+  // historical NULL row or permitting a second action.
+  const legacyTerminalBefore = permitState('legacy-terminal-null-mana');
+  assert.deepEqual(legacyTerminalBefore, {
+    player_hp: 70, player_mana: null, enemy_hp: 0, battle_status: 'victory', turn_count: 3,
+  });
+  const legacyTerminal = await action('legacy-terminal-null-mana', 'slash', 'integration-player', 3);
+  assert.equal(legacyTerminal.status, 409, JSON.stringify(legacyTerminal));
+  assert.deepEqual(legacyTerminal.data.battleState, {
+    permitId: 'legacy-terminal-null-mana', status: 'victory',
+    playerHp: 70, playerMana: 12, enemyHp: 0, turnCount: 3,
+  }, 'terminal recovery returns server-derived Mana for a legacy permit');
+  assert.deepEqual(permitState('legacy-terminal-null-mana'), legacyTerminalBefore,
+    'terminal recovery must not mutate the legacy permit');
 
   // Exercise the real Worker HTTP route inside the final fractional second.
   // Whole-second datetime() rejects this still-live permit; julianday() must
