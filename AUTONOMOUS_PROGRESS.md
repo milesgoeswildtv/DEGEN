@@ -286,3 +286,15 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - D1 source assumptions rechecked: `wrangler.toml` binds `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and the deploy workflow applies schema/migrations before Worker code. No production D1 operation, deployment, migration change, or config change.
 - Release blockers: reconcile overlapping PRs #9/#10/#11/#12 and retain compatible-client-before-strict-turn rollout; signed Discord/Telegram identity and request-level ownership, production Pages/Worker CORS/connectivity, and real browser/mobile/platform gameplay remain unverified.
 - Best next task: verify exact-head CI for the rollover test, then continue line-by-line release-order reconciliation of PR #12 before any merge.
+
+
+## 2026-10-17 — Exact-head authority CI review
+
+- Main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; draft PR #12 branch `automation/degen/permit-millisecond-expiry-v02`, head `53c9e4cfe6c6fab1f4a5d78dafd9d6b0bc7d4962`.
+- Exact-head GitHub Actions run `39006935795` succeeded: `npm test`, isolated local Wrangler/D1 reward/action concurrency, active-cycle race, expired-cycle rollover race, `npm run build`, and `npm run check:worker`.
+- The committed `tests/browser-worker-vertical-slice.mjs` is not invoked by this branch's CI workflow. It exercises Chromium mobile touch through Map → Home → Underpass → authoritative Mana spending → server-earned trophy against isolated local Wrangler/D1. A related client-first branch ran it successfully, but that is not exact-head proof for PR #12.
+- Adding the browser harness as a CI step after the build was attempted twice and blocked by runtime safety checks. The exact intended one-step diff is preserved in this note; no workflow write was accepted. Do not claim browser QA passed on this PR head.
+- Mana and reward receipt/idempotency are merged on main. PR #12's expiry precision, expected-turn CAS, atomic defeat/history, earned-victory recovery, cycle reservation, and Worker/D1 integration remain pushed/draft only.
+- D1 source assumptions: `wrangler.toml` binds `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and deploy order is schema → migrations → Worker. No production D1 mutation, migration execution, or deployment occurred.
+- Release gates: reconcile PR #12 with #9/#10/#11 and keep client-first before mandatory turn enforcement; signed platform identity/request ownership and production Pages/Worker CORS remain unverified. Local checkout was unavailable because this runtime could not resolve `github.com`.
+- Best next task: wire the committed browser vertical-slice test into CI through a supported write path, verify exact-head CI, then integrate the reliability slice in release-safe order before Shield work.
