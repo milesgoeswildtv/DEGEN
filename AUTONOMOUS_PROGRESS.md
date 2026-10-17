@@ -274,3 +274,15 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - Miles blocker/release gates unchanged: signed Discord/Telegram identity and per-request player ownership are not wired into main routes; production Pages origin/CORS/API connectivity and real browser/mobile/platform gameplay remain unverified.
 - Best next task: verify fresh exact-head CI, then reconcile PR #12 with #9/#10/#11 into a release-safe frontend-first sequence before generic temporary Shield support.
 
+
+
+## 2026-10-17 — Underpass rollover concurrency QA (PUSHED / draft PR #12; CI pending)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Continued existing branch `automation/degen/permit-millisecond-expiry-v02` from verified head `00570d9be096b32214571e27bc68976cf4ca3fe9`; no duplicate branch or direct-main write.
+- Added `tests/worker-d1-cycle-rollover.mjs`, an isolated local Wrangler/D1 HTTP test that seeds one expired Underpass cycle, sends 60 concurrent world requests, and requires every response to converge on one successor while preserving the expired row. Added the test to `.github/workflows/ci.yml`.
+- Prior exact-head CI run `38995831405` passed the 49-step-independent pipeline's configured gates: deterministic tests, isolated Worker/D1 reward/action integration, 60-request active-cycle race, TypeScript/Vite build, and Worker dry run. This new rollover test has not run in CI yet; await a fresh exact-head result before claiming it green.
+- Mana: COMPLETE / MERGED on main. Shared `maxMana`/`manaCost`, authoritative persisted player Mana, no-mutation rejection, exact paid deduction, zero-cost use at 0 Mana, no monster Mana, no reversion, and tracked migration `0003_degen_mana.sql` remain unchanged.
+- Battle authority/reward idempotency: server-owned victory and persisted reward receipts are merged on main. PR #12's exact-expiry guards, turn CAS, atomic defeat/history, earned-victory recovery, cycle reservation, and integration coverage remain PUSHED / DRAFT, not merged or live.
+- D1 source assumptions rechecked: `wrangler.toml` binds `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and the deploy workflow applies schema/migrations before Worker code. No production D1 operation, deployment, migration change, or config change.
+- Release blockers: reconcile overlapping PRs #9/#10/#11/#12 and retain compatible-client-before-strict-turn rollout; signed Discord/Telegram identity and request-level ownership, production Pages/Worker CORS/connectivity, and real browser/mobile/platform gameplay remain unverified.
+- Best next task: verify exact-head CI for the rollover test, then continue line-by-line release-order reconciliation of PR #12 before any merge.
