@@ -276,11 +276,11 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 
 
 
-## 2026-10-17 — Underpass rollover concurrency QA (PUSHED / draft PR #12; CI pending)
+## 2026-10-17 — Underpass rollover concurrency QA (PUSHED / draft PR #12; CI PASS)
 
 - Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Continued existing branch `automation/degen/permit-millisecond-expiry-v02` from verified head `00570d9be096b32214571e27bc68976cf4ca3fe9`; no duplicate branch or direct-main write.
 - Added `tests/worker-d1-cycle-rollover.mjs`, an isolated local Wrangler/D1 HTTP test that seeds one expired Underpass cycle, sends 60 concurrent world requests, and requires every response to converge on one successor while preserving the expired row. Added the test to `.github/workflows/ci.yml`.
-- Prior exact-head CI run `38995831405` passed the 49-step-independent pipeline's configured gates: deterministic tests, isolated Worker/D1 reward/action integration, 60-request active-cycle race, TypeScript/Vite build, and Worker dry run. This new rollover test has not run in CI yet; await a fresh exact-head result before claiming it green.
+- Exact-head GitHub Actions run `39003413119` PASSED at `8c404d2c4f3c8fb121013cc28498fd23d77b9fa6`: 56/56 deterministic tests, isolated Worker/D1 reward/action concurrency, 60-request active-cycle race, 60-request expired-cycle rollover race, TypeScript/Vite production build, and Wrangler Worker dry run. Vite emitted an informational >500 kB chunk warning; the build succeeded. These are CI-local tests, not production D1, deployment, or mobile proof.
 - Mana: COMPLETE / MERGED on main. Shared `maxMana`/`manaCost`, authoritative persisted player Mana, no-mutation rejection, exact paid deduction, zero-cost use at 0 Mana, no monster Mana, no reversion, and tracked migration `0003_degen_mana.sql` remain unchanged.
 - Battle authority/reward idempotency: server-owned victory and persisted reward receipts are merged on main. PR #12's exact-expiry guards, turn CAS, atomic defeat/history, earned-victory recovery, cycle reservation, and integration coverage remain PUSHED / DRAFT, not merged or live.
 - D1 source assumptions rechecked: `wrangler.toml` binds `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and the deploy workflow applies schema/migrations before Worker code. No production D1 operation, deployment, migration change, or config change.
