@@ -403,38 +403,42 @@ try {
   // A live permit is not itself a victory receipt. Completion before the
   // server has resolved a terminal battle must leave every economic record
   // and the authoritative turn state untouched.
-  const noVictorySnapshot = () => ({
-    permit: permitState('action-complete-race'),
-    character: queryRows(
-      "SELECT level, xp, currency FROM characters WHERE player_id = 'race-player'",
-      ['level', 'xp', 'currency'],
-    ),
-    receipt: queryRows(
-      "SELECT reward_state, reward_claim_token, reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at FROM battle_permits WHERE id = 'action-complete-race'",
-      ['reward_state', 'reward_claim_token', 'reward_clear_number', 'reward_xp', 'reward_currency', 'reward_tier', 'completed_at'],
-    ),
-    victoryHistory: queryRows(
-      "SELECT id FROM battle_history WHERE id = 'action-complete-race:victory'",
-      ['id'],
-    ),
-    clear: queryRows(
-      "SELECT full_reward_clears FROM world_event_clears WHERE player_id = 'race-player' AND event_key = 'underpass' AND cycle_id = 'integration-cycle'",
-      ['full_reward_clears'],
-    ),
-    inventory: queryRows(
-      "SELECT item_key, quantity FROM player_inventory WHERE player_id = 'race-player'",
-      ['item_key', 'quantity'],
-    ),
-  });
+  const noVictorySnapshot = () => {
+    // Read the whole pre/post condition in one D1 CLI query. Repeated CLI
+    // connections against Wrangler's live local SQLite store made this HTTP
+    // integration fixture intermittently drop its next Worker connection.
+    const rows = queryRows(`SELECT json_object(
+      'permit', json((SELECT json_object(
+        'player_hp', player_hp, 'player_mana', player_mana, 'enemy_hp', enemy_hp,
+        'battle_status', battle_status, 'turn_count', turn_count
+      ) FROM battle_permits WHERE id = 'action-complete-race')),
+      'character', json((SELECT json_object('level', level, 'xp', xp, 'currency', currency)
+        FROM characters WHERE player_id = 'race-player')),
+      'receipt', json((SELECT json_object(
+        'reward_state', reward_state, 'reward_claim_token', reward_claim_token,
+        'reward_clear_number', reward_clear_number, 'reward_xp', reward_xp,
+        'reward_currency', reward_currency, 'reward_tier', reward_tier, 'completed_at', completed_at
+      ) FROM battle_permits WHERE id = 'action-complete-race')),
+      'victoryHistory', json((SELECT COALESCE(json_group_array(id), '[]')
+        FROM battle_history WHERE id = 'action-complete-race:victory')),
+      'clear', json((SELECT COALESCE(json_group_array(full_reward_clears), '[]')
+        FROM world_event_clears WHERE player_id = 'race-player'
+          AND event_key = 'underpass' AND cycle_id = 'integration-cycle')),
+      'inventory', json((SELECT COALESCE(json_group_array(json_object('item_key', item_key, 'quantity', quantity)), '[]')
+        FROM player_inventory WHERE player_id = 'race-player'))
+    ) AS snapshot`, ['snapshot']);
+    assert.equal(rows.length, 1, 'the active-permit snapshot query returns one row');
+    return JSON.parse(rows[0].snapshot);
+  };
   const beforeActiveCompletion = noVictorySnapshot();
   assert.deepEqual(beforeActiveCompletion.permit, {
     player_hp: 120, player_mana: 4, enemy_hp: 30, battle_status: 'active', turn_count: 0,
   });
-  assert.deepEqual(beforeActiveCompletion.character, [{ level: 1, xp: 0, currency: 0 }]);
-  assert.deepEqual(beforeActiveCompletion.receipt, [{
+  assert.deepEqual(beforeActiveCompletion.character, { level: 1, xp: 0, currency: 0 });
+  assert.deepEqual(beforeActiveCompletion.receipt, {
     reward_state: 'pending', reward_claim_token: null, reward_clear_number: null,
     reward_xp: null, reward_currency: null, reward_tier: null, completed_at: null,
-  }]);
+  });
   assert.deepEqual(beforeActiveCompletion.victoryHistory, []);
   assert.deepEqual(beforeActiveCompletion.clear, []);
   assert.deepEqual(beforeActiveCompletion.inventory, []);
