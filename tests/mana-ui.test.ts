@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import { TEST_DEGEN } from '../src/data/combatPrototype.ts';
+import { canAffordManaCost } from '../src/game/combat/rules.ts';
 
 // Execute the real view source without Node's unsupported extensionless Vite imports.
 const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf8')
@@ -11,7 +12,7 @@ const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf
   .replace(/^export const /gm, 'const ');
 const stripped = stripTypeScriptTypes(source, { mode: 'transform' });
 const views = (document = {}) => runInNewContext(stripped + '\n({ battleView, updateBattleDom });', {
-  FURNITURE_CATALOG: [], WORLD_LOCATIONS: [], getFurniture: () => undefined, document,
+  FURNITURE_CATALOG: [], WORLD_LOCATIONS: [], getFurniture: () => undefined, canAffordManaCost, document,
 });
 const player = {
   id: 'p', displayName: 'Tester', level: 1, xp: 0, currency: 0,
@@ -38,6 +39,11 @@ test('zero Mana disables paid abilities, preserves free ability, and victory dis
   const buttons = [
     { dataset: { manaCost: '4' }, disabled: false },
     { dataset: { manaCost: '0' }, disabled: false },
+    { dataset: { manaCost: 'NaN' }, disabled: false },
+    { dataset: { manaCost: '' }, disabled: false },
+    { dataset: {}, disabled: false },
+    { dataset: { manaCost: '-1' }, disabled: false },
+    { dataset: { manaCost: '0.5' }, disabled: false },
   ];
   const appended = [];
   const log = { innerHTML: '', append: item => appended.push(item) };
@@ -50,11 +56,13 @@ test('zero Mana disables paid abilities, preserves free ability, and victory dis
   updateBattleDom(snapshot);
   assert.equal(buttons[0].disabled, true);
   assert.equal(buttons[1].disabled, false);
+  for (const index of [2, 3, 4, 5, 6]) assert.equal(buttons[index].disabled, true);
   assert.match(log.innerHTML, /Ready/);
 
   updateBattleDom({ ...snapshot, playerMana: 4 });
   assert.equal(buttons[0].disabled, false);
   assert.equal(buttons[1].disabled, false);
+  for (const index of [2, 3, 4, 5, 6]) assert.equal(buttons[index].disabled, true);
 
   updateBattleDom({ ...snapshot, status: 'victory', playerMana: 0 });
   assert.equal(buttons[0].disabled, true);

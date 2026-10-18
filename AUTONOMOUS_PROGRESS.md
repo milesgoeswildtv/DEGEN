@@ -381,3 +381,15 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - Mana authority and migration `0003_degen_mana.sql` remain merged/tracked on main; monsters still have no Mana field and 0 Mana never triggers reversion. No D1 mutation or production deployment was performed.
 - Battle authority/reward receipts remain server-owned on main; PR #12 still needs integration/rollout review against PRs #9–#11. No Miles design blocker.
 - Best next task: inspect exact-head CI; if green, record the run evidence and resolve the compatible-client-before-strict-turn-enforcement release order before merge.
+
+
+## 2026-10-18 — Mana UI test harness correction (LOCAL/PR update pending CI)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Continued draft PR #12 on `automation/degen/permit-millisecond-expiry-v02`; parent head before this correction: `e0f42c3d3c1033bf0d49dd98906329713280da4d`.
+- Exact-head CI run `39101003496` failed at `npm test` (79/81). Evidence from the job log: `tests/combat-progression.test.ts` imported `src/ui/views.ts`, whose extensionless Vite import `../data/world` is not resolvable by Node's test runner; `tests/mana-ui.test.ts` stripped the views imports without injecting the newly shared `canAffordManaCost` helper, causing `canAffordManaCost is not defined`.
+- Correction: keep the shared-rule parity tests in `tests/combat-progression.test.ts` but move DOM-specific cases into the existing isolated `tests/mana-ui.test.ts` harness; inject the real shared predicate into that VM context and extend invalid/blank/missing/fractional/negative cost assertions.
+- Verification after correction: pending fresh exact-head CI. No local checkout available in this run; do not claim tests/build/Worker/Chromium checks passed until fresh CI finishes.
+- Mana authority and migration `0003_degen_mana.sql` remain merged/tracked on main. Monsters have no Mana namespace; 0 Mana never reverts combat. Battle action/reward authority remains server-owned; PR #12 is still draft and not live.
+- D1 source of truth remains `wrangler.toml` binding `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and deploy ordering is schema → migrations → Worker. No production D1 operation or deployment.
+- Best next task: verify fresh exact-head CI, then reconcile PRs #9–#12 in compatible-client-first release order before merge or Shield work.
