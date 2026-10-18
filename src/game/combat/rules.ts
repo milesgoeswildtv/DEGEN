@@ -18,8 +18,13 @@ export interface CombatTurnResult {
   retaliationDamage: number;
 }
 
+const isNonnegativeSafeInteger = (value: number): boolean =>
+  Number.isSafeInteger(value) && value >= 0;
+
 export const canUseAbility = (playerMana: number, ability: AbilityDefinition): boolean =>
-  playerMana >= ability.manaCost;
+  isNonnegativeSafeInteger(playerMana)
+  && isNonnegativeSafeInteger(ability.manaCost)
+  && playerMana >= ability.manaCost;
 
 export const resolveCombatTurn = ({
   playerHp,
@@ -29,7 +34,13 @@ export const resolveCombatTurn = ({
   degen,
   enemy,
 }: CombatTurnInput): CombatTurnResult => {
-  if (!canUseAbility(playerMana, ability)) {
+  if (!isNonnegativeSafeInteger(playerMana)) {
+    throw new RangeError('Invalid player Mana state');
+  }
+  if (!isNonnegativeSafeInteger(ability.manaCost)) {
+    throw new RangeError(`Invalid Mana cost for ${ability.name}`);
+  }
+  if (playerMana < ability.manaCost) {
     throw new RangeError(`Insufficient Mana for ${ability.name}`);
   }
 
