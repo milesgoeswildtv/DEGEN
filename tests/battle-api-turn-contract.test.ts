@@ -214,3 +214,51 @@ test('malformed conflict payload is rejected instead of being treated as authori
     /DEGEN API 409/,
   );
 });
+
+
+test('successful battle actions reject malformed or out-of-turn Worker state before presentation', async () => {
+  const valid = {
+    permitId: 'permit-action', status: 'active', playerHp: 103, playerMana: 8,
+    enemyHp: 57, turnCount: 1,
+  };
+  const invalidResponses = [
+    { ...valid, permitId: 'another-permit' },
+    { ...valid, status: 'unknown' },
+    { ...valid, turnCount: 2 },
+    { ...valid, playerHp: -1 },
+    { ...valid, playerMana: -1 },
+    { ...valid, enemyHp: -1 },
+    { ...valid, status: 'active', playerHp: 0 },
+    { ...valid, status: 'active', enemyHp: 0 },
+    { ...valid, status: 'victory' },
+    { ...valid, status: 'defeat' },
+    { ...valid, status: 'victory', playerHp: 0, enemyHp: 0 },
+  ];
+
+  for (const responseBody of invalidResponses) {
+    const { GameApi } = createApi(async () => new Response(JSON.stringify(responseBody), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }));
+    await assert.rejects(
+      new GameApi().actUnderpass('player-1', 'permit-action', 'slash', 0),
+      /Malformed authoritative battle action response/,
+      JSON.stringify(responseBody),
+    );
+  }
+});
+
+test('successful terminal action responses require Worker-consistent victory or defeat HP', async () => {
+  const terminalStates = [
+    { permitId: 'permit-action', status: 'victory', playerHp: 1, playerMana: 0, enemyHp: 0, turnCount: 1 },
+    { permitId: 'permit-action', status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 1, turnCount: 1 },
+  ];
+  for (const responseBody of terminalStates) {
+    const { GameApi } = createApi(async () => new Response(JSON.stringify(responseBody), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }));
+    await assert.doesNotReject(
+      new GameApi().actUnderpass('player-1', 'permit-action', 'slash', 0),
+      JSON.stringify(responseBody),
+    );
+  }
+});

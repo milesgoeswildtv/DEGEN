@@ -25,16 +25,21 @@ const isAuthoritativeBattleActionResult = (
   if (!isNonnegativeSafeInteger(expectedTurnCount) || expectedTurnCount >= Number.MAX_SAFE_INTEGER
     || !value || typeof value !== 'object') return false;
   const state = value as Record<string, unknown>;
+  const status = state.status;
+  const playerHp = state.playerHp;
+  const playerMana = state.playerMana;
+  const enemyHp = state.enemyHp;
   if (state.permitId !== permitId
-    || typeof state.status !== 'string' || !['active', 'victory', 'defeat'].includes(state.status)
+    || typeof status !== 'string' || !['active', 'victory', 'defeat'].includes(status)
     || state.turnCount !== expectedTurnCount + 1
-    || !isNonnegativeSafeInteger(state.playerHp)
-    || !isNonnegativeSafeInteger(state.playerMana)
-    || !isNonnegativeSafeInteger(state.enemyHp)) return false;
+    || !isNonnegativeSafeInteger(playerHp)
+    || !isNonnegativeSafeInteger(playerMana)
+    || !isNonnegativeSafeInteger(enemyHp)) return false;
 
-  if (state.status === 'active') return state.playerHp > 0 && state.enemyHp > 0;
-  if (state.status === 'victory') return state.playerHp > 0 && state.enemyHp === 0;
-  return state.playerHp === 0 && state.enemyHp > 0;
+  if (status === 'active') return playerHp > 0 && enemyHp > 0;
+  if (status === 'victory') return playerHp > 0 && enemyHp === 0;
+  if (status === 'defeat') return playerHp === 0 && enemyHp > 0;
+  return false;
 };
 
 export class BattleTurnConflictError extends Error {
