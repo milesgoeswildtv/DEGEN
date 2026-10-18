@@ -393,3 +393,15 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - Mana authority and migration `0003_degen_mana.sql` remain merged/tracked on main. Monsters have no Mana namespace; 0 Mana never reverts combat. Battle action/reward authority remains server-owned; PR #12 is still draft and not live.
 - D1 source of truth remains `wrangler.toml` binding `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and deploy ordering is schema → migrations → Worker. No production D1 operation or deployment.
 - Best next task: verify fresh exact-head CI, then reconcile PRs #9–#12 in compatible-client-first release order before merge or Shield work.
+
+
+## 2026-10-18 — Mana UI correction verified green (PUSHED / draft PR #12; exact-head CI PASS)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Code/test commit: `73a428867910a6e7587603d0cd27a715e48fafa6`; exact-head GitHub Actions run [39104671989](https://github.com/milesgoeswildtv/DEGEN/actions/runs/39104671989) completed SUCCESS on 2026-10-18.
+- The correction fixes both harness failures from run 39101003496. The DOM-specific test now runs in `tests/mana-ui.test.ts` with the actual shared `canAffordManaCost` injected into the VM context; `tests/combat-progression.test.ts` no longer imports the Vite view module directly.
+- Exact-head evidence: `npm test` **92/92 pass**; isolated Worker/D1 reward/action concurrency PASS; 60-request Underpass cycle reservation PASS; 60-request expired-cycle rollover PASS; TypeScript/Vite production build PASS; Chromium mobile Worker/D1 vertical slice PASS (Map → Home → Underpass → authoritative Degen Mana battle → server reward receipt → Home trophy); `npm run check:worker` dry-run PASS.
+- Non-blocking warnings: Vite bundle exceeds 500 kB; GitHub Actions reports Node 20 deprecation for `actions/checkout@v4` / `actions/setup-node@v4`. No production D1 mutation or deployment.
+- Mana foundation: shared Degen max Mana/ability costs, server-owned Mana, affordability rejection without mutation, exact deduction, free abilities at zero, no monster Mana, and no zero-Mana reversion are confirmed by deterministic and isolated local Worker/D1 tests on this PR head. This hardening remains PUSHED / draft, not merged/live.
+- Battle authority/reward idempotency: main retains server-resolved victories and persisted receipts; PR #12 remains a draft aggregate of expiry precision, expected-turn CAS, defeat/history atomicity, earned-victory recovery, cycle reservation, and integration coverage. Do not merge/deploy until the overlapping #9–#12 release sequence and production authentication/CORS gates are reconciled.
+- D1 assumptions rechecked: `wrangler.toml` binds `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and the deployment workflow applies schema → migrations → Worker. No remote migration or production write.
+- Best next task: release-order/security review of PRs #9–#12 and the Pages/Worker origin; wire signed Discord/Telegram identity and request-level player ownership before any public-economy deployment. Do not start Shield work ahead of this authority release gate.
