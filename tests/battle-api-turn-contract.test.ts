@@ -24,6 +24,13 @@ function createApi(fetchImpl: typeof fetch) {
     withBattleActionRetry,
   }) as {
     GameApi: new () => {
+      startUnderpass(playerId: string, cycleId: string): Promise<{
+        permitId: string; eventKey: string; cycleId: string; encounterKey: string; expiresAt: string;
+        initialState: {
+          permitId: string; status: string; playerHp: number; playerMana: number;
+          enemyHp: number; turnCount: number;
+        };
+      }>;
       actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<{
         permitId: string; status: string; playerHp: number; playerMana: number;
         enemyHp: number; turnCount: number;
@@ -37,6 +44,75 @@ function createApi(fetchImpl: typeof fetch) {
     };
   };
 }
+
+test('server-backed battle start accepts only a complete authoritative HP/Mana snapshot', async () => {
+  const permit = {
+    permitId: 'permit-start',
+    eventKey: 'underpass',
+    cycleId: 'cycle-1',
+    encounterKey: 'tunnel-maw',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    initialState: {
+      permitId: 'permit-start', status: 'active', playerHp: 120,
+      playerMana: 12, enemyHp: 92, turnCount: 0,
+    },
+  };
+  let capturedUrl = '';
+  let capturedBody: unknown;
+  const { GameApi } = createApi(async (input, init) => {
+    capturedUrl = String(input);
+    capturedBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify(permit), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  });
+
+  const result = await new GameApi().startUnderpass('player-1', 'cycle-1');
+  assert.equal(capturedUrl, 'https://degen-api.example/api/battle/start');
+  assert.deepEqual(capturedBody, {
+    playerId: 'player-1', eventKey: 'underpass', cycleId: 'cycle-1', encounterKey: 'tunnel-maw',
+  });
+  assert.deepEqual(result, permit);
+  assert.equal(result.initialState.playerMana, 12);
+  assert.equal(result.initialState.turnCount, 0);
+});
+
+test('server-backed battle start rejects missing, mismatched, or malformed authoritative state', async () => {
+  const valid = {
+    permitId: 'permit-start',
+    eventKey: 'underpass',
+    cycleId: 'cycle-1',
+    encounterKey: 'tunnel-maw',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    initialState: {
+      permitId: 'permit-start', status: 'active', playerHp: 120,
+      playerMana: 12, enemyHp: 92, turnCount: 0,
+    },
+  };
+  const invalidResponses = [
+    { ...valid, initialState: undefined },
+    { ...valid, initialState: { ...valid.initialState, permitId: 'different-permit' } },
+    { ...valid, initialState: { ...valid.initialState, playerMana: undefined } },
+    { ...valid, initialState: { ...valid.initialState, playerMana: -1 } },
+    { ...valid, initialState: { ...valid.initialState, playerHp: 0 } },
+    { ...valid, initialState: { ...valid.initialState, enemyHp: 0 } },
+    { ...valid, initialState: { ...valid.initialState, status: 'victory' } },
+    { ...valid, initialState: { ...valid.initialState, turnCount: 1 } },
+    { ...valid, cycleId: 'another-cycle' },
+    { ...valid, expiresAt: 'not-a-date' },
+  ];
+
+  for (const responseBody of invalidResponses) {
+    const { GameApi } = createApi(async () => new Response(JSON.stringify(responseBody), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }));
+    await assert.rejects(
+      new GameApi().startUnderpass('player-1', 'cycle-1'),
+      /authoritative battle start state/i,
+      JSON.stringify(responseBody),
+    );
+  }
+});
 
 test('battle action sends only the ability and expected turn, never client-owned combat or reward state', async () => {
   let capturedUrl = '';

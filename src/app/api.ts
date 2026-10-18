@@ -3,6 +3,20 @@ import { withBattleActionRetry } from './battleActionRetry';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
+const isNonnegativeSafeInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const isAuthoritativeBattleStartState = (value: unknown, permitId: string): value is BattleActionResult => {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as Record<string, unknown>;
+  return state.permitId === permitId
+    && state.status === 'active'
+    && state.turnCount === 0
+    && isNonnegativeSafeInteger(state.playerHp) && state.playerHp > 0
+    && isNonnegativeSafeInteger(state.playerMana)
+    && isNonnegativeSafeInteger(state.enemyHp) && state.enemyHp > 0;
+};
+
 export class BattleTurnConflictError extends Error {
   constructor(readonly battleState: BattleActionResult) {
     super('Battle turn changed; synchronized from the Worker.');
@@ -56,11 +70,19 @@ export class GameApi {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
     try {
-      return await this.request<BattlePermit>('/api/battle/start', {
+      const permit = await this.request<BattlePermit>('/api/battle/start', {
         method: 'POST',
         body: JSON.stringify({ playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
         signal: controller.signal,
       });
+      if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()
+        || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
+        || permit.encounterKey !== 'tunnel-maw'
+        || typeof permit.expiresAt !== 'string' || !Number.isFinite(Date.parse(permit.expiresAt))
+        || !isAuthoritativeBattleStartState(permit.initialState, permit.permitId)) {
+        throw new Error('Missing or malformed authoritative battle start state.');
+      }
+      return permit;
     } finally {
       clearTimeout(timeout);
     }

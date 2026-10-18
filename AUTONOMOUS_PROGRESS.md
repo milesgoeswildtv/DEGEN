@@ -451,3 +451,18 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - D1 assumptions: `wrangler.toml` remains the source of truth for binding `DB` → `DEGEN`; migrations 0002–0005 are tracked and Worker deployment order is schema → migrations → Worker. No remote migration or production deployment occurred.
 - Release gates: PRs #9–#12 overlap and are not a safe linear stack; compatible client behavior must precede strict expected-turn enforcement. Signed Discord/Telegram identity, request-level player ownership, production Pages/Worker CORS, and published-origin gameplay remain blockers. PR #12 stays draft and unmerged; green CI alone does not resolve branch overlap or public-auth release gates.
 - Best next task: reconcile PRs #9–#12 by file-level diff and release order, then close signed platform identity/request-ownership and production CORS/published-origin QA before any deployment or broader combat expansion.
+
+
+## 2026-10-18 — Fail-closed authoritative battle start handoff (PUSHED / draft PR #12; CI pending)
+
+- Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; continued existing branch `automation/degen/permit-millisecond-expiry-v02` / PR #12 from head `bdc66e4ca969686b34c26b5e99ce219749eb798e`. No competing branch and no direct write to `main`.
+- Audit found a client/Worker boundary gap: `GameApi.startUnderpass` trusted the typed response without runtime validation, while `BattleEngine` intentionally falls back to local prototype HP/Mana when `initialState` is absent. A stale/malformed Worker response could therefore display non-authoritative initial Mana before the first action.
+- Fix: validate the server permit envelope (event/cycle/encounter/expiry) and require a matching active turn-0 initial snapshot with safe nonnegative HP/Mana integers and positive starting HP values. Server-backed battle entry now fails closed instead of falling back to client defaults; offline preview remains unchanged.
+- Tests added in `tests/battle-api-turn-contract.test.ts`: valid authoritative start snapshot; rejection for missing state, mismatched permit, missing/negative Mana, zero starting HP, terminal status, nonzero turn count, wrong cycle, and invalid expiry.
+- Files changed: `src/app/api.ts`, `tests/battle-api-turn-contract.test.ts`, `AUTONOMOUS_PROGRESS.md`.
+- QA: exact-head CI pending; do not claim tests/build/Worker/Chromium pass until it completes. No local checkout available in this runtime.
+- Mana remains COMPLETE / MERGED on main for core server-owned costs/deduction/migration 0003; PR #12 adds fail-closed initial-state/UI integration hardening. Monsters have no Mana and zero Mana never reverts combat.
+- Battle/reward authority: main keeps persisted idempotent receipts; PR #12's expected-turn CAS, terminal recovery, expiry precision, cycle reservation, and endpoint-level concurrency coverage remain draft-only.
+- D1: `wrangler.toml` remains the source of truth for `DB` → `DEGEN`; migrations 0002–0005 remain tracked and deploy schema → migrations → Worker. No migration, production DB operation, or deployment.
+- Remaining blockers: reconcile PRs #9–#12 and rollout order; signed Discord/Telegram identity, per-request player ownership, production Pages/Worker CORS, and live published-origin QA remain unresolved. No Miles design blocker.
+- Best next task: verify this exact-head CI, then continue file-level release-order reconciliation without starting Shield before battle-authority integration is safely released.
