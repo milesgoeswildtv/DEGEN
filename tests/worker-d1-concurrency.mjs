@@ -150,21 +150,29 @@ function queryRows(sql, columns) {
 
 async function action(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0) {
   const r = await fetch(base + '/api/battle/action', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json', connection: 'close' },
     body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
   });
   return { status: r.status, data: await r.json() };
 }
 async function complete(permitId, playerId = 'integration-player') {
-  const r = await fetch(base + '/api/battle/complete', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId, permitId }),
-  });
+  let r;
+  try {
+    r = await fetch(base + '/api/battle/complete', {
+      method: 'POST', headers: { 'content-type': 'application/json', connection: 'close' },
+      body: JSON.stringify({ playerId, permitId }),
+    });
+  } catch (error) {
+    throw new Error(
+      `completion HTTP request failed: ${String(error)}; Worker exitCode=${server?.exitCode}; captured logs:\n${logs}`,
+      { cause: error },
+    );
+  }
   return { status: r.status, data: await r.json() };
 }
 async function post(path, payload) {
   const r = await fetch(base + path, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json', connection: 'close' },
     body: JSON.stringify(payload),
   });
   return { status: r.status, data: await r.json() };
@@ -495,33 +503,53 @@ try {
   assert.equal(battleHistoryRows('duplicate-completion-race:victory').length, 1);
 
   // A different player must not claim another player's already-resolved victory.
-  const wrongOwnerSnapshot = () => ({
-    permit: queryRows(
-      "SELECT player_id, battle_status, reward_state, reward_claim_token, reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at FROM battle_permits WHERE id = 'permit-a'",
-      ['player_id', 'battle_status', 'reward_state', 'reward_claim_token', 'reward_clear_number', 'reward_xp', 'reward_currency', 'reward_tier', 'completed_at'],
-    ),
-    ownerCharacter: queryRows(
-      "SELECT level, xp, currency FROM characters WHERE player_id = 'integration-player'",
-      ['level', 'xp', 'currency'],
-    ),
-    otherCharacter: queryRows(
-      "SELECT level, xp, currency FROM characters WHERE player_id = 'expired-player'",
-      ['level', 'xp', 'currency'],
-    ),
-    ownerInventory: queryRows(
-      "SELECT id, item_key, item_type, quantity FROM player_inventory WHERE player_id = 'integration-player' ORDER BY id",
-      ['id', 'item_key', 'item_type', 'quantity'],
-    ),
-    otherInventory: queryRows(
-      "SELECT id, item_key, item_type, quantity FROM player_inventory WHERE player_id = 'expired-player' ORDER BY id",
-      ['id', 'item_key', 'item_type', 'quantity'],
-    ),
-    clears: queryRows(
-      "SELECT player_id, full_reward_clears FROM world_event_clears WHERE cycle_id = 'integration-cycle' AND player_id IN ('integration-player', 'expired-player') ORDER BY player_id",
-      ['player_id', 'full_reward_clears'],
-    ),
-    history: battleHistoryRows('permit-a:victory'),
-  });
+  const wrongOwnerSnapshot = () => {
+    // One query keeps the state audit complete without opening several CLI processes.
+    const rows = queryRows(`SELECT json_object(
+      'permits', json((SELECT COALESCE(json_group_array(json_object(
+        'id', id, 'player_id', player_id, 'battle_status', battle_status,
+        'player_hp', player_hp, 'player_mana', player_mana, 'enemy_hp', enemy_hp,
+        'turn_count', turn_count, 'reward_state', reward_state,
+        'reward_claim_token', reward_claim_token, 'reward_clear_number', reward_clear_number,
+        'reward_xp', reward_xp, 'reward_currency', reward_currency, 'reward_tier', reward_tier,
+        'reward_level', reward_level, 'reward_remaining_xp', reward_remaining_xp,
+        'completed_at', completed_at
+      )), '[]') FROM (SELECT id, player_id, battle_status, player_hp, player_mana, enemy_hp,
+        turn_count, reward_state, reward_claim_token, reward_clear_number, reward_xp,
+        reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+        FROM battle_permits WHERE id = 'permit-a' OR player_id = 'expired-player' ORDER BY id))),
+      'ownerCharacter', json((SELECT json_object('level', level, 'xp', xp, 'currency', currency,
+        'last_reward_claim_token', last_reward_claim_token, 'degen_key', degen_key)
+        FROM characters WHERE player_id = 'integration-player')),
+      'otherCharacter', json((SELECT json_object('level', level, 'xp', xp, 'currency', currency,
+        'last_reward_claim_token', last_reward_claim_token, 'degen_key', degen_key)
+        FROM characters WHERE player_id = 'expired-player')),
+      'ownerInventory', json((SELECT COALESCE(json_group_array(json_object(
+        'id', id, 'item_key', item_key, 'item_type', item_type, 'quantity', quantity
+      )), '[]') FROM (SELECT id, item_key, item_type, quantity FROM player_inventory
+        WHERE player_id = 'integration-player' ORDER BY id))),
+      'otherInventory', json((SELECT COALESCE(json_group_array(json_object(
+        'id', id, 'item_key', item_key, 'item_type', item_type, 'quantity', quantity
+      )), '[]') FROM (SELECT id, item_key, item_type, quantity FROM player_inventory
+        WHERE player_id = 'expired-player' ORDER BY id))),
+      'clears', json((SELECT COALESCE(json_group_array(json_object(
+        'player_id', player_id, 'event_key', event_key, 'cycle_id', cycle_id,
+        'full_reward_clears', full_reward_clears
+      )), '[]') FROM (SELECT player_id, event_key, cycle_id, full_reward_clears FROM world_event_clears
+        WHERE player_id IN ('integration-player', 'expired-player') ORDER BY player_id, event_key, cycle_id))),
+      'history', json((SELECT COALESCE(json_group_array(json_object(
+        'id', id, 'player_id', player_id, 'encounter_key', encounter_key, 'result', result,
+        'player_level', player_level, 'xp_awarded', xp_awarded, 'currency_awarded', currency_awarded
+      )), '[]') FROM (SELECT id, player_id, encounter_key, result, player_level, xp_awarded,
+        currency_awarded FROM battle_history WHERE player_id IN ('integration-player', 'expired-player') ORDER BY id))),
+      'defeatedBosses', json((SELECT COALESCE(json_group_array(json_object(
+        'player_id', player_id, 'boss_key', boss_key
+      )), '[]') FROM (SELECT player_id, boss_key FROM defeated_bosses
+        WHERE player_id IN ('integration-player', 'expired-player') ORDER BY player_id, boss_key)))
+    ) AS snapshot`, ['snapshot']);
+    assert.equal(rows.length, 1, 'the wrong-owner snapshot query returns one row');
+    return JSON.parse(rows[0].snapshot);
+  };
   const beforeWrongOwnerCompletion = wrongOwnerSnapshot();
   const wrongOwnerCompletion = await complete('permit-a', 'expired-player');
   assert.ok([404, 409].includes(wrongOwnerCompletion.status), JSON.stringify(wrongOwnerCompletion));
