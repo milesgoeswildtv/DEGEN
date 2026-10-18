@@ -204,10 +204,11 @@ try {
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),('expired-player','Expired Victory'),('vertical-player','Vertical Slice'),
-      ('race-player','Action Completion Race');
+      ('race-player','Action Completion Race'),('duplicate-player','Duplicate Completion Race');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES('integration-player',1,0,0,'test-degen'),('expired-player',1,0,0,'test-degen'),
-        ('vertical-player',1,0,0,'test-degen'),('race-player',1,0,0,'test-degen');
+        ('vertical-player',1,0,0,'test-degen'),('race-player',1,0,0,'test-degen'),
+        ('duplicate-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
@@ -222,6 +223,7 @@ try {
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('action-complete-race','race-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,30,0),
+      ('duplicate-completion-race','duplicate-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('expired','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,4,30,0),
       ('expired-victory','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
@@ -473,6 +475,24 @@ try {
   assert.equal(raceReplay.player.inventory.filter(item => item === 'underpass-scrap').length, 1);
   assert.equal(raceReplay.worldEvent.fullRewardClears, 1);
   assert.equal(battleHistoryRows('action-complete-race:victory').length, 1);
+
+  // Two completion requests racing for one persisted victory must share one receipt.
+  const [duplicateOne, duplicateTwo] = await Promise.all([
+    complete('duplicate-completion-race', 'duplicate-player'),
+    complete('duplicate-completion-race', 'duplicate-player'),
+  ]);
+  assert.ok([duplicateOne, duplicateTwo].every(r => r.status === 200 || r.status === 409),
+    'same-permit completion race returned an unexpected status: ' + JSON.stringify([duplicateOne, duplicateTwo]));
+  const duplicateReceipt = await eventuallyComplete('duplicate-completion-race', 'duplicate-player');
+  assert.equal(duplicateReceipt.reward.tier, 'full');
+  assert.deepEqual([duplicateReceipt.player.level, duplicateReceipt.player.xp, duplicateReceipt.player.currency], [1, 75, 30]);
+  assert.equal(duplicateReceipt.player.inventory.filter(item => item === 'underpass-scrap').length, 1);
+  assert.equal(duplicateReceipt.worldEvent.fullRewardClears, 1);
+  const duplicateReplay = await eventuallyComplete('duplicate-completion-race', 'duplicate-player');
+  assert.deepEqual([duplicateReplay.player.level, duplicateReplay.player.xp, duplicateReplay.player.currency], [1, 75, 30]);
+  assert.equal(duplicateReplay.player.inventory.filter(item => item === 'underpass-scrap').length, 1);
+  assert.equal(duplicateReplay.worldEvent.fullRewardClears, 1);
+  assert.equal(battleHistoryRows('duplicate-completion-race:victory').length, 1);
 
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
   assert.equal(a.reward.xp, 75);

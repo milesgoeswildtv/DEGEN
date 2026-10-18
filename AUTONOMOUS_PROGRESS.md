@@ -1,6 +1,6 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-14
+Updated: 2026-10-18
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
@@ -427,3 +427,16 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - Exact-head CI: `npm test` **92/92 pass**; isolated Worker/D1 reward/action concurrency PASS; active Underpass cycle reservation (60 requests) PASS; expired-cycle rollover (60 requests) PASS; production build PASS; Chromium mobile Worker/D1 vertical slice PASS; `npm run check:worker` dry-run PASS. Only existing bundle-size and Actions runtime deprecation warnings.
 - Mana and reward authority remain complete on main; this test strengthens the merged reward boundary while PR #12's broader integration remains PUSHED / draft. No production D1 mutation, migration, deployment, or merge.
 - Best next task: keep PR #12 draft while reconciling the divergent #9/#10/#11/#12 release sequence; compatible client must be published before strict Worker turn enforcement, and signed platform identity/request ownership plus production-origin verification remain gates.
+
+## 2026-10-18 — Same-permit concurrent completion regression (PUSHED / draft PR #12; CI pending)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Continued the existing integration slice on `automation/degen/permit-millisecond-expiry-v02` / PR #12; no competing implementation branch and no direct write to `main`.
+- Changed: `tests/worker-d1-concurrency.mjs` adds a separate player and already-victorious permit, submits two `/api/battle/complete` calls simultaneously, then verifies the eventual persisted receipt, XP/currency, inventory, full-clear count, replay behavior, and one victory-history row. Existing action/completion racing and Mana assertions remain intact.
+- QA: exact-head CI is pending for this new test. No local checkout is available in this runtime (GitHub clone access failed DNS); previous exact-head CI run 39117444722 was green before this change. Do not treat that prior run as validation of this new test.
+- Mana: foundation merged on `main`; battle-start authoritative snapshot, client presentation/recovery, millisecond expiry, expected-turn CAS, and defeat/history recovery remain draft integration work, not merged/live.
+- Battle authority: merged main still requires server-resolved victory and persisted receipt idempotency. This new concurrent same-permit endpoint test is intended to verify no duplicate progression, currency, item, clear, or history award under simultaneous completion.
+- D1: `wrangler.toml` binding is `DB` / `DEGEN`; migrations `0002`–`0005` remain tracked and deployment order is schema → migrations → Worker. No remote migration or deployment was performed.
+- Remaining gates: reconcile overlapping PRs #9–#12; signed Discord/Telegram identity, per-request player ownership, production Pages/Worker origin validation, and published-origin platform QA remain release blockers.
+- Best next task: run fresh exact-head CI for this concurrency test, fix any race exposed, then continue release-order/security review before public economy deployment.
+
