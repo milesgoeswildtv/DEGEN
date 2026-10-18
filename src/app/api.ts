@@ -17,6 +17,26 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     && isNonnegativeSafeInteger(state.enemyHp) && state.enemyHp > 0;
 };
 
+const isAuthoritativeBattleActionResult = (
+  value: unknown,
+  permitId: string,
+  expectedTurnCount: number,
+): value is BattleActionResult => {
+  if (!isNonnegativeSafeInteger(expectedTurnCount) || expectedTurnCount >= Number.MAX_SAFE_INTEGER
+    || !value || typeof value !== 'object') return false;
+  const state = value as Record<string, unknown>;
+  if (state.permitId !== permitId
+    || typeof state.status !== 'string' || !['active', 'victory', 'defeat'].includes(state.status)
+    || state.turnCount !== expectedTurnCount + 1
+    || !isNonnegativeSafeInteger(state.playerHp)
+    || !isNonnegativeSafeInteger(state.playerMana)
+    || !isNonnegativeSafeInteger(state.enemyHp)) return false;
+
+  if (state.status === 'active') return state.playerHp > 0 && state.enemyHp > 0;
+  if (state.status === 'victory') return state.playerHp > 0 && state.enemyHp === 0;
+  return state.playerHp === 0 && state.enemyHp > 0;
+};
+
 export class BattleTurnConflictError extends Error {
   constructor(readonly battleState: BattleActionResult) {
     super('Battle turn changed; synchronized from the Worker.');
@@ -90,12 +110,20 @@ export class GameApi {
 
   async actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<BattleActionResult | undefined> {
     if (!this.enabled) return undefined;
-    return withBattleActionRetry(expectedTurnCount, (turnCount, signal) =>
-      this.request<BattleActionResult>('/api/battle/action', {
+    if (!isNonnegativeSafeInteger(expectedTurnCount) || expectedTurnCount >= Number.MAX_SAFE_INTEGER) {
+      throw new Error('Invalid expected battle turn count.');
+    }
+    return withBattleActionRetry(expectedTurnCount, async (turnCount, signal) => {
+      const result = await this.request<unknown>('/api/battle/action', {
         method: 'POST',
         signal,
         body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount: turnCount }),
-      }));
+      });
+      if (!isAuthoritativeBattleActionResult(result, permitId, turnCount)) {
+        throw new Error('Malformed authoritative battle action response.');
+      }
+      return result;
+    });
   }
 
   async completeUnderpass(playerId: string, permitId: string): Promise<BattleCompletionResult | undefined> {
