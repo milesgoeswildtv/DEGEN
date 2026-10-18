@@ -466,3 +466,11 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - D1: `wrangler.toml` remains the source of truth for `DB` → `DEGEN`; migrations 0002–0005 remain tracked and deploy schema → migrations → Worker. No migration, production DB operation, or deployment.
 - Remaining blockers: reconcile PRs #9–#12 and rollout order; signed Discord/Telegram identity, per-request player ownership, production Pages/Worker CORS, and live published-origin QA remain unresolved. No Miles design blocker.
 - Best next task: verify this exact-head CI, then continue file-level release-order reconciliation without starting Shield before battle-authority integration is safely released.
+
+
+## 2026-10-18 — Start-state contract fixture correction (PUSHED / draft PR #12; CI pending)
+
+- On commit `b92a05a469a848cb033e850b91b6c9aff23371bb`, exact-head CI run `39165301507` failed in `npm test` because the existing request-deadline test's successful permit fixture intentionally returned only `permitId/cycleId`; the new fail-closed API correctly rejected that incomplete response.
+- Re-read and updated `tests/world-entry-request-deadlines.test.ts` to return/assert the full Worker permit envelope and authoritative turn-0 HP/Mana snapshot. Production validation remains fail-closed; no compatibility fallback was added.
+- Fresh exact-head CI is required. No local checkout, production DB operation, migration, deployment, or merge.
+- Best next task: inspect fresh CI for this fixture correction; preserve the existing release/auth gates and do not start Shield before battle-authority integration is safely released.

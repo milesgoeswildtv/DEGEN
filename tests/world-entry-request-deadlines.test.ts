@@ -34,7 +34,14 @@ function fixture(complete = false) {
       calls.push({ path, signal, method: init.method ?? 'GET',
         body: init.body ? JSON.parse(String(init.body)) : undefined });
       if (complete) return Response.json(path === '/api/battle/start'
-        ? { permitId: 'worker-permit', cycleId: 'cycle' }
+        ? {
+          permitId: 'worker-permit', eventKey: 'underpass', cycleId: 'cycle',
+          encounterKey: 'tunnel-maw', expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          initialState: {
+            permitId: 'worker-permit', status: 'active', playerHp: 120,
+            playerMana: 12, enemyHp: 92, turnCount: 0,
+          },
+        }
         : { source: 'server', phase: 'open', cycleId: 'cycle' });
       return new Promise<Response>((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
@@ -72,7 +79,16 @@ test('permit request aborts at 20 seconds without fabricating a permit', async (
 test('successful world and permit responses retain Worker data and clear timers', async () => {
   const f = fixture(true);
   assert.deepEqual(await f.api.getUnderpass('owner'), { source: 'server', phase: 'open', cycleId: 'cycle' });
-  assert.deepEqual(await f.api.startUnderpass('owner', 'cycle'), { permitId: 'worker-permit', cycleId: 'cycle' });
+  const permit = await f.api.startUnderpass('owner', 'cycle');
+  assert.deepEqual(permit, {
+    permitId: 'worker-permit', eventKey: 'underpass', cycleId: 'cycle',
+    encounterKey: 'tunnel-maw', expiresAt: permit.expiresAt,
+    initialState: {
+      permitId: 'worker-permit', status: 'active', playerHp: 120,
+      playerMana: 12, enemyHp: 92, turnCount: 0,
+    },
+  });
+  assert.ok(Number.isFinite(Date.parse(permit.expiresAt)));
   assert.deepEqual([...f.cleared], [1, 2]);
   assert.ok(f.calls.every(call => !call.signal.aborted));
 });
