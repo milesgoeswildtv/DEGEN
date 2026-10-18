@@ -121,6 +121,33 @@ function battleHistoryRows(id) {
   return rows;
 }
 
+
+function queryRows(sql, columns) {
+  const r = spawnSync(wrangler, [
+    'd1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--command', sql, '--json',
+  ], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  if (r.error || r.status !== 0) {
+    throw new Error(`wrangler query failed: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
+  }
+  const payload = JSON.parse(r.stdout);
+  const rows = [];
+  const visit = value => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    if (columns.every(column => Object.hasOwn(value, column))) {
+      rows.push(Object.fromEntries(columns.map(column => [column, value[column]])));
+      return;
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(payload);
+  return rows;
+}
+
 async function action(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0) {
   const r = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -373,6 +400,49 @@ try {
   assert.ok(duplicateCompletionRace.some(result => result.status === 200),
     JSON.stringify(duplicateCompletionRace));
 
+  // A live permit is not itself a victory receipt. Completion before the
+  // server has resolved a terminal battle must leave every economic record
+  // and the authoritative turn state untouched.
+  const noVictorySnapshot = () => ({
+    permit: permitState('action-complete-race'),
+    character: queryRows(
+      "SELECT level, xp, currency FROM characters WHERE player_id = 'race-player'",
+      ['level', 'xp', 'currency'],
+    ),
+    receipt: queryRows(
+      "SELECT reward_state, reward_claim_token, reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at FROM battle_permits WHERE id = 'action-complete-race'",
+      ['reward_state', 'reward_claim_token', 'reward_clear_number', 'reward_xp', 'reward_currency', 'reward_tier', 'completed_at'],
+    ),
+    victoryHistory: queryRows(
+      "SELECT id FROM battle_history WHERE id = 'action-complete-race:victory'",
+      ['id'],
+    ),
+    clear: queryRows(
+      "SELECT full_reward_clears FROM world_event_clears WHERE player_id = 'race-player' AND event_key = 'underpass' AND cycle_id = 'integration-cycle'",
+      ['full_reward_clears'],
+    ),
+    inventory: queryRows(
+      "SELECT item_key, quantity FROM player_inventory WHERE player_id = 'race-player'",
+      ['item_key', 'quantity'],
+    ),
+  });
+  const beforeActiveCompletion = noVictorySnapshot();
+  assert.deepEqual(beforeActiveCompletion.permit, {
+    player_hp: 120, player_mana: 4, enemy_hp: 30, battle_status: 'active', turn_count: 0,
+  });
+  assert.deepEqual(beforeActiveCompletion.character, [{ level: 1, xp: 0, currency: 0 }]);
+  assert.deepEqual(beforeActiveCompletion.receipt, [{
+    reward_state: 'pending', reward_claim_token: null, reward_clear_number: null,
+    reward_xp: null, reward_currency: null, reward_tier: null, completed_at: null,
+  }]);
+  assert.deepEqual(beforeActiveCompletion.victoryHistory, []);
+  assert.deepEqual(beforeActiveCompletion.clear, []);
+  assert.deepEqual(beforeActiveCompletion.inventory, []);
+  const prematureCompletion = await complete('action-complete-race', 'race-player');
+  assert.equal(prematureCompletion.status, 409, JSON.stringify(prematureCompletion));
+  assert.deepEqual(noVictorySnapshot(), beforeActiveCompletion,
+    'completion without a server-resolved victory must not change battle state, receipts, progression, inventory, clear counts, or history');
+
   const [raceAction, raceCompletion] = await Promise.all([
     action('action-complete-race', 'crack', 'race-player', 0),
     complete('action-complete-race', 'race-player'),
@@ -513,7 +583,7 @@ try {
   assert.equal(currentWorld.cycleId, 'integration-cycle');
   assert.equal(currentWorld.fullRewardClears, 5,
     'settling an old-cycle victory must not consume the current cycle reward quota');
-  console.log('PASS isolated Worker/D1: reward replay, authoritative Mana, action CAS, terminal outcomes, and legal closed-cycle permit');
+  console.log('PASS isolated Worker/D1: active-victory guard, reward replay, authoritative Mana, action CAS, terminal outcomes, and legal closed-cycle permit');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
