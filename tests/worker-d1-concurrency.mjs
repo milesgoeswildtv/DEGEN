@@ -438,7 +438,16 @@ try {
   assert.deepEqual(beforeActiveCompletion.victoryHistory, []);
   assert.deepEqual(beforeActiveCompletion.clear, []);
   assert.deepEqual(beforeActiveCompletion.inventory, []);
-  const prematureCompletion = await complete('action-complete-race', 'race-player');
+  const prematureCompletion = await post('/api/battle/complete', {
+    playerId: 'race-player',
+    permitId: 'action-complete-race',
+    victory: true,
+    playerHp: 0,
+    playerMana: 12,
+    enemyHp: 0,
+    turnCount: 999,
+    reward: { xp: 1234, currency: 1234, items: ['test-item'] },
+  });
   assert.equal(prematureCompletion.status, 409, JSON.stringify(prematureCompletion));
   assert.deepEqual(noVictorySnapshot(), beforeActiveCompletion,
     'completion without a server-resolved victory must not change battle state, receipts, progression, inventory, clear counts, or history');
