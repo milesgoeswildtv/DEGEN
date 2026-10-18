@@ -257,7 +257,7 @@ test('successful terminal action responses require Worker-consistent victory or 
       status: 200, headers: { 'content-type': 'application/json' },
     }));
     await assert.doesNotReject(
-      new GameApi().actUnderpass('player-1', 'permit-action', 'slash', 0),
+      () => new GameApi().actUnderpass('player-1', 'permit-action', 'slash', 0),
       JSON.stringify(responseBody),
     );
   }
