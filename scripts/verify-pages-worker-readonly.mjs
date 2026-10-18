@@ -35,12 +35,17 @@ export async function verifyPagesWorker({ pagesUrl, workerUrl, fetcher = fetch, 
     });
   assert.ok(scriptUrls.length, 'Pages must serve its own JS bundle');
   let hasApiBase = false;
+  let hasExpectedTurnContract = false;
   for (const asset of scriptUrls.slice(0, 10)) {
     const response = await request(asset);
     assert.equal(response.status, 200, `Pages JS bundle unavailable: ${asset}`);
-    if ((await response.text()).includes(worker)) hasApiBase = true;
+    const bundle = await response.text();
+    if (bundle.includes(worker)) hasApiBase = true;
+    if (bundle.includes('expectedTurnCount')) hasExpectedTurnContract = true;
   }
   assert.ok(hasApiBase, `Published JS must embed Worker API origin ${worker}`);
+  assert.ok(hasExpectedTurnContract,
+    'Published JS must include expectedTurnCount before strict Worker turn enforcement');
   const health = await request(worker + '/api/health', { headers: { Origin: pages } });
   assert.equal(health.status, 200, 'Worker health must return 200');
   assert.equal(health.headers.get('access-control-allow-origin'), pages, 'Worker health CORS must allow Pages origin');
@@ -65,7 +70,7 @@ export async function verifyPagesWorker({ pagesUrl, workerUrl, fetcher = fetch, 
   assert.notEqual(denied.headers.get('access-control-allow-origin'), preview, 'Unapproved preview origin must not be reflected');
   assert.notEqual(denied.headers.get('access-control-allow-origin'), '*', 'Unapproved preview origin must not receive wildcard CORS');
   assert.notEqual(denied.headers.get('access-control-allow-origin'), 'null', 'Unapproved preview origin must not receive opaque-origin CORS');
-  return { status: 'PASS', mode: 'READ_ONLY', pages, pagesBase: pagesBase.href, worker, checked: ['published JS API base', 'Worker health', 'bootstrap POST preflight', 'housing PUT preflight', 'content-type header', 'preview-origin rejection'] };
+  return { status: 'PASS', mode: 'READ_ONLY', pages, pagesBase: pagesBase.href, worker, checked: ['published JS API base', 'expected-turn battle action contract', 'Worker health', 'bootstrap POST preflight', 'housing PUT preflight', 'content-type header', 'preview-origin rejection'] };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

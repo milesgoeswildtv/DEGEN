@@ -8,11 +8,11 @@ async function server(handler) {
   await new Promise(resolve=>instance.listen(0,'127.0.0.1',resolve));
   return {origin:`http://127.0.0.1:${instance.address().port}`,requests,close:()=>new Promise(resolve=>instance.close(resolve))};
 }
-async function fixture({badPut=false,unsafePreview=false}={}) {
+async function fixture({badPut=false,unsafePreview=false,missingTurnContract=false}={}) {
   let workerOrigin;
   const pages=await server((req,res)=>{
     res.writeHead(200,{'content-type':req.url==='/'?'text/html':'application/javascript'});
-    res.end(req.url==='/'?'<script type="module" src="/assets/app.js"></script>':`const api="${workerOrigin}";`);
+    res.end(req.url==='/'?'<script type="module" src="/assets/app.js"></script>':missingTurnContract?`const api="${workerOrigin}";`:`const api="${workerOrigin}";const action={expectedTurnCount:0};`);
   });
   const worker=await server((req,res)=>{
     const origin=req.headers.origin;
@@ -31,6 +31,11 @@ test('real loopback HTTP passes only GET and OPTIONS, never mutates player data'
     assert.equal(result.status,'PASS');
     assert.deepEqual(f.pages.requests.map(x=>x.method),['GET','GET']);
     assert.deepEqual(f.worker.requests.map(x=>x.method),['GET','OPTIONS','OPTIONS','OPTIONS']);
+  }finally{await f.close()}
+});
+test('real loopback HTTP rejects a published client without the expected-turn contract',async()=>{
+  const f=await fixture({missingTurnContract:true});try{
+    await assert.rejects(verifyPagesWorker({pagesUrl:f.pages.origin,workerUrl:f.worker.origin,timeoutMs:5000}),/expectedTurnCount/);
   }finally{await f.close()}
 });
 test('real loopback HTTP rejects lowercase PUT permission',async()=>{
@@ -52,7 +57,7 @@ test('real loopback HTTP supports GitHub Pages-style project subpaths', async ()
       res.end('<script type="module" crossorigin src="./assets/app.js"></script>');
     } else if (req.url === '/DEGEN/assets/app.js') {
       res.writeHead(200, { 'content-type': 'application/javascript' });
-      res.end(`const api="${workerOrigin}";`);
+      res.end(`const api="${workerOrigin}";const action={expectedTurnCount:0};`);
     } else {
       res.writeHead(404); res.end();
     }

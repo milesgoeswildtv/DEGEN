@@ -12,7 +12,7 @@ function fixture(options: Record<string, boolean> = {}) {
     requests.push({ url, method });
     const origin = (init.headers as Record<string, string> | undefined)?.Origin;
     if (url === pages + '/') return new Response(options.missingPage ? '' : '<script type="module" src="/assets/game.js"></script>', { status: options.missingPage ? 404 : 200 });
-    if (url === pages + '/assets/game.js') return new Response(options.missingApi ? 'const API=""' : `const API="${worker}"`, { status: 200 });
+    if (url === pages + '/assets/game.js') return new Response(options.missingApi ? 'const API=""' : options.missingTurnContract ? `const API="${worker}"` : `const API="${worker}";const action={expectedTurnCount:0}`, { status: 200 });
     if (url === worker + '/api/health') return new Response(JSON.stringify({ ok: true }), { status: options.unhealthy ? 503 : 200,
       headers: { 'access-control-allow-origin': options.badCors ? 'https://wrong.example' : pages } });
     if ([worker + '/api/player/bootstrap', worker + '/api/player/housing'].includes(url) && method === 'OPTIONS') {
@@ -39,6 +39,7 @@ test('read-only release gate verifies published API URL and exact-origin CORS', 
 for (const [name, options, pattern] of [
   ['missing Pages', { missingPage: true }, /Pages homepage/],
   ['missing frontend API URL', { missingApi: true }, /Published JS/],
+  ['missing expected-turn client contract', { missingTurnContract: true }, /expectedTurnCount/],
   ['missing Worker CORS', { badCors: true }, /Worker health CORS/],
   ['unhealthy Worker', { unhealthy: true }, /Worker health/],
   ['missing POST preflight', { noPost: true }, /POST must be allowed/],
@@ -72,7 +73,7 @@ test('GitHub Pages project subpath resolves relative JS and origin-only CORS', a
   const fetcher = async (url: string, init: RequestInit = {}) => {
     requests.push({ url, method: init.method ?? 'GET' });
     if (url === pagesBase) return new Response('<script type="module" crossorigin src="./assets/game.js"></script>', { status: 200 });
-    if (url === pagesBase + 'assets/game.js') return new Response(`const API="${worker}"`, { status: 200 });
+    if (url === pagesBase + 'assets/game.js') return new Response(`const API="${worker}";const action={expectedTurnCount:0}`, { status: 200 });
     if (url === worker + '/api/health') return new Response('{"ok":true}', {
       status: 200, headers: { 'access-control-allow-origin': pagesOrigin },
     });
