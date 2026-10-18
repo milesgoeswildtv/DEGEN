@@ -1,6 +1,7 @@
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
+import { canAffordManaCost } from '../game/combat/rules';
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>'\"]/g, (char) => ({
@@ -159,9 +160,12 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   log.innerHTML = snapshot.log.map((entry) => `<div>${escapeHtml(entry)}</div>`).join('');
 
   document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
-    const manaCost = Number(button.dataset.manaCost ?? 0);
-    const validManaCost = Number.isSafeInteger(manaCost) && manaCost >= 0;
-    button.disabled = snapshot.status !== 'active' || !validManaCost || manaCost > snapshot.playerMana;
+    const rawManaCost = button.dataset.manaCost;
+    const manaCost = rawManaCost === undefined || rawManaCost.trim() === ''
+      ? Number.NaN
+      : Number(rawManaCost);
+    button.disabled = snapshot.status !== 'active'
+      || !canAffordManaCost(manaCost, snapshot.playerMana);
   });
 
   if (snapshot.status !== 'active') {

@@ -21,10 +21,13 @@ export interface CombatTurnResult {
 const isNonnegativeSafeInteger = (value: number): boolean =>
   Number.isSafeInteger(value) && value >= 0;
 
+export const canAffordManaCost = (manaCost: number, playerMana: number): boolean =>
+  isNonnegativeSafeInteger(manaCost)
+  && isNonnegativeSafeInteger(playerMana)
+  && playerMana >= manaCost;
+
 export const canUseAbility = (playerMana: number, ability: AbilityDefinition): boolean =>
-  isNonnegativeSafeInteger(playerMana)
-  && isNonnegativeSafeInteger(ability.manaCost)
-  && playerMana >= ability.manaCost;
+  canAffordManaCost(ability.manaCost, playerMana);
 
 export const resolveCombatTurn = ({
   playerHp,

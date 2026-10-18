@@ -3,6 +3,7 @@ import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
 import type { BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
+import { canAffordManaCost } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
 import { battleView, homeView, mapView, underpassView, updateBattleDom } from '../ui/views';
 import { BattleTurnConflictError, GameApi } from './api';
@@ -237,12 +238,15 @@ export class AppController {
 
   private setAbilityButtonsDisabled(disabled: boolean): void {
     const snapshot = this.battleEngine?.snapshot;
+    const degen = this.battleEngine?.degen;
     this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
-      const manaCost = Number(button.dataset.manaCost ?? 0);
+      const abilityId = button.dataset.ability;
+      const ability = degen?.abilities.find((candidate) => candidate.id === abilityId);
       button.disabled = disabled
         || !snapshot
         || snapshot.status !== 'active'
-        || manaCost > snapshot.playerMana;
+        || !ability
+        || !canAffordManaCost(ability.manaCost, snapshot.playerMana);
     });
   }
 

@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { canAffordManaCost, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import { BattleEngine } from '../src/game/combat/engine.ts';
+import { updateBattleDom } from '../src/ui/views.ts';
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
   advanceLevel,
@@ -216,4 +217,61 @@ test('invalid Mana states and negative or fractional costs cannot mint Mana', ()
     degen: TEST_DEGEN,
     enemy: TUNNEL_MAW,
   }), /Invalid player Mana state/);
+});
+
+
+test('shared Mana affordability rejects malformed costs and player Mana consistently', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
+  const paid = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(free);
+  assert.ok(paid);
+
+  assert.equal(canAffordManaCost(0, 0), true);
+  assert.equal(canAffordManaCost(paid.manaCost, paid.manaCost), true);
+  assert.equal(canAffordManaCost(paid.manaCost, paid.manaCost - 1), false);
+  assert.equal(canUseAbility(0, free), canAffordManaCost(free.manaCost, 0));
+  assert.equal(canUseAbility(paid.manaCost, paid), canAffordManaCost(paid.manaCost, paid.manaCost));
+
+  for (const cost of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(canAffordManaCost(cost, 10), false, `invalid cost ${cost}`);
+  }
+  for (const mana of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(canAffordManaCost(0, mana), false, `invalid player Mana ${mana}`);
+  }
+});
+
+test('battle DOM keeps zero-cost actions usable at zero Mana and fails closed for invalid costs', () => {
+  const paid = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(paid);
+  const buttons = [
+    { dataset: { manaCost: '0' }, disabled: true },
+    { dataset: { manaCost: String(paid.manaCost) }, disabled: false },
+    { dataset: { manaCost: 'NaN' }, disabled: false },
+    { dataset: { manaCost: '' }, disabled: false },
+    { dataset: {}, disabled: false },
+    { dataset: { manaCost: '-1' }, disabled: false },
+    { dataset: { manaCost: '0.5' }, disabled: false },
+  ];
+  const log = { innerHTML: '', append: (_node: unknown) => undefined };
+  const fakeDocument = {
+    querySelector: (selector: string) => selector === '#battle-log' ? log : null,
+    querySelectorAll: (selector: string) => selector === '[data-ability]' ? buttons : [],
+  };
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: fakeDocument });
+
+  try {
+    const snapshot = {
+      ...new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined).snapshot,
+      playerMana: 0,
+    };
+    updateBattleDom(snapshot);
+    assert.equal(buttons[0].disabled, false, 'zero-cost ability remains available');
+    for (const index of [1, 2, 3, 4, 5, 6]) {
+      assert.equal(buttons[index].disabled, true, `button ${index} must be disabled at zero Mana`);
+    }
+  } finally {
+    if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
 });

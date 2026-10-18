@@ -368,3 +368,16 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - D1 source assumptions rechecked: `wrangler.toml` binds `DB` to `DEGEN`; migrations 0002–0005 are tracked; `.github/workflows/deploy-worker.yml` applies schema, then migrations, then Worker code. No production D1 write, migration execution, or deployment occurred.
 - Release/auth blockers: `pages.yml` currently deploys GitHub Pages and main's allowlist contains that origin plus localhost; PR #7's Cloudflare Pages origin change is still draft, so verify the intended production origin before merging that config change. Signed Discord/Telegram identity and per-request player ownership are not yet wired into main routes. The new smoke gate has not been run against the actual published origin.
 - Best next task: reconcile PRs #9–#12 into one release-safe sequence, verify the real published Pages/Worker origin with the read-only gate, and close signed-identity/request-ownership gates before public economic gameplay. Do not start Shield until the battle-authority integration is safely merged.
+
+
+## Mana UI affordability hardening — 2026-10-18
+
+- Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Continued existing battle-integration branch `automation/degen/permit-millisecond-expiry-v02`, PR #12; base head before this update: `f12834718af68a2f3452eb1f3ff39b561d5c1140` (PUSHED / DRAFT, not merged or live).
+- Re-read `src/game/combat/rules.ts`, `src/app/AppController.ts`, `src/ui/views.ts`, and `tests/combat-progression.test.ts`. The deterministic affordability rule was already strict, but the post-request controller unlock path still compared only the parsed cost and could enable malformed/missing costs; the DOM path treated a blank/missing data attribute as zero.
+- This patch exports one shared `canAffordManaCost` predicate and uses it in deterministic ability validation, controller unlocks, and DOM button updates. The controller validates against the actual Degen ability definition; the DOM path fails closed on absent/blank/invalid costs.
+- Added tests for shared affordability parity, invalid Mana/cost values, and battle-DOM button availability at 0 Mana (free remains enabled; paid/malformed costs are disabled).
+- Test/build/Worker checks: pending CI on the resulting PR head; no local checkout was available for local execution. Do not treat this as passed until the exact-head workflow completes.
+- Mana authority and migration `0003_degen_mana.sql` remain merged/tracked on main; monsters still have no Mana field and 0 Mana never triggers reversion. No D1 mutation or production deployment was performed.
+- Battle authority/reward receipts remain server-owned on main; PR #12 still needs integration/rollout review against PRs #9–#11. No Miles design blocker.
+- Best next task: inspect exact-head CI; if green, record the run evidence and resolve the compatible-client-before-strict-turn-enforcement release order before merge.
