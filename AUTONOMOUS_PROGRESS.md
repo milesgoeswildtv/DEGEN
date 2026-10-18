@@ -418,3 +418,12 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - D1 source of truth verified: `wrangler.toml` binds `DB` to `DEGEN`; migrations `0002`–`0005` are tracked and deployment order remains schema → migrations → Worker. No migration changes in this slice.
 - Remaining blockers: reconcile overlapping PRs #9–#12 and preserve compatible-client-before-strict-turn rollout; signed Discord/Telegram identity and per-request ownership, intended production Pages/Worker CORS, and live published-origin/platform QA remain unresolved.
 - Best next task: review and consolidate the overlapping battle PRs in release-safe order, then close platform-auth/CORS gates before deployment. Do not start Shield or deploy strict-turn enforcement ahead of those gates.
+
+
+## 2026-10-18 — Client-claimed victory/reward forgery regression green (PUSHED / draft PR #12)
+
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Test commit: `cb884b29017ce316520b5c6f2c86d72696fb50de`; exact-head CI run [39116959986](https://github.com/milesgoeswildtv/DEGEN/actions/runs/39116959986) completed SUCCESS.
+- Extended only `tests/worker-d1-concurrency.mjs`: the active-permit completion rejection now includes client-claimed victory, zero HP, altered Mana/enemy HP, an impossible turn count, and invented XP/currency/items. Worker returns 409 and the before/after D1 snapshot remains identical across battle state, receipt, character progression, inventory, event clear count, and victory history. The test then proceeds through the valid action/completion race and verifies one legitimate receipt.
+- Exact-head CI: `npm test` **92/92 pass**; isolated Worker/D1 reward/action concurrency PASS; active Underpass cycle reservation (60 requests) PASS; expired-cycle rollover (60 requests) PASS; production build PASS; Chromium mobile Worker/D1 vertical slice PASS; `npm run check:worker` dry-run PASS. Only existing bundle-size and Actions runtime deprecation warnings.
+- Mana and reward authority remain complete on main; this test strengthens the merged reward boundary while PR #12's broader integration remains PUSHED / draft. No production D1 mutation, migration, deployment, or merge.
+- Best next task: keep PR #12 draft while reconciling the divergent #9/#10/#11/#12 release sequence; compatible client must be published before strict Worker turn enforcement, and signed platform identity/request ownership plus production-origin verification remain gates.
