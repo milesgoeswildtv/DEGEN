@@ -494,6 +494,40 @@ try {
   assert.equal(duplicateReplay.worldEvent.fullRewardClears, 1);
   assert.equal(battleHistoryRows('duplicate-completion-race:victory').length, 1);
 
+  // A different player must not claim another player's already-resolved victory.
+  const wrongOwnerSnapshot = () => ({
+    permit: queryRows(
+      "SELECT player_id, battle_status, reward_state, reward_claim_token, reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at FROM battle_permits WHERE id = 'permit-a'",
+      ['player_id', 'battle_status', 'reward_state', 'reward_claim_token', 'reward_clear_number', 'reward_xp', 'reward_currency', 'reward_tier', 'completed_at'],
+    ),
+    ownerCharacter: queryRows(
+      "SELECT level, xp, currency FROM characters WHERE player_id = 'integration-player'",
+      ['level', 'xp', 'currency'],
+    ),
+    otherCharacter: queryRows(
+      "SELECT level, xp, currency FROM characters WHERE player_id = 'expired-player'",
+      ['level', 'xp', 'currency'],
+    ),
+    ownerInventory: queryRows(
+      "SELECT id, item_key, item_type, quantity FROM player_inventory WHERE player_id = 'integration-player' ORDER BY id",
+      ['id', 'item_key', 'item_type', 'quantity'],
+    ),
+    otherInventory: queryRows(
+      "SELECT id, item_key, item_type, quantity FROM player_inventory WHERE player_id = 'expired-player' ORDER BY id",
+      ['id', 'item_key', 'item_type', 'quantity'],
+    ),
+    clears: queryRows(
+      "SELECT player_id, full_reward_clears FROM world_event_clears WHERE cycle_id = 'integration-cycle' AND player_id IN ('integration-player', 'expired-player') ORDER BY player_id",
+      ['player_id', 'full_reward_clears'],
+    ),
+    history: battleHistoryRows('permit-a:victory'),
+  });
+  const beforeWrongOwnerCompletion = wrongOwnerSnapshot();
+  const wrongOwnerCompletion = await complete('permit-a', 'expired-player');
+  assert.ok([404, 409].includes(wrongOwnerCompletion.status), JSON.stringify(wrongOwnerCompletion));
+  assert.deepEqual(wrongOwnerSnapshot(), beforeWrongOwnerCompletion,
+    'wrong-owner completion must not change the permit, either player, inventory, clear count, or victory history');
+
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
   assert.equal(a.reward.xp, 75);
   assert.equal(b.reward.xp, 75);
