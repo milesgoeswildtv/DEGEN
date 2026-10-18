@@ -24,7 +24,7 @@ function database(): DatabaseSync {
 test('Worker/D1 integration seed respects all tracked migrations and foreign keys', () => {
   const db = database();
   try {
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM battle_permits').get()?.n, 18);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM battle_permits').get()?.n, 19);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM world_event_cycles').get()?.n, 3);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
     assert.equal(db.prepare('PRAGMA integrity_check').get()?.integrity_check, 'ok');
