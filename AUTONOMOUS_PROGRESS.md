@@ -474,3 +474,18 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - Re-read and updated `tests/world-entry-request-deadlines.test.ts` to return/assert the full Worker permit envelope and authoritative turn-0 HP/Mana snapshot. Production validation remains fail-closed; no compatibility fallback was added.
 - Fresh exact-head CI is required. No local checkout, production DB operation, migration, deployment, or merge.
 - Best next task: inspect fresh CI for this fixture correction; preserve the existing release/auth gates and do not start Shield before battle-authority integration is safely released.
+
+
+## 2026-10-18 — Authoritative battle-start state validation verified (PUSHED / draft PR #12)
+
+- Authoritative `main`: `33e7477961d2a6ab7b79bf52d78a93901e19f658`. Code/test head `f7b466923c72b2ed566e9250f25104c1278dc698` passed exact-head GitHub Actions run `39165426265` on 2026-10-18.
+- Fix on the existing `automation/degen/permit-millisecond-expiry-v02` branch: `GameApi.startUnderpass` now validates the server permit envelope and requires a matching, active, turn-0 authoritative HP/Mana snapshot. Missing/malformed initial state now fails closed rather than letting `BattleEngine` silently initialize from local prototype HP/Mana.
+- Regression coverage: valid start contract plus rejection of missing state, mismatched permit, missing/negative Mana, zero starting HP, terminal status, nonzero turn count, wrong cycle, and invalid expiry. Updated the existing deadline test's success fixture to include the required server snapshot after the first CI run correctly caught its obsolete partial fixture.
+- Exact-head CI run `39165426265`: `npm test` **94/94 pass**; isolated local Wrangler/D1 reward/action integration PASS; 60-request cycle reservation PASS; 60-request expired-cycle rollover PASS; Vite production build PASS; Chromium + Vite + local Wrangler/D1 vertical slice PASS (`Map → Home → Underpass → Degen battle → Worker reward → Home trophy`); `npm run check:worker` dry-run PASS. Non-blocking Node/action deprecation warnings remain.
+- The prior code head `b92a05a` failed one test because `tests/world-entry-request-deadlines.test.ts` returned an incomplete mock permit. That fixture is corrected; the fresh exact-head run is green.
+- Files changed: `src/app/api.ts`, `tests/battle-api-turn-contract.test.ts`, `tests/world-entry-request-deadlines.test.ts`, and this progress record. No new migration or schema change.
+- Mana: COMPLETE / MERGED on main for core Degen-only Mana and migration 0003; PR #12 adds the authoritative start-state/client hardening and existing Mana UI regression coverage. No monster Mana; zero Mana never reverts combat.
+- Battle/reward authority: main's server-resolved victory and persisted reward receipt remain intact; PR #12's strict turn CAS, terminal recovery, expiry precision, cycle reservation, and expanded integration are still draft-only, not merged/live.
+- D1 source of truth: `wrangler.toml` binds `DB` → `DEGEN`; migrations 0002–0005 are tracked and deployment applies schema → migrations → Worker. No production D1 mutation, migration execution, merge, or deployment.
+- Remaining blockers: release-order reconciliation across PRs #9–#12; signed Discord/Telegram identity and per-request player ownership; intended Pages/Worker CORS and live published-origin QA. No Miles design blocker.
+- Best next task: reconcile the overlapping battle PRs in a release-safe sequence and close signed-identity/request-ownership before public economic gameplay. Do not start Shield until the authority integration is safely released.
