@@ -142,7 +142,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
           <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
-            <small>${ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}</small>
+            <small>${!Number.isSafeInteger(ability.manaCost) || ability.manaCost < 0 ? 'INVALID COST' : ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}</small>
           </button>
         `).join('')}
       </div>
@@ -160,7 +160,8 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
 
   document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
     const manaCost = Number(button.dataset.manaCost ?? 0);
-    button.disabled = snapshot.status !== 'active' || manaCost > snapshot.playerMana;
+    const validManaCost = Number.isSafeInteger(manaCost) && manaCost >= 0;
+    button.disabled = snapshot.status !== 'active' || !validManaCost || manaCost > snapshot.playerMana;
   });
 
   if (snapshot.status !== 'active') {
