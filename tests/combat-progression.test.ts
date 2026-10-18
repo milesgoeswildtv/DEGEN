@@ -187,3 +187,33 @@ test('depleting Degen Mana never reverts combat and zero-cost actions still reso
   assert.equal(battle.snapshot.playerMaxMana, TEST_DEGEN.maxMana);
   assert.equal(completed.length, 0);
 });
+
+
+test('invalid Mana states and negative or fractional costs cannot mint Mana', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
+  assert.ok(free);
+
+  assert.equal(canUseAbility(-1, free), false);
+  assert.equal(canUseAbility(Number.NaN, free), false);
+  assert.equal(canUseAbility(0, { ...free, manaCost: -1 }), false);
+  assert.equal(canUseAbility(0, { ...free, manaCost: 0.5 }), false);
+  assert.equal(canUseAbility(0, { ...free, manaCost: Number.NaN }), false);
+
+  assert.throws(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: { ...free, manaCost: -1 },
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  }), /Invalid Mana cost/);
+
+  assert.throws(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: -1,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  }), /Invalid player Mana state/);
+});
