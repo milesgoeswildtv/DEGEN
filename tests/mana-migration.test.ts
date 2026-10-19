@@ -21,17 +21,19 @@ function setup() {
   const insert = db.prepare(`INSERT INTO battle_permits
     (id, player_id, event_key, cycle_id, encounter_key, expires_at, completed_at,
      player_hp, enemy_hp, battle_status, turn_count)
-    VALUES (?, 'player', 'underpass', 'closed-cycle', 'tunnel-maw', ?, ?, ?, ?, ?, 0)`);
+    VALUES (?, 'player', ?, 'closed-cycle', ?, ?, ?, ?, ?, ?, 0)`);
 
-  insert.run('valid-active', future, null, 80, 20, 'active');
-  insert.run('expired-active', expired, null, 80, 20, 'active');
-  insert.run('malformed-expiry', 'not-a-date', null, 80, 20, 'active');
-  insert.run('missing-player-hp', future, null, null, 20, 'active');
-  insert.run('missing-enemy-hp', future, null, 80, null, 'active');
-  insert.run('victory', future, null, 80, 0, 'victory');
-  insert.run('defeat', future, null, 0, 20, 'defeat');
-  insert.run('completed-active', future, '2026-10-01 00:00:00', 80, 20, 'active');
-  insert.run('already-has-mana', future, null, 80, 20, 'active');
+  insert.run('valid-active', 'underpass', 'tunnel-maw', future, null, 80, 20, 'active');
+  insert.run('expired-active', 'underpass', 'tunnel-maw', expired, null, 80, 20, 'active');
+  insert.run('malformed-expiry', 'underpass', 'tunnel-maw', 'not-a-date', null, 80, 20, 'active');
+  insert.run('missing-player-hp', 'underpass', 'tunnel-maw', future, null, null, 20, 'active');
+  insert.run('missing-enemy-hp', 'underpass', 'tunnel-maw', future, null, 80, null, 'active');
+  insert.run('victory', 'underpass', 'tunnel-maw', future, null, 80, 0, 'victory');
+  insert.run('defeat', 'underpass', 'tunnel-maw', future, null, 0, 20, 'defeat');
+  insert.run('completed-active', 'underpass', 'tunnel-maw', future, '2026-10-01 00:00:00', 80, 20, 'active');
+  insert.run('already-has-mana', 'underpass', 'tunnel-maw', future, null, 80, 20, 'active');
+  insert.run('other-event', 'boss-event', 'other-monster', future, null, 80, 20, 'active');
+  insert.run('other-underpass-encounter', 'underpass', 'future-approved-encounter', future, null, 80, 20, 'active');
 
   // Reproduce the rollout window: valid HP/enemy state existed before player_mana.
   db.exec(read('../db/migrations/0003_degen_mana.sql'));
@@ -62,6 +64,8 @@ test('Mana backfill repairs only eligible, unexpired active permits with complet
       'victory',
       'defeat',
       'completed-active',
+      'other-event',
+      'other-underpass-encounter',
     ]) assert.equal(mana(db, id), null, `${id} must remain untouched`);
   } finally {
     db.close();
