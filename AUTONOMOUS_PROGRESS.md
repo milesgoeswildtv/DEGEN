@@ -80,3 +80,17 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Mana rules are merged on main; migration 0007 is branch-only and has not been applied to production. D1 source of truth remains binding `DB`, database `DEGEN`, migration directory `db/migrations`; deployment workflow applies base schema, then tracked migrations, then Worker code. No production D1 mutation or deployment.
 - Battle authority remains Worker-owned; reward receipt/idempotency merged through PR #5, but endpoint-level concurrent action/completion coverage and battle-start authoritative snapshot are still gaps. No Miles design blocker.
 - Best next task: open a focused draft PR for the backfill and require exact-head CI; then finish the authoritative battle-start snapshot before Shield/status complexity.
+
+
+## Latest verified run — 2026-10-19 (Mana backfill continuation)
+
+- Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Continued `automation/degen/mana-active-permit-backfill-v01` from pre-continuity head `e78f13386eeb6f43e198eee999f37004178e70b1`, directly based on current main.
+- **PUSHED / branch only:** migration `0007_backfill_active_battle_mana.sql`, `tests/mana-migration.test.ts`, `tests/mana-deploy-order.test.ts`. No PR was opened in this run; no merge, deployment, or production D1 mutation occurred.
+- Targeted isolated Node 22 + SQLite fixture: **3/3 PASS** for eligible active-permit backfill, preserving existing Mana, rejecting expired/malformed expiry and incomplete/terminal/completed states, allowing valid permits through cycle closure, idempotent rerun, and schema → migrations → Worker ordering. This was an isolated fixture copied from fetched repository source, not full repository CI.
+- Full `npm test`, `npm run build`, and `npm run check:worker` were not run: a complete checkout/dependency tree was unavailable. No exact-head CI was triggered because this branch has no PR.
+- Mana core remains merged on main; migration 0007 is branch-only and unapplied in production. The value 12 is prototype scaffolding, not final balance canon. No monster Mana or zero-Mana reversion was added.
+- Battle authority/reward receipts remain Worker-owned; reward idempotency is merged through PR #5, but live D1 behavior is unverified. Main's battle-start response still omits the initial authoritative snapshot; PR #12 has an unmerged implementation/test to reconcile after this slice.
+- D1 source of truth verified: binding `DB`, database `DEGEN`, migration directory `db/migrations`; deployment applies schema, migrations, then Worker.
+- Miles blocker: none on canon. PR creation remains pending; no PR status should be inferred.
+- **Best next task:** open the focused backfill draft PR through a supported GitHub path, require exact-head CI, then review/reconcile PR #12's authoritative battle-start snapshot before Shield/status work.
