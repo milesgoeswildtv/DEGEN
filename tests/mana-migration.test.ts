@@ -25,6 +25,7 @@ function setup() {
 
   insert.run('valid-active', future, null, 80, 20, 'active');
   insert.run('expired-active', expired, null, 80, 20, 'active');
+  insert.run('malformed-expiry', 'not-a-date', null, 80, 20, 'active');
   insert.run('missing-player-hp', future, null, null, 20, 'active');
   insert.run('missing-enemy-hp', future, null, 80, null, 'active');
   insert.run('victory', future, null, 80, 0, 'victory');
@@ -55,6 +56,7 @@ test('Mana backfill repairs only eligible, unexpired active permits with complet
     assert.equal(mana(db, 'already-has-mana'), 2);
     for (const id of [
       'expired-active',
+      'malformed-expiry',
       'missing-player-hp',
       'missing-enemy-hp',
       'victory',
