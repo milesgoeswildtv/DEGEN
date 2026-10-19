@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import test from 'node:test';
+import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8')
@@ -21,7 +22,7 @@ function fixture(complete = false) {
   const calls: Array<{ path: string; signal: AbortSignal; method: string; body?: unknown }> = [];
   let nextId = 0;
   const ApiClass = runInNewContext(compiled + '\nGameApi;', {
-    AbortController, Response, console,
+    AbortController, Response, console, TEST_DEGEN, TUNNEL_MAW,
     setTimeout: (fire: () => void, ms: number) => {
       const id = ++nextId;
       timers.set(id, { fire, ms });
