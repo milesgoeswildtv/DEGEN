@@ -1,11 +1,11 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-08
+Updated: 2026-10-19
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
 - Integration branch: `main`
-- Authoritative main SHA at this run: `2df79a123a022212721634c048147d8bf935566a`.
+- Authoritative main SHA at this run: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
 - Stack: TypeScript + Vite + Phaser + DOM/CSS; Cloudflare Worker + D1.
 - Core vertical slice: Map -> Home -> Underpass -> Battle -> Loot -> Home.
 
@@ -26,7 +26,7 @@ Updated: 2026-10-08
 - D1 migration for authoritative battle Mana/state is tracked and deploy ordering applies schema + migrations before Worker code.
 - Client and Worker share one deterministic turn resolver.
 
-## Current slice — PUSHED / PR
+## Historical PR #5 slice — merged on 2026-10-08
 - PR #5: `automation/degen/reward-authority-v22` -> `main`.
 - Reward lifecycle is persisted as pending/claiming/awarded with a 60-second stale-claim lease.
 - Fresh claims require an unexpired server-resolved victory; recovery reuses the persisted clear number.
@@ -34,13 +34,13 @@ Updated: 2026-10-08
 - `db/migrations/0004_reward_receipt.sql` is tracked; no production D1 migration has been executed from this branch.
 - Permit expiry hardening is now folded into PR #5 by fast-forward: all three authoritative checks use `datetime(expires_at) > CURRENT_TIMESTAMP`.
 - `tests/reward-authority.test.ts` covers migration defaults, expired/non-victory rejection, duplicate live-claim rejection, stale-claim recovery, preserved clear number, and terminal awarded receipts; Node 22 SQLite rows are normalized before deep equality.
-- Current PR head before this continuity commit: `55d1152373d6602696593a39d26fda7793fa10a8`.
-- CI status: fresh PR-head CI is required after folding the expiry commits into PR #5. Do not merge until `npm test`, `npm run build`, and `npm run check:worker` are green.
+- Historical PR head before merge: `55d1152373d6602696593a39d26fda7793fa10a8`; PR #5 later merged into main at `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- CI status at the time: fresh PR-head CI was required; the merge SHA later passed Actions CI run `37736582203` on 2026-10-08.
 
 ## Battle authority / reward idempotency
 - Mana authority: COMPLETE / MERGED on main.
-- Reward recoverability/idempotency: PUSHED / PR, not merged or live.
-- Permit expiry format regression: fixed on PR branch, awaiting fresh CI.
+- Reward recoverability/idempotency: MERGED on main through PR #5; no live production verification was performed in this run.
+- Permit expiry format regression: fixed before merge; broader endpoint-level concurrency coverage remains pending.
 - Remaining coverage priority: concurrent action/completion attempts, duplicate completion at endpoint level, invalid permits, and full/reduced clear + level-up integration.
 
 ## Deployment / persistence
@@ -49,7 +49,7 @@ Updated: 2026-10-08
 - `wrangler.toml` remains the source of truth for the existing D1 binding/config; no deployment config was changed.
 
 ## Best next task
-Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and merge only if authority/idempotency invariants remain intact. If CI fails, fix the smallest failing regression on the same branch. After reward authority is merged, add endpoint-level concurrency/duplicate-completion integration coverage before generic Shield work.
+Deliver the active-permit Mana backfill as a focused PR with malformed-expiry and migration-before-Worker deployment regressions. After exact-head CI is green, implement and test the authoritative battle-start snapshot contract before Shield/status work.
 
 ## Latest verified run — 2026-10-08
 - Main SHA: `2df79a123a022212721634c048147d8bf935566a`.
@@ -69,3 +69,14 @@ Wait for and inspect fresh PR #5 CI. If green, review the complete PR diff and m
 - LOCAL ONLY: isolated harness fix (remove unsupported Wrangler migrations `--yes`) and CI invocation prepared as patch, not pushed. Local SQLite reservation/CAS and migration model checks passed; actual Worker/D1 integration unverified.
 - Reward migrations 0004/0005 tracked, no production D1 changes. Mana merged, no monster Mana or reversion.
 - Best next task: land the harness and CI correction on the same branch, run Worker/D1 integration and update this file with observed results.
+
+
+## Latest verified run — 2026-10-19 (Mana active-permit backfill continuation)
+- Authoritative `main`: `33e7477961d2a6ab7b79bf52d78a93901e19f658`; active branch `automation/degen/mana-active-permit-backfill-v01` started at `fd7ca19d9c72e4886262c9811425b05bc3751e49`, 7 commits ahead / 0 behind, with no PR at start.
+- Sidekick Mana branch remains 11 ahead / 22 behind and diverged. Its older client/Worker/runtime changes were inspected but not merged; current main is the source of truth.
+- Scoped changes prepared for this branch: malformed-expiry rejection in `tests/mana-migration.test.ts`; new `tests/mana-deploy-order.test.ts`; continuity corrections in this file. Migration `0007_backfill_active_battle_mana.sql` remains unchanged.
+- Targeted local Node 22 / SQLite fixture passed 3/3: eligible active-permit backfill with malformed expiry excluded; preserve valid encounters across event closure and idempotent rerun; schema → tracked migrations → Worker deployment ordering. These are isolated fixtures, not full repository CI.
+- Full `npm test`, `npm run build`, and `npm run check:worker` were not run in this runtime because a complete checkout/dependency tree is unavailable. No PR-head CI exists yet.
+- Mana rules are merged on main; migration 0007 is branch-only and has not been applied to production. D1 source of truth remains binding `DB`, database `DEGEN`, migration directory `db/migrations`; deployment workflow applies base schema, then tracked migrations, then Worker code. No production D1 mutation or deployment.
+- Battle authority remains Worker-owned; reward receipt/idempotency merged through PR #5, but endpoint-level concurrent action/completion coverage and battle-start authoritative snapshot are still gaps. No Miles design blocker.
+- Best next task: open a focused draft PR for the backfill and require exact-head CI; then finish the authoritative battle-start snapshot before Shield/status complexity.
