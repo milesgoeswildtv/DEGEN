@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
-import type { BattleInitialState, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
+import type { BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { underpassRewardForClear } from '../game/progression';
@@ -113,15 +113,11 @@ export class AppController {
     if (!event || event.phase !== 'open') return;
 
     try {
-      const permit = this.api.enabled
+      this.battlePermit = this.api.enabled
         ? await this.api.startUnderpass(this.store.snapshot.id, event.cycleId)
         : createPreviewPermit(event.cycleId);
 
-      if (!permit) throw new Error('No battle permit returned.');
-      if (this.api.enabled && !this.isValidBattleInitialState(permit.initialState)) {
-        throw new Error('Missing or invalid authoritative battle-start snapshot.');
-      }
-      this.battlePermit = permit;
+      if (!this.battlePermit) throw new Error('No battle permit returned.');
       this.navigate('battle');
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
@@ -130,31 +126,13 @@ export class AppController {
     }
   }
 
-  private isValidBattleInitialState(state?: BattleInitialState): state is BattleInitialState {
-    return Boolean(
-      state
-      && state.status === 'active'
-      && Number.isInteger(state.playerHp)
-      && state.playerHp > 0
-      && state.playerHp <= TEST_DEGEN.maxHp
-      && Number.isInteger(state.playerMana)
-      && state.playerMana >= 0
-      && state.playerMana <= TEST_DEGEN.maxMana
-      && Number.isInteger(state.enemyHp)
-      && state.enemyHp > 0
-      && state.enemyHp <= TUNNEL_MAW.maxHp
-      && Number.isInteger(state.turnCount)
-      && state.turnCount === 0
-    );
-  }
-
   private mountBattle(): void {
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     if (!parent || !this.battlePermit) return;
 
     this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
       void this.finishBattle(status);
-    }, this.battlePermit.initialState);
+    });
 
     this.battleEngine.subscribe(updateBattleDom);
     this.battleGame = createBattleGame(parent, this.battleEngine);

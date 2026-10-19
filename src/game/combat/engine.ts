@@ -1,4 +1,4 @@
-import type { BattleActionResult, BattleInitialState, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
+import type { BattleActionResult, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
 import { canUseAbility, resolveCombatTurn } from './rules';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
@@ -30,12 +30,10 @@ export class BattleEngine {
     readonly degen: DegenDefinition,
     readonly enemy: EnemyDefinition,
     private readonly onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
-    initialState?: BattleInitialState,
   ) {
-    this.playerHp = initialState?.playerHp ?? degen.maxHp;
-    this.playerMana = initialState?.playerMana ?? degen.maxMana;
-    this.enemyHp = initialState?.enemyHp ?? enemy.maxHp;
-    this.status = initialState?.status ?? 'active';
+    this.playerHp = degen.maxHp;
+    this.playerMana = degen.maxMana;
+    this.enemyHp = enemy.maxHp;
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
   }
 

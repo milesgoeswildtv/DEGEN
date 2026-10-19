@@ -97,25 +97,12 @@ export interface WorldEventSnapshot {
   source: 'server' | 'preview';
 }
 
-export interface BattleInitialState {
-  status: 'active';
-  playerHp: number;
-  playerMana: number;
-  enemyHp: number;
-  turnCount: number;
-}
-
 export interface BattlePermit {
   permitId: string;
   eventKey: string;
   cycleId: string;
   encounterKey: string;
   expiresAt: string;
-  initialState?: BattleInitialState;
-}
-
-export interface BattleStartResult extends BattlePermit {
-  initialState: BattleInitialState;
 }
 
 export interface BattleActionResult {
