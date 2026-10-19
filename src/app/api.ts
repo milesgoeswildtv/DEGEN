@@ -1,4 +1,5 @@
 import type { BattleActionResult, BattleCompletionResult, BattlePermit, HousingState, PlatformIdentity, PlayerState, WorldEventSnapshot } from '../domain/types';
+import { TEST_DEGEN, TUNNEL_MAW } from '../data/combatPrototype';
 import { withBattleActionRetry } from './battleActionRetry';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
@@ -6,41 +7,44 @@ const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const isNonnegativeSafeInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
-const isAuthoritativeBattleStartState = (value: unknown, permitId: string): value is BattleActionResult => {
-  if (!value || typeof value !== 'object') return false;
-  const state = value as Record<string, unknown>;
-  return state.permitId === permitId
-    && state.status === 'active'
-    && state.turnCount === 0
-    && isNonnegativeSafeInteger(state.playerHp) && state.playerHp > 0
-    && isNonnegativeSafeInteger(state.playerMana)
-    && isNonnegativeSafeInteger(state.enemyHp) && state.enemyHp > 0;
-};
+const isBoundedSafeInteger = (value: unknown, maximum: number): value is number =>
+  isNonnegativeSafeInteger(value) && value <= maximum;
 
-const isAuthoritativeBattleActionResult = (
-  value: unknown,
-  permitId: string,
-  expectedTurnCount: number,
-): value is BattleActionResult => {
-  if (!isNonnegativeSafeInteger(expectedTurnCount) || expectedTurnCount >= Number.MAX_SAFE_INTEGER
-    || !value || typeof value !== 'object') return false;
+const isAuthoritativeBattleState = (value: unknown, permitId: string): value is BattleActionResult => {
+  if (!value || typeof value !== 'object') return false;
   const state = value as Record<string, unknown>;
   const status = state.status;
   const playerHp = state.playerHp;
   const playerMana = state.playerMana;
   const enemyHp = state.enemyHp;
+
   if (state.permitId !== permitId
     || typeof status !== 'string' || !['active', 'victory', 'defeat'].includes(status)
-    || state.turnCount !== expectedTurnCount + 1
-    || !isNonnegativeSafeInteger(playerHp)
-    || !isNonnegativeSafeInteger(playerMana)
-    || !isNonnegativeSafeInteger(enemyHp)) return false;
+    || !isNonnegativeSafeInteger(state.turnCount)
+    || !isBoundedSafeInteger(playerHp, TEST_DEGEN.maxHp)
+    || !isBoundedSafeInteger(playerMana, TEST_DEGEN.maxMana)
+    || !isBoundedSafeInteger(enemyHp, TUNNEL_MAW.maxHp)) return false;
 
   if (status === 'active') return playerHp > 0 && enemyHp > 0;
   if (status === 'victory') return playerHp > 0 && enemyHp === 0;
   if (status === 'defeat') return playerHp === 0 && enemyHp > 0;
   return false;
 };
+
+const isAuthoritativeBattleStartState = (value: unknown, permitId: string): value is BattleActionResult =>
+  isAuthoritativeBattleState(value, permitId)
+  && value.status === 'active'
+  && value.turnCount === 0;
+
+const isAuthoritativeBattleActionResult = (
+  value: unknown,
+  permitId: string,
+  expectedTurnCount: number,
+): value is BattleActionResult =>
+  isNonnegativeSafeInteger(expectedTurnCount)
+  && expectedTurnCount < Number.MAX_SAFE_INTEGER
+  && isAuthoritativeBattleState(value, permitId)
+  && value.turnCount === expectedTurnCount + 1;
 
 export class BattleTurnConflictError extends Error {
   constructor(readonly battleState: BattleActionResult) {
@@ -118,17 +122,25 @@ export class GameApi {
     if (!isNonnegativeSafeInteger(expectedTurnCount) || expectedTurnCount >= Number.MAX_SAFE_INTEGER) {
       throw new Error('Invalid expected battle turn count.');
     }
-    return withBattleActionRetry(expectedTurnCount, async (turnCount, signal) => {
-      const result = await this.request<unknown>('/api/battle/action', {
-        method: 'POST',
-        signal,
-        body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount: turnCount }),
+    try {
+      return await withBattleActionRetry(expectedTurnCount, async (turnCount, signal) => {
+        const result = await this.request<unknown>('/api/battle/action', {
+          method: 'POST',
+          signal,
+          body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount: turnCount }),
+        });
+        if (!isAuthoritativeBattleActionResult(result, permitId, turnCount)) {
+          throw new Error('Malformed authoritative battle action response.');
+        }
+        return result;
       });
-      if (!isAuthoritativeBattleActionResult(result, permitId, turnCount)) {
-        throw new Error('Malformed authoritative battle action response.');
+    } catch (error) {
+      if (error instanceof BattleTurnConflictError
+        && !isAuthoritativeBattleState(error.battleState, permitId)) {
+        throw new Error('Malformed authoritative battle conflict response.');
       }
-      return result;
-    });
+      throw error;
+    }
   }
 
   async completeUnderpass(playerId: string, permitId: string): Promise<BattleCompletionResult | undefined> {

@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import { withBattleActionRetry } from '../src/app/battleActionRetry.ts';
+import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 
 // Exercise the real API adapter with a deterministic fetch stub. This verifies
 // the client/Worker turn contract without pretending to run a browser or Worker.
@@ -22,6 +23,8 @@ function createApi(fetchImpl: typeof fetch) {
     setTimeout,
     clearTimeout,
     withBattleActionRetry,
+    TEST_DEGEN,
+    TUNNEL_MAW,
   }) as {
     GameApi: new () => {
       startUnderpass(playerId: string, cycleId: string): Promise<{
@@ -94,6 +97,9 @@ test('server-backed battle start rejects missing, mismatched, or malformed autho
     { ...valid, initialState: { ...valid.initialState, permitId: 'different-permit' } },
     { ...valid, initialState: { ...valid.initialState, playerMana: undefined } },
     { ...valid, initialState: { ...valid.initialState, playerMana: -1 } },
+    { ...valid, initialState: { ...valid.initialState, playerHp: TEST_DEGEN.maxHp + 1 } },
+    { ...valid, initialState: { ...valid.initialState, playerMana: TEST_DEGEN.maxMana + 1 } },
+    { ...valid, initialState: { ...valid.initialState, enemyHp: TUNNEL_MAW.maxHp + 1 } },
     { ...valid, initialState: { ...valid.initialState, playerHp: 0 } },
     { ...valid, initialState: { ...valid.initialState, enemyHp: 0 } },
     { ...valid, initialState: { ...valid.initialState, status: 'victory' } },
@@ -205,14 +211,23 @@ test('insufficient-Mana conflict returns the unchanged Worker state for safe cli
 });
 
 test('malformed conflict payload is rejected instead of being treated as authoritative state', async () => {
-  const { GameApi } = createApi(async () => new Response(JSON.stringify({
-    error: 'Conflict', battleState: { permitId: 'permit-3', status: 'active', turnCount: -1 },
-  }), { status: 409, headers: { 'content-type': 'application/json' } }));
+  const invalidStates = [
+    { permitId: 'permit-3', status: 'active', turnCount: -1 },
+    { permitId: 'permit-3', status: 'active', playerHp: 120, playerMana: TEST_DEGEN.maxMana + 1, enemyHp: 57, turnCount: 1 },
+    { permitId: 'permit-3', status: 'active', playerHp: 120, playerMana: 8, enemyHp: TUNNEL_MAW.maxHp + 1, turnCount: 1 },
+  ];
 
-  await assert.rejects(
-    new GameApi().actUnderpass('player-1', 'permit-3', 'slash', 0),
-    /DEGEN API 409/,
-  );
+  for (const battleState of invalidStates) {
+    const { GameApi } = createApi(async () => new Response(JSON.stringify({
+      error: 'Conflict', battleState,
+    }), { status: 409, headers: { 'content-type': 'application/json' } }));
+
+    await assert.rejects(
+      new GameApi().actUnderpass('player-1', 'permit-3', 'slash', 0),
+      /DEGEN API 409|Malformed authoritative battle conflict response/,
+      JSON.stringify(battleState),
+    );
+  }
 });
 
 
@@ -228,6 +243,9 @@ test('successful battle actions reject malformed or out-of-turn Worker state bef
     { ...valid, playerHp: -1 },
     { ...valid, playerMana: -1 },
     { ...valid, enemyHp: -1 },
+    { ...valid, playerHp: TEST_DEGEN.maxHp + 1 },
+    { ...valid, playerMana: TEST_DEGEN.maxMana + 1 },
+    { ...valid, enemyHp: TUNNEL_MAW.maxHp + 1 },
     { ...valid, status: 'active', playerHp: 0 },
     { ...valid, status: 'active', enemyHp: 0 },
     { ...valid, status: 'victory' },
