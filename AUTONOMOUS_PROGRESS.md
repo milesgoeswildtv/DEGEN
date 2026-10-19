@@ -107,3 +107,16 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Miles blocker: none on gameplay canon. Delivery blocker: connector safety checks rejected PR creation; no speculative workaround was used.
 - **Best next task:** retry focused PR delivery for this preserved backfill branch through a supported GitHub write path; after that PR is reviewable, port only the tested authoritative battle-start snapshot contract into a small separate change before any Shield/status work.
 
+
+
+## 2026-10-19 — Mana backfill scope hardening (PUSHED / PR pending)
+- Authoritative main SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Active continuation: `automation/degen/mana-active-permit-backfill-v01`; previous head `91dfdedb05f1b03bcde95290cfb3088b7afb8761`; scoped migration/test commit `1509b816fc407c9848a9ec78583a7eab980e561e` pushed. Branch remains 12 commits ahead and 0 behind main before this continuity update.
+- Changed `db/migrations/0007_backfill_active_battle_mana.sql` to limit the one-time prototype backfill to legacy `underpass` / `tunnel-maw` permits, in addition to existing active-state, live HP/enemy HP, incomplete, NULL Mana, and unexpired checks. This avoids assigning TEST_DEGEN's scaffolding value to unrelated event or encounter types. A legal issued permit remains eligible after its Underpass cycle closes.
+- Changed `tests/mana-migration.test.ts` to vary event/encounter keys and assert unrelated event and future encounter permits remain untouched, while preserving existing Mana and the closed-cycle case.
+- Targeted test source was updated, but exact branch CI is still pending; do not claim the repository test suite passed from this edit alone. Full local `npm test`, `npm run build`, and `npm run check:worker` remain unavailable without a checkout/dependency tree.
+- Mana core remains MERGED on main. Migration 0007 remains branch-only/unapplied; no production D1 mutation or Worker deployment. D1 binding `DB`, database `DEGEN`, and migrations directory `db/migrations` were re-read from `wrangler.toml`; deploy workflow applies schema, tracked migrations, then Worker.
+- Battle authority and reward receipts remain Worker-owned on main. The authoritative initial battle-start snapshot is still absent from main; PR #12 contains a broader, green-CI draft implementation but overlaps other battle reliability branches and must not be merged wholesale.
+- Migration sequencing note: draft PR #14 also proposes `0006_player_sessions.sql`. Resolve that numbering/order dependency before merging this 0007 PR; PR #14 is not production authentication and must not be treated as such.
+- No Miles canon blocker. Delivery status: code/test commit PUSHED; focused PR and exact-head CI pending. One earlier contents-API write was rejected; after re-reading branch/file SHA and push permission, the scoped changes were successfully committed via normal Git blob/tree/commit/ref operations. No force push or protected-main write.
+- Best next task: open a focused draft PR for this backfill, obtain exact-head CI, then reconcile migration numbering with PR #14 and port only PR #12's tested initial battle snapshot into a separate narrow change.
