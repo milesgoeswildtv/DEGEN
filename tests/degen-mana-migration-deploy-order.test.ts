@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -8,6 +8,20 @@ const manaBackfill = read('../db/migrations/0007_backfill_active_battle_mana.sql
 const deployWorkflow = read('../.github/workflows/deploy-worker.yml');
 const wranglerConfig = read('../wrangler.toml');
 const packageJson = JSON.parse(read('../package.json')) as { scripts: Record<string, string> };
+const migrationFiles = readdirSync(new URL('../db/migrations/', import.meta.url))
+  .filter((file) => /^\d+_.+\.sql$/.test(file))
+  .sort();
+
+test('tracked D1 migrations use unique numeric prefixes without requiring gapless numbering', () => {
+  const prefixes = migrationFiles
+    .map((file) => file.match(/^(\d+)_/)?.[1])
+    .filter((prefix): prefix is string => Boolean(prefix));
+
+  assert.equal(prefixes.length, migrationFiles.length, 'every tracked migration must have a numeric prefix');
+  assert.equal(new Set(prefixes).size, prefixes.length, 'two migrations must never share a numeric prefix');
+  assert.ok(migrationFiles.includes('0005_reward_claim_character_guard.sql'));
+  assert.ok(migrationFiles.includes('0007_backfill_active_battle_mana.sql'));
+});
 
 test('Degen Mana migration adds only the player-owned Mana column', () => {
   const addedColumns = [...manaMigration.matchAll(/\bADD\s+COLUMN\s+([a-z_][a-z0-9_]*)/gi)]
