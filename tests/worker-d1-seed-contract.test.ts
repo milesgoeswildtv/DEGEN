@@ -7,6 +7,7 @@ import test from 'node:test';
 // tests/worker-d1-concurrency.mjs against the tracked D1 schema/migrations.
 // The HTTP harness itself must still run under isolated Wrangler/D1 in CI.
 const source = readFileSync(new URL('./worker-d1-concurrency.mjs', import.meta.url), 'utf8');
+const workerSource = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8');
 const seed = source.match(/writeFileSync\(seed, `([\s\S]*?)`\);/)?.[1];
 assert.ok(seed, 'Worker/D1 integration harness must contain its SQL seed');
 
@@ -66,8 +67,8 @@ test('HTTP action fixtures validate supplied turns and preserve temporary legacy
   assert.match(source, /JSON\.stringify\(\{ playerId, permitId, abilityId, expectedTurnCount \}\)/);
   assert.match(source, /action\('paid-nonlethal', 'crack', 'integration-player', 1\)/);
   assert.match(source, /action\('parallel-action', 'slash', 'integration-player', 1\)/);
-  assert.match(source, /if \(input\.expectedTurnCount !== undefined/);
-  assert.match(source, /const expectedTurnCount = input\.expectedTurnCount \?\? permit\.turn_count/);
+  assert.match(workerSource, /if \(input\.expectedTurnCount !== undefined/);
+  assert.match(workerSource, /const expectedTurnCount = input\.expectedTurnCount \?\? permit\.turn_count/);
   assert.match(source, /legacy-no-turn/);
 });
 
