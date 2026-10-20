@@ -128,11 +128,12 @@ export class AppController {
 
   private mountBattle(): void {
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
-    if (!parent || !this.battlePermit) return;
+    const permit = this.battlePermit;
+    if (!parent || !permit) return;
 
     this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
       void this.finishBattle(status);
-    });
+    }, this.api.enabled ? permit.initialState : undefined);
 
     this.battleEngine.subscribe(updateBattleDom);
     this.battleGame = createBattleGame(parent, this.battleEngine);

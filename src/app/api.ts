@@ -1,4 +1,19 @@
 import type { BattleActionResult, BattleCompletionResult, BattlePermit, HousingState, PlatformIdentity, PlayerState, WorldEventSnapshot } from '../domain/types';
+import { TEST_DEGEN, TUNNEL_MAW } from '../data/combatPrototype';
+
+const isBoundedSafeInteger = (value: unknown, minimum: number, maximum: number): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
+
+const isAuthoritativeBattleStartState = (value: unknown, permitId: string): value is BattleActionResult => {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as Record<string, unknown>;
+  return state.permitId === permitId
+    && state.status === 'active'
+    && state.turnCount === 0
+    && isBoundedSafeInteger(state.playerHp, 1, TEST_DEGEN.maxHp)
+    && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
+    && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
+};
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
@@ -28,10 +43,19 @@ export class GameApi {
 
   async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<BattlePermit>('/api/battle/start', {
+    const permit = await this.request<BattlePermit>('/api/battle/start', {
       method: 'POST',
       body: JSON.stringify({ playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
     });
+    if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()
+      || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
+      || permit.encounterKey !== TUNNEL_MAW.id
+      || typeof permit.expiresAt !== 'string' || !Number.isFinite(Date.parse(permit.expiresAt))
+      || Date.parse(permit.expiresAt) <= Date.now()
+      || !isAuthoritativeBattleStartState(permit.initialState, permit.permitId)) {
+      throw new Error('Missing or malformed authoritative battle start state.');
+    }
+    return permit;
   }
 
   async actUnderpass(playerId: string, permitId: string, abilityId: string): Promise<BattleActionResult | undefined> {

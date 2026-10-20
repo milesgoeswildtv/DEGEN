@@ -71,6 +71,42 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+  const startResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  const started = await startResponse.json();
+  assert.equal(startResponse.status, 200, JSON.stringify(started));
+  assert.equal(started.initialState.permitId, started.permitId);
+  assert.equal(started.initialState.status, 'active');
+  assert.ok(Number.isSafeInteger(started.initialState.playerHp) && started.initialState.playerHp > 0);
+  assert.ok(Number.isSafeInteger(started.initialState.playerMana) && started.initialState.playerMana >= 0);
+  assert.ok(Number.isSafeInteger(started.initialState.enemyHp) && started.initialState.enemyHp > 0);
+  assert.equal(started.initialState.turnCount, 0);
+
+  const firstActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: started.permitId,
+      abilityId: 'slash',
+    }),
+  });
+  const firstAction = await firstActionResponse.json();
+  assert.equal(firstActionResponse.status, 200, JSON.stringify(firstAction));
+  assert.equal(firstAction.permitId, started.permitId);
+  assert.equal(firstAction.playerMana, started.initialState.playerMana);
+  assert.equal(firstAction.turnCount, started.initialState.turnCount + 1);
+  assert.ok(firstAction.playerHp < started.initialState.playerHp);
+  assert.ok(firstAction.enemyHp < started.initialState.enemyHp);
+
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);

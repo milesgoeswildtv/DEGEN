@@ -26,14 +26,23 @@ export class BattleEngine {
   private listeners = new Set<(snapshot: BattleSnapshot) => void>();
   private completionSent = false;
 
+  readonly degen: DegenDefinition;
+  readonly enemy: EnemyDefinition;
+  private readonly onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void;
+
   constructor(
-    readonly degen: DegenDefinition,
-    readonly enemy: EnemyDefinition,
-    private readonly onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
+    degen: DegenDefinition,
+    enemy: EnemyDefinition,
+    onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
+    initialState?: BattleActionResult,
   ) {
-    this.playerHp = degen.maxHp;
-    this.playerMana = degen.maxMana;
-    this.enemyHp = enemy.maxHp;
+    this.degen = degen;
+    this.enemy = enemy;
+    this.onComplete = onComplete;
+    this.playerHp = initialState?.playerHp ?? degen.maxHp;
+    this.playerMana = initialState?.playerMana ?? degen.maxMana;
+    this.enemyHp = initialState?.enemyHp ?? enemy.maxHp;
+    this.status = initialState?.status ?? 'active';
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
   }
 
