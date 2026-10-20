@@ -244,6 +244,7 @@ try {
       ('closed-cycle-valid','integration-player','underpass','closed-cycle','tunnel-maw',datetime('now','+10 minutes'),'active',120,4,30,0),
       ('fractional-expiry','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,92,0),
       ('legacy-null-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,NULL,92,0),
+      ('legacy-no-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
       ('legacy-terminal-null-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,NULL,0,3);
     UPDATE battle_permits SET started_at=datetime('now','-30 minutes') WHERE id='expired';
     UPDATE battle_permits SET started_at=datetime('now','-10 minutes') WHERE id IN ('closed-cycle-valid','expired-victory');
@@ -637,13 +638,20 @@ try {
   assert.equal((await action('parallel-action', 'crack', 'integration-player', -1)).status, 400);
   assert.equal((await action('parallel-action', 'crack', 'integration-player', 0.5)).status, 400);
   for (const invalidPayload of [
-    { playerId: 'integration-player', permitId: 'parallel-action', abilityId: 'crack' },
     { playerId: 'integration-player', permitId: 'parallel-action', abilityId: 'crack', expectedTurnCount: null },
     { playerId: 'integration-player', permitId: 'parallel-action', abilityId: 'crack', expectedTurnCount: '0' },
   ]) {
     assert.equal((await post('/api/battle/action', invalidPayload)).status, 400,
       JSON.stringify(invalidPayload));
   }
+  const legacyNoTurn = await post('/api/battle/action', {
+    playerId: 'integration-player', permitId: 'legacy-no-turn', abilityId: 'slash',
+  });
+  assert.equal(legacyNoTurn.status, 200, JSON.stringify(legacyNoTurn));
+  assertMatchesSharedTurn(legacyNoTurn.data, sharedMath.zeroManaFree, 1);
+  assert.deepEqual(permitState('legacy-no-turn'), {
+    player_hp: 110, player_mana: 0, enemy_hp: 31, battle_status: 'active', turn_count: 1,
+  }, 'legacy requests can omit expectedTurnCount during the compatible rollout');
   assert.equal((await action('parallel-action', 'crack', 'expired-player', 0)).status, 409,
     'a different player cannot act on another player\'s permit');
   assert.deepEqual(permitState('parallel-action'), beforeInvalidTurn,

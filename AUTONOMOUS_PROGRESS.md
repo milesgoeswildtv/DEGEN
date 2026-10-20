@@ -1,6 +1,6 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-18
+Updated: 2026-10-20
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
@@ -553,3 +553,17 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - Mana core remains **MERGED on main**. PR #12's authoritative battle start/action/recovery integration and migration 0007 remain **PUSHED / PR**, not merged/live. No production D1 mutation or deployment was performed.
 - Battle reward receipts/idempotency are merged on main; PR #12 adds broader action/completion/expiry/concurrency evidence. PRs #9–#12 remain overlapping drafts and must not be merged blindly. Client-first rollout remains necessary before strict expected-turn enforcement; signed platform identity and per-request player authorization remain a public-economy release blocker.
 - **Best next task:** reconcile the client-first battle rollout across PRs #9–#12, then wire and integration-test signed Discord/Telegram identity and per-request player authorization before any public economic release.
+
+
+## Autonomous build run — 2026-10-20 (compatible battle-turn rollout)
+
+- **Authoritative main SHA:** `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- **PUSHED / PR #12 target:** `automation/degen/permit-millisecond-expiry-v02`; branch was re-read at `dd2336b8e3d71c6bc1e32dbef0550539cb6d5c1d` before this scoped change. This slice keeps strict validation for any supplied `expectedTurnCount` while allowing older clients to omit it during rollout.
+- **Implementation:** Worker derives the SQL compare-and-swap turn from the current Worker-read permit only when the field is absent. Stale or malformed supplied values still reject. Defeat-history guards use the same resolved turn. Integration fixture exercises a legacy zero-cost ability at 0 Mana, asserting one turn, no Mana change, and exact persisted HP/enemy HP.
+- **Compatibility limitation:** clients that omit `expectedTurnCount` do not get sequential lost-response replay protection; this matches the existing legacy contract and is temporary. Current clients still send the precondition and receive stale-turn protection. Do not call the compatibility path fully idempotent; tighten enforcement after the client-first release is verified.
+- **Mana:** COMPLETE / MERGED on main; Degen-only Mana, zero-cost at 0, paid deduction once, insufficient-Mana rejection without state mutation, killing blow and defeat coverage remain green in PR #12's test suite.
+- **Battle authority / rewards:** server-owned battle state and reward receipts/idempotency are merged on main. PR #12 adds authoritative start snapshots, expiry precision, action/completion/concurrency tests and local Worker/D1 + browser vertical-slice CI; not merged/live.
+- **Migration assumptions:** main migrations 0002–0005; PR #12 keeps `0007_backfill_active_battle_mana.sql` to avoid colliding with PR #14's draft `0006_player_sessions.sql`. Wrangler deploy workflow applies schema, then tracked migrations, then Worker. No remote D1 mutation or deployment.
+- **QA status at commit time:** exact previous PR #12 head `dd2336b8e3d71c6bc1e32dbef0550539cb6d5c1d` passed CI run [39468179578](https://github.com/milesgoeswildtv/DEGEN/actions/runs/39468179578), including deterministic tests, isolated Worker/D1 reward + cycle concurrency, build, Chromium mobile vertical slice and Wrangler dry run. New compatibility assertions require fresh exact-head CI; they are not yet verified.
+- **Release blockers:** PRs #9–#12 overlap and must not be merged blindly; client-first rollout and production Pages/Worker origin verification remain necessary. Signed Discord/Telegram identity and per-request player authorization remain required before public economic gameplay.
+- **Best next task:** verify fresh CI on this exact PR #12 head, then reconcile client-first release order and the battle reliability changes before any merge/deploy.

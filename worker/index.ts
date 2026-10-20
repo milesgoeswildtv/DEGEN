@@ -237,8 +237,11 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (!input.playerId || !input.permitId || !input.abilityId) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
   }
-  if (typeof input.expectedTurnCount !== 'number'
-    || !Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0) {
+  // Temporary compatible rollout: legacy clients may omit this precondition.
+  // Supplied values still protect current clients from stale-turn replays.
+  if (input.expectedTurnCount !== undefined
+    && (typeof input.expectedTurnCount !== 'number'
+      || !Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0)) {
     return fail(request, env, 'expectedTurnCount must be a nonnegative safe integer.', 400);
   }
 
@@ -287,7 +290,10 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     json(request, env, { error: message, battleState: battleState(row) }, 409);
 
   if (permit.battle_status !== 'active') return conflict(`Battle is already ${permit.battle_status}.`, permit);
-  if (permit.turn_count !== input.expectedTurnCount) return conflict('Stale battle turn.', permit);
+  if (input.expectedTurnCount !== undefined && permit.turn_count !== input.expectedTurnCount) {
+    return conflict('Stale battle turn.', permit);
+  }
+  const expectedTurnCount = input.expectedTurnCount ?? permit.turn_count;
   const currentMana = resolveMana(permit.player_mana);
   if (!canUseAbility(currentMana, ability)) return conflict('Not enough Mana for that ability.', permit);
 
@@ -305,7 +311,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
       AND julianday(expires_at) > julianday('now') AND turn_count = ?
     RETURNING turn_count`)
-    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, input.expectedTurnCount);
+    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, expectedTurnCount);
 
   let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
@@ -323,7 +329,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           AND battle_status = 'defeat' AND turn_count = ? AND completed_at IS NULL)
         ON CONFLICT(id) DO NOTHING`)
         .bind(`${input.permitId}:defeat`, input.playerId, TUNNEL_MAW.id, character.level,
-          input.permitId, input.playerId, input.expectedTurnCount + 1),
+          input.permitId, input.playerId, expectedTurnCount + 1),
     ]);
     updated = results[0]?.results?.[0] as { turn_count: number } | undefined;
   } else {
