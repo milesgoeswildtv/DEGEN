@@ -194,11 +194,20 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 
   const permitId = crypto.randomUUID();
   const expiresAt = iso(Date.now() + 20 * 60_000);
+  const initialState = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  };
   await env.DB.prepare(`INSERT INTO battle_permits (
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count
     ) VALUES (?, ?, 'underpass', ?, ?, ?, ?, ?, ?, 'active', 0)`)
-    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt, TEST_DEGEN.maxHp, TEST_DEGEN.maxMana, TUNNEL_MAW.maxHp).run();
+    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt,
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp).run();
 
   return json(request, env, {
     permitId,
@@ -206,6 +215,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     cycleId: cycle.id,
     encounterKey: TUNNEL_MAW.id,
     expiresAt,
+    initialState,
   });
 }
 
