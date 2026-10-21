@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
-const shieldMigration = read('../db/migrations/0006_degen_shield.sql');
+const shieldMigration = read('../db/migrations/0008_degen_shield.sql');
 const deployWorkflow = read('../.github/workflows/deploy-worker.yml');
 const wranglerConfig = read('../wrangler.toml');
 const packageJson = JSON.parse(read('../package.json')) as { scripts: Record<string, string> };
