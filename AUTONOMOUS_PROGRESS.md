@@ -162,10 +162,10 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Best next task: retry focused PR delivery in a later run through a supported path, coordinate the 0006/0007 migration order, then require exact-head deterministic tests, build, Worker dry-run, and isolated Worker/D1 integration before merge.
 
 ## Latest verified run — 2026-10-21 (forged battle-state regression)
-- Authoritative `main`: `4a57424e4b8abbd13b64034be1d8a8bcef28fa27` is unchanged at `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Authoritative `main` SHA: `33e7477961d2a6ab7b79bf52d78a93901e19f658` (unchanged). Mana feature branch commit: `0f60b07533186afc049dba65ce23b1ee220ada18`.
 - Continued the existing Mana rollout branch / PR #15; added Worker/D1 harness assertions that send forged client HP, Mana, enemy HP, and turn count to both an affordable paid action and an unaffordable action. The accepted action must use persisted state and shared combat math (HP -10, enemy HP -35, Mana -4, turn +1); the rejected action must remain 409 despite forged Mana.
-- Delivery: intended changes are being committed only to `automation/degen/mana-active-permit-backfill-v01`; no protected-main write, force-push, production D1 operation, or deployment.
-- Verification gate: this commit has not yet run CI at the time of this entry. Do not treat the assertions as passing until exact-head `npm test`, `npm run build`, `npm run check:worker`, and the isolated Worker/D1 harness finish green.
+- Delivery: PUSHED / PR #15, commit `0f60b07533186afc049dba65ce23b1ee220ada18`, feature branch only. No protected-main write, force-push, production D1 operation, or deployment.
+- Verification gate: exact-head CI run `39672370579` was queued immediately after the commit. Do not treat the assertions as passing until exact-head `npm test`, `npm run build`, `npm run check:worker`, and the isolated Worker/D1 harness finish green.
 - Mana remains core-MERGED on main; authoritative battle-start snapshot and migration 0007 remain PR-only. Reward receipt/idempotency is merged on main; no live production persistence/deployment is claimed.
 - PR #12 overlaps Worker/action files and migration 0007. Keep both drafts open until a diff-level reconciliation establishes the smallest safe merge sequence.
 - Best next task: inspect exact-head CI for this commit and reconcile PR #12/#15 overlaps without importing unrelated client/reward changes.
