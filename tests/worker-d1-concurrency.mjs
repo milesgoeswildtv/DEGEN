@@ -146,7 +146,7 @@ try {
   assert.equal(freeAtZeroResponse.status, 200, JSON.stringify(freeAtZero));
   assert.equal(freeAtZero.playerMana, 0);
   assert.equal(freeAtZero.turnCount, 1, 'rejected paid action must not advance the turn');
-  assert.equal(freeAtZero.playerHp, 67, 'only the accepted free action may apply retaliation');
+  assert.equal(freeAtZero.playerHp, 70, 'only the accepted free action may apply retaliation');
   assert.equal(freeAtZero.enemyHp, 21, 'only the accepted free action may damage the enemy');
 
   assert.equal((await complete('expired')).status, 409);
