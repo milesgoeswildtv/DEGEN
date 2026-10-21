@@ -11,10 +11,10 @@ import type { BattleActionResult } from '../src/domain/types.ts';
 // Load the real engine source without asking Node's native ESM resolver to
 // follow the production bundler's extensionless internal import.
 const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
+  .replace(/^import .*;\r?\n/gm, '')
   .replace('export class BattleEngine', 'class BattleEngine');
 const BattleEngine = runInNewContext(
-  stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\\nBattleEngine;',
+  stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\nBattleEngine;',
   { canUseAbility, resolveCombatTurn },
 ) as new (
   degen: typeof TEST_DEGEN,
