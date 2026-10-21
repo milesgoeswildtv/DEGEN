@@ -581,6 +581,11 @@ try {
   });
   const unaffordable = await action('zero-mana', 'crack');
   assert.equal(unaffordable.status, 409, JSON.stringify(unaffordable));
+  assert.deepEqual(unaffordable.data.battleState, {
+    permitId: 'zero-mana', status: 'active',
+    playerHp: zeroManaBefore.player_hp, playerMana: zeroManaBefore.player_mana,
+    enemyHp: zeroManaBefore.enemy_hp, turnCount: zeroManaBefore.turn_count,
+  }, 'rejected unaffordable action returns the unchanged Worker-owned snapshot for client resynchronization');
   assert.deepEqual(permitState('zero-mana'), zeroManaBefore,
     'rejected unaffordable action must not damage either side, spend Mana, or advance the turn');
   const free = await action('zero-mana', 'slash');

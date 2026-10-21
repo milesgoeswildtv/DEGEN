@@ -100,6 +100,26 @@ test('zero-Mana free action keeps the Degen manifested and the encounter active'
   assert.equal(engine.snapshot.log.some((entry) => /revert/i.test(entry)), false);
 });
 
+test('same-turn insufficient-Mana conflict resynchronizes a stale client without advancing combat', () => {
+  const staleClientState: BattleActionResult = {
+    permitId: 'permit-test', status: 'active',
+    playerHp: 120, playerMana: 4, enemyHp: 60, turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, staleClientState);
+  const rejectedServerState: BattleActionResult = { ...staleClientState, playerMana: 0 };
+
+  engine.syncAuthoritativeState(rejectedServerState);
+
+  assert.deepEqual(
+    [engine.snapshot.status, engine.snapshot.playerHp, engine.snapshot.playerMana,
+      engine.snapshot.enemyHp, engine.snapshot.turnCount],
+    ['active', 120, 0, 60, 0],
+  );
+  assert.ok(engine.snapshot.log.includes('Battle state synchronized with server.'));
+  assert.equal(engine.snapshot.log.some((entry) => entry.includes('uses Crack:')), false,
+    'a rejected action is synchronization, not a resolved combat turn');
+});
+
 test('authoritative killing blow completes once and never supplies client-computed rewards', () => {
   const completed: Array<{ status: string; reward?: BattleReward }> = [];
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status, reward) => completed.push({ status, reward }));
