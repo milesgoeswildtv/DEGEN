@@ -10,7 +10,7 @@ const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/\bexport const /g, 'const ');
 const ui = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\nbattleView; updateBattleDom;',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\nbattleView; updateBattleDom;',
   { document: undefined },
 ) as {
   battleView: (player: { displayName: string; level: number; currency: number }, degen: typeof TEST_DEGEN) => string;
@@ -42,7 +42,7 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
   };
 
   const boundUi = runInNewContext(
-    stripTypeScriptTypes(source, { mode: 'transform' }) + '\\nupdateBattleDom;',
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\nupdateBattleDom;',
     { document: fakeDocument },
   ) as {
     updateBattleDom: (snapshot: {

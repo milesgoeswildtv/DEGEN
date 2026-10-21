@@ -1,8 +1,31 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 import test from 'node:test';
+
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { BattleEngine } from '../src/game/combat/engine.ts';
+import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import type { BattleActionResult } from '../src/domain/types.ts';
+
+// Load the real engine source without asking Node's native ESM resolver to
+// follow the production bundler's extensionless internal import.
+const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import.meta.url), 'utf8')
+  .replace(/^import .*;\\r?\\n/gm, '')
+  .replace('export class BattleEngine', 'class BattleEngine');
+const BattleEngine = runInNewContext(
+  stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\\nBattleEngine;',
+  { canUseAbility, resolveCombatTurn },
+) as new (
+  degen: typeof TEST_DEGEN,
+  enemy: typeof TUNNEL_MAW,
+  onComplete: (status: 'victory' | 'defeat') => void,
+  initialState?: BattleActionResult,
+) => {
+  snapshot: { playerHp: number; playerMana: number; enemyHp: number; status: string };
+  useAbility: (abilityId: string) => void;
+  applyAuthoritativeAction: (abilityId: string, result: BattleActionResult) => void;
+};
 
 const startState = (overrides: Partial<BattleActionResult> = {}): BattleActionResult => ({
   permitId: 'permit-1',
