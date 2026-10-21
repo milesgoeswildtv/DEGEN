@@ -98,15 +98,21 @@ try {
       playerId: 'integration-player',
       permitId: started.permitId,
       abilityId: 'crack',
+      // Client-supplied battle state is untrusted and must not affect the turn.
+      playerHp: 1,
+      playerMana: 0,
+      enemyHp: 1,
+      turnCount: 999,
     }),
   });
   const firstAction = await firstActionResponse.json();
   assert.equal(firstActionResponse.status, 200, JSON.stringify(firstAction));
   assert.equal(firstAction.permitId, started.permitId);
   assert.equal(firstAction.playerMana, started.initialState.playerMana - 4);
+  assert.equal(firstAction.playerHp, started.initialState.playerHp - 10);
+  assert.equal(firstAction.enemyHp, started.initialState.enemyHp - 35);
   assert.equal(firstAction.turnCount, started.initialState.turnCount + 1);
-  assert.ok(firstAction.playerHp < started.initialState.playerHp);
-  assert.ok(firstAction.enemyHp < started.initialState.enemyHp);
+  assert.equal(firstAction.status, 'active');
 
   const freeActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -129,6 +135,11 @@ try {
       playerId: 'integration-player',
       permitId: 'permit-mana-zero',
       abilityId: 'crack',
+      // Forged client Mana cannot make an unaffordable server action valid.
+      playerMana: 999,
+      playerHp: 999,
+      enemyHp: 1,
+      turnCount: 0,
     }),
   });
   assert.equal(unaffordableResponse.status, 409, 'an unaffordable ability must reject');
