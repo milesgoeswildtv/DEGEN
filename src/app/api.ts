@@ -108,6 +108,7 @@ export class GameApi {
         || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
         || permit.encounterKey !== 'tunnel-maw'
         || typeof permit.expiresAt !== 'string' || !Number.isFinite(Date.parse(permit.expiresAt))
+        || Date.parse(permit.expiresAt) <= Date.now()
         || !isAuthoritativeBattleStartState(permit.initialState, permit.permitId)) {
         throw new Error('Missing or malformed authoritative battle start state.');
       }

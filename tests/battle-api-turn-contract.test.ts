@@ -80,7 +80,7 @@ test('server-backed battle start accepts only a complete authoritative HP/Mana s
   assert.equal(result.initialState.turnCount, 0);
 });
 
-test('server-backed battle start rejects missing, mismatched, or malformed authoritative state', async () => {
+test('server-backed battle start rejects missing, mismatched, malformed, or expired authoritative state', async () => {
   const valid = {
     permitId: 'permit-start',
     eventKey: 'underpass',
@@ -105,6 +105,7 @@ test('server-backed battle start rejects missing, mismatched, or malformed autho
     { ...valid, initialState: { ...valid.initialState, status: 'victory' } },
     { ...valid, initialState: { ...valid.initialState, turnCount: 1 } },
     { ...valid, cycleId: 'another-cycle' },
+    { ...valid, expiresAt: new Date(Date.now() - 60_000).toISOString() },
     { ...valid, expiresAt: 'not-a-date' },
   ];
 
