@@ -52,6 +52,7 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -96,16 +97,57 @@ try {
     body: JSON.stringify({
       playerId: 'integration-player',
       permitId: started.permitId,
-      abilityId: 'slash',
+      abilityId: 'crack',
     }),
   });
   const firstAction = await firstActionResponse.json();
   assert.equal(firstActionResponse.status, 200, JSON.stringify(firstAction));
   assert.equal(firstAction.permitId, started.permitId);
-  assert.equal(firstAction.playerMana, started.initialState.playerMana);
+  assert.equal(firstAction.playerMana, started.initialState.playerMana - 4);
   assert.equal(firstAction.turnCount, started.initialState.turnCount + 1);
   assert.ok(firstAction.playerHp < started.initialState.playerHp);
   assert.ok(firstAction.enemyHp < started.initialState.enemyHp);
+
+  const freeActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: started.permitId,
+      abilityId: 'slash',
+    }),
+  });
+  const freeAction = await freeActionResponse.json();
+  assert.equal(freeActionResponse.status, 200, JSON.stringify(freeAction));
+  assert.equal(freeAction.playerMana, firstAction.playerMana);
+  assert.equal(freeAction.turnCount, firstAction.turnCount + 1);
+
+  const unaffordableResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-mana-zero',
+      abilityId: 'crack',
+    }),
+  });
+  assert.equal(unaffordableResponse.status, 409, 'an unaffordable ability must reject');
+
+  const freeAtZeroResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-mana-zero',
+      abilityId: 'slash',
+    }),
+  });
+  const freeAtZero = await freeAtZeroResponse.json();
+  assert.equal(freeAtZeroResponse.status, 200, JSON.stringify(freeAtZero));
+  assert.equal(freeAtZero.playerMana, 0);
+  assert.equal(freeAtZero.turnCount, 1, 'rejected paid action must not advance the turn');
+  assert.equal(freeAtZero.playerHp, 67, 'only the accepted free action may apply retaliation');
+  assert.equal(freeAtZero.enemyHp, 21, 'only the accepted free action may damage the enemy');
 
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
