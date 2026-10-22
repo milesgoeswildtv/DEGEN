@@ -1,11 +1,11 @@
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
-import type { BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
+import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { underpassRewardForClear } from '../game/progression';
 import { battleView, homeView, mapView, underpassView, updateBattleDom } from '../ui/views';
-import { GameApi } from './api';
+import { GameApi, GameApiError, isAuthoritativeBattleActionState } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
 
@@ -156,7 +156,7 @@ export class AppController {
 
     try {
       if (this.api.enabled) {
-        const authoritative = await this.api.actUnderpass(this.store.snapshot.id, permitId, abilityId);
+        const authoritative = await this.api.actUnderpass(this.store.snapshot.id, permitId, abilityId, engine.snapshot.turnCount);
         if (this.battleEngine !== engine || this.battlePermit?.permitId !== permitId) return;
         if (!authoritative || authoritative.permitId !== permitId) {
           throw new Error('Missing or mismatched authoritative battle action response.');
@@ -166,6 +166,12 @@ export class AppController {
         engine.useAbility(abilityId);
       }
     } catch (error) {
+      if (error instanceof GameApiError && error.status === 409 && error.payload && typeof error.payload === 'object') {
+        const battleState = (error.payload as { battleState?: unknown }).battleState;
+        if (isAuthoritativeBattleActionState(battleState, permitId)) {
+          engine.synchronizeAuthoritativeState(battleState);
+        }
+      }
       console.warn('Battle action rejected by authoritative server.', error);
     } finally {
       if (this.battleEngine === engine) {

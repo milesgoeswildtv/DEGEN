@@ -22,9 +22,10 @@ const BattleEngine = runInNewContext(
   onComplete: (status: 'victory' | 'defeat') => void,
   initialState?: BattleActionResult,
 ) => {
-  snapshot: { playerHp: number; playerMana: number; enemyHp: number; status: string };
+  snapshot: { playerHp: number; playerMana: number; enemyHp: number; status: string; turnCount: number };
   useAbility: (abilityId: string) => void;
   applyAuthoritativeAction: (abilityId: string, result: BattleActionResult) => void;
+  synchronizeAuthoritativeState: (result: BattleActionResult) => void;
 };
 
 const startState = (overrides: Partial<BattleActionResult> = {}): BattleActionResult => ({
@@ -45,6 +46,7 @@ test('BattleEngine initializes from the Worker snapshot instead of prototype def
   assert.equal(engine.snapshot.playerMana, initialState.playerMana);
   assert.equal(engine.snapshot.enemyHp, initialState.enemyHp);
   assert.equal(engine.snapshot.status, 'active');
+  assert.equal(engine.snapshot.turnCount, 0);
 });
 
 test('a zero-Mana battle remains active and zero-cost abilities remain usable', () => {
@@ -54,6 +56,7 @@ test('a zero-Mana battle remains active and zero-cost abilities remain usable', 
   assert.equal(engine.snapshot.status, 'active');
   assert.equal(engine.snapshot.playerMana, 0);
   assert.equal(engine.snapshot.enemyHp, 22);
+  assert.equal(engine.snapshot.turnCount, 1);
 });
 
 test('the client snapshot follows authoritative action HP, Mana, and enemy HP', () => {
@@ -66,4 +69,34 @@ test('the client snapshot follows authoritative action HP, Mana, and enemy HP', 
   assert.equal(engine.snapshot.playerMana, 0);
   assert.equal(engine.snapshot.enemyHp, 25);
   assert.equal(engine.snapshot.status, 'active');
+  assert.equal(engine.snapshot.turnCount, 1);
+});
+
+test('an unaffordable local preview action changes neither state nor turn count', () => {
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({ playerMana: 0 }));
+  const before = engine.snapshot;
+  engine.useAbility('crack');
+
+  assert.equal(engine.snapshot.playerHp, before.playerHp);
+  assert.equal(engine.snapshot.playerMana, before.playerMana);
+  assert.equal(engine.snapshot.enemyHp, before.enemyHp);
+  assert.equal(engine.snapshot.turnCount, 0);
+});
+
+test('a stale action response synchronizes only from the same permit authoritative state', () => {
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState());
+  engine.synchronizeAuthoritativeState({
+    permitId: 'permit-1', status: 'active', playerHp: 54, playerMana: 0, enemyHp: 13, turnCount: 2,
+  });
+  assert.deepEqual(
+    [engine.snapshot.playerHp, engine.snapshot.playerMana, engine.snapshot.enemyHp, engine.snapshot.turnCount],
+    [54, 0, 13, 2],
+  );
+  engine.synchronizeAuthoritativeState({
+    permitId: 'another-permit', status: 'active', playerHp: 1, playerMana: 12, enemyHp: 1, turnCount: 99,
+  });
+  assert.deepEqual(
+    [engine.snapshot.playerHp, engine.snapshot.playerMana, engine.snapshot.enemyHp, engine.snapshot.turnCount],
+    [54, 0, 13, 2],
+  );
 });
