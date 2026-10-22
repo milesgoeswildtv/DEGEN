@@ -8,7 +8,7 @@ test('Worker deployment applies the tracked D1 schema and migrations before Work
   const workflow = read('../.github/workflows/deploy-worker.yml');
   const packageJson = JSON.parse(read('../package.json')) as { scripts?: Record<string, string> };
   const wrangler = read('../wrangler.toml');
-  const manaBackfill = read('../db/migrations/0007_backfill_active_battle_mana.sql');
+  const manaBackfill = read('../db/migrations/0006_backfill_active_battle_mana.sql');
 
   const step = (name: string): string => {
     const start = workflow.indexOf(`      - name: ${name}`);

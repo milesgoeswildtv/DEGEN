@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
-const manaBackfill = read('../db/migrations/0007_backfill_active_battle_mana.sql');
+const manaBackfill = read('../db/migrations/0006_backfill_active_battle_mana.sql');
+
+test('Mana backfill uses the single ordered 0006 migration slot', () => {
+  const names = readdirSync(new URL('../db/migrations/', import.meta.url));
+  assert.ok(names.includes('0006_backfill_active_battle_mana.sql'));
+  assert.equal(names.includes('0007_backfill_active_battle_mana.sql'), false);
+});
 
 function setup() {
   const db = new DatabaseSync(':memory:');
