@@ -25,7 +25,7 @@ function database(): DatabaseSync {
 test('Worker/D1 integration seed respects all tracked migrations and foreign keys', () => {
   const db = database();
   try {
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM battle_permits').get()?.n, 20);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM battle_permits').get()?.n, 21);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM world_event_cycles').get()?.n, 3);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
     assert.equal(db.prepare('PRAGMA integrity_check').get()?.integrity_check, 'ok');
@@ -62,9 +62,11 @@ test('integration fixtures distinguish authoritative victory, defeat and zero Ma
 });
 
 
-test('HTTP action fixtures validate supplied turns and preserve temporary legacy compatibility', () => {
-  assert.match(source, /async function action\(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0\)/);
-  assert.match(source, /JSON\.stringify\(\{ playerId, permitId, abilityId, expectedTurnCount \}\)/);
+test('HTTP action fixtures validate supplied turns, forged payloads, and temporary legacy compatibility', () => {
+  assert.match(source, /async function action\(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0, extraFields = \{\}\)/);
+  assert.match(source, /JSON\.stringify\(\{ playerId, permitId, abilityId, expectedTurnCount, \.\.\.extraFields \}\)/);
+  assert.match(source, /forged-paid/);
+  assert.match(source, /forgedPayload/);
   assert.match(source, /action\('paid-nonlethal', 'crack', 'integration-player', 1\)/);
   assert.match(source, /action\('parallel-action', 'slash', 'integration-player', 1\)/);
   assert.match(workerSource, /if \(input\.expectedTurnCount !== undefined/);
