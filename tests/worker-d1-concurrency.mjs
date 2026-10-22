@@ -53,6 +53,8 @@ try {
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
+      ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
+      ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -159,6 +161,40 @@ try {
   assert.equal(freeAtZero.turnCount, 1, 'rejected paid action must not advance the turn');
   assert.equal(freeAtZero.playerHp, 70, 'only the accepted free action may apply retaliation');
   assert.equal(freeAtZero.enemyHp, 21, 'only the accepted free action may damage the enemy');
+
+  const killingBlowResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-killing-blow',
+      abilityId: 'crack',
+    }),
+  });
+  const killingBlow = await killingBlowResponse.json();
+  assert.equal(killingBlowResponse.status, 200, JSON.stringify(killingBlow));
+  assert.equal(killingBlow.status, 'victory');
+  assert.equal(killingBlow.playerHp, 80, 'a killing blow must not trigger enemy retaliation');
+  assert.equal(killingBlow.playerMana, 0, 'the killing blow must deduct its Mana cost exactly once');
+  assert.equal(killingBlow.enemyHp, 0);
+  assert.equal(killingBlow.turnCount, 1);
+
+  const defeatResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-defeat',
+      abilityId: 'slash',
+    }),
+  });
+  const defeat = await defeatResponse.json();
+  assert.equal(defeatResponse.status, 200, JSON.stringify(defeat));
+  assert.equal(defeat.status, 'defeat');
+  assert.equal(defeat.playerHp, 0);
+  assert.equal(defeat.playerMana, 0, 'zero-cost action at zero Mana remains usable on defeat');
+  assert.equal(defeat.enemyHp, 63);
+  assert.equal(defeat.turnCount, 1);
 
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
