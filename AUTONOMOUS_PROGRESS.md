@@ -1,6 +1,6 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-20
+Updated: 2026-10-22
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
@@ -608,3 +608,17 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - **Migration ordering verified from current branch files:** main tracks 0002–0005; PR #14 proposes `0006_player_sessions.sql`; PR #12 proposes `0007_backfill_active_battle_mana.sql`; the current Shield branch uses `0008_degen_shield.sql`. Numeric prefixes are unique across these candidates, but none of the PR-only migrations has been applied to production.
 - **Authority / deployment:** battle state and rewards remain Worker-owned; no monster Mana or zero-Mana reversion. No merge, production D1 mutation, Worker deployment, or Pages deployment occurred. Production Pages/Worker CORS and signed Discord/Telegram identity with per-request player authorization remain release blockers.
 - **Best next task:** reconcile PR #12's overlap with PRs #9–#11 and avoid merging the duplicate PR #15; keep all production release gates explicit.
+
+
+## Autonomous build run — 2026-10-22 (forged client state regression)
+
+- **Authoritative main SHA:** `33e7477961d2a6ab7b79bf52d78a93901e19f658` (unchanged).
+- **Current delivery:** `automation/degen/permit-millisecond-expiry-v02`, PR #12 OPEN / DRAFT / UNMERGED. Code/test commit: `cb7c3c9510b876e206a1dd99ca20e12806a150b2`. No write to protected main.
+- **Implementation:** `tests/worker-d1-concurrency.mjs` now sends forged client HP, Mana, enemy HP, turn count, victory, reward, XP, and currency fields to the real local Worker/D1 harness. The paid action must use the persisted permit (HP 120, Mana 12, enemy HP 92), resolve to HP 110 / Mana 8 / enemy HP 57 / turn 1, and remain active. A forged completion request must return 409 and leave the permit unchanged. The same forged payload against a 0-Mana paid ability must return 409 without damage, Mana change, or turn advance.
+- **Verification:** prior exact head `3674611a4ce1040cd9eca03b17698ae149ecaf1d` passed CI run [39655041430](https://github.com/milesgoeswildtv/DEGEN/actions/runs/39655041430), including deterministic tests, isolated Worker/D1 reward/action harness, Underpass cycle race/rollover checks, Chromium browser vertical slice, production build, and Wrangler Worker dry-run. Exact-head run [39797790252](https://github.com/milesgoeswildtv/DEGEN/actions/runs/39797790252) for code/test commit `cb7c3c9` is **QUEUED** as of this entry; the new forged-payload assertions are not yet claimed passing. No local checkout/test run was available in this runtime.
+- **Mana status:** the base Degen-only Mana rules are MERGED on main. Authoritative start snapshot, legacy active-permit backfill, exact-expiry handling, and client turn recovery remain PR-only on the consolidated PR #12 branch. Existing deterministic coverage checks affordable use, insufficient Mana, exact deduction, zero-cost at 0 Mana, killing blow, defeat, no monster Mana, no reversion, UI affordability, and client/Worker math agreement.
+- **Battle authority / rewards:** Worker owns HP/Mana/enemy HP/status/turn count and reward settlement. PR #5 reward receipt/idempotency is MERGED on main; PR #12 carries the compatible action/recovery and Worker/D1 concurrency suite. This run made no production D1 mutation, Worker deploy, Pages deploy, or merge.
+- **D1 assumptions:** `wrangler.toml` remains the source of truth for binding `DB`, database `DEGEN`, and `db/migrations`. Main tracks migrations 0002–0005; PR #12's `0007_backfill_active_battle_mana.sql` remains branch-only. PR #14 proposes 0006 player sessions; Shield branch uses 0008, so the candidate prefixes are unique in the current reviewed branches. Deployment order remains schema → migrations → Worker. No remote migration has run.
+- **Reconciliation / blockers:** PR #12 contains the same Mana start/backfill and expiry behavior as duplicate PR #15, plus broader client compatibility and integration coverage. PR #15 remains open because the metadata-close mutation was rejected twice by the connector safety layer; its branch was not deleted and no history was rewritten. PRs #9–#11 still overlap PR #12 and need a single reviewable release sequence. Production Pages CORS and signed Discord/Telegram identity with per-request authorization remain public-economy release gates.
+- **Miles blocker:** none on canon; integration/CI sequencing remains the blocker.
+- **Best next task:** inspect exact-head CI for `cb7c3c9`, then review PR #12 against PRs #9–#11 and establish one client-compatible merge sequence. Do not merge duplicate PR #15 or begin Shield/status work before Mana integration is green.
