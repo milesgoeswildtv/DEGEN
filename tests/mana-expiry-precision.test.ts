@@ -12,10 +12,10 @@ test('Worker action and fresh reward-claim expiry guards preserve millisecond pr
     3,
     'action lookup, action compare-and-swap, and fresh reward claim must use exact expiry precision',
   );
-  assert.doesNotMatch(worker, /datetime\\(expires_at\\)\\s*>\\s*CURRENT_TIMESTAMP/);
+  assert.doesNotMatch(worker, /datetime\(expires_at\)\s*>\s*CURRENT_TIMESTAMP/);
   assert.match(
     worker,
-    /reward_state = 'pending' AND completed_at IS NULL AND \\(julianday\\(expires_at\\) > julianday\\('now'\\) OR reward_clear_number IS NOT NULL\\)/,
+    /reward_state = 'pending' AND completed_at IS NULL AND \(julianday\(expires_at\) > julianday\('now'\) OR reward_clear_number IS NOT NULL\)/,
     'a server-recorded victory with an assigned clear number remains recoverable after permit expiry',
   );
 });
