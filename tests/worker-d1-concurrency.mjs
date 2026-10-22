@@ -148,10 +148,10 @@ function queryRows(sql, columns) {
   return rows;
 }
 
-async function action(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0) {
+async function action(permitId, abilityId, playerId = 'integration-player', expectedTurnCount = 0, extraFields = {}) {
   const r = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json', connection: 'close' },
-    body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
+    body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount, ...extraFields }),
   });
   return { status: r.status, data: await r.json() };
 }
@@ -236,6 +236,7 @@ try {
       ('expired-victory','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
       ('paid-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,30,0),
+      ('forged-paid','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
       ('defeat-case','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',5,0,60,0),
       ('expired-action','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,4,30,0),
       ('paid-nonlethal','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,8,60,0),
@@ -575,11 +576,37 @@ try {
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
   assert.equal((await complete('expired', 'expired-player')).status, 409);
+  const forgedPayload = {
+    playerHp: 0, playerMana: 999, enemyHp: 0, turnCount: 999,
+    victory: true, reward: { xp: 999999, currency: 999999, items: ['tunnel-trophy'] },
+    xp: 999999, currency: 999999,
+  };
+  const forgedPaid = await action('forged-paid', 'crack', 'integration-player', 0, forgedPayload);
+  assert.equal(forgedPaid.status, 200, JSON.stringify(forgedPaid));
+  assert.deepEqual(
+    [forgedPaid.data.status, forgedPaid.data.playerHp, forgedPaid.data.playerMana,
+      forgedPaid.data.enemyHp, forgedPaid.data.turnCount],
+    ['active', 110, 8, 57, 1],
+    'Worker action math must use persisted HP/Mana/enemy HP and advance exactly one turn despite forged client fields',
+  );
+  const forgedPaidState = permitState('forged-paid');
+  assert.deepEqual(forgedPaidState, {
+    player_hp: 110, player_mana: 8, enemy_hp: 57, battle_status: 'active', turn_count: 1,
+  });
+  const forgedCompletion = await post('/api/battle/complete', {
+    playerId: 'integration-player', permitId: 'forged-paid', victory: true,
+    reward: forgedPayload.reward, xp: 999999, currency: 999999,
+  });
+  assert.equal(forgedCompletion.status, 409,
+    'client-supplied victory and reward data cannot complete an active Worker-owned battle');
+  assert.deepEqual(permitState('forged-paid'), forgedPaidState,
+    'forged completion must leave the active permit and authoritative turn unchanged');
+
   const zeroManaBefore = permitState('zero-mana');
   assert.deepEqual(zeroManaBefore, {
     player_hp: 120, player_mana: 0, enemy_hp: 60, battle_status: 'active', turn_count: 0,
   });
-  const unaffordable = await action('zero-mana', 'crack');
+  const unaffordable = await action('zero-mana', 'crack', 'integration-player', 0, forgedPayload);
   assert.equal(unaffordable.status, 409, JSON.stringify(unaffordable));
   assert.deepEqual(unaffordable.data.battleState, {
     permitId: 'zero-mana', status: 'active',
