@@ -1,7 +1,7 @@
 // Isolated HTTP integration against a local Wrangler Worker and local D1 only.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,8 +65,22 @@ try {
 
   const first = await bootstrap('discord', 'uid', 'owner', 'Owner');
   assert.equal(first.status, 200);
+
+  const attackerSeed = join(scratch, 'existing-attacker.sql');
+  writeFileSync(attackerSeed, `
+    INSERT INTO players(id,display_name) VALUES('attacker','Existing Account');
+    INSERT INTO characters(player_id,level,xp,currency,degen_key)
+      VALUES('attacker',7,9,123,'test-degen');
+  `);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + attackerSeed]);
   const stolen = await bootstrap('discord', 'uid', 'attacker', 'Impostor');
   assert.equal(stolen.status, 409, 'another player cannot claim the existing binding');
+
+  const attackerAfter = JSON.parse(cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=SELECT p.display_name, c.level, c.xp, c.currency FROM players p JOIN characters c ON c.player_id=p.id WHERE p.id='attacker'", '--json']));
+  const attackerRows = Array.isArray(attackerAfter) ? attackerAfter[0]?.results : attackerAfter.results;
+  assert.deepEqual({ ...attackerRows[0] }, { display_name: 'Existing Account', level: 7, xp: 9, currency: 123 },
+    'a conflicting identity request must not mutate an existing player account');
   const repeat = await bootstrap('discord', 'uid', 'owner', 'Renamed');
   assert.equal(repeat.status, 200);
   const independent = await bootstrap('telegram', 'uid', 'other-player', 'Telegram');
@@ -94,7 +108,7 @@ try {
   assert.equal(rows.find(row => row.platform === 'discord' && row.platform_user_id === 'uid').display_name, 'Renamed');
 
   const accountOutput = cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    "--command=SELECT (SELECT COUNT(*) FROM players WHERE id LIKE 'racer-%' OR id IN ('late-attacker', 'attacker', 'missing-provider-id')) AS players, (SELECT COUNT(*) FROM characters WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'attacker', 'missing-provider-id')) AS characters, (SELECT COUNT(*) FROM player_inventory WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'attacker', 'missing-provider-id')) AS inventory, (SELECT COUNT(*) FROM unlocked_locations WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'attacker', 'missing-provider-id')) AS locations, (SELECT COUNT(*) FROM housing_placements WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'attacker', 'missing-provider-id')) AS housing", '--json']);
+    "--command=SELECT (SELECT COUNT(*) FROM players WHERE id LIKE 'racer-%' OR id IN ('late-attacker', 'missing-provider-id')) AS players, (SELECT COUNT(*) FROM characters WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'missing-provider-id')) AS characters, (SELECT COUNT(*) FROM player_inventory WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'missing-provider-id')) AS inventory, (SELECT COUNT(*) FROM unlocked_locations WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'missing-provider-id')) AS locations, (SELECT COUNT(*) FROM housing_placements WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'missing-provider-id')) AS housing", '--json']);
   const accountParsed = JSON.parse(accountOutput);
   const accountRows = Array.isArray(accountParsed) ? accountParsed[0]?.results : accountParsed.results;
   assert.ok(Array.isArray(accountRows), 'D1 must return bootstrap side-effect counts');
