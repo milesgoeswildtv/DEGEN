@@ -6,7 +6,7 @@ Updated: 2026-10-23
 - Authoritative `main` SHA: `687510dc5e01d70f05734c5c5c50e3354404d1c0`. Mana foundation and reward/action authority remain merged; no Shield deployment has occurred.
 - Continued PR #20 on `automation/degen/shield-foundation-v03`. **PUSHED / PR ONLY:** renamed the Shield migration from `0007_degen_shield.sql` to `0008_degen_shield.sql` and updated `tests/degen-shield-migration-deploy-order.test.ts`.
 - Intended migration sequence: Mana backfill `0006_backfill_active_battle_mana.sql`, sessions + Discord nonce storage `0007_player_sessions.sql` in PR #21, then Shield `0008_degen_shield.sql` in this PR. Merge PR #21 first, then PR #20; the previous duplicate-`0007` form must not be merged.
-- Exact-head CI after resequencing is pending. The earlier green Shield CI is not proof for this renamed head. No production D1 mutation or Worker deployment was performed.
+- Exact-head CI run `39942814476` passed after the `0008_degen_shield.sql` rename and test-fixture update: deterministic tests, reward concurrency, Underpass cycle/rollover concurrency, atomic defeat history, Shield D1 integration, web build, real browser Vite/Worker/D1 vertical slice, and Worker dry-run all passed. No production D1 mutation or Worker deployment was performed.
 - Best next task: require fresh exact-head CI on PR #21 and PR #20, then review the authentication/session PR before Shield integration.
 
 
