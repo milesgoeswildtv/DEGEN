@@ -11,13 +11,13 @@ const domainTypes = read('../src/domain/types.ts');
 
 test('D1 migration sequence is unique and Shield follows the merged Mana backfill', () => {
   const migrationNames = readdirSync(new URL('../db/migrations/', import.meta.url))
-    .filter((name) => /^\\d+_[a-z0-9_]+\\.sql$/i.test(name))
+    .filter((name) => /^\d+_[a-z0-9_]+\.sql$/i.test(name))
     .sort();
   const manaIndex = migrationNames.indexOf('0006_backfill_active_battle_mana.sql');
   const shieldIndex = migrationNames.indexOf('0007_degen_shield.sql');
   assert.ok(manaIndex >= 0, 'the merged Mana backfill must remain tracked');
   assert.ok(shieldIndex > manaIndex, 'Shield must follow the Mana backfill');
-  const prefixes = migrationNames.map((name) => name.match(/^(\\d+)_/)?.[1]);
+  const prefixes = migrationNames.map((name) => name.match(/^(\d+)_/)?.[1]);
   assert.equal(new Set(prefixes).size, prefixes.length, 'migration sequence numbers must be unique');
 });
 
