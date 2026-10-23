@@ -42,6 +42,7 @@ const { GameApi } = runInNewContext(
     bootstrap(identity: { platform: 'telegram'; displayName: string; telegramInitData: string }): Promise<unknown>;
     setIdentityProvider(provider: () => Promise<{ platform: 'telegram'; displayName: string; telegramInitData: string }>): void;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<{ turnCount: number } | undefined>;
+    getUnderpass(playerId: string): Promise<unknown>;
   };
 };
 
@@ -58,6 +59,7 @@ test('an expired account session never replays an in-flight action under a diffe
   let bootstrapCount = 0;
   let accountAActions = 0;
   const actionTokens: string[] = [];
+  let worldSnapshotToken = '';
   let releaseStale401!: (response: Response) => void;
   const stale401 = new Promise<Response>((resolve) => { releaseStale401 = resolve; });
 
@@ -70,6 +72,17 @@ test('an expired account session never replays an in-flight action under a diffe
       return jsonResponse({
         player: { id: playerId, displayName: playerId },
         session: { token, expiresAtMs: Date.now() + 60_000 },
+      });
+    }
+
+    if (path === '/api/world/underpass') {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      worldSnapshotToken = headers.authorization ?? '';
+      return jsonResponse({
+        eventKey: 'underpass', cycleId: 'cycle-B', phase: 'open',
+        opensAt: new Date(Date.now() - 1_000).toISOString(),
+        closesAt: new Date(Date.now() + 60_000).toISOString(),
+        fullRewardClears: 0, fullRewardLimit: 3, source: 'server',
       });
     }
 
@@ -113,14 +126,11 @@ test('an expired account session never replays an in-flight action under a diffe
     await assert.rejects(delayedOldAccountRequest, /authenticated player changed/);
 
     // The rejected old-account requests must not clear or reuse Player B's new session.
-    const currentAccountRequest = await reloadedApi.actUnderpass('player-B', 'permit-1', 'slash', 0);
-    assert.equal(currentAccountRequest?.turnCount, 1);
+    const currentAccountSnapshot = await reloadedApi.getUnderpass('player-B');
+    assert.equal((currentAccountSnapshot as { cycleId: string }).cycleId, 'cycle-B');
+    assert.equal(worldSnapshotToken, 'Bearer ' + tokenB);
     assert.equal(bootstrapCount, 2, 'only one rebootstrap should occur');
-    assert.deepEqual(actionTokens, [
-      'Bearer ' + tokenA,
-      'Bearer ' + tokenA,
-      'Bearer ' + tokenB,
-    ]);
+    assert.deepEqual(actionTokens, ['Bearer ' + tokenA, 'Bearer ' + tokenA]);
   } finally {
     globalThis.fetch = oldFetch;
   }
