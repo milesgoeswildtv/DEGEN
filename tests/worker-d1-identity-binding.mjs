@@ -107,6 +107,34 @@ try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   await startWorker();
 
+  const productionOrigin = 'https://degen-8ze.pages.dev';
+  const productionPreflight = await request('/api/battle/start', {
+    method: 'OPTIONS',
+    headers: {
+      origin: productionOrigin,
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type,authorization',
+    },
+  });
+  assert.equal(productionPreflight.status, 204);
+  assert.equal(productionPreflight.headers.get('access-control-allow-origin'), productionOrigin,
+    'the exact production Pages origin must be allowed to call the Worker');
+  assert.match(productionPreflight.headers.get('access-control-allow-headers') ?? '', /authorization/i,
+    'browser preflight must allow the bearer Authorization header');
+  assert.match(productionPreflight.headers.get('access-control-allow-methods') ?? '', /POST/i);
+
+  const previewOrigin = 'https://untrusted-preview.degen-8ze.pages.dev';
+  const previewPreflight = await request('/api/battle/start', {
+    method: 'OPTIONS',
+    headers: {
+      origin: previewOrigin,
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type,authorization',
+    },
+  });
+  assert.notEqual(previewPreflight.headers.get('access-control-allow-origin'), previewOrigin,
+    'unlisted Pages preview origins must remain disallowed');
+
   const noProof = await request('/api/player/bootstrap', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ platform: 'telegram', playerId: 'missing-proof', platformUserId: '42' }),
