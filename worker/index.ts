@@ -215,6 +215,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     playerMana: TEST_DEGEN.maxMana,
     playerShield: 0,
     shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   };
@@ -268,6 +269,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     playerMana: permit.player_mana,
     playerShield: permit.player_shield,
     shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: permit.enemy_hp,
     turnCount: permit.turn_count,
   };
@@ -289,7 +291,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     degen: TEST_DEGEN,
     enemy: TUNNEL_MAW,
   });
-  const { playerHp, playerMana, playerShield, enemyHp, status, shieldAbsorbed } = turn;
+  const { playerHp, playerMana, playerShield, enemyHp, status, shieldAbsorbed, retaliationDamage } = turn;
 
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, player_shield = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
@@ -338,6 +340,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           playerMana: latest.player_mana,
           playerShield: latest.player_shield,
           shieldAbsorbed: 0,
+          retaliationDamage: 0,
           enemyHp: latest.enemy_hp,
           turnCount: latest.turn_count,
         },
@@ -354,6 +357,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     playerMana,
     playerShield,
     shieldAbsorbed,
+    retaliationDamage,
     enemyHp,
     turnCount: updated.turn_count,
   });
