@@ -291,13 +291,35 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   });
   const { playerHp, playerMana, playerShield, enemyHp, status, shieldAbsorbed } = turn;
 
-  const updated = await env.DB.prepare(`UPDATE battle_permits
+  const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, player_shield = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
       AND julianday(expires_at) > julianday('now') AND turn_count = ?
     RETURNING turn_count`)
-    .bind(playerHp, playerMana, playerShield, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
-    .first<{ turn_count: number }>();
+    .bind(playerHp, playerMana, playerShield, enemyHp, status, input.permitId, input.playerId, permit.turn_count);
+
+  let updated: { turn_count: number } | null | undefined;
+  if (status === 'defeat') {
+    const character = await env.DB.prepare(`SELECT level FROM characters WHERE player_id = ?`)
+      .bind(input.playerId).first<{ level: number }>();
+    if (!character) return fail(request, env, 'Player character not found.', 404);
+
+    // The terminal turn and its deterministic history marker must commit or roll back together.
+    const results = await env.DB.batch([
+      actionUpdate,
+      env.DB.prepare(`INSERT INTO battle_history (
+        id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
+      ) SELECT ?, ?, ?, 'defeat', ?, 0, 0
+        WHERE EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
+          AND battle_status = 'defeat' AND turn_count = ? AND completed_at IS NULL)
+        ON CONFLICT(id) DO NOTHING`)
+        .bind(`${input.permitId}:defeat`, input.playerId, TUNNEL_MAW.id, character.level,
+          input.permitId, input.playerId, permit.turn_count + 1),
+    ]);
+    updated = results[0]?.results?.[0] as { turn_count: number } | undefined;
+  } else {
+    updated = await actionUpdate.first<{ turn_count: number }>();
+  }
 
   if (!updated) {
     // A competing action may have committed after the SELECT. Return only persisted state.
@@ -324,16 +346,6 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
   }
 
-  if (status === 'defeat') {
-    const character = await env.DB.prepare(`SELECT level FROM characters WHERE player_id = ?`)
-      .bind(input.playerId).first<{ level: number }>();
-    if (character) {
-      await env.DB.prepare(`INSERT INTO battle_history (
-        id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
-      ) VALUES (?, ?, ?, 'defeat', ?, 0, 0)`)
-        .bind(crypto.randomUUID(), input.playerId, TUNNEL_MAW.id, character.level).run();
-    }
-  }
 
   return json(request, env, {
     permitId: input.permitId,
