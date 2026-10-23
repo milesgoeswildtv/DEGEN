@@ -323,3 +323,10 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - The run confirms the merged Shield tree and the current-main Mana persisted-state assertions together. The follow-up commit is documentation-only; no runtime, balance, migration, or test code changed after the verified code/test head. Fresh CI for the continuity-only commit is pending and is not claimed green.
 - PR #20 remains draft/unmerged and mergeable against current main. Migration 0008 must remain behind PR #21's 0007 session migration; no production D1 or Worker action was taken.
 - Best next task remains: finish exact-head auth verification, then reconcile PR #21 into the Shield branch and rerun the combined browser/auth/Shield suite before any integration merge.
+
+
+### Mobile CSS cleanup — 2026-10-23 (Shield branch)
+
+- Removed the duplicate `.player-chip` declaration by folding the existing mobile width/wrapping constraints into its original rule. This preserves the same computed properties while honoring the no-duplicate-CSS constraint; no visual design or combat behavior was changed.
+- The merged code/test head `7b57604b297062f2a800f4bddd1c4b7623b8e0e7` passed CI run `40020343593`, including real Chromium + Vite + isolated Worker/D1, Shield persistence, build, and Worker validation. This CSS cleanup creates a new code head; exact-head CI is pending and must be observed before calling the updated branch green.
+- Best next task: complete current exact-head CI, then reconcile auth PR #21 with Shield after the signed-platform release gate; do not merge or deploy Shield ahead of migration 0007.
