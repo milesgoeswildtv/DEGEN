@@ -238,3 +238,45 @@ test('shared Mana affordability rejects malformed costs and player Mana consiste
     assert.equal(canAffordManaCost(0, mana), false, `invalid player Mana ${mana}`);
   }
 });
+
+test('client BattleEngine and the Worker-shared resolver stay in sync for a paid Degen action', () => {
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const input = {
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  };
+  const expected = resolveCombatTurn(input);
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+    permitId: 'client-worker-mana-parity',
+    status: 'active',
+    playerHp: input.playerHp,
+    playerMana: input.playerMana,
+    enemyHp: input.enemyHp,
+    turnCount: 0,
+  });
+
+  engine.useAbility(ability.id);
+
+  assert.deepEqual(
+    {
+      status: engine.snapshot.status,
+      playerHp: engine.snapshot.playerHp,
+      playerMana: engine.snapshot.playerMana,
+      enemyHp: engine.snapshot.enemyHp,
+      turnCount: engine.snapshot.turnCount,
+    },
+    {
+      status: expected.status,
+      playerHp: expected.playerHp,
+      playerMana: expected.playerMana,
+      enemyHp: expected.enemyHp,
+      turnCount: 1,
+    },
+  );
+});
+
