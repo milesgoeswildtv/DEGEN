@@ -76,6 +76,21 @@ test('authoritative battle log reports full retaliation when Shield absorbs part
   assert.equal(engine.snapshot.log.includes('Tunnel Maw hits back for 3.'), false);
 });
 
+test('authoritative battle log keeps full retaliation on defeat even when Shield absorbs damage', () => {
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({
+    playerHp: 1, playerMana: 0, playerShield: 2, enemyHp: TUNNEL_MAW.maxHp,
+  }));
+  engine.applyAuthoritativeAction('slash', {
+    permitId: 'permit-1', status: 'defeat', playerHp: 0, playerMana: 0,
+    playerShield: 0, shieldAbsorbed: 2, retaliationDamage: 10, enemyHp: 63, turnCount: 1,
+  });
+
+  assert.ok(engine.snapshot.log.includes('Tunnel Maw hits back for 10.'));
+  assert.ok(engine.snapshot.log.includes('Shield absorbs 2.'));
+  assert.ok(engine.snapshot.log.includes('TEST_DEGEN goes down.'));
+  assert.equal(engine.snapshot.log.includes('Tunnel Maw hits back for 1.'), false);
+});
+
 test('the client snapshot follows authoritative action HP, Mana, and enemy HP', () => {
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState());
   engine.applyAuthoritativeAction('crack', {
