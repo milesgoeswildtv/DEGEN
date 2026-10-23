@@ -5,8 +5,12 @@ export type WorldEventPhase = 'sealed' | 'warning' | 'open';
 
 export interface PlatformIdentity {
   platform: PlatformName;
-  platformUserId: string;
+  /** Untrusted display hint only; the Worker resolves the provider ID from signed proof. */
+  platformUserId?: string;
   displayName: string;
+  telegramInitData?: string;
+  discordAuthorizationCode?: string;
+  discordState?: string;
 }
 
 export interface AbilityDefinition {

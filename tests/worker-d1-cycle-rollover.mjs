@@ -1,5 +1,6 @@
 // Real isolated local Worker/D1 concurrent rollover test; never connects to remote D1.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,6 +14,8 @@ const scratch = mkdtempSync(join(tmpdir(), 'degen-cycle-rollover-'));
 const persist = join(scratch, 'state');
 const base = 'http://127.0.0.1:8794';
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
+const SESSION_TOKEN = Buffer.alloc(32, 12).toString('base64url');
+const SESSION_HASH = createHash('sha256').update(SESSION_TOKEN).digest('hex');
 let server;
 let logs = '';
 function cli(args) {
@@ -29,7 +32,7 @@ function countRows(query) {
 }
 async function world(i) {
   const response = await fetch(base + '/api/world/underpass?playerId=rollover-test-' + i,
-    { signal: AbortSignal.timeout(8000) });
+    { headers: { authorization: 'Bearer ' + SESSION_TOKEN }, signal: AbortSignal.timeout(8000) });
   assert.equal(response.status, 200, 'world request ' + i);
   const snapshot = await response.json();
   assert.equal(snapshot.eventKey, 'underpass');
@@ -41,8 +44,11 @@ try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
   const seed = join(scratch, 'expired-cycle.sql');
-  writeFileSync(seed, `INSERT INTO world_event_cycles (id, event_key, opens_at, closes_at)
-    VALUES ('expired-underpass-cycle', 'underpass', datetime('now', '-2 hours'), datetime('now', '-1 second'));`);
+  writeFileSync(seed, `INSERT INTO players(id,display_name) VALUES('rollover-owner','Rollover Owner');
+    INSERT INTO player_sessions(token_hash,player_id,created_at_ms,expires_at_ms,revoked_at_ms)
+      VALUES('${SESSION_HASH}','rollover-owner',${Date.now()},${Date.now()+3600000},NULL);
+    INSERT INTO world_event_cycles (id, event_key, opens_at, closes_at)
+      VALUES ('expired-underpass-cycle', 'underpass', datetime('now', '-2 hours'), datetime('now', '-1 second'));`);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
 
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8794'],

@@ -41,22 +41,20 @@ export class PlayerStore {
   }
 
   async initialize(identity: PlatformIdentity): Promise<void> {
-    if (this.state.displayName === 'Player' && identity.displayName !== 'Player') {
-      this.state.displayName = identity.displayName.slice(0, 32);
-      this.commitLocal();
-    }
-
-    if (!this.api.enabled) return;
-
-    try {
-      const remote = await this.api.bootstrap(this.state.id, identity);
-      if (remote) {
-        this.state = remote;
+    if (!this.api.enabled) {
+      if (this.state.displayName === 'Player' && identity.displayName !== 'Player') {
+        this.state.displayName = identity.displayName.slice(0, 32);
         this.commitLocal();
       }
-    } catch (error) {
-      console.warn('DEGEN backend unavailable; retaining local preview state.', error);
+      return;
     }
+
+    // A configured Worker means production authority is required. Never silently
+    // continue as a local preview when platform authentication or bootstrap fails.
+    const remote = await this.api.bootstrap(identity);
+    if (!remote) throw new Error('The DEGEN Worker did not return an authenticated player.');
+    this.state = remote;
+    this.commitLocal();
   }
 
   subscribe(listener: (state: PlayerState) => void): () => void {

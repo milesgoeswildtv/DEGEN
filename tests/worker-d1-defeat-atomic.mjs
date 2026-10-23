@@ -1,5 +1,6 @@
 // Real local Worker + D1 fault injection. This script never uses --remote.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,6 +13,8 @@ const wrangler = resolve(root, 'node_modules/.bin/wrangler');
 const scratch = mkdtempSync(join(tmpdir(), 'degen-defeat-d1-'));
 const persist = join(scratch, 'db');
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
+const SESSION_TOKEN = Buffer.alloc(32, 13).toString('base64url');
+const SESSION_HASH = createHash('sha256').update(SESSION_TOKEN).digest('hex');
 const origin = 'http://127.0.0.1:8793';
 let worker;
 let logs = '';
@@ -53,7 +56,7 @@ async function stop() {
 }
 async function act(id, abilityId = 'slash') {
   const r=await fetch(origin+'/api/battle/action',{
-    method:'POST',headers:{'content-type':'application/json'},
+    method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+SESSION_TOKEN},
     body:JSON.stringify({playerId:'qa-player',permitId:id,abilityId}),
     signal:AbortSignal.timeout(15000),
   });
@@ -77,6 +80,8 @@ try {
   cli(['d1','migrations','apply','DEGEN','--local',`--persist-to=${persist}`]);
   const seedFile=join(scratch,'seed.sql');
   writeFileSync(seedFile,`INSERT INTO players(id,display_name) VALUES('qa-player','QA');
+    INSERT INTO player_sessions(token_hash,player_id,created_at_ms,expires_at_ms,revoked_at_ms)
+      VALUES('${SESSION_HASH}','qa-player',${Date.now()},${Date.now()+3600000},NULL);
     INSERT INTO characters(player_id,degen_key,level) VALUES('qa-player','test-degen',3);
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
     VALUES('closed-cycle','underpass',datetime('now','-4 hours'),datetime('now','-2 hours'));`);

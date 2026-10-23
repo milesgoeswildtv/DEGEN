@@ -1,6 +1,7 @@
 // Real local Worker + D1 fault injection for recoverable victory rewards.
 // This harness never uses --remote and never touches production data.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,6 +15,8 @@ const scratch = mkdtempSync(join(tmpdir(), 'degen-reward-recovery-'));
 const persist = join(scratch, 'state');
 const origin = 'http://127.0.0.1:8795';
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
+const SESSION_TOKEN = Buffer.alloc(32, 7).toString('base64url');
+const SESSION_HASH = createHash('sha256').update(SESSION_TOKEN).digest('hex');
 let worker;
 let logs = '';
 
@@ -58,8 +61,8 @@ async function stop() {
 async function complete(permitId = 'permit-recovery') {
   const response = await fetch(origin + '/api/battle/complete', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: 'qa-player', permitId }),
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + SESSION_TOKEN },
+    body: JSON.stringify({ permitId }),
     signal: AbortSignal.timeout(15_000),
   });
   const raw = await response.text();
@@ -77,6 +80,8 @@ try {
     INSERT INTO players(id, display_name) VALUES ('qa-player', 'Reward Recovery QA');
     INSERT INTO characters(player_id, level, xp, currency, degen_key)
       VALUES ('qa-player', 1, 0, 0, 'test-degen');
+    INSERT INTO player_sessions(token_hash, player_id, created_at_ms, expires_at_ms, revoked_at_ms)
+      VALUES ('${SESSION_HASH}', 'qa-player', ${Date.now()}, ${Date.now()+3600000}, NULL);
     INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at)
       VALUES ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
     INSERT INTO battle_permits(

@@ -20,6 +20,8 @@ jobs:
         run: npm install
       - name: Run deterministic game tests
         run: npm test
+      - name: Verify signed platform auth and session ownership on isolated local Worker/D1
+        run: node tests/worker-d1-identity-binding.mjs
       - name: Exercise isolated local Worker/D1 reward concurrency
         run: node tests/worker-d1-concurrency.mjs
       - name: Verify reward recovery after transient local D1 failure
@@ -32,5 +34,7 @@ jobs:
         run: node tests/worker-d1-defeat-atomic.mjs
       - name: Build web app
         run: npm run build
+      - name: Verify signed platform auth in real Chromium + local Worker/D1
+        run: node tests/browser-platform-auth.mjs
       - name: Validate Cloudflare Worker
         run: npm run check:worker
