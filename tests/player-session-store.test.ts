@@ -13,7 +13,7 @@ import {
 } from '../worker/auth/sessionStore.ts';
 
 const migration = readFileSync(
-  new URL('../db/migrations/0006_player_sessions.sql', import.meta.url),
+  new URL('../db/migrations/0007_player_sessions.sql', import.meta.url),
   'utf8',
 );
 

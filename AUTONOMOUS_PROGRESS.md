@@ -18,7 +18,7 @@ Updated: 2026-10-16
 
 ## Current slice — PUSHED / PR #14 (DRAFT, UNMERGED)
 - Branch: `automation/degen/verified-session-store-v01`.
-- Scope: `db/migrations/0006_player_sessions.sql`, `worker/auth/sessionStore.ts`, and new `tests/player-session-store.test.ts`.
+- Scope: `db/migrations/0007_player_sessions.sql`, `worker/auth/sessionStore.ts`, and new `tests/player-session-store.test.ts`.
 - Session helper stores only SHA-256 token digests, issues bounded-lifetime opaque bearer tokens, resolves only unexpired/unrevoked sessions, and supports idempotent revocation. It is NOT wired into Worker routes; do not treat it as production authentication.
 - Test commit: `0e824e51a7d6900f628415d9b4fe9839f7c0521b`; exact CI-green branch head before this progress refresh: `844b38400468b780f23a03433e4389b2c3763208`.
 - LOCAL targeted evidence: 6/6 session-store tests PASS in an isolated Node 22.16.0 + SQLite fixture using the exact helper, migration, and test source.
@@ -31,7 +31,7 @@ Updated: 2026-10-16
 - Main includes reward idempotency/recovery; PR #10 adds real isolated Worker/D1 HTTP coverage for invalid/expired permits, same-turn replay, concurrent actions/completions, event closure, full/reduced clears, level-up math, and expired-victory recovery.
 - PR #9, #11, and #12 remain open drafts; reconcile overlapping Worker changes rather than deploying stricter expected-turn enforcement before compatible client rollout.
 - Main's `wrangler.toml` is the D1 binding/config source of truth. `deploy-worker.yml` applies `db/schema.sql` and tracked migrations before Worker deploy.
-- Migration `0006_player_sessions.sql` exists only on PR #14. It has NOT been merged or applied to production. No production D1 mutation, Worker deployment, or Pages deployment occurred in this run.
+- Migration `0007_player_sessions.sql` exists only on PR #14. It has NOT been merged or applied to production. No production D1 mutation, Worker deployment, or Pages deployment occurred in this run.
 
 ## Release/security blockers
 - PR #14 is a storage/helper slice only: no Telegram/Discord identity verification, session issuance route, bearer authorization middleware, or per-player route ownership is wired.
@@ -41,6 +41,11 @@ Updated: 2026-10-16
 
 ## Best next task
 Integrate verified platform identity and hashed-session primitives into a narrow Worker authentication slice, with fail-closed per-request player ownership tests. Preserve browser preview mode without allowing unauthenticated server-backed economic actions; do not deploy or apply migrations until reviewed and explicitly released.
+
+## Migration sequencing update — 2026-10-22
+
+- Renumbered the unchanged session-store migration from `0006_player_sessions.sql` to `0007_player_sessions.sql` so the Degen Mana active-permit backfill can occupy migration 0006. This is filename/order coordination only; the SQL schema and session helper behavior are unchanged.
+- PR #14 remains draft and unmerged. The helper is not wired into Worker authentication routes; this migration has not been applied to production.
 
 ## Historical record
 
