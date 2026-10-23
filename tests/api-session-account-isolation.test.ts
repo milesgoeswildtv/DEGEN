@@ -11,6 +11,8 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
   .replace(/\bexport class /g, 'class ')
   .replace(/\bexport const /g, 'const ');
 
+const sessionValues = new Map<string, string>();
+
 const { GameApi } = runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi });',
   {
@@ -29,6 +31,11 @@ const { GameApi } = runInNewContext(
     Error,
     encodeURIComponent,
     console,
+    sessionStorage: {
+      getItem: (key: string) => sessionValues.get(key) ?? null,
+      setItem: (key: string, value: string) => { sessionValues.set(key, value); },
+      removeItem: (key: string) => { sessionValues.delete(key); },
+    },
   },
 ) as {
   GameApi: new () => {
@@ -94,17 +101,19 @@ test('an expired account session never replays an in-flight action under a diffe
 
   try {
     await api.bootstrap(identityA);
-    api.setIdentityProvider(async () => identityB);
+    // Simulate a page reload: the token and its owner must be restored together.
+    const reloadedApi = new GameApi();
+    reloadedApi.setIdentityProvider(async () => identityB);
 
-    const expiredRequest = api.actUnderpass('player-A', 'permit-1', 'slash', 0);
-    const delayedOldAccountRequest = api.actUnderpass('player-A', 'permit-1', 'slash', 0);
+    const expiredRequest = reloadedApi.actUnderpass('player-A', 'permit-1', 'slash', 0);
+    const delayedOldAccountRequest = reloadedApi.actUnderpass('player-A', 'permit-1', 'slash', 0);
 
     await assert.rejects(expiredRequest, /authenticated player changed/);
     releaseStale401(jsonResponse({ error: 'expired' }, 401));
     await assert.rejects(delayedOldAccountRequest, /authenticated player changed/);
 
     // The rejected old-account requests must not clear or reuse Player B's new session.
-    const currentAccountRequest = await api.actUnderpass('player-B', 'permit-1', 'slash', 0);
+    const currentAccountRequest = await reloadedApi.actUnderpass('player-B', 'permit-1', 'slash', 0);
     assert.equal(currentAccountRequest?.turnCount, 1);
     assert.equal(bootstrapCount, 2, 'only one rebootstrap should occur');
     assert.deepEqual(actionTokens, [
