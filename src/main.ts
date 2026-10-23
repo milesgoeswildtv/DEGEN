@@ -10,6 +10,7 @@ if (!root) throw new Error('DEGEN could not find #app');
 
 const api = new GameApi();
 const platform = createPlatformAdapter(api);
+api.setIdentityProvider(() => platform.getIdentity());
 const store = new PlayerStore(api);
 
 try {
