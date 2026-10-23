@@ -144,6 +144,8 @@ try {
     status: firstAction.status,
     playerHp: firstAction.playerHp,
     playerMana: firstAction.playerMana,
+    playerShield: firstAction.playerShield,
+    shieldAbsorbed: 0,
     enemyHp: firstAction.enemyHp,
     turnCount: firstAction.turnCount,
   });
