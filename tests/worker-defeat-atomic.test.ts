@@ -20,7 +20,7 @@ function setup(hp = 1) {
   const root = new URL('../db/', import.meta.url);
   db.exec(readFileSync(new URL('schema.sql', root), 'utf8'));
   for (const name of ['0002_authoritative_battle_state.sql', '0003_degen_mana.sql',
-    '0004_reward_receipt.sql', '0005_reward_claim_character_guard.sql', '0006_backfill_active_battle_mana.sql', '0007_degen_shield.sql']) {
+    '0004_reward_receipt.sql', '0005_reward_claim_character_guard.sql', '0006_backfill_active_battle_mana.sql', '0008_degen_shield.sql', '0007_degen_shield.sql']) {
     db.exec(readFileSync(new URL('migrations/' + name, root), 'utf8'));
   }
   db.exec("INSERT INTO players(id,display_name) VALUES ('p1','Player')");
