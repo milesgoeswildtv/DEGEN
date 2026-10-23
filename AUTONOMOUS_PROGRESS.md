@@ -338,3 +338,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - No production secrets, remote D1, deployment config, or mainline files were changed. The existing main deploy remains verified at `687510dc5e01d70f05734c5c5c50e3354404d1c0`; PR #21 is still not merged or live.
 - Mana remains complete on main. Migration order remains `0006_backfill_active_battle_mana.sql` → PR #21 `0007_player_sessions.sql` → PR #20 `0008_degen_shield.sql`.
 - Best next task: verify exact-head CI for commit `738d12bf1279215816e2faff67886406547acaec`; if green, finish auth review and coordinate the external credential/frontend setup plus controlled live Telegram/Discord verification before merging.
+
+### Auth fail-closed coverage follow-up — 2026-10-23
+
+- The prior code/test head `738d12bf1279215816e2faff67886406547acaec` passed exact-head CI run `39954678557`: 78/78 tests; Worker/D1 auth/session/identity tests; reward/action-completion race; cycle reservation/rollover; atomic defeat harness; production build; Chromium + local Worker/D1 signed-Telegram startup; and Worker dry-run.
+- Added a second assertion to the same local Worker/D1 setup: when Discord OAuth credentials are absent, `POST /api/auth/discord/challenge` returns 503 and does not allocate an `auth_nonces` row. This joins the Telegram missing-bot-token 503/no-identity-write check. New commit: `7f7b3cb654a6c4101b20258b33eddfb99fd0df8e`.
+- Exact-head CI for this follow-up assertion is **pending**. The previous green run does not cover the newest Discord-specific assertion.
+- No runtime code, mainline code, secret, deployment setting, or remote D1 was changed. Mana and reward authority remain complete on main; session migration 0007 and Shield migration 0008 remain PR-only.
+- Best next task: verify exact-head CI for `7f7b3cb654a6c4101b20258b33eddfb99fd0df8e`, then keep PR #21 gated on approved credentials and live platform verification before integrating PR #20.
