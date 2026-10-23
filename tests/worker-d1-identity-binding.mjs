@@ -58,12 +58,13 @@ async function bootstrap(initData, claimedPlayerId = 'attacker') {
   try { data = raw ? JSON.parse(raw) : undefined; } catch { data = raw; }
   return { status: response.status, data, cacheControl: response.headers.get('cache-control') };
 }
-async function startWorker() {
+async function startWorker(includeBotToken = true) {
   logs = '';
-  server = spawn(wrangler, [
+  const args = [
     'dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8794',
-    '--var', 'TELEGRAM_BOT_TOKEN:' + BOT_TOKEN,
-  ], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  ];
+  if (includeBotToken) args.push('--var', 'TELEGRAM_BOT_TOKEN:' + BOT_TOKEN);
+  server = spawn(wrangler, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [server.stdout, server.stderr]) {
     stream.on('data', data => { logs = (logs + data.toString()).slice(-12000); });
   }
@@ -105,8 +106,16 @@ try {
       VALUES('telegram','77','empty-room','Empty Room Owner');
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
-  await startWorker();
 
+  // Missing production credentials must fail closed without creating an account.
+  await startWorker(false);
+  const unconfigured = await bootstrap(signedInitData({ id: 41, first_name: 'Unconfigured' }));
+  assert.equal(unconfigured.status, 503, 'Telegram bootstrap must fail closed when the bot token is not configured');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM platform_identities WHERE platform='telegram' AND platform_user_id='41'")[0].n, 0,
+    'missing credentials must not create a platform identity');
+  await stopWorker();
+
+  await startWorker();
   const productionOrigin = 'https://degen-8ze.pages.dev';
   const productionPreflight = await request('/api/battle/start', {
     method: 'OPTIONS',
