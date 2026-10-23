@@ -241,3 +241,13 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Production deployment triggered by the Mana merge is not verified: the available workflow-run connector only returns PR-triggered runs. `wrangler.toml` remains the source of truth (`DB` → `DEGEN`, `db/migrations`), and deploy order is schema → migrations → Worker. Do not claim LIVE without the push-triggered deployment result.
 - Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
 - Best next task: run exact-head CI on the successor PR; if green, merge only this cycle reservation fix, then add endpoint-level duplicate completion/concurrent action-completion integration coverage.
+
+## Latest verified run — 2026-10-23 (action/completion race coverage)
+
+- Authoritative main SHA: `cadf71e9f82deef14135d68b855ede4cc0ae12bc`. PR #15 Mana rollout and PR #16 Underpass cycle-CAS are merged; PR #16 exact-head CI run `39920177775` passed with 49/49 deterministic tests, reward concurrency/replay, 60-request cycle reservation, 60-request rollover, Vite build, and Wrangler dry-run.
+- New feature branch: `automation/degen/battle-completion-concurrency-v01`, based directly on that main SHA. Extends the existing isolated Worker/D1 concurrency harness without changing Worker runtime behavior.
+- Added a seeded active permit for a killing blow, then races `POST /api/battle/action` against `POST /api/battle/complete`; completion may reject an active snapshot or award only after the Worker has persisted victory. Two concurrent completion retries must converge on one receipt.
+- Assertions cover terminal permit state, exactly one deterministic victory-history row, same reward receipt for both completion callers, exactly-once currency delta, and no extra inventory from the reduced tier. Existing harness coverage for stale action races, expired/wrong-player permits, full/reduced clears, and level-up remains intact.
+- No schema/migration change. CI uses local Wrangler/D1 only. Production push-triggered deploy after prior Worker merges remains unverified because the available Actions query only surfaces PR-triggered runs.
+- Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
+- Best next task: run exact-head CI for this integration test; if green, merge it, then implement the signed platform identity and per-request player ownership gate before public economic release.
