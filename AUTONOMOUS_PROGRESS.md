@@ -294,3 +294,10 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Exact-head CI run `39923790445` passed all 65 deterministic tests, the Worker/D1 reward concurrency harness, cycle race/rollover, atomic defeat harness, Shield persistence harness, build, and Worker validation; the Chromium vertical slice reached the compact-viewport check.
 - The browser test exposed a genuine mobile overflow edge case: a long player display name could expand the topbar's flex item and make the compact viewport report 472px instead of 320px. Added responsive `min-width: 0`, a viewport-relative max width, and `overflow-wrap: anywhere` for the display-name span rather than weakening the test.
 - Fresh exact-head browser/CI verification is required after this CSS correction. This is a responsive overflow fix; no gameplay balance or canon changed.
+
+### Shield exact-head QA result — 2026-10-23
+
+- Code head `642d8560504f320d4bd5d42627bfd2d7da5812fa` passed exact-head CI run `39924321391`: 65/65 deterministic tests; local Worker/D1 reward/action/completion, cycle reservation, rollover, atomic defeat, and Shield persistence harnesses; production build; Chromium + Vite + local Wrangler/D1 vertical slice; and Worker validation.
+- The browser run exposed and then verified the fix for long player-name overflow at compact mobile width. No visual test assertion was weakened.
+- Current PR #20 remains DRAFT and merge-blocked solely by migration ordering: PR #14 owns `0007_player_sessions.sql`; this Shield change adds `0008_degen_shield.sql`. Do not merge/deploy Shield until 0007 is integrated or explicitly resequenced.
+- The latest commit is continuity documentation only; runtime/test code is identical to the green code head above. A CI rerun may occur for the new head; do not treat this as production deployment proof.
