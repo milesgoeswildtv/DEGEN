@@ -6,13 +6,13 @@ import test from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 
 const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
+  .replace(/^import .*;\r?\n/gm, '')
   .replace('import.meta.env.VITE_API_BASE', 'globalThis.__API_BASE')
-  .replace(/\\bexport class /g, 'class ')
-  .replace(/\\bexport const /g, 'const ');
+  .replace(/\bexport class /g, 'class ')
+  .replace(/\bexport const /g, 'const ');
 
 const { GameApi } = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ GameApi });',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi });',
   {
     __API_BASE: 'https://degen-api.example',
     TEST_DEGEN,
