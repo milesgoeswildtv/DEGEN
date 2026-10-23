@@ -92,6 +92,76 @@ test('battle action sends the displayed authoritative turn as a replay precondit
   }
 });
 
+test('player-owned API requests use the server session and never submit playerId', async () => {
+  const api = new GameApi();
+  const token = 'A'.repeat(43);
+  const oldFetch = globalThis.fetch;
+  const calls: Array<{ path: string; headers: Record<string, string>; body?: Record<string, unknown> }> = [];
+  globalThis.fetch = async (input, init) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+    calls.push({ path, headers, body });
+    if (path === '/api/player/bootstrap') {
+      return new Response(JSON.stringify({
+        player: { id: 'server-player', displayName: 'Verified' },
+        session: { token, expiresAtMs: Date.now() + 60_000 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({
+      permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0, enemyHp: 20, turnCount: 4,
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    await api.bootstrap({ platform: 'telegram', displayName: 'Untrusted', telegramInitData: 'signed-proof' });
+    await api.actUnderpass('client-claimed-player', 'permit-1', 'crack', 3);
+    const action = calls.find(call => call.path === '/api/battle/action');
+    assert.ok(action);
+    assert.equal(action.headers.authorization, 'Bearer ' + token);
+    assert.equal(action.body?.playerId, undefined);
+    assert.deepEqual(action.body, { permitId: 'permit-1', abilityId: 'crack', expectedTurnCount: 3 });
+  } finally { globalThis.fetch = oldFetch; }
+});
+
+test('expired session retries only after a fresh verified platform bootstrap', async () => {
+  const api = new GameApi();
+  const identity = { platform: 'telegram', displayName: 'Verified', telegramInitData: 'signed-proof' };
+  const tokens = ['A'.repeat(43), 'B'.repeat(43)];
+  const oldFetch = globalThis.fetch;
+  let bootstraps = 0;
+  let actions = 0;
+  const actionTokens: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    if (path === '/api/player/bootstrap') {
+      const token = tokens[bootstraps++];
+      return new Response(JSON.stringify({
+        player: { id: 'server-player', displayName: 'Verified' },
+        session: { token, expiresAtMs: Date.now() + 60_000 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (path === '/api/battle/action') {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      actionTokens.push(headers.authorization ?? '');
+      actions += 1;
+      if (actions === 1) return new Response(JSON.stringify({ error: 'expired' }), { status: 401 });
+      return new Response(JSON.stringify({
+        permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0, enemyHp: 20, turnCount: 4,
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error('Unexpected API request: ' + path);
+  };
+  api.setIdentityProvider(async () => identity);
+  try {
+    await api.bootstrap(identity);
+    const result = await api.actUnderpass('server-player', 'permit-1', 'crack', 3);
+    assert.equal((result as { turnCount: number }).turnCount, 4);
+    assert.equal(bootstraps, 2);
+    assert.equal(actions, 2);
+    assert.deepEqual(actionTokens, ['Bearer ' + tokens[0], 'Bearer ' + tokens[1]]);
+  } finally { globalThis.fetch = oldFetch; }
+});
+
 test('battle action conflicts preserve the Worker authoritative state for safe client recovery', async () => {
   const oldFetch = globalThis.fetch;
   const battleState = {
