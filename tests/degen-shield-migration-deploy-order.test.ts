@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
@@ -27,9 +28,45 @@ test('Shield migration adds only the player-owned Shield column', () => {
   const addedColumns = [...shieldMigration.matchAll(/\bADD\s+COLUMN\s+([a-z_][a-z0-9_]*)/gi)]
     .map((match) => match[1]?.toLowerCase());
   assert.deepEqual(addedColumns, ['player_shield']);
+  assert.match(shieldMigration, /ADD COLUMN player_shield INTEGER NOT NULL DEFAULT 0/i,
+    'legacy permits must receive zero Shield when the column is introduced');
   assert.equal((shieldMigration.match(/\bALTER\s+TABLE\b/gi) ?? []).length, 1);
   assert.doesNotMatch(shieldMigration, /CREATE\s+TABLE/i);
   assert.doesNotMatch(shieldMigration, /(?:enemy|monster)[_ ](?:mana|shield)/i);
+});
+
+
+test('Shield migration preserves legacy active permits with zero Shield', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(`
+      CREATE TABLE battle_permits (
+        id TEXT PRIMARY KEY,
+        battle_status TEXT NOT NULL,
+        player_hp INTEGER,
+        player_mana INTEGER,
+        enemy_hp INTEGER,
+        turn_count INTEGER NOT NULL
+      );
+      INSERT INTO battle_permits(id,battle_status,player_hp,player_mana,enemy_hp,turn_count)
+        VALUES('active-legacy','active',80,4,92,2),
+              ('victory-legacy','victory',80,0,0,3);
+    `);
+    db.exec(shieldMigration);
+
+    const shields = db.prepare('SELECT id, player_shield FROM battle_permits ORDER BY id').all();
+    assert.deepEqual(shields.map((row) => ({ ...row })), [
+      { id: 'active-legacy', player_shield: 0 },
+      { id: 'victory-legacy', player_shield: 0 },
+    ]);
+    const active = db.prepare(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+      FROM battle_permits WHERE id = 'active-legacy'`).get();
+    assert.deepEqual({ ...active }, {
+      battle_status: 'active', player_hp: 80, player_mana: 4, enemy_hp: 92, turn_count: 2,
+    }, 'adding Shield must not invalidate or reset an already-issued encounter');
+  } finally {
+    db.close();
+  }
 });
 
 test('Worker deployment applies schema and migrations before Worker code', () => {

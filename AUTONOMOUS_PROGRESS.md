@@ -302,3 +302,15 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1/deploy assumptions:** source of truth remains `wrangler.toml`: binding `DB`, database `DEGEN`, migration directory `db/migrations`; deployment order is base schema → tracked migrations → Worker. Migration 0006 Mana is on main, 0007 player sessions remains in PR #21, and 0008 Shield remains PR-only here. No production D1 mutation or Worker deployment was performed.
 - **Miles blocker:** PR #21's signed Discord/Telegram identity and session ownership still needs approved production credential/config setup plus controlled live verification. Do not merge/deploy Shield migration 0008 ahead of session migration 0007 or bypass the authentication release gate.
 - **Best next task:** reconcile PR #21 with current main and rerun exact-head CI without merging/deploying until its approved credential/config and live-verification gate is cleared; then integrate Shield on top of the authenticated Worker.
+
+## Latest run — 2026-10-23 (Shield migration preserves legacy permits)
+
+- Authoritative main SHA: `9eb8d7c7db5f6c2be61488aa12c1a127c206a0be`.
+- Current feature branch/PR: `automation/degen/shield-foundation-v03` / PR #20. This continues the existing Shield slice; no duplicate branch or runtime rewrite.
+- Exact task/files: `tests/degen-shield-migration-deploy-order.test.ts` now executes migration 0008 against pre-existing active and victory permits, proving the new `player_shield NOT NULL DEFAULT 0` column initializes old rows to zero while preserving HP, Mana, enemy HP, status, and turn count. Worker runtime and balance are unchanged.
+- Test status: exact-head CI is pending after this continuity commit. The previous Shield code/test head passed CI run `39981756453`; this new migration regression is not claimed green until its own PR-head run passes.
+- Mana status: complete and merged on main, including authoritative Degen-only Mana, zero-cost use at zero, exact paid deduction, rejection without state mutation, and tracked migration 0006. No monster Mana or zero-Mana reversion.
+- Battle authority/reward idempotency: main contains action CAS/replay rejection, reward receipts/recovery, action/completion race coverage, full/reduced rewards, level-up math, atomic defeat history, Underpass cycle CAS, and permit-across-event-closure coverage. Shield branch keeps server-owned Shield separate from monster resources.
+- D1/deploy assumptions: `wrangler.toml` remains source of truth (`DB` → `DEGEN`, `db/migrations`); deploy order is schema → tracked migrations → Worker. Migration 0008 has a zero default so existing permits survive the schema transition; no production D1 mutation or deployment was performed.
+- Release gate: PR #21 signed platform identity/session ownership remains unmerged pending approved production credential/config setup and controlled live verification. Do not merge/deploy Shield 0008 ahead of session migration 0007 or bypass that gate.
+- Best next task: verify exact-head CI for PR #20; then resolve the auth credential/live-verification gate before integrating the Shield foundation.
