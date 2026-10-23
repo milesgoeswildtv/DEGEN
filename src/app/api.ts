@@ -192,7 +192,7 @@ export class GameApi {
           this.refreshInFlight = refresh.finally(() => { this.refreshInFlight = undefined; });
         }
         await this.refreshInFlight;
-        if (playerIdUsed && this.sessionPlayerId !== playerIdUsed) {
+        if (this.sessionPlayerId !== playerIdUsed) {
           throw new GameApiError(401, { error: 'Authenticated player changed while request was in flight.' }, 'DEGEN API 401: authenticated player changed while the request was in flight.');
         }
         return this.request<T>(path, init, false);
