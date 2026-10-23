@@ -98,6 +98,11 @@ try {
       VALUES('attacker:starter-bed','attacker','starter-bed','furniture',1);
     INSERT INTO housing_placements(id,player_id,furniture_key,grid_x,grid_y,rotation)
       VALUES('attacker:bed','attacker','starter-bed',1,1,0);
+    INSERT INTO players(id,display_name) VALUES('empty-room','Empty Room Owner');
+    INSERT INTO characters(player_id,level,xp,currency,degen_key)
+      VALUES('empty-room',3,25,40,'test-degen');
+    INSERT INTO platform_identities(platform,platform_user_id,player_id,display_name)
+      VALUES('telegram','77','empty-room','Empty Room Owner');
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   await startWorker();
@@ -118,8 +123,16 @@ try {
   assert.ok(first.data.player.id && first.data.player.id !== 'attacker',
     'client-supplied playerId cannot select an existing account');
   assert.equal(first.data.player.displayName, 'Verified Player', 'display name comes from verified provider data');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + first.data.player.id + "'")[0].n, 1,
+    'new characters receive the starter bed during bootstrap');
   assert.match(first.data.session.token, /^[A-Za-z0-9_-]{43}$/);
   assert.ok(first.data.session.expiresAtMs > Date.now());
+
+  const emptyRoomLogin = await bootstrap(signedInitData({ id: 77, first_name: 'Empty Room Owner' }), 'attacker');
+  assert.equal(emptyRoomLogin.status, 200, JSON.stringify(emptyRoomLogin.data));
+  assert.equal(emptyRoomLogin.data.player.id, 'empty-room', 'verified identity resolves its existing account');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='empty-room'")[0].n, 0,
+    'sign-in must not reseed a deliberately empty saved room');
 
   const attackerAfter = sql("SELECT p.display_name, c.level, c.xp, c.currency FROM players p JOIN characters c ON c.player_id=p.id WHERE p.id='attacker'");
   assert.deepEqual({ ...attackerAfter[0] }, { display_name: 'Existing Account', level: 7, xp: 9, currency: 123 },
@@ -183,7 +196,7 @@ try {
   assert.equal(new Set(races.map(result => result.data.player.id)).size, 1,
     'concurrent bootstrap creates exactly one player identity');
   assert.equal(sql("SELECT COUNT(*) AS n FROM platform_identities WHERE platform='telegram' AND platform_user_id='99'")[0].n, 1);
-  assert.equal(sql(`SELECT COUNT(*) AS n FROM players WHERE id NOT IN ('attacker','${first.data.player.id}')`)[0].n, 1,
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM players WHERE id NOT IN ('attacker','empty-room','${first.data.player.id}')`)[0].n, 1,
     'the race creates one account, not orphan accounts');
 
   const logout = await request('/api/auth/logout', {
