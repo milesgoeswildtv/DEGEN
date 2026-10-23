@@ -9,7 +9,15 @@ import type { SessionDatabase } from '../worker/auth/sessionStore.ts';
 const migration = readFileSync(new URL('../db/migrations/0007_player_sessions.sql', import.meta.url), 'utf8');
 function setup() {
   const raw = new DatabaseSync(':memory:');
-  raw.exec('PRAGMA foreign_keys=ON; CREATE TABLE players(id TEXT PRIMARY KEY); INSERT INTO players VALUES(\'player-a\');');
+  raw.exec(`PRAGMA foreign_keys=ON;
+    CREATE TABLE players(id TEXT PRIMARY KEY);
+    INSERT INTO players VALUES('player-a');
+    CREATE TABLE platform_identities(
+      platform TEXT NOT NULL, platform_user_id TEXT NOT NULL, player_id TEXT NOT NULL,
+      display_name TEXT NOT NULL, linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(platform, platform_user_id),
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    );`);
   raw.exec(migration);
   const db: SessionDatabase = {
     prepare(query: string) {
