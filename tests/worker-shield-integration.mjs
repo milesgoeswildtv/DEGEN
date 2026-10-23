@@ -90,6 +90,7 @@ try {
     playerId: 'shield-player', eventKey: 'underpass', cycleId: 'shield-cycle', encounterKey: 'tunnel-maw',
   });
   assert.equal(start.status, 200);
+  assert.equal(start.data.initialState.retaliationDamage, 0, 'battle start has no retaliation event');
   assert.deepEqual(sql(`SELECT player_shield FROM battle_permits WHERE id='${start.data.permitId}'`), [{ player_shield: 0 }],
     'server battle start initializes player Shield to zero');
 
@@ -98,9 +99,9 @@ try {
   });
   assert.equal(action.status, 200);
   assert.deepEqual([
-    action.data.playerHp, action.data.playerShield, action.data.shieldAbsorbed,
+    action.data.playerHp, action.data.playerShield, action.data.shieldAbsorbed, action.data.retaliationDamage,
     action.data.playerMana, action.data.enemyHp, action.data.turnCount, action.data.status,
-  ], [115, 0, 5, 0, 63, 1, 'active']);
+  ], [115, 0, 5, 10, 0, 63, 1, 'active']);
   assert.equal('enemyShield' in action.data, false);
   assert.equal('enemyMana' in action.data, false);
   assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shielded'"),
@@ -115,7 +116,7 @@ try {
   assert.equal(rejected.status, 409);
   assert.deepEqual(rejected.data.battleState, {
     permitId: 'shield-carryover', status: 'active', playerHp: 120, playerMana: 0,
-    playerShield: 12, shieldAbsorbed: 0, enemyHp: 92, turnCount: 0,
+    playerShield: 12, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 92, turnCount: 0,
   });
   assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
     [{ player_hp: 120, player_shield: 12, player_mana: 0, enemy_hp: 92, turn_count: 0, battle_status: 'active' }],
@@ -128,8 +129,8 @@ try {
   assert.equal(carryover.status, 200);
   assert.deepEqual([
     carryover.data.playerHp, carryover.data.playerMana, carryover.data.playerShield,
-    carryover.data.shieldAbsorbed, carryover.data.enemyHp, carryover.data.turnCount,
-  ], [120, 0, 2, 10, 63, 1]);
+    carryover.data.shieldAbsorbed, carryover.data.retaliationDamage, carryover.data.enemyHp, carryover.data.turnCount,
+  ], [120, 0, 2, 10, 10, 63, 1]);
   assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
     [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'remaining Shield must persist after absorbing retaliation');
