@@ -1,6 +1,14 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-19
+Updated: 2026-10-23
+
+## Latest run — 2026-10-23 (session / Shield migration sequencing)
+- Authoritative `main` SHA: `687510dc5e01d70f05734c5c5c50e3354404d1c0`. Mana foundation and reward/action authority remain merged; no Shield deployment has occurred.
+- Continued PR #20 on `automation/degen/shield-foundation-v02`. **PUSHED / PR ONLY:** renamed the Shield migration from `0007_degen_shield.sql` to `0008_degen_shield.sql` and updated `tests/degen-shield-migration-deploy-order.test.ts`.
+- Migration order is now Mana backfill `0006_backfill_active_battle_mana.sql`, server-side sessions / Discord nonce storage `0007_player_sessions.sql` in PR #21, then Shield `0008_degen_shield.sql` in this PR. Merge PR #21 first, then PR #20; do not merge the previous duplicate-0007 form.
+- Exact-head CI after resequencing is pending. No production D1 mutation or Worker deployment was performed. The branch's earlier green CI does not prove the renamed migration head is green.
+- Best next task: require exact-head CI on both auth/session and Shield branches, then review PR #21 before PR #20 integration.
+
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
