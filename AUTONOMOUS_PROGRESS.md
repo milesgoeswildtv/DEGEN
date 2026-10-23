@@ -1,6 +1,6 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-19
+Updated: 2026-10-23
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
@@ -301,3 +301,14 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - The browser run exposed and then verified the fix for long player-name overflow at compact mobile width. No visual test assertion was weakened.
 - Current PR #20 remains DRAFT and merge-blocked solely by migration ordering: PR #14 owns `0007_player_sessions.sql`; this Shield change adds `0008_degen_shield.sql`. Do not merge/deploy Shield until 0007 is integrated or explicitly resequenced.
 - The latest commit is continuity documentation only; runtime/test code is identical to the green code head above. A CI rerun may occur for the new head; do not treat this as production deployment proof.
+
+## Latest verified run — 2026-10-23 (Shield migration resequencing)
+
+- Authoritative `main` SHA at start: `687510dc5e01d70f05734c5c5c50e3354404d1c0` (atomic defeat-history transaction is already merged). Continued the existing Shield successor `automation/degen/shield-foundation-v03` / PR #20; no duplicate feature branch created.
+- Scoped integration change: moved the Shield column migration from `0008_degen_shield.sql` to `0007_degen_shield.sql` so the player-only Shield slice does not depend on the still-draft session-store PR #14. Updated `tests/degen-shield-migration-deploy-order.test.ts` and the SQLite migration list in `tests/worker-defeat-atomic.test.ts`; removed the superseded 0008 file. The migration still adds only `battle_permits.player_shield` with a non-negative default of zero. No monster fields, combat math, or balance were changed by the resequencing.
+- Migration ordering is now: merged Mana backfill `0006_backfill_active_battle_mana.sql`; this Shield candidate `0007_degen_shield.sql`; session-store PR #14 must be renumbered to `0008_player_sessions.sql` before any later integration. PR #14 remains draft and its session helper is not wired to Worker routes.
+- Prior exact-head CI for the pre-resequence Shield head `e053c3bb1f72da3a24a3f3c3d03b5c612c25ea8a` passed run `39924668763`. That does **not** verify the new migration path. Fresh exact-head CI on the post-resequence head is required before marking ready or merging.
+- Mana foundation: MERGED on main; paid Mana deduction, unaffordable rejection, zero-cost at 0 Mana, no monster Mana, and no Mana-triggered reversion remain intact. Reward receipt/idempotency, cycle reservation/rollover races, action/completion concurrency, and atomic defeat-history persistence are already merged and have isolated local Worker/D1 CI coverage. Production D1/deploy is not inferred from branch CI.
+- D1 source of truth remains `wrangler.toml`: binding `DB`, database `DEGEN`, migration directory `db/migrations`; deployment order remains base schema → tracked migrations → Worker. No production D1 operation or deployment was performed.
+- Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
+- Best next task: verify exact-head CI for PR #20 after the migration resequence. If green, mark it ready for review; keep PR #14 draft until its migration is renumbered and its session-store tests are committed.
