@@ -262,3 +262,9 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Deployment assumptions remain `wrangler.toml` binding `DB` → `DEGEN`, migration directory `db/migrations`, deploy order schema → migrations → Worker. Production push-triggered deployment status after prior Worker merges remains unverified.
 - Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
 - Best next task: run exact-head CI for this Shield successor; fix failures, then coordinate PR #14's 0007 migration before considering Shield merge.
+
+### Shield CI follow-up — 2026-10-23
+
+- First exact-head CI run `39922342502` failed in deterministic tests only: `tests/worker-battle-start-state.test.ts` still expected the pre-Shield start snapshot shape.
+- Updated that fixture and its inferred type to include `playerShield: 0` and `shieldAbsorbed: 0`, matching the new authoritative Worker start response. The other 54 deterministic tests passed in that run, including Shield absorption, killing-blow, carryover, migration/deploy-order, and monster-namespace assertions.
+- Fresh CI for the corrected head is required; no runtime behavior was changed by this test-only correction.
