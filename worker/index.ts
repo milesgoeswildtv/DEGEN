@@ -24,14 +24,17 @@ const corsHeaders = (request: Request, env: Env): HeadersInit => {
   const origin = request.headers.get('origin') ?? '';
   const allowed = (env.ALLOWED_ORIGINS ?? 'https://milesgoeswildtv.github.io,http://localhost:5173')
     .split(',')
-    .map((value) => value.trim());
-  const allowOrigin = allowed.includes(origin) ? origin : allowed[0] ?? '*';
-  return {
-    'access-control-allow-origin': allowOrigin,
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const headers: Record<string, string> = {
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
     'vary': 'Origin',
   };
+  // Never emit an Access-Control-Allow-Origin value for an absent or unlisted
+  // Origin. The browser must not receive a misleading allowlisted origin.
+  if (origin && allowed.includes(origin)) headers['access-control-allow-origin'] = origin;
+  return headers;
 };
 
 const json = (request: Request, env: Env, data: unknown, status = 200): Response =>
