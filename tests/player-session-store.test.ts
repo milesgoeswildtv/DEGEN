@@ -123,3 +123,29 @@ test('session issuance cannot create a session for a nonexistent player', async 
   const { db } = setup();
   await assert.rejects(issuePlayerSession(db, 'missing-player', 1_000), /FOREIGN KEY constraint failed/);
 });
+
+
+test('session issuance prunes only expired and revoked sessions for that player', async () => {
+  const { raw, db } = setup();
+  const expired = await issuePlayerSession(db, 'player-a', 1_000, 60_000);
+  const revoked = await issuePlayerSession(db, 'player-a', 2_000, 60_000);
+  const otherPlayer = await issuePlayerSession(db, 'player-b', 4_000, 60_000);
+  assert.equal(await revokePlayerSession(db, revoked.token, 5_000), true);
+
+  const fresh = await issuePlayerSession(db, 'player-a', 61_000, 60_000);
+  assert.equal(await resolvePlayerSession(db, expired.token, 61_001), null);
+  assert.equal(await resolvePlayerSession(db, revoked.token, 61_001), null);
+  assert.deepEqual(await resolvePlayerSession(db, fresh.token, 61_001), {
+    playerId: 'player-a',
+    expiresAtMs: fresh.expiresAtMs,
+  });
+  assert.deepEqual(await resolvePlayerSession(db, otherPlayer.token, 61_001), {
+    playerId: 'player-b',
+    expiresAtMs: otherPlayer.expiresAtMs,
+  });
+
+  const rows = raw.prepare('SELECT player_id, token_hash FROM player_sessions ORDER BY player_id').all() as Array<{player_id:string;token_hash:string}>;
+  assert.equal(rows.length, 2, 'only the fresh player-a session and active player-b session remain');
+  assert.ok(rows.every(row => row.token_hash !== expired.token && row.token_hash !== revoked.token));
+  raw.close();
+});
