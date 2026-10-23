@@ -90,7 +90,7 @@ export class BattleEngine {
     }
 
     const playerDamage = Math.max(0, this.enemyHp - result.enemyHp);
-    const retaliationDamage = Math.max(0, this.playerHp - result.playerHp);
+    const retaliationDamage = result.retaliationDamage;
     const manaSpent = Math.max(0, this.playerMana - result.playerMana);
     const shieldGained = Math.max(0, result.playerShield + result.shieldAbsorbed - this.playerShield);
     this.playerHp = result.playerHp;
