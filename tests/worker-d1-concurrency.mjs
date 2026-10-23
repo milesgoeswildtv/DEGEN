@@ -115,7 +115,7 @@ try {
 
   const firstActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player',
       permitId: started.permitId,
@@ -139,7 +139,7 @@ try {
 
   const staleReplayResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player',
       permitId: started.permitId,
@@ -160,7 +160,7 @@ try {
 
   const freeActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player',
       permitId: started.permitId,
@@ -175,7 +175,7 @@ try {
 
   const unaffordableResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player',
       permitId: 'permit-mana-zero',
@@ -197,7 +197,7 @@ try {
 
   const freeAtZeroResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player',
       permitId: 'permit-mana-zero',
@@ -214,7 +214,7 @@ try {
 
   const killingBlowResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player',
       permitId: 'permit-killing-blow',
@@ -232,7 +232,7 @@ try {
 
   const defeatResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player',
       permitId: 'permit-defeat',
@@ -250,7 +250,7 @@ try {
 
   const malformedTurnResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player', permitId: 'permit-turn-race',
       abilityId: 'slash', expectedTurnCount: -1,
@@ -260,7 +260,7 @@ try {
 
   const raceRequest = () => fetch(base + '/api/battle/action', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player', permitId: 'permit-turn-race',
       abilityId: 'slash', expectedTurnCount: 0,
@@ -306,7 +306,7 @@ try {
   // Race a killing action against completion: only a Worker-resolved victory may award.
   const [raceActionResponse, earlyCompletion] = await Promise.all([
     fetch(base + '/api/battle/action', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST', headers: AUTH_HEADERS,
       body: JSON.stringify({
         playerId: 'integration-player', permitId: 'permit-e',
         abilityId: 'slash', expectedTurnCount: 0,
