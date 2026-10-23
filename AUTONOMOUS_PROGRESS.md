@@ -263,3 +263,16 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - D1 assumptions remain verified from `wrangler.toml`: binding `DB`, database `DEGEN`, migrations `db/migrations`. No migration is added; tracked migration `0006_backfill_active_battle_mana.sql` was applied by the successful deployment run above. No production D1 mutation/deploy is part of this feature branch.
 - Reward receipts and duplicate-completion recovery are merged on main; action/completion race and duplicate receipt assertions are on main via `693a7c5`. Public economic release remains blocked on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
 - Best next task: require exact-head CI and review/merge this atomic defeat-history slice; then wire signed platform identity to per-request player ownership before public economic release.
+
+## Latest verified run — 2026-10-23 (Shield foundation clean successor)
+
+- Authoritative main SHA: `687510dc5e01d70f05734c5c5c50e3354404d1c0`, after PR #18's atomic defeat-history fix. PR #15 Mana, PR #16 cycle-CAS, PR #17 action/completion race coverage, and PR #18 defeat-history atomicity are merged.
+- PR #17 exact-head CI `39920825468` passed 49/49 deterministic tests plus local Worker/D1 reward/action/completion, cycle reservation, rollover, build, and Worker dry-run checks.
+- Shield successor branch `automation/degen/shield-foundation-v03` is created directly from current main because the prior Shield branch was behind/diverged after PR #18. It carries only the Shield feature/test additions, with the current atomic-defeat Worker logic and current CI checks preserved.
+- Shield behavior: Degen-only temporary protection absorbs retaliation before HP, persists across authoritative turns, initializes to zero on battle start, and is stored on battle permits. Killing blows skip retaliation; unused Shield remains. No monster Shield/Mana fields or generic move pool.
+- Added tracked migration `0008_degen_shield.sql`, deterministic absorption/carryover/killing-blow tests, isolated local Worker/D1 persistence coverage, and a Chromium/Vite/Wrangler browser vertical slice.
+- Prior Shield CI run `39922342502` found one stale battle-start fixture missing the two new zero Shield fields; the fixture was corrected. Fresh exact-head CI on this clean successor is pending.
+- Migration blocker: session-store PR #14 owns `0007_player_sessions.sql` and is not merged. Keep Shield draft and do not merge/deploy migration 0008 until 0007 is integrated or explicitly resequenced. No production D1 operation is performed by this branch.
+- Deployment source remains `wrangler.toml` binding `DB` → `DEGEN`, migrations `db/migrations`, deploy order schema → migrations → Worker. Production push-triggered deployment status after prior Worker merges remains unverified.
+- Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
+- Best next task: run exact-head CI on this clean Shield successor; fix failures and coordinate PR #14 migration 0007 before any Shield merge.
