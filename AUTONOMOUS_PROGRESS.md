@@ -321,3 +321,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 
 - During post-write source QA, caught two stale variable references in the newly ported housing HTTP block (`bed` and `collision`) before accepting CI results. Corrected both references to the renamed housing-scoped variables and restored the explicit housing integration PASS log.
 - This is a test-harness correction only; housing Worker behavior is unchanged. Exact-head CI is pending on the corrected branch head; do not rely on the prior in-progress run for this change.
+
+
+### Exact-head CI result — 2026-10-23 (housing reliability sync)
+
+- Code/test head `8f53162b4c60c8b4de4b1de85327d340411677a3` passed GitHub Actions CI run `40021462611` (**SUCCESS**). Observed green steps: deterministic tests (including housing bootstrap/save-order/quantity validation), isolated local Worker/D1 reward + housing HTTP integration, Underpass cycle race/rollover, atomic defeat history, `npm run build`, and `npm run check:worker`.
+- The Worker/D1 harness verified: intentionally empty rooms remain empty after bootstrap; valid placement persists; malformed/overquantity layouts return 400 without destroying prior layout; a cross-player global placement-ID collision rolls back the batch; and an explicit clear survives a later bootstrap. The earlier harness-variable mistake was corrected before this exact-head run.
+- This continuity-only commit records the observed result; no runtime or test code changes follow the verified head. PR #8 remains draft/unmerged and mergeable against current main. No production D1 or Worker deployment occurred.
+- Best next task: keep housing behind the signed-session ownership gate; after approved auth live verification, reconcile PR #8's housing changes with PR #21 and PR #20 and rerun the combined suite before any merge.
