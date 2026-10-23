@@ -1,6 +1,17 @@
 # DEGEN — AUTONOMOUS PROGRESS
 Updated: 2026-10-23
 
+## Latest run — 2026-10-23 (verified platform auth + session ownership)
+- Authoritative `main` SHA: `687510dc5e01d70f05734c5c5c50e3354404d1c0`. Degen-only Mana remains complete on main; reward receipts, action/completion concurrency, Underpass cycle CAS/rollover, and atomic defeat history remain Worker-owned and covered on main.
+- Continued existing PR #21 branch `automation/degen/identity-binding-immutability-v02` instead of creating a competing auth branch. **PUSHED / PR ONLY:** signed Telegram initData verification; Discord Embedded App SDK authorization-code flow with one-use server-issued state and server-side token/application/scope/user verification; hashed D1 player sessions; per-request bearer ownership for housing, Underpass, battle start/action/completion; logout revocation; caller-supplied `playerId` ignored; automatic session renewal through verified platform identity; fail-closed startup when a configured Worker has no verified platform adapter.
+- Files changed on the branch: `worker/index.ts`, `worker/auth/telegramInitData.ts`, `worker/auth/sessionStore.ts`, `worker/auth/discordChallenge.ts`, `worker/auth/discordOAuth.ts`, `db/migrations/0007_player_sessions.sql`, `src/app/api.ts`, `src/app/state.ts`, `src/platform/platform.ts`, `src/domain/types.ts`, `src/main.ts`, `index.html`, `package.json`, `README.md`, `.github/workflows/ci.yml`, and auth/session/Worker-D1 tests.
+- D1 migration `0007_player_sessions.sql` creates hashed bearer-session storage plus one-use Discord nonce storage. PR #20's Shield migration has been resequenced to `0008_degen_shield.sql` on its actual head branch; intended merge order is PR #21 first, then PR #20. Deployment workflow remains schema → tracked migrations → Worker.
+- CI on earlier auth heads exposed two test issues (Node's isolated test VM lacked global `Headers`, and the client payload assertion still expected `playerId`). The API now uses plain header records, and the test asserts ownership is not sent. These fixes are pushed; exact-head CI for the current commit is pending. Do not treat earlier failures as a green result.
+- No production D1 migration, secret update, Worker deployment, or live Discord/Telegram session was performed. Before deployment, configure `TELEGRAM_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, and frontend `VITE_API_BASE` / `VITE_DISCORD_CLIENT_ID` using the existing deployment environment; never put secrets in Vite variables.
+- Battle-authority/reward-idempotency status: unchanged from main; client no longer submits player ownership to player-owned API routes. Mana remains merged; no Shield/status implementation was added to this auth branch.
+- Best next task: obtain green exact-head CI for PR #21, fix any remaining Worker/D1 harness issues, then review and merge authentication before the resequenced Shield PR.
+
+
 
 ## Latest verified run — 2026-10-23 (platform identity binding hardening)
 
