@@ -113,6 +113,13 @@ try {
   assert.equal(unconfigured.status, 503, 'Telegram bootstrap must fail closed when the bot token is not configured');
   assert.equal(sql("SELECT COUNT(*) AS n FROM platform_identities WHERE platform='telegram' AND platform_user_id='41'")[0].n, 0,
     'missing credentials must not create a platform identity');
+  const unconfiguredDiscord = await request('/api/auth/discord/challenge', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(unconfiguredDiscord.status, 503, 'Discord challenge must fail closed when OAuth credentials are missing');
+  await unconfiguredDiscord.text();
+  assert.equal(sql('SELECT COUNT(*) AS n FROM auth_nonces')[0].n, 0,
+    'missing Discord credentials must not allocate auth nonces');
   await stopWorker();
 
   await startWorker();
