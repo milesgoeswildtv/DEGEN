@@ -280,8 +280,9 @@ export class AppController {
         ? await this.api.getUnderpass(this.store.snapshot.id)
         : getPreviewUnderpass();
     } catch (error) {
-      console.warn('World-event sync failed; using local preview clock.', error);
-      this.underpassEvent = getPreviewUnderpass();
+      console.warn('World-event sync failed.', error);
+      // Server-backed play must not fabricate an Underpass cycle when auth/network sync fails.
+      this.underpassEvent = this.api.enabled ? undefined : getPreviewUnderpass();
     }
 
     if (rerender && (this.route === 'map' || this.route === 'underpass')) this.render();
