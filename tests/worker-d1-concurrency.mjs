@@ -52,6 +52,10 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
+      ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
+      ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
+      ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,100,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -71,6 +75,194 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+  const startResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  const started = await startResponse.json();
+  assert.equal(startResponse.status, 200, JSON.stringify(started));
+  assert.equal(started.initialState.permitId, started.permitId);
+  assert.equal(started.initialState.status, 'active');
+  assert.ok(Number.isSafeInteger(started.initialState.playerHp) && started.initialState.playerHp > 0);
+  assert.ok(Number.isSafeInteger(started.initialState.playerMana) && started.initialState.playerMana >= 0);
+  assert.ok(Number.isSafeInteger(started.initialState.enemyHp) && started.initialState.enemyHp > 0);
+  assert.equal(started.initialState.turnCount, 0);
+
+  const firstActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: started.permitId,
+      abilityId: 'crack',
+      expectedTurnCount: started.initialState.turnCount,
+      // Client-supplied battle state is untrusted and must not affect the turn.
+      playerHp: 1,
+      playerMana: 0,
+      enemyHp: 1,
+      turnCount: 999,
+    }),
+  });
+  const firstAction = await firstActionResponse.json();
+  assert.equal(firstActionResponse.status, 200, JSON.stringify(firstAction));
+  assert.equal(firstAction.permitId, started.permitId);
+  assert.equal(firstAction.playerMana, started.initialState.playerMana - 4);
+  assert.equal(firstAction.playerHp, started.initialState.playerHp - 10);
+  assert.equal(firstAction.enemyHp, started.initialState.enemyHp - 35);
+  assert.equal(firstAction.turnCount, started.initialState.turnCount + 1);
+  assert.equal(firstAction.status, 'active');
+
+  const staleReplayResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: started.permitId,
+      abilityId: 'crack',
+      expectedTurnCount: started.initialState.turnCount,
+    }),
+  });
+  const staleReplay = await staleReplayResponse.json();
+  assert.equal(staleReplayResponse.status, 409, 'replaying the observed turn must not apply a second action');
+  assert.deepEqual(staleReplay.battleState, {
+    permitId: started.permitId,
+    status: firstAction.status,
+    playerHp: firstAction.playerHp,
+    playerMana: firstAction.playerMana,
+    enemyHp: firstAction.enemyHp,
+    turnCount: firstAction.turnCount,
+  });
+
+  const freeActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: started.permitId,
+      abilityId: 'slash',
+      expectedTurnCount: firstAction.turnCount,
+    }),
+  });
+  const freeAction = await freeActionResponse.json();
+  assert.equal(freeActionResponse.status, 200, JSON.stringify(freeAction));
+  assert.equal(freeAction.playerMana, firstAction.playerMana);
+  assert.equal(freeAction.turnCount, firstAction.turnCount + 1);
+
+  const unaffordableResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-mana-zero',
+      abilityId: 'crack',
+      expectedTurnCount: 0,
+      // Forged client Mana cannot make an unaffordable server action valid.
+      playerMana: 999,
+      playerHp: 999,
+      enemyHp: 1,
+      turnCount: 0,
+    }),
+  });
+  const unaffordable = await unaffordableResponse.json();
+  assert.equal(unaffordableResponse.status, 409, 'an unaffordable ability must reject');
+  assert.deepEqual(unaffordable.battleState, {
+    permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
+    enemyHp: 50, turnCount: 0,
+  });
+
+  const freeAtZeroResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-mana-zero',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const freeAtZero = await freeAtZeroResponse.json();
+  assert.equal(freeAtZeroResponse.status, 200, JSON.stringify(freeAtZero));
+  assert.equal(freeAtZero.playerMana, 0);
+  assert.equal(freeAtZero.turnCount, 1, 'rejected paid action must not advance the turn');
+  assert.equal(freeAtZero.playerHp, 70, 'only the accepted free action may apply retaliation');
+  assert.equal(freeAtZero.enemyHp, 21, 'only the accepted free action may damage the enemy');
+
+  const killingBlowResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-killing-blow',
+      abilityId: 'crack',
+      expectedTurnCount: 0,
+    }),
+  });
+  const killingBlow = await killingBlowResponse.json();
+  assert.equal(killingBlowResponse.status, 200, JSON.stringify(killingBlow));
+  assert.equal(killingBlow.status, 'victory');
+  assert.equal(killingBlow.playerHp, 80, 'a killing blow must not trigger enemy retaliation');
+  assert.equal(killingBlow.playerMana, 0, 'the killing blow must deduct its Mana cost exactly once');
+  assert.equal(killingBlow.enemyHp, 0);
+  assert.equal(killingBlow.turnCount, 1);
+
+  const defeatResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-defeat',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const defeat = await defeatResponse.json();
+  assert.equal(defeatResponse.status, 200, JSON.stringify(defeat));
+  assert.equal(defeat.status, 'defeat');
+  assert.equal(defeat.playerHp, 0);
+  assert.equal(defeat.playerMana, 0, 'zero-cost action at zero Mana remains usable on defeat');
+  assert.equal(defeat.enemyHp, 63);
+  assert.equal(defeat.turnCount, 1);
+
+  const malformedTurnResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-turn-race',
+      abilityId: 'slash', expectedTurnCount: -1,
+    }),
+  });
+  assert.equal(malformedTurnResponse.status, 400, 'invalid expected-turn preconditions must reject');
+
+  const raceRequest = () => fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-turn-race',
+      abilityId: 'slash', expectedTurnCount: 0,
+    }),
+  });
+  const raceResponses = await Promise.all([raceRequest(), raceRequest()]);
+  const raceResults = await Promise.all(raceResponses.map(async response => ({
+    status: response.status, data: await response.json(),
+  })));
+  assert.equal(raceResults.filter(result => result.status === 200).length, 1,
+    'exactly one action for the same observed turn may commit');
+  assert.equal(raceResults.filter(result => result.status === 409).length, 1,
+    'the losing same-turn action must receive a conflict');
+  const acceptedRace = raceResults.find(result => result.status === 200).data;
+  const rejectedRace = raceResults.find(result => result.status === 409).data;
+  assert.equal(acceptedRace.turnCount, 1);
+  assert.equal(rejectedRace.battleState.turnCount, 1);
+  assert.equal(rejectedRace.battleState.playerHp, acceptedRace.playerHp);
+  assert.equal(rejectedRace.battleState.playerMana, acceptedRace.playerMana);
+  assert.equal(rejectedRace.battleState.enemyHp, acceptedRace.enemyHp);
+
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);

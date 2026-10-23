@@ -103,6 +103,9 @@ export interface BattlePermit {
   cycleId: string;
   encounterKey: string;
   expiresAt: string;
+  // Server-backed entry returns the exact initial combat state persisted on the permit.
+  // Offline preview permits omit this and use the local prototype initializer.
+  initialState?: BattleActionResult;
 }
 
 export interface BattleActionResult {

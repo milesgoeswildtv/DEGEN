@@ -194,11 +194,20 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 
   const permitId = crypto.randomUUID();
   const expiresAt = iso(Date.now() + 20 * 60_000);
+  const initialState = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  };
   await env.DB.prepare(`INSERT INTO battle_permits (
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count
     ) VALUES (?, ?, 'underpass', ?, ?, ?, ?, ?, ?, 'active', 0)`)
-    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt, TEST_DEGEN.maxHp, TEST_DEGEN.maxMana, TUNNEL_MAW.maxHp).run();
+    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt,
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp).run();
 
   return json(request, env, {
     permitId,
@@ -206,13 +215,19 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     cycleId: cycle.id,
     encounterKey: TUNNEL_MAW.id,
     expiresAt,
+    initialState,
   });
 }
 
 async function handleBattleAction(request: Request, env: Env): Promise<Response> {
-  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string }>(request);
+  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount?: number }>(request);
   if (!input.playerId || !input.permitId || !input.abilityId) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
+  }
+  // This is a compare-and-swap precondition only; combat state remains Worker-owned.
+  if (input.expectedTurnCount !== undefined
+    && (!Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0)) {
+    return fail(request, env, 'expectedTurnCount must be a non-negative safe integer.', 400);
   }
 
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === input.abilityId);
@@ -221,18 +236,30 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const permit = await env.DB.prepare(`SELECT
       cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
     FROM battle_permits
-    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND datetime(expires_at) > CURRENT_TIMESTAMP`)
+    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND julianday(expires_at) > julianday('now')`)
     .bind(input.permitId, input.playerId)
     .first<BattlePermitStateRow>();
 
   if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
-  if (permit.battle_status !== 'active') return fail(request, env, `Battle is already ${permit.battle_status}.`, 409);
   if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
   }
+  const battleState = {
+    permitId: input.permitId,
+    status: permit.battle_status,
+    playerHp: permit.player_hp,
+    playerMana: permit.player_mana,
+    enemyHp: permit.enemy_hp,
+    turnCount: permit.turn_count,
+  };
+  const conflict = (message: string) => json(request, env, { error: message, battleState }, 409);
+  if (input.expectedTurnCount !== undefined && input.expectedTurnCount !== permit.turn_count) {
+    return conflict('Stale battle turn.');
+  }
+  if (permit.battle_status !== 'active') return conflict(`Battle is already ${permit.battle_status}.`);
   if (!canUseAbility(permit.player_mana, ability)) {
-    return fail(request, env, 'Not enough Mana for that ability.', 409);
+    return conflict('Not enough Mana for that ability.');
   }
 
   const turn = resolveCombatTurn({
@@ -248,12 +275,33 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const updated = await env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
-      AND datetime(expires_at) > CURRENT_TIMESTAMP AND turn_count = ?
+      AND julianday(expires_at) > julianday('now') AND turn_count = ?
     RETURNING turn_count`)
     .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, permit.turn_count)
     .first<{ turn_count: number }>();
 
-  if (!updated) return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
+  if (!updated) {
+    // A competing action may have committed after the SELECT. Return only persisted state.
+    const latest = await env.DB.prepare(`SELECT
+        cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
+      FROM battle_permits WHERE id = ? AND player_id = ?`)
+      .bind(input.permitId, input.playerId)
+      .first<BattlePermitStateRow>();
+    if (latest && latest.player_hp !== null && latest.player_mana !== null && latest.enemy_hp !== null) {
+      return json(request, env, {
+        error: 'Battle state changed; synchronized from the latest authoritative state.',
+        battleState: {
+          permitId: input.permitId,
+          status: latest.battle_status,
+          playerHp: latest.player_hp,
+          playerMana: latest.player_mana,
+          enemyHp: latest.enemy_hp,
+          turnCount: latest.turn_count,
+        },
+      }, 409);
+    }
+    return fail(request, env, 'Battle state changed; retry from the latest authoritative state.', 409);
+  }
 
   if (status === 'defeat') {
     const character = await env.DB.prepare(`SELECT level FROM characters WHERE player_id = ?`)
@@ -309,7 +357,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
-      (reward_state = 'pending' AND completed_at IS NULL AND (datetime(expires_at) > CURRENT_TIMESTAMP OR reward_clear_number IS NOT NULL))
+      (reward_state = 'pending' AND completed_at IS NULL AND (julianday(expires_at) > julianday('now') OR reward_clear_number IS NOT NULL))
       OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId)
