@@ -102,8 +102,12 @@ try {
     INSERT INTO players(id,display_name) VALUES('empty-room','Empty Room Owner');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES('empty-room',3,25,40,'test-degen');
+    -- This row represents a binding established by the authenticated flow.
+    INSERT INTO platform_identities(platform,platform_user_id,player_id,display_name,verified_at)
+      VALUES('telegram','77','empty-room','Empty Room Owner',CURRENT_TIMESTAMP);
+    -- Pre-auth builds accepted caller-supplied provider IDs; this row must remain untrusted.
     INSERT INTO platform_identities(platform,platform_user_id,player_id,display_name)
-      VALUES('telegram','77','empty-room','Empty Room Owner');
+      VALUES('telegram','88','attacker','Legacy Unverified Owner');
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
 
@@ -178,6 +182,19 @@ try {
   assert.equal(emptyRoomLogin.data.player.id, 'empty-room', 'verified identity resolves its existing account');
   assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='empty-room'")[0].n, 0,
     'sign-in must not reseed a deliberately empty saved room');
+
+  const legacySessionsBefore = sql('SELECT COUNT(*) AS n FROM player_sessions')[0].n;
+  const legacyPlayersBefore = sql('SELECT COUNT(*) AS n FROM players')[0].n;
+  const legacyClaim = await bootstrap(signedInitData({ id: 88, first_name: 'Verified Claimant' }), 'attacker');
+  assert.equal(legacyClaim.status, 409, 'verified proof must not trust a pre-auth caller-supplied identity row');
+  assert.match(legacyClaim.data.error, /legacy platform identity needs account recovery/i);
+  const legacyBinding = sql("SELECT player_id, verified_at FROM platform_identities WHERE platform='telegram' AND platform_user_id='88'")[0];
+  assert.equal(legacyBinding.player_id, 'attacker');
+  assert.equal(legacyBinding.verified_at, null, 'legacy row is preserved but remains unverified');
+  assert.equal(sql('SELECT COUNT(*) AS n FROM player_sessions')[0].n, legacySessionsBefore,
+    'legacy collision must not issue a session');
+  assert.equal(sql('SELECT COUNT(*) AS n FROM players')[0].n, legacyPlayersBefore,
+    'legacy collision must not create an orphan account');
 
   const attackerAfter = sql("SELECT p.display_name, c.level, c.xp, c.currency FROM players p JOIN characters c ON c.player_id=p.id WHERE p.id='attacker'");
   assert.deepEqual({ ...attackerAfter[0] }, { display_name: 'Existing Account', level: 7, xp: 9, currency: 123 },
