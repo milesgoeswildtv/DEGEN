@@ -320,3 +320,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Added a deterministic guard that reads the tracked migration directory and asserts Mana migration 0006 precedes Shield 0007 and every numeric migration prefix is unique. This prevents the still-draft PR #14 session migration from silently colliding at 0007; before future integration it must become `0008_player_sessions.sql`.
 - Exact-head CI run `39925772021` passed after the initial rename: deterministic tests, reward concurrency, cycle reservation/rollover, atomic defeat, Shield persistence, Vite build, Chromium + local Wrangler/D1 vertical slice, and Worker validation. A second run `39926007151` is in progress for the new migration-collision regression test at head `882124dd64e4ee35dc19d5a887aca7ffb5f0044a`; do not call that new test green until its run completes.
 - No production D1 migration/deploy or protected-main write occurred. PR #20 remains draft until the newest run is green. The prior Mana/reward authority and no-monster-resource canon remain unchanged.
+
+
+### Shield migration sequence CI — 2026-10-23
+
+- Exact code/test head `882124dd64e4ee35dc19d5a887aca7ffb5f0044a` passed CI run `39926007151`: **66/66 deterministic tests**, reward/action/completion concurrency harness, 60-request cycle reservation, 60-request rollover, atomic defeat rollback/retry harness, Shield initialization/absorption/persistence harness, Vite production build, Chromium + isolated local Wrangler/D1 vertical slice, and Worker dry-run.
+- The new migration-number uniqueness regression passed in that 66-test suite. It confirms the Shield migration follows Mana migration 0006 and prevents duplicate numeric prefixes such as the still-draft session migration's current 0007.
+- The continuity-only commit `1c1f10bb2e7e46fcfd614d4006279e71bb1d0792` triggered CI run `39926116538`; at the time of this log update it was still running the same suite. The latest continuity update is also documentation-only; it changes no runtime or test files and will trigger another exact-head CI run.
+- Existing non-failing warnings: Node `punycode` / experimental API warnings, the GitHub Actions Node 20 deprecation warning, and Vite's large-chunk warning. No production D1 migration or Worker deployment was performed by this feature branch.
