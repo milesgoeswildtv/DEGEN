@@ -37,7 +37,7 @@ const corsHeaders = (request: Request, env: Env): HeadersInit => {
 const json = (request: Request, env: Env, data: unknown, status = 200): Response =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...corsHeaders(request, env) },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...corsHeaders(request, env) },
   });
 
 const fail = (request: Request, env: Env, message: string, status = 400): Response =>
