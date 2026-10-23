@@ -72,6 +72,10 @@ async function ensurePlayer(
   identity?: PlatformIdentity,
 ): Promise<boolean> {
   const normalizedName = displayName.slice(0, 32);
+  // Seed the starter bed only when this is a new character. An empty room is a
+  // valid saved layout and must stay empty on later platform sign-ins.
+  const existingCharacter = await db.prepare(`SELECT player_id FROM characters WHERE player_id = ?`)
+    .bind(playerId).first<{ player_id: string }>();
   // Every bootstrap side effect shares the same identity-ownership predicate.
   // D1 batch is atomic: a competing first-bind transaction that loses the
   // identity race sees the winner here and performs no player bootstrap writes.
@@ -104,6 +108,15 @@ async function ensurePlayer(
       .bind(identity.platform, identity.platformUserId, playerId, normalizedName, ...guardValues));
   }
 
+  // Keep first-login housing creation in the same atomic batch as character
+  // creation. Concurrent first logins use the same deterministic placement ID.
+  if (!existingCharacter) {
+    statements.push(db.prepare(`INSERT OR IGNORE INTO housing_placements
+      (id, player_id, furniture_key, grid_x, grid_y, rotation)
+      SELECT ?, ?, 'starter-bed', 1, 1, 0 WHERE ${guard}`)
+      .bind(`${playerId}:starter-bed-placed`, playerId, ...guardValues));
+  }
+
   await db.batch(statements);
 
   if (identity) {
@@ -113,14 +126,6 @@ async function ensurePlayer(
     if (!linked) return false;
   }
 
-  const housing = await db.prepare(`SELECT COUNT(*) AS count FROM housing_placements WHERE player_id = ?`)
-    .bind(playerId).first<{ count: number }>();
-  if ((housing?.count ?? 0) === 0) {
-    await db.prepare(`INSERT OR IGNORE INTO housing_placements
-      (id, player_id, furniture_key, grid_x, grid_y, rotation)
-      VALUES (?, ?, 'starter-bed', 1, 1, 0)`)
-      .bind(`${playerId}:starter-bed-placed`, playerId).run();
-  }
   return true;
 }
 
