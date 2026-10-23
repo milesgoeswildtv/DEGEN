@@ -184,7 +184,7 @@ try {
 
   await click('[data-furniture="starter-chair"]');
   await until('chair selection', async () =>
-    await cdp.evaluate("Boolean(document.querySelector('[data-furniture=\"starter-chair\"].selected)") ? true : null);
+    await cdp.evaluate("Boolean(document.querySelector('[data-furniture=\"starter-chair\"].selected'))") ? true : null);
   await click('[data-room-x="3"][data-room-y="2"]');
   await until('chair rendered in the selected room cell', async () => {
     const label = await cdp.evaluate("document.querySelector('[data-room-x=\"3\"][data-room-y=\"2\"]')?.getAttribute('aria-label') || ''");
