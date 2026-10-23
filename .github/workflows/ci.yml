@@ -26,6 +26,8 @@ jobs:
         run: node tests/worker-d1-cycle-race.mjs
       - name: Exercise isolated local Worker/D1 Underpass rollover concurrency
         run: node tests/worker-d1-cycle-rollover.mjs
+      - name: Verify atomic defeat history on isolated local Worker/D1
+        run: node tests/worker-d1-defeat-atomic.mjs
       - name: Exercise isolated local Worker/D1 Shield state
         run: node tests/worker-shield-integration.mjs
       - name: Build web app
