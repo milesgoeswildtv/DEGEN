@@ -35,6 +35,21 @@ async function eventuallyComplete(id) {
   }
   throw new Error('Reward retry exhausted for ' + id);
 }
+function countRows(query) {
+  const r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  assert.equal(r.status, 0, 'local D1 query failed: ' + r.stderr);
+  const result = JSON.parse(r.stdout);
+  const row = Array.isArray(result) ? result[0]?.results?.[0] : result.results?.[0];
+  return row?.n;
+}
+function assertPersistedPermitState(permitId, state) {
+  const query = `SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
+    AND completed_at IS NULL AND battle_status = '${state.status}'
+    AND player_hp = ${state.playerHp} AND player_mana = ${state.playerMana}
+    AND enemy_hp = ${state.enemyHp} AND turn_count = ${state.turnCount}`;
+  assert.equal(countRows(query), 1, `persisted Worker state must match the authoritative snapshot for ${permitId}`);
+}
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
@@ -52,6 +67,11 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
+      ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
+      ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
+      ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,100,0),
+      ('permit-e','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,1,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -71,6 +91,201 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+  const startResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  const started = await startResponse.json();
+  assert.equal(startResponse.status, 200, JSON.stringify(started));
+  assert.equal(started.initialState.permitId, started.permitId);
+  assert.equal(started.initialState.status, 'active');
+  assert.ok(Number.isSafeInteger(started.initialState.playerHp) && started.initialState.playerHp > 0);
+  assert.ok(Number.isSafeInteger(started.initialState.playerMana) && started.initialState.playerMana >= 0);
+  assert.ok(Number.isSafeInteger(started.initialState.enemyHp) && started.initialState.enemyHp > 0);
+  assert.equal(started.initialState.turnCount, 0);
+
+  const firstActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: started.permitId,
+      abilityId: 'crack',
+      expectedTurnCount: started.initialState.turnCount,
+      // Client-supplied battle state is untrusted and must not affect the turn.
+      playerHp: 1,
+      playerMana: 0,
+      enemyHp: 1,
+      turnCount: 999,
+    }),
+  });
+  const firstAction = await firstActionResponse.json();
+  assert.equal(firstActionResponse.status, 200, JSON.stringify(firstAction));
+  assert.equal(firstAction.permitId, started.permitId);
+  assert.equal(firstAction.playerMana, started.initialState.playerMana - 4);
+  assert.equal(firstAction.playerHp, started.initialState.playerHp - 10);
+  assert.equal(firstAction.enemyHp, started.initialState.enemyHp - 35);
+  assert.equal(firstAction.turnCount, started.initialState.turnCount + 1);
+  assert.equal(firstAction.status, 'active');
+  assertPersistedPermitState(started.permitId, firstAction);
+
+  const staleReplayResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: started.permitId,
+      abilityId: 'crack',
+      expectedTurnCount: started.initialState.turnCount,
+    }),
+  });
+  const staleReplay = await staleReplayResponse.json();
+  assert.equal(staleReplayResponse.status, 409, 'replaying the observed turn must not apply a second action');
+  assert.deepEqual(staleReplay.battleState, {
+    permitId: started.permitId,
+    status: firstAction.status,
+    playerHp: firstAction.playerHp,
+    playerMana: firstAction.playerMana,
+    enemyHp: firstAction.enemyHp,
+    turnCount: firstAction.turnCount,
+  });
+  assertPersistedPermitState(started.permitId, firstAction);
+
+  const freeActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: started.permitId,
+      abilityId: 'slash',
+      expectedTurnCount: firstAction.turnCount,
+    }),
+  });
+  const freeAction = await freeActionResponse.json();
+  assert.equal(freeActionResponse.status, 200, JSON.stringify(freeAction));
+  assert.equal(freeAction.playerMana, firstAction.playerMana);
+  assert.equal(freeAction.turnCount, firstAction.turnCount + 1);
+
+  const unaffordableResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-mana-zero',
+      abilityId: 'crack',
+      expectedTurnCount: 0,
+      // Forged client Mana cannot make an unaffordable server action valid.
+      playerMana: 999,
+      playerHp: 999,
+      enemyHp: 1,
+      turnCount: 0,
+    }),
+  });
+  const unaffordable = await unaffordableResponse.json();
+  assert.equal(unaffordableResponse.status, 409, 'an unaffordable ability must reject');
+  assert.deepEqual(unaffordable.battleState, {
+    permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
+    enemyHp: 50, turnCount: 0,
+  });
+  assertPersistedPermitState('permit-mana-zero', unaffordable.battleState);
+
+  const freeAtZeroResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-mana-zero',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const freeAtZero = await freeAtZeroResponse.json();
+  assert.equal(freeAtZeroResponse.status, 200, JSON.stringify(freeAtZero));
+  assert.equal(freeAtZero.playerMana, 0);
+  assert.equal(freeAtZero.turnCount, 1, 'rejected paid action must not advance the turn');
+  assert.equal(freeAtZero.playerHp, 70, 'only the accepted free action may apply retaliation');
+  assert.equal(freeAtZero.enemyHp, 21, 'only the accepted free action may damage the enemy');
+  assertPersistedPermitState('permit-mana-zero', freeAtZero);
+
+  const killingBlowResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-killing-blow',
+      abilityId: 'crack',
+      expectedTurnCount: 0,
+    }),
+  });
+  const killingBlow = await killingBlowResponse.json();
+  assert.equal(killingBlowResponse.status, 200, JSON.stringify(killingBlow));
+  assert.equal(killingBlow.status, 'victory');
+  assert.equal(killingBlow.playerHp, 80, 'a killing blow must not trigger enemy retaliation');
+  assert.equal(killingBlow.playerMana, 0, 'the killing blow must deduct its Mana cost exactly once');
+  assert.equal(killingBlow.enemyHp, 0);
+  assert.equal(killingBlow.turnCount, 1);
+  assertPersistedPermitState('permit-killing-blow', killingBlow);
+
+  const defeatResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-defeat',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const defeat = await defeatResponse.json();
+  assert.equal(defeatResponse.status, 200, JSON.stringify(defeat));
+  assert.equal(defeat.status, 'defeat');
+  assert.equal(defeat.playerHp, 0);
+  assert.equal(defeat.playerMana, 0, 'zero-cost action at zero Mana remains usable on defeat');
+  assert.equal(defeat.enemyHp, 63);
+  assert.equal(defeat.turnCount, 1);
+  assertPersistedPermitState('permit-defeat', defeat);
+
+  const malformedTurnResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-turn-race',
+      abilityId: 'slash', expectedTurnCount: -1,
+    }),
+  });
+  assert.equal(malformedTurnResponse.status, 400, 'invalid expected-turn preconditions must reject');
+
+  const raceRequest = () => fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-turn-race',
+      abilityId: 'slash', expectedTurnCount: 0,
+    }),
+  });
+  const raceResponses = await Promise.all([raceRequest(), raceRequest()]);
+  const raceResults = await Promise.all(raceResponses.map(async response => ({
+    status: response.status, data: await response.json(),
+  })));
+  assert.equal(raceResults.filter(result => result.status === 200).length, 1,
+    'exactly one action for the same observed turn may commit');
+  assert.equal(raceResults.filter(result => result.status === 409).length, 1,
+    'the losing same-turn action must receive a conflict');
+  const acceptedRace = raceResults.find(result => result.status === 200).data;
+  const rejectedRace = raceResults.find(result => result.status === 409).data;
+  assert.equal(acceptedRace.turnCount, 1);
+  assert.equal(rejectedRace.battleState.turnCount, 1);
+  assert.equal(rejectedRace.battleState.playerHp, acceptedRace.playerHp);
+  assert.equal(rejectedRace.battleState.playerMana, acceptedRace.playerMana);
+  assert.equal(rejectedRace.battleState.enemyHp, acceptedRace.enemyHp);
+  assertPersistedPermitState('permit-turn-race', acceptedRace);
+
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
@@ -92,8 +307,161 @@ try {
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
   assert.equal((await complete('expired')).status, 409);
 
+  // Race a killing action against completion: only a Worker-resolved victory may award.
+  const [raceActionResponse, earlyCompletion] = await Promise.all([
+    fetch(base + '/api/battle/action', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'integration-player', permitId: 'permit-e',
+        abilityId: 'slash', expectedTurnCount: 0,
+      }),
+    }),
+    complete('permit-e'),
+  ]);
+  const raceAction = await raceActionResponse.json();
+  assert.equal(raceActionResponse.status, 200, JSON.stringify(raceAction));
+  assert.equal(raceAction.status, 'victory');
+  assert.equal(raceAction.enemyHp, 0);
+  assert.equal(raceAction.turnCount, 1);
+  assert.ok([200, 409].includes(earlyCompletion.status),
+    'completion may observe either active state (409) or the committed server victory (200)');
+
+  // Two simultaneous completion attempts must converge on the same persisted receipt.
+  const [completionA, completionB] = await Promise.all([
+    eventuallyComplete('permit-e'),
+    eventuallyComplete('permit-e'),
+  ]);
+  assert.equal(completionA.reward.tier, 'reduced', 'fifth clear should use the existing reduced tier');
+  assert.equal(completionB.reward.tier, completionA.reward.tier);
+  assert.equal(completionB.reward.xp, completionA.reward.xp);
+  assert.equal(completionB.reward.currency, completionA.reward.currency);
+  assert.equal(completionA.player.currency, final.player.currency + completionA.reward.currency,
+    'concurrent completion must apply currency exactly once');
+  assert.equal(completionB.player.currency, completionA.player.currency);
+  assert.equal(completionA.player.inventory.filter(x => x === 'underpass-scrap').length, 3,
+    'reduced duplicate completion must not add another scrap');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-e:victory'"), 1,
+    'one victory receipt/history row must exist for the permit');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id = 'permit-e' AND reward_state = 'awarded' AND battle_status = 'victory' AND enemy_hp = 0 AND turn_count = 1"), 1,
+    'the completed permit must retain one authoritative terminal state');
+
+  // A permit already issued while the Underpass is open remains legal until its own expiry.
+  // Closing the world-event cycle must not interrupt an encounter or move its reward to a new cycle.
+  const closureSeed = join(scratch, 'closure-cycle.sql');
+  writeFileSync(closureSeed, `
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+      VALUES('closure-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+3 hours'));
+  `);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + closureSeed]);
+
+  const closureStartResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'closure-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  const closureStart = await closureStartResponse.json();
+  assert.equal(closureStartResponse.status, 200, JSON.stringify(closureStart));
+  assert.equal(closureStart.initialState.status, 'active');
+  assert.equal(closureStart.initialState.turnCount, 0);
+
+  const expiredClosureStartResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'closure-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  const expiredClosureStart = await expiredClosureStartResponse.json();
+  assert.equal(expiredClosureStartResponse.status, 200, JSON.stringify(expiredClosureStart));
+
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE world_event_cycles SET closes_at = datetime('now','-1 minute') WHERE id = 'closure-cycle'"]);
+
+  const closedCycleStartResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'closure-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  assert.equal(closedCycleStartResponse.status, 409,
+    'a closed cycle cannot issue a new permit even while an earlier permit remains valid');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE cycle_id = 'closure-cycle'"), 2,
+    'failed entry after closure must not create another permit');
+
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    `--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = '${expiredClosureStart.permitId}'`]);
+
+  const expiredAfterClosureResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: expiredClosureStart.permitId,
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const expiredAfterClosure = await expiredAfterClosureResponse.json();
+  assert.equal(expiredAfterClosureResponse.status, 409, 'cycle closure does not extend a permit past its own expiry');
+  assert.match(expiredAfterClosure.error, /invalid, expired, or already completed/i);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${expiredClosureStart.permitId}'
+    AND battle_status = 'active' AND turn_count = 0
+    AND player_hp = ${expiredClosureStart.initialState.playerHp}
+    AND player_mana = ${expiredClosureStart.initialState.playerMana}
+    AND enemy_hp = ${expiredClosureStart.initialState.enemyHp}`), 1,
+    'an expired permit must remain unchanged even when its event cycle is closed');
+
+  let closureResult = closureStart.initialState;
+  for (let expectedTurnCount = 0; expectedTurnCount < 3; expectedTurnCount += 1) {
+    const response = await fetch(base + '/api/battle/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'integration-player',
+        permitId: closureStart.permitId,
+        abilityId: 'crack',
+        expectedTurnCount,
+      }),
+    });
+    const action = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(action));
+    assert.equal(action.turnCount, expectedTurnCount + 1);
+    assert.equal(action.status, expectedTurnCount === 2 ? 'victory' : 'active');
+    closureResult = action;
+  }
+  assert.equal(closureResult.playerMana, 0);
+  assert.equal(closureResult.enemyHp, 0);
+  assert.equal(closureResult.playerHp, closureStart.initialState.playerHp - 20,
+    'the two non-lethal enemy turns retaliate; the killing blow does not');
+
+  const closureCompletion = await eventuallyComplete(closureStart.permitId);
+  assert.equal(closureCompletion.reward.tier, 'full');
+  assert.equal(closureCompletion.reward.xp, 75);
+  assert.equal(closureCompletion.reward.currency, 30);
+  assert.equal(closureCompletion.worldEvent.cycleId, 'closure-cycle',
+    'completion remains attributed to the permit original cycle after closure');
+  assert.equal(closureCompletion.worldEvent.phase, 'sealed');
+  assert.equal(closureCompletion.worldEvent.fullRewardClears, 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id = '${closureStart.permitId}:victory'`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${closureStart.permitId}'
+    AND cycle_id = 'closure-cycle' AND battle_status = 'victory' AND reward_state = 'awarded'
+    AND player_mana = 0 AND enemy_hp = 0 AND turn_count = 3`), 1,
+    'the closed-cycle encounter must retain one authoritative awarded receipt');
+
   // Real HTTP against this isolated Wrangler Worker/D1 database, never production.
-  const bootstrapHousing = async () => {
+  const housingBootstrap = async () => {
     const response = await fetch(base + '/api/player/bootstrap', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ playerId: 'integration-player', displayName: 'Integration' }),
@@ -101,51 +469,51 @@ try {
     assert.equal(response.status, 200);
     return (await response.json()).housing.placements;
   };
-  const saveHousing = (housing) => fetch(base + '/api/player/housing', {
+  const housingSave = (housing) => fetch(base + '/api/player/housing', {
     method: 'PUT', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ playerId: 'integration-player', housing }),
   });
-  const originalHousing = await bootstrapHousing();
-  assert.deepEqual(originalHousing, [], 'pre-seeded character must not receive new starter placement');
-  const bed = { instanceId: 'integration-housing-bed', furnitureId: 'starter-bed', x: 3, y: 2 };
-  assert.equal((await saveHousing({ placements: [bed] })).status, 204);
-  assert.deepEqual((await bootstrapHousing()).map(item => [item.instanceId,item.x,item.y]),
+  const housingOriginal = await housingBootstrap();
+  assert.deepEqual(housingOriginal, [], 'pre-seeded character must not receive new starter placement');
+  const housingBed = { instanceId: 'integration-housing-bed', furnitureId: 'starter-bed', x: 3, y: 2 };
+  assert.equal((await housingSave({ placements: [bed] })).status, 204);
+  assert.deepEqual((await housingBootstrap()).map(item => [item.instanceId,item.x,item.y]),
     [['integration-housing-bed',3,2]], 'valid placement must persist');
-  const expectedHousing = await bootstrapHousing();
+  const housingExpected = await housingBootstrap();
   for (const invalid of [
     {},
-    { placements: [bed, { ...bed, instanceId: 'extra-bed', x: 4 }] },
-    { placements: [{ ...bed, furnitureId: 'unowned-furniture' }], inventory: ['unowned-furniture'] },
-    { placements: [bed, { instanceId: 'chair-duplicate-cell', furnitureId: 'starter-chair', x: 3, y: 2 }] },
+    { placements: [housingBed, { ...housingBed, instanceId: 'extra-bed', x: 4 }] },
+    { placements: [{ ...housingBed, furnitureId: 'unowned-furniture' }], inventory: ['unowned-furniture'] },
+    { placements: [housingBed, { instanceId: 'chair-duplicate-cell', furnitureId: 'starter-chair', x: 3, y: 2 }] },
   ]) {
-    assert.equal((await saveHousing(invalid)).status, 400, 'malformed/overquantity save must reject');
-    assert.deepEqual(await bootstrapHousing(), expectedHousing, 'rejected save must preserve prior layout');
+    assert.equal((await housingSave(invalid)).status, 400, 'malformed/overquantity save must reject');
+    assert.deepEqual(await housingBootstrap(), housingExpected, 'rejected save must preserve prior layout');
   }
   // A globally colliding placement ID must roll back the whole D1 batch,
   // preserving both players' rooms despite the rejected write.
-  const otherId = 'integration-housing-other';
-  const otherBootstrap = () => fetch(base + '/api/player/bootstrap', {
+  const housingOtherId = 'integration-housing-other';
+  const housingOtherBootstrap = () => fetch(base + '/api/player/bootstrap', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: otherId, displayName: 'Other' }),
+    body: JSON.stringify({ playerId: housingOtherId, displayName: 'Other' }),
   });
-  const otherSave = (placements) => fetch(base + '/api/player/housing', {
+  const housingOtherSave = (placements) => fetch(base + '/api/player/housing', {
     method: 'PUT', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: otherId, housing: { placements } }),
+    body: JSON.stringify({ playerId: housingOtherId, housing: { placements } }),
   });
-  assert.equal((await otherBootstrap()).status, 200);
-  const collision = { instanceId: 'integration-shared-global-id', furnitureId: 'starter-bed', x: 1, y: 1 };
-  assert.equal((await otherSave([collision])).status, 204);
-  const collided = await saveHousing({ placements: [{ ...collision, x: 4, y: 3 }] });
-  assert.equal(collided.status, 500, 'cross-player global ID collision must fail transaction');
-  assert.deepEqual(await bootstrapHousing(), expectedHousing, 'failed transaction must preserve original player room');
-  const other = await (await otherBootstrap()).json();
-  assert.equal(other.housing.placements.length, 1);
-  assert.equal(other.housing.placements[0].instanceId, collision.instanceId);
+  assert.equal((await housingOtherBootstrap()).status, 200);
+  const housingCollision = { instanceId: 'integration-shared-global-id', furnitureId: 'starter-bed', x: 1, y: 1 };
+  assert.equal((await housingOtherSave([collision])).status, 204);
+  const housingCollided = await housingSave({ placements: [{ ...housingCollision, x: 4, y: 3 }] });
+  assert.equal(housingCollided.status, 500, 'cross-player global ID collision must fail transaction');
+  assert.deepEqual(await housingBootstrap(), housingExpected, 'failed transaction must preserve original player room');
+  const housingOther = await (await housingOtherBootstrap()).json();
+  assert.equal(housingOther.housing.placements.length, 1);
+  assert.equal(housingOther.housing.placements[0].instanceId, housingCollision.instanceId);
 
-  assert.equal((await saveHousing({ placements: [] })).status, 204);
-  assert.deepEqual(await bootstrapHousing(), [], 'explicit empty room must persist through bootstrap');
-  console.log('PASS isolated Worker/D1 HTTP housing: valid save, invalid rejection, persistence, empty-room reload');
-  console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
+  assert.equal((await housingSave({ placements: [] })).status, 204);
+  assert.deepEqual(await housingBootstrap(), [], 'explicit empty room must persist through bootstrap');
+  
+  console.log('PASS isolated Worker/D1: action/completion race, duplicate receipt, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
