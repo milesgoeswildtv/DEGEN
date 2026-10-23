@@ -1,5 +1,6 @@
 // Isolated HTTP integration against a local Wrangler Worker and local D1 only.
 import assert from 'node:assert/strict';
+import { createHash, createHmac } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,9 +10,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const wrangler = resolve(root, 'node_modules/.bin/wrangler');
-const scratch = mkdtempSync(join(tmpdir(), 'degen-identity-d1-'));
+const scratch = mkdtempSync(join(tmpdir(), 'degen-auth-d1-'));
 const persist = join(scratch, 'state');
 const base = 'http://127.0.0.1:8794';
+const BOT_TOKEN = 'degen-test-bot-token';
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
 let server;
 let logs = '';
@@ -23,103 +25,177 @@ function cli(args) {
   }
   return result.stdout;
 }
-
-async function bootstrap(platform, platformUserId, playerId, displayName) {
-  const response = await fetch(base + '/api/player/bootstrap', {
+function sql(query) {
+  const output = cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--command=' + query, '--json']);
+  const parsed = JSON.parse(output);
+  return Array.isArray(parsed) ? parsed[0]?.results ?? [] : parsed.results ?? [];
+}
+function signedInitData(user, authDate = Math.floor(Date.now() / 1000)) {
+  const params = new URLSearchParams({ auth_date: String(authDate), user: JSON.stringify(user) });
+  const check = [...params.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, value]) => key + '=' + value).join('\n');
+  const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+  params.set('hash', createHmac('sha256', secret).update(check).digest('hex'));
+  return params.toString();
+}
+async function request(path, init = {}) {
+  return fetch(base + path, { ...init, signal: AbortSignal.timeout(15000) });
+}
+async function bootstrap(initData, claimedPlayerId = 'attacker') {
+  const response = await request('/api/player/bootstrap', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ platform, platformUserId, playerId, displayName }),
-    signal: AbortSignal.timeout(15000),
+    body: JSON.stringify({
+      platform: 'telegram',
+      telegramInitData: initData,
+      playerId: claimedPlayerId,
+      platformUserId: 'forged-provider-id',
+      displayName: 'Forged Display Name',
+    }),
   });
-  return { status: response.status, data: await response.json() };
+  const raw = await response.text();
+  let data;
+  try { data = raw ? JSON.parse(raw) : undefined; } catch { data = raw; }
+  return { status: response.status, data };
+}
+async function startWorker() {
+  logs = '';
+  server = spawn(wrangler, [
+    'dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8794',
+    '--var', 'TELEGRAM_BOT_TOKEN:' + BOT_TOKEN,
+  ], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  for (const stream of [server.stdout, server.stderr]) {
+    stream.on('data', data => { logs = (logs + data.toString()).slice(-12000); });
+  }
+  for (let attempt = 0; attempt < 80; attempt++) {
+    if (server.exitCode !== null) throw new Error('Worker exited: ' + logs);
+    try {
+      const response = await fetch(base + '/api/health', { signal: AbortSignal.timeout(600) });
+      if (response.ok && (await response.json()).ok) return;
+    } catch {}
+    await sleep(250);
+  }
+  throw new Error('Worker did not start: ' + logs);
+}
+async function stopWorker() {
+  if (!server || server.exitCode !== null) return;
+  const child = server;
+  child.kill('SIGTERM');
+  await Promise.race([new Promise(resolve => child.once('exit', resolve)), sleep(2000)]);
+  if (child.exitCode === null) child.kill('SIGKILL');
+  server = undefined;
 }
 
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
-  server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8794'], {
-    cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  for (const stream of [server.stdout, server.stderr]) {
-    stream.on('data', data => { logs = (logs + data.toString()).slice(-12000); });
-  }
-  let ready = false;
-  for (let attempt = 0; attempt < 80; attempt++) {
-    if (server.exitCode !== null) throw new Error('Worker exited: ' + logs);
-    try {
-      const response = await fetch(base + '/api/health', { signal: AbortSignal.timeout(600) });
-      if (response.ok && (await response.json()).ok) { ready = true; break; }
-    } catch {}
-    await sleep(250);
-  }
-  assert.ok(ready, 'Worker did not start: ' + logs);
-
-  const missingIdentity = await fetch(base + '/api/player/bootstrap', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ platform: 'telegram', playerId: 'missing-provider-id', displayName: 'Missing' }),
-    signal: AbortSignal.timeout(15000),
-  });
-  assert.equal(missingIdentity.status, 400, 'provider bootstrap must fail closed when the provider ID is absent');
-  await missingIdentity.text();
-
-  const first = await bootstrap('discord', 'uid', 'owner', 'Owner');
-  assert.equal(first.status, 200);
-
-  const attackerSeed = join(scratch, 'existing-attacker.sql');
-  writeFileSync(attackerSeed, `
+  const seed = join(scratch, 'seed.sql');
+  writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES('attacker','Existing Account');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES('attacker',7,9,123,'test-degen');
+    INSERT INTO player_inventory(id,player_id,item_key,item_type,quantity)
+      VALUES('attacker:starter-bed','attacker','starter-bed','furniture',1);
+    INSERT INTO housing_placements(id,player_id,furniture_key,grid_x,grid_y,rotation)
+      VALUES('attacker:bed','attacker','starter-bed',1,1,0);
   `);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + attackerSeed]);
-  const stolen = await bootstrap('discord', 'uid', 'attacker', 'Impostor');
-  assert.equal(stolen.status, 409, 'another player cannot claim the existing binding');
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
+  await startWorker();
 
-  const attackerAfter = JSON.parse(cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    "--command=SELECT p.display_name, c.level, c.xp, c.currency FROM players p JOIN characters c ON c.player_id=p.id WHERE p.id='attacker'", '--json']));
-  const attackerRows = Array.isArray(attackerAfter) ? attackerAfter[0]?.results : attackerAfter.results;
-  assert.deepEqual({ ...attackerRows[0] }, { display_name: 'Existing Account', level: 7, xp: 9, currency: 123 },
-    'a conflicting identity request must not mutate an existing player account');
-  const repeat = await bootstrap('discord', 'uid', 'owner', 'Renamed');
-  assert.equal(repeat.status, 200);
-  const independent = await bootstrap('telegram', 'uid', 'other-player', 'Telegram');
-  assert.equal(independent.status, 200);
+  const noProof = await request('/api/player/bootstrap', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ platform: 'telegram', playerId: 'missing-proof', platformUserId: '42' }),
+  });
+  assert.equal(noProof.status, 401, 'unsigned provider identifiers must not authenticate');
+  await noProof.text();
 
-  const attempts = await Promise.all(Array.from({ length: 8 }, (_, index) =>
-    bootstrap('discord', 'race-user', 'racer-' + index, 'Racer ' + index)));
-  assert.equal(attempts.filter(result => result.status === 200).length, 1,
-    'exactly one concurrent first-binding request must win: ' + JSON.stringify(attempts));
-  assert.equal(attempts.filter(result => result.status === 409).length, 7,
-    'every competing bootstrap must receive a conflict');
-  const winningIndex = attempts.findIndex(result => result.status === 200);
-  assert.equal((await bootstrap('discord', 'race-user', 'late-attacker', 'Late')).status, 409);
+  const forgedHash = signedInitData({ id: 42, first_name: 'Verified' }).replace(/hash=./, 'hash=0');
+  assert.equal((await bootstrap(forgedHash)).status, 401, 'tampered Telegram initData must reject');
 
-  const output = cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    '--command=SELECT platform, platform_user_id, player_id, display_name FROM platform_identities ORDER BY platform, platform_user_id', '--json']);
-  const parsed = JSON.parse(output);
-  const rows = Array.isArray(parsed) ? parsed[0]?.results : parsed.results;
-  assert.ok(Array.isArray(rows), 'D1 must return identity rows');
-  assert.deepEqual(rows.map(row => [row.platform, row.platform_user_id, row.player_id]), [
-    ['discord', 'race-user', 'racer-' + winningIndex],
-    ['discord', 'uid', 'owner'],
-    ['telegram', 'uid', 'other-player'],
-  ]);
-  assert.equal(rows.find(row => row.platform === 'discord' && row.platform_user_id === 'uid').display_name, 'Renamed');
+  const first = await bootstrap(signedInitData({ id: 42, first_name: 'Verified', last_name: 'Player' }));
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.ok(first.data.player.id && first.data.player.id !== 'attacker',
+    'client-supplied playerId cannot select an existing account');
+  assert.equal(first.data.player.displayName, 'Verified Player', 'display name comes from verified provider data');
+  assert.match(first.data.session.token, /^[A-Za-z0-9_-]{43}$/);
+  assert.ok(first.data.session.expiresAtMs > Date.now());
 
-  const accountOutput = cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    "--command=SELECT (SELECT COUNT(*) FROM players WHERE id LIKE 'racer-%' OR id IN ('late-attacker', 'missing-provider-id')) AS players, (SELECT COUNT(*) FROM characters WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'missing-provider-id')) AS characters, (SELECT COUNT(*) FROM player_inventory WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'missing-provider-id')) AS inventory, (SELECT COUNT(*) FROM unlocked_locations WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'missing-provider-id')) AS locations, (SELECT COUNT(*) FROM housing_placements WHERE player_id LIKE 'racer-%' OR player_id IN ('late-attacker', 'missing-provider-id')) AS housing", '--json']);
-  const accountParsed = JSON.parse(accountOutput);
-  const accountRows = Array.isArray(accountParsed) ? accountParsed[0]?.results : accountParsed.results;
-  assert.ok(Array.isArray(accountRows), 'D1 must return bootstrap side-effect counts');
-  assert.deepEqual({ ...accountRows[0] }, { players: 1, characters: 1, inventory: 4, locations: 3, housing: 1 },
-    'losing first-binding requests must not leave orphan player, character, inventory, location, or housing rows');
-  console.log('PASS local Worker/D1: immutable binding, retry, namespace isolation, 8-way first-binding race, no orphan bootstrap rows');
-} finally {
-  if (server && server.exitCode === null) {
-    server.kill('SIGTERM');
-    await Promise.race([new Promise(resolve => server.once('exit', resolve)), sleep(2000)]);
-    if (server.exitCode === null) server.kill('SIGKILL');
+  const attackerAfter = sql("SELECT p.display_name, c.level, c.xp, c.currency FROM players p JOIN characters c ON c.player_id=p.id WHERE p.id='attacker'");
+  assert.deepEqual({ ...attackerAfter[0] }, { display_name: 'Existing Account', level: 7, xp: 9, currency: 123 },
+    'forged bootstrap fields cannot mutate another account');
+
+  const repeated = await bootstrap(signedInitData({ id: 42, first_name: 'Verified', last_name: 'Player' }), 'some-other-id');
+  assert.equal(repeated.status, 200, JSON.stringify(repeated.data));
+  assert.equal(repeated.data.player.id, first.data.player.id, 'rebootstrap resolves the existing verified provider binding');
+
+  const token = first.data.session.token;
+  const noSession = await request('/api/world/underpass?playerId=' + encodeURIComponent(first.data.player.id));
+  assert.equal(noSession.status, 401, 'caller-supplied query identity cannot access player-owned routes');
+  await noSession.text();
+
+  const noAuthHousing = await request('/api/player/housing', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: first.data.player.id, housing: { placements: [] } }),
+  });
+  assert.equal(noAuthHousing.status, 401);
+  await noAuthHousing.text();
+
+  const spoofedHousing = await request('/api/player/housing', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+    body: JSON.stringify({ playerId: 'attacker', housing: { placements: [] } }),
+  });
+  assert.equal(spoofedHousing.status, 204, 'valid session owns housing regardless of body playerId');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='attacker'")[0].n, 1,
+    'body playerId cannot delete another player housing');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + first.data.player.id + "'")[0].n, 0,
+    'session owner housing is updated');
+
+  for (const [path, body] of [
+    ['/api/battle/start', { playerId: first.data.player.id, eventKey: 'underpass', cycleId: 'x', encounterKey: 'tunnel-maw' }],
+    ['/api/battle/action', { playerId: first.data.player.id, permitId: 'x', abilityId: 'slash' }],
+    ['/api/battle/complete', { playerId: first.data.player.id, permitId: 'x' }],
+  ]) {
+    const response = await request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, 401, path + ' must reject without a session');
+    await response.text();
   }
+
+  const ownerWorld = await request('/api/world/underpass?playerId=attacker', {
+    headers: { authorization: 'Bearer ' + repeated.data.session.token },
+  });
+  assert.equal(ownerWorld.status, 200, 'authenticated world lookup uses the session owner, not the query');
+  assert.equal((await ownerWorld.json()).source, 'server');
+
+  const expiredToken = Buffer.alloc(32, 4).toString('base64url');
+  const expiredHash = createHash('sha256').update(expiredToken).digest('hex');
+  sql(`INSERT INTO player_sessions(token_hash,player_id,created_at_ms,expires_at_ms,revoked_at_ms)
+    VALUES('${expiredHash}','${first.data.player.id}',${Date.now()-60000},${Date.now()-1},NULL)`);
+  const expired = await request('/api/world/underpass', { headers: { authorization: 'Bearer ' + expiredToken } });
+  assert.equal(expired.status, 401, 'expired bearer sessions must fail closed');
+  await expired.text();
+
+  const races = await Promise.all(Array.from({ length: 8 }, () =>
+    bootstrap(signedInitData({ id: 99, first_name: 'Race User' }), 'attacker')));
+  assert.ok(races.every(result => result.status === 200),
+    'concurrent bootstrap retries for one verified identity converge: ' + JSON.stringify(races));
+  assert.equal(new Set(races.map(result => result.data.player.id)).size, 1,
+    'concurrent bootstrap creates exactly one player identity');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM platform_identities WHERE platform='telegram' AND platform_user_id='99'")[0].n, 1);
+  assert.equal(sql("SELECT COUNT(*) AS n FROM players WHERE id NOT IN ('attacker','${first.data.player.id}')")[0].n, 1,
+    'the race creates one account, not orphan accounts');
+
+  const logout = await request('/api/auth/logout', {
+    method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'attacker' }),
+  });
+  assert.equal(logout.status, 204);
+  const afterLogout = await request('/api/world/underpass', { headers: { authorization: 'Bearer ' + token } });
+  assert.equal(afterLogout.status, 401, 'logout revokes the server-side session');
+  await afterLogout.text();
+
+  console.log('PASS local Worker/D1: signed Telegram bootstrap, immutable provider binding, opaque sessions, per-route ownership, expiry, logout, concurrent first bind');
+} finally {
+  await stopWorker();
   rmSync(scratch, { recursive: true, force: true });
 }
