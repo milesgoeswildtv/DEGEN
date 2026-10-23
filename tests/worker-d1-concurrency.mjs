@@ -144,6 +144,8 @@ try {
     status: firstAction.status,
     playerHp: firstAction.playerHp,
     playerMana: firstAction.playerMana,
+    playerShield: firstAction.playerShield,
+    shieldAbsorbed: 0,
     enemyHp: firstAction.enemyHp,
     turnCount: firstAction.turnCount,
   });
@@ -182,7 +184,7 @@ try {
   assert.equal(unaffordableResponse.status, 409, 'an unaffordable ability must reject');
   assert.deepEqual(unaffordable.battleState, {
     permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
-    enemyHp: 50, turnCount: 0,
+    playerShield: 0, shieldAbsorbed: 0, enemyHp: 50, turnCount: 0,
   });
 
   const freeAtZeroResponse = await fetch(base + '/api/battle/action', {
