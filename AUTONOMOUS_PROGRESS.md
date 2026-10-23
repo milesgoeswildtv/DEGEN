@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-23 (quarantine pre-auth provider identity mappings)
+
+- Authoritative `main` SHA at start: `42a53321f79440351fef19b321391aea6fb52b79`. Continued the existing `automation/degen/identity-binding-immutability-v02` / PR #21 branch; no competing branch and no direct `main` writes.
+- **PUSHED / PR #21:** identified and closed a security gap: pre-auth `main` accepted caller-supplied `playerId` and `platformUserId`, so old `platform_identities` rows cannot be trusted as proof of ownership. Migration `0007_player_sessions.sql` adds nullable `verified_at`; existing rows remain present and NULL. New bindings created after signed proof are timestamped.
+- **PUSHED / PR #21:** `worker/index.ts` now returns HTTP 409 when a verified provider identity collides with an unverified legacy row. It does not select that row's player, issue a session, reassign the identity, or delete/merge existing progress. Concurrent first-bind recovery only accepts a row marked verified. Updated `tests/identity-binding.test.ts`, `tests/discord-challenge.test.ts`, `tests/player-session-store.test.ts`, `tests/worker-d1-identity-binding.mjs`, and `README.md`; existing session-retention cleanup and its test remain on this branch.
+- **Targeted local QA:** standalone Node 22/SQLite identity-migration/upsert fixture **2/2 PASS**; standalone session-retention fixture **1/1 PASS**. These are focused fixtures, not the full repository test suite. The actual Worker/D1 harness is committed but was not run locally because this runtime has no complete checkout/dependency tree. Exact-head GitHub CI status was not surfaced by the available workflow/status lookup; `npm test`, `npm run build`, and `npm run check:worker` remain unverified for the latest branch head.
+- Mana remains complete/merged on main: authoritative Degen Mana, rejection without turn/damage mutation, exact deduction, zero-cost use at zero, killing-blow/defeat parity, client/Worker math consistency, and tracked migration 0006. No monster Mana or Mana-triggered reversion.
+- Battle authority/reward idempotency on main remains unchanged: authoritative action CAS, victory-only completion, persisted reward receipts/recovery, duplicate/concurrent completion coverage, cycle reservation/rollover, atomic defeat history, and permit continuity across event closure.
+- D1 assumptions: `wrangler.toml` remains source of truth (`DB` → `DEGEN`, `db/migrations`); deploy order remains base schema → tracked migrations → Worker. Migration 0007 is still PR-only and must be applied before auth Worker code. No production D1 mutation, secret update, or Worker deployment occurred.
+- **Miles blockers:** approved production Telegram/Discord credentials/configuration and controlled live platform verification; separately, an approved legacy-account recovery/link policy is needed for any pre-auth identity collision. Do not auto-link, reassign, or merge legacy accounts.
+- **Best next task:** verify exact-head PR #21 CI; if green, complete approved credential setup and controlled signed Telegram/Discord ownership checks before merge. Then reconcile draft Shield PR #20 against the auth-enabled Worker/client and migration 0008 order.
+
+
 ## Latest run — 2026-10-23 (server-session retention cleanup)
 
 - Authoritative `main` SHA observed at start: `42a53321f79440351fef19b321391aea6fb52b79`. Continued the existing `automation/degen/identity-binding-immutability-v02` / PR #21 branch; did not create a competing auth branch.
