@@ -150,9 +150,11 @@ export class GameApi {
 
   private async request<T = void>(path: string, init?: RequestInit, allowRefresh = true): Promise<T> {
     const tokenUsed = this.sessionToken;
-    const headers = new Headers(init?.headers);
-    if (init?.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
-    if (tokenUsed) headers.set('authorization', `Bearer ${tokenUsed}`);
+    const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) };
+    if (init?.body && !Object.keys(headers).some((key) => key.toLowerCase() === 'content-type')) {
+      headers['content-type'] = 'application/json';
+    }
+    if (tokenUsed) headers.authorization = `Bearer ${tokenUsed}`;
     const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
     if (response.status === 401) {
       if (tokenUsed && this.sessionToken && this.sessionToken !== tokenUsed) {
