@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
-const manaBackfill = read('../db/migrations/0007_backfill_active_battle_mana.sql');
+const manaBackfill = read('../db/migrations/0006_backfill_active_battle_mana.sql');
 
 function setup() {
   const db = new DatabaseSync(':memory:');
