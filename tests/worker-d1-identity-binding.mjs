@@ -109,7 +109,8 @@ try {
   assert.equal(noProof.status, 401, 'unsigned provider identifiers must not authenticate');
   await noProof.text();
 
-  const forgedHash = signedInitData({ id: 42, first_name: 'Verified' }).replace(/hash=./, 'hash=0');
+  const validHash = signedInitData({ id: 42, first_name: 'Verified' });
+  const forgedHash = validHash.replace(/hash=([a-f0-9])/, (_match, first) => 'hash=' + (first === '0' ? '1' : '0'));
   assert.equal((await bootstrap(forgedHash)).status, 401, 'tampered Telegram initData must reject');
 
   const first = await bootstrap(signedInitData({ id: 42, first_name: 'Verified', last_name: 'Player' }));
@@ -182,7 +183,7 @@ try {
   assert.equal(new Set(races.map(result => result.data.player.id)).size, 1,
     'concurrent bootstrap creates exactly one player identity');
   assert.equal(sql("SELECT COUNT(*) AS n FROM platform_identities WHERE platform='telegram' AND platform_user_id='99'")[0].n, 1);
-  assert.equal(sql("SELECT COUNT(*) AS n FROM players WHERE id NOT IN ('attacker','${first.data.player.id}')")[0].n, 1,
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM players WHERE id NOT IN ('attacker','${first.data.player.id}')`)[0].n, 1,
     'the race creates one account, not orphan accounts');
 
   const logout = await request('/api/auth/logout', {
