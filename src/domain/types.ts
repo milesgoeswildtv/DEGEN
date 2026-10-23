@@ -117,6 +117,8 @@ export interface BattleActionResult {
   playerMana: number;
   playerShield: number;
   shieldAbsorbed: number;
+  /** Full server-resolved enemy retaliation, including damage absorbed by Shield. */
+  retaliationDamage: number;
   enemyHp: number;
   turnCount: number;
 }
