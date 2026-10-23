@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
-const shieldMigration = read('../db/migrations/0007_degen_shield.sql');
+const shieldMigration = read('../db/migrations/0008_degen_shield.sql');
 const deployWorkflow = read('../.github/workflows/deploy-worker.yml');
 const wranglerConfig = read('../wrangler.toml');
 const packageJson = JSON.parse(read('../package.json')) as { scripts: Record<string, string> };
@@ -14,9 +14,11 @@ test('D1 migration sequence is unique and Shield follows the merged Mana backfil
     .filter((name) => /^\d+_[a-z0-9_]+\.sql$/i.test(name))
     .sort();
   const manaIndex = migrationNames.indexOf('0006_backfill_active_battle_mana.sql');
-  const shieldIndex = migrationNames.indexOf('0007_degen_shield.sql');
+  const sessionIndex = migrationNames.indexOf('0007_player_sessions.sql');
+  const shieldIndex = migrationNames.indexOf('0008_degen_shield.sql');
   assert.ok(manaIndex >= 0, 'the merged Mana backfill must remain tracked');
   assert.ok(shieldIndex > manaIndex, 'Shield must follow the Mana backfill');
+  if (sessionIndex >= 0) assert.ok(shieldIndex > sessionIndex, 'Shield must follow player sessions when the auth migration is integrated');
   const prefixes = migrationNames.map((name) => name.match(/^(\d+)_/)?.[1]);
   assert.equal(new Set(prefixes).size, prefixes.length, 'migration sequence numbers must be unique');
 });
