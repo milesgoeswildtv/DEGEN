@@ -23,6 +23,12 @@ function setup() {
     PRAGMA foreign_keys = ON;
     CREATE TABLE players (id TEXT PRIMARY KEY);
     INSERT INTO players (id) VALUES ('player-a'), ('player-b');
+    CREATE TABLE platform_identities (
+      platform TEXT NOT NULL, platform_user_id TEXT NOT NULL, player_id TEXT NOT NULL,
+      display_name TEXT NOT NULL, linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (platform, platform_user_id),
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    );
   `);
   raw.exec(migration);
 
