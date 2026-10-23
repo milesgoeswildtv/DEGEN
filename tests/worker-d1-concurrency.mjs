@@ -331,7 +331,122 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id = 'permit-e' AND reward_state = 'awarded' AND battle_status = 'victory' AND enemy_hp = 0 AND turn_count = 1"), 1,
     'the completed permit must retain one authoritative terminal state');
 
-  console.log('PASS isolated Worker/D1: action/completion race, duplicate receipt, expiry, reward tiers, level-up');
+  // A permit already issued while the Underpass is open remains legal until its own expiry.
+  // Closing the world-event cycle must not interrupt an encounter or move its reward to a new cycle.
+  const closureSeed = join(scratch, 'closure-cycle.sql');
+  writeFileSync(closureSeed, `
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+      VALUES('closure-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+3 hours'));
+  `);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + closureSeed]);
+
+  const closureStartResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'closure-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  const closureStart = await closureStartResponse.json();
+  assert.equal(closureStartResponse.status, 200, JSON.stringify(closureStart));
+  assert.equal(closureStart.initialState.status, 'active');
+  assert.equal(closureStart.initialState.turnCount, 0);
+
+  const expiredClosureStartResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'closure-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  const expiredClosureStart = await expiredClosureStartResponse.json();
+  assert.equal(expiredClosureStartResponse.status, 200, JSON.stringify(expiredClosureStart));
+
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE world_event_cycles SET closes_at = datetime('now','-1 minute') WHERE id = 'closure-cycle'"]);
+
+  const closedCycleStartResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'closure-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  assert.equal(closedCycleStartResponse.status, 409,
+    'a closed cycle cannot issue a new permit even while an earlier permit remains valid');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE cycle_id = 'closure-cycle'"), 2,
+    'failed entry after closure must not create another permit');
+
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    `--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = '${expiredClosureStart.permitId}'`]);
+
+  const expiredAfterClosureResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: expiredClosureStart.permitId,
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const expiredAfterClosure = await expiredAfterClosureResponse.json();
+  assert.equal(expiredAfterClosureResponse.status, 409, 'cycle closure does not extend a permit past its own expiry');
+  assert.match(expiredAfterClosure.error, /invalid, expired, or already completed/i);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${expiredClosureStart.permitId}'
+    AND battle_status = 'active' AND turn_count = 0
+    AND player_hp = ${expiredClosureStart.initialState.playerHp}
+    AND player_mana = ${expiredClosureStart.initialState.playerMana}
+    AND enemy_hp = ${expiredClosureStart.initialState.enemyHp}`), 1,
+    'an expired permit must remain unchanged even when its event cycle is closed');
+
+  let closureResult = closureStart.initialState;
+  for (let expectedTurnCount = 0; expectedTurnCount < 3; expectedTurnCount += 1) {
+    const response = await fetch(base + '/api/battle/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'integration-player',
+        permitId: closureStart.permitId,
+        abilityId: 'crack',
+        expectedTurnCount,
+      }),
+    });
+    const action = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(action));
+    assert.equal(action.turnCount, expectedTurnCount + 1);
+    assert.equal(action.status, expectedTurnCount === 2 ? 'victory' : 'active');
+    closureResult = action;
+  }
+  assert.equal(closureResult.playerMana, 0);
+  assert.equal(closureResult.enemyHp, 0);
+  assert.equal(closureResult.playerHp, closureStart.initialState.playerHp - 20,
+    'the two non-lethal enemy turns retaliate; the killing blow does not');
+
+  const closureCompletion = await eventuallyComplete(closureStart.permitId);
+  assert.equal(closureCompletion.reward.tier, 'full');
+  assert.equal(closureCompletion.reward.xp, 75);
+  assert.equal(closureCompletion.reward.currency, 30);
+  assert.equal(closureCompletion.worldEvent.cycleId, 'closure-cycle',
+    'completion remains attributed to the permit original cycle after closure');
+  assert.equal(closureCompletion.worldEvent.phase, 'sealed');
+  assert.equal(closureCompletion.worldEvent.fullRewardClears, 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id = '${closureStart.permitId}:victory'`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${closureStart.permitId}'
+    AND cycle_id = 'closure-cycle' AND battle_status = 'victory' AND reward_state = 'awarded'
+    AND player_mana = 0 AND enemy_hp = 0 AND turn_count = 3`), 1,
+    'the closed-cycle encounter must retain one authoritative awarded receipt');
+
+  console.log('PASS isolated Worker/D1: action/completion race, duplicate receipt, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
