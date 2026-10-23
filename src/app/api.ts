@@ -42,36 +42,71 @@ export class GameApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+const SESSION_STORAGE_KEY = 'degen.player.session.v1';
+const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export class GameApi {
   readonly enabled = API_BASE.length > 0;
+  private sessionToken: string | undefined;
 
-  async bootstrap(playerId: string, identity: PlatformIdentity): Promise<PlayerState | undefined> {
-    if (!this.enabled) return undefined;
-    return this.request<PlayerState>('/api/player/bootstrap', {
-      method: 'POST',
-      body: JSON.stringify({ playerId, displayName: identity.displayName, platform: identity.platform, platformUserId: identity.platformUserId }),
-    });
+  constructor() {
+    try {
+      const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (stored && SESSION_TOKEN_PATTERN.test(stored)) this.sessionToken = stored;
+    } catch { /* Storage can be unavailable in embedded/private contexts. */ }
   }
 
-  async saveHousing(playerId: string, housing: HousingState): Promise<void> {
+  async createDiscordChallenge(): Promise<string> {
+    if (!this.enabled) throw new Error('Discord authentication requires the DEGEN Worker API.');
+    const challenge = await this.request<{ state: string; expiresAtMs: number }>('/api/auth/discord/challenge', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    if (!challenge || !SESSION_TOKEN_PATTERN.test(challenge.state)
+      || !Number.isSafeInteger(challenge.expiresAtMs) || challenge.expiresAtMs <= Date.now()) {
+      throw new Error('Discord authentication challenge was malformed.');
+    }
+    return challenge.state;
+  }
+
+  async bootstrap(identity: PlatformIdentity): Promise<PlayerState | undefined> {
+    if (!this.enabled) return undefined;
+    const result = await this.request<{ player: PlayerState; session: { token: string; expiresAtMs: number } }>('/api/player/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify({
+        platform: identity.platform,
+        telegramInitData: identity.telegramInitData,
+        discordAuthorizationCode: identity.discordAuthorizationCode,
+        discordState: identity.discordState,
+      }),
+    });
+    if (!result?.player || !result.session || !SESSION_TOKEN_PATTERN.test(result.session.token)
+      || !Number.isSafeInteger(result.session.expiresAtMs) || result.session.expiresAtMs <= Date.now()) {
+      throw new Error('The Worker returned an invalid player session.');
+    }
+    this.sessionToken = result.session.token;
+    try { sessionStorage.setItem(SESSION_STORAGE_KEY, this.sessionToken); } catch { /* In-memory session remains valid. */ }
+    return result.player;
+  }
+
+  async saveHousing(_playerId: string, housing: HousingState): Promise<void> {
     if (!this.enabled) return;
     await this.request('/api/player/housing', {
       method: 'PUT',
-      body: JSON.stringify({ playerId, housing }),
+      body: JSON.stringify({ housing }),
     });
   }
 
-  async getUnderpass(playerId: string): Promise<WorldEventSnapshot | undefined> {
+  async getUnderpass(_playerId: string): Promise<WorldEventSnapshot | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<WorldEventSnapshot>(`/api/world/underpass?playerId=${encodeURIComponent(playerId)}`);
+    return this.request<WorldEventSnapshot>('/api/world/underpass');
   }
 
   async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
     const permit = await this.request<BattlePermit>('/api/battle/start', {
       method: 'POST',
-      body: JSON.stringify({ playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
+      body: JSON.stringify({ eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
     });
     if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()
       || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
@@ -91,7 +126,7 @@ export class GameApi {
     }
     const result = await this.request<BattleActionResult>('/api/battle/action', {
       method: 'POST',
-      body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
+      body: JSON.stringify({ permitId, abilityId, expectedTurnCount }),
     });
     if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
       throw new Error('Malformed authoritative battle action response.');
@@ -103,15 +138,19 @@ export class GameApi {
     if (!this.enabled) return undefined;
     return this.request<BattleCompletionResult>('/api/battle/complete', {
       method: 'POST',
-      body: JSON.stringify({ playerId, permitId }),
+      body: JSON.stringify({ permitId }),
     });
   }
 
   private async request<T = void>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
-    });
+    const headers = new Headers(init?.headers);
+    if (init?.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
+    if (this.sessionToken) headers.set('authorization', `Bearer ${this.sessionToken}`);
+    const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    if (response.status === 401 && path !== '/api/player/bootstrap' && path !== '/api/auth/discord/challenge') {
+      this.sessionToken = undefined;
+      try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* Ignore unavailable storage. */ }
+    }
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
       let payload: unknown;
