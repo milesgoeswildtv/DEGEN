@@ -1,0 +1,168 @@
+// Real local Worker + D1 fault injection for recoverable victory rewards.
+// This harness never uses --remote and never touches production data.
+import assert from 'node:assert/strict';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const wrangler = resolve(root, 'node_modules/.bin/wrangler');
+const scratch = mkdtempSync(join(tmpdir(), 'degen-reward-recovery-'));
+const persist = join(scratch, 'state');
+const origin = 'http://127.0.0.1:8795';
+const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
+let worker;
+let logs = '';
+
+function cli(args) {
+  const result = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120_000 });
+  if (result.error || result.status !== 0) {
+    throw new Error(`wrangler ${args.join(' ')}: ${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
+  }
+  return result.stdout;
+}
+function sql(query) {
+  const raw = cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, '--json', `--command=${query}`]);
+  const parsed = JSON.parse(raw);
+  const row = Array.isArray(parsed) ? parsed[0] : parsed;
+  return row?.results ?? row?.result?.[0]?.results ?? [];
+}
+async function start() {
+  logs = '';
+  worker = spawn(wrangler, ['dev', '--local', `--persist-to=${persist}`, '--ip=127.0.0.1', '--port=8795'],
+    { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  for (const stream of [worker.stdout, worker.stderr]) {
+    stream.on('data', data => { logs = (logs + data.toString()).slice(-12_000); });
+  }
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (worker.exitCode !== null) throw new Error('Worker exited: ' + logs);
+    try {
+      const response = await fetch(origin + '/api/health', { signal: AbortSignal.timeout(600) });
+      if (response.ok && (await response.json()).ok) return;
+    } catch {}
+    await sleep(250);
+  }
+  throw new Error('Worker did not start: ' + logs);
+}
+async function stop() {
+  if (!worker || worker.exitCode !== null) return;
+  const child = worker;
+  child.kill('SIGTERM');
+  await Promise.race([new Promise(done => child.once('exit', done)), sleep(2_000)]);
+  if (child.exitCode === null) child.kill('SIGKILL');
+  worker = undefined;
+}
+async function complete(permitId = 'permit-recovery') {
+  const response = await fetch(origin + '/api/battle/complete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'qa-player', permitId }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const raw = await response.text();
+  let body;
+  try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
+  return { status: response.status, body };
+}
+
+try {
+  cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, '--file=db/schema.sql']);
+  cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', `--persist-to=${persist}`]);
+  const seed = join(scratch, 'seed.sql');
+  writeFileSync(seed, `
+    PRAGMA foreign_keys = ON;
+    INSERT INTO players(id, display_name) VALUES ('qa-player', 'Reward Recovery QA');
+    INSERT INTO characters(player_id, level, xp, currency, degen_key)
+      VALUES ('qa-player', 1, 0, 0, 'test-degen');
+    INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at)
+      VALUES ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+    INSERT INTO battle_permits(
+      id, player_id, event_key, cycle_id, encounter_key, expires_at,
+      player_hp, player_mana, enemy_hp, battle_status, turn_count
+    ) VALUES (
+      'permit-recovery', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+      datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1
+    );
+  `);
+  cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
+
+  // Force the atomic award batch to fail after the clear number has been
+  // reserved. The lease must be released without rolling back or duplicating
+  // that reservation, so the next request can retry immediately.
+  sql(`CREATE TRIGGER qa_fail_victory_receipt BEFORE INSERT ON battle_history
+    WHEN NEW.id = 'permit-recovery:victory'
+    BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_REWARD_FAILURE'); END`);
+  await start();
+  const failed = await complete();
+  assert.equal(failed.status, 500, 'injected reward transaction failure must be surfaced');
+  await stop();
+
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-recovery'`), [{
+    reward_state: 'pending',
+    reward_claim_token: null,
+    reward_claimed_at: null,
+    reward_clear_number: 1,
+    completed_at: null,
+  }], 'failed award should release only its own claim while retaining the reserved clear');
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`),
+    [{ full_reward_clears: 1 }], 'retry must not consume a second reward slot');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-recovery:victory'`)[0]?.n, 0);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), [{
+    level: 1, xp: 0, currency: 0, last_reward_claim_token: null,
+  }], 'a failed D1 batch must not partially grant progression');
+
+  // Simulate the permit expiring while the award service is recovering. Once
+  // a clear number is reserved, the authoritative victory remains claimable.
+  sql("UPDATE battle_permits SET expires_at = datetime('now', '-1 minute') WHERE id = 'permit-recovery'");
+  assert.equal(sql("SELECT julianday(expires_at) < julianday('now') AS expired FROM battle_permits WHERE id = 'permit-recovery'")[0]?.expired, 1);
+  sql('DROP TRIGGER qa_fail_victory_receipt');
+  await start();
+  const recovered = await complete();
+  assert.equal(recovered.status, 200, JSON.stringify(recovered.body));
+  assert.ok(recovered.body?.reward, 'successful retry returns an authoritative reward receipt');
+  const reward = recovered.body.reward;
+  const characterAfterAward = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const permitAfterAward = sql(`SELECT reward_state, reward_clear_number, reward_xp,
+      reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-recovery'`);
+  assert.equal(permitAfterAward[0]?.reward_state, 'awarded');
+  assert.equal(permitAfterAward[0]?.reward_clear_number, 1);
+  assert.equal(permitAfterAward[0]?.reward_xp, reward.xp);
+  assert.equal(permitAfterAward[0]?.reward_currency, reward.currency);
+  assert.ok(permitAfterAward[0]?.completed_at);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-recovery:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM defeated_bosses
+    WHERE player_id = 'qa-player' AND boss_key = 'tunnel-maw'`)[0]?.n, 1);
+
+  const duplicate = await complete();
+  assert.equal(duplicate.status, 200, JSON.stringify(duplicate.body));
+  assert.deepEqual(duplicate.body.reward, reward, 'duplicate completion returns the same stored receipt');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), characterAfterAward,
+    'duplicate completion must not change progression twice');
+  assert.deepEqual(sql(`SELECT reward_state, reward_clear_number, reward_xp,
+      reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-recovery'`), permitAfterAward);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-recovery:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT quantity FROM player_inventory
+    WHERE player_id = 'qa-player' AND item_key = 'underpass-scrap' AND item_type = 'item'`)[0]?.quantity ?? 0,
+    reward.items.includes('underpass-scrap') ? 1 : 0);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE player_id = 'qa-player' AND item_key = 'tunnel-trophy' AND item_type = 'furniture'`)[0]?.n ?? 0,
+    reward.furniture.includes('tunnel-trophy') ? 1 : 0);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 1);
+  await stop();
+  console.log('PASS local Worker/D1 reward failure release, immediate retry, stable receipt, and exactly-once rewards');
+} finally {
+  await stop();
+  rmSync(scratch, { recursive: true, force: true });
+}
