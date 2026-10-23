@@ -315,3 +315,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - D1/deploy: `wrangler.toml` remains authoritative (`DB` → `DEGEN`, `db/migrations`). Migration 0008 adds only `player_shield` and must follow auth migration 0007 when PR #21 is integrated. Deployment remains schema → tracked migrations → Worker. No production D1 mutation, secret/config change, or Worker deployment was performed.
 - Release gate / Miles blocker: PR #21's signed Discord/Telegram identity and per-request session ownership remains a prerequisite for public economic release. Keep PR #20 draft/unmerged until the auth migration and controlled live verification gate are resolved; do not merge accounts or invent identity-link policy.
 - Best next task: reconcile and validate PR #21 against current main, then integrate Shield only after migration order, exact-head CI, and the approved authentication release gate are satisfied.
+
+
+### Exact-head CI result — 2026-10-23 (Shield branch sync)
+
+- Code/test head `7b57604b297062f2a800f4bddd1c4b7623b8e0e7` passed GitHub Actions CI run `40020343593` (**SUCCESS**). Observed green steps: `npm test`; isolated Worker/D1 reward concurrency; Underpass cycle race and rollover; atomic defeat history; Shield state/persistence integration; `npm run build`; real Chromium + Vite + local Wrangler/D1 vertical slice; and `npm run check:worker`.
+- The run confirms the merged Shield tree and the current-main Mana persisted-state assertions together. The follow-up commit is documentation-only; no runtime, balance, migration, or test code changed after the verified code/test head. Fresh CI for the continuity-only commit is pending and is not claimed green.
+- PR #20 remains draft/unmerged and mergeable against current main. Migration 0008 must remain behind PR #21's 0007 session migration; no production D1 or Worker action was taken.
+- Best next task remains: finish exact-head auth verification, then reconcile PR #21 into the Shield branch and rerun the combined browser/auth/Shield suite before any integration merge.
