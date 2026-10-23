@@ -47,6 +47,11 @@ export async function issuePlayerSession(
   crypto.getRandomValues(random);
   const token = tokenFromBytes(random);
   const tokenHash = await digestToken(token);
+  // Prune only this player's expired/revoked sessions during login. The player/expiry index
+  // keeps the cleanup scoped; active sessions belonging to other players are untouched.
+  await db.prepare(`DELETE FROM player_sessions
+    WHERE player_id = ? AND (expires_at_ms <= ? OR revoked_at_ms IS NOT NULL)`)
+    .bind(playerId, nowMs).run();
   await db.prepare(`INSERT INTO player_sessions (token_hash, player_id, created_at_ms, expires_at_ms, revoked_at_ms)
     VALUES (?, ?, ?, ?, NULL)`).bind(tokenHash, playerId, nowMs, expiresAtMs).run();
   return { token, playerId, expiresAtMs };
