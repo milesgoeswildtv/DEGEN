@@ -315,3 +315,9 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - D1 assumptions: no new migration; `wrangler.toml` remains authoritative (`DB` → `DEGEN`, `db/migrations`). No production D1 mutation or Worker deployment. The housing route still must be integrated behind PR #21's session-ownership gate before public economic release.
 - Miles blocker: PR #21's signed Discord/Telegram identity and per-request session ownership plus controlled live verification remain external release gates. PR #8 remains draft/unmerged.
 - Best next task: obtain exact-head housing CI, then reconcile the housing changes with the auth branch only after its approved live verification gate; preserve existing player data and do not deploy directly.
+
+
+### Housing harness merge correction — 2026-10-23
+
+- During post-write source QA, caught two stale variable references in the newly ported housing HTTP block (`bed` and `collision`) before accepting CI results. Corrected both references to the renamed housing-scoped variables and restored the explicit housing integration PASS log.
+- This is a test-harness correction only; housing Worker behavior is unchanged. Exact-head CI is pending on the corrected branch head; do not rely on the prior in-progress run for this change.

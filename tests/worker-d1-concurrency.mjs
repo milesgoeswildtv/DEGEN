@@ -476,7 +476,7 @@ try {
   const housingOriginal = await housingBootstrap();
   assert.deepEqual(housingOriginal, [], 'pre-seeded character must not receive new starter placement');
   const housingBed = { instanceId: 'integration-housing-bed', furnitureId: 'starter-bed', x: 3, y: 2 };
-  assert.equal((await housingSave({ placements: [bed] })).status, 204);
+  assert.equal((await housingSave({ placements: [housingBed] })).status, 204);
   assert.deepEqual((await housingBootstrap()).map(item => [item.instanceId,item.x,item.y]),
     [['integration-housing-bed',3,2]], 'valid placement must persist');
   const housingExpected = await housingBootstrap();
@@ -502,7 +502,7 @@ try {
   });
   assert.equal((await housingOtherBootstrap()).status, 200);
   const housingCollision = { instanceId: 'integration-shared-global-id', furnitureId: 'starter-bed', x: 1, y: 1 };
-  assert.equal((await housingOtherSave([collision])).status, 204);
+  assert.equal((await housingOtherSave([housingCollision])).status, 204);
   const housingCollided = await housingSave({ placements: [{ ...housingCollision, x: 4, y: 3 }] });
   assert.equal(housingCollided.status, 500, 'cross-player global ID collision must fail transaction');
   assert.deepEqual(await housingBootstrap(), housingExpected, 'failed transaction must preserve original player room');
@@ -513,6 +513,7 @@ try {
   assert.equal((await housingSave({ placements: [] })).status, 204);
   assert.deepEqual(await housingBootstrap(), [], 'explicit empty room must persist through bootstrap');
   
+  console.log('PASS isolated Worker/D1 HTTP housing: valid save, invalid rejection, persistence, empty-room reload');
   console.log('PASS isolated Worker/D1: action/completion race, duplicate receipt, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
