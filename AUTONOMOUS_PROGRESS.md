@@ -1,6 +1,6 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-22
+Updated: 2026-10-23
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
@@ -647,3 +647,18 @@ Reconcile PR #12's full diff with PRs #9/#10/#11, preserve the compatible client
 - **Duplicate PR:** PR #15 remains OPEN / DRAFT because both supported PR metadata close/update routes were rejected by the connector safety layer. Its branch is retained, but it is superseded by PR #12 and must not be merged independently. No branch deletion or history rewrite.
 - **Best next task:** reconcile PR #12 with overlapping PRs #9–#11 as one reviewed release sequence, then wire verified Discord/Telegram identity and fail-closed per-request ownership before any public economic release. Keep Shield/status work behind Mana integration.
 
+
+
+## Autonomous build run — 2026-10-23 (Mana authority integration review)
+
+- **Authoritative main SHA at start:** `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- **Existing integration candidate:** PR #12, `automation/degen/permit-millisecond-expiry-v02`, code/test head `2300d09596729066d0a0baa9ebf8f497f03a0040` (PUSHED / PR, OPEN / DRAFT at start). No new competing branch was created.
+- **Start-of-run branch reconciliation:** `sidekick/degen-mana-foundation-v01` is 11 commits ahead / 22 behind main and diverged; its older code was not selected. PR #15 (`automation/degen/mana-active-permit-backfill-v01`) is a duplicate Mana start/backfill slice. PR #12 already contains the equivalent authoritative start contract and backfill plus broader compatible client recovery, exact-expiry checks, Worker/D1 action/reward concurrency, Underpass cycle reservation/rollover, and the local browser vertical-slice harness. The two branches carry the same `0006_backfill_active_battle_mana.sql` blob; do not merge both.
+- **Migration sequence verified from current branch trees:** main tracks 0002–0005; PR #12 adds `0006_backfill_active_battle_mana.sql`; PR #14 adds `0007_player_sessions.sql`; the reviewed Shield candidate uses `0008_degen_shield.sql`. Numeric prefixes are unique in these candidates. Migration 0006 is branch-only at this point; no production D1 mutation has been run by this review.
+- **Exact-head QA before this continuity update:** CI run [39892491286](https://github.com/milesgoeswildtv/DEGEN/actions/runs/39892491286) passed on code/test head `2300d09596729066d0a0baa9ebf8f497f03a0040`. All configured steps succeeded: deterministic game tests; isolated local Wrangler/D1 reward/action concurrency; Underpass cycle-race and rollover concurrency; TypeScript/Vite production build; Chromium + Vite + local Wrangler/D1 vertical slice; and `npm run check:worker` dry run. This is isolated CI evidence, not proof of physical mobile, Discord/Telegram identity, or production gameplay.
+- **Mana status:** deterministic Degen-only rules are already merged on main. PR #12 completes the server-authoritative battle-start snapshot/client initialization and eligible active-permit backfill. Existing tests cover affordable and unaffordable abilities, exact paid deduction, zero-cost actions at 0 Mana, killing blow, defeat, no monster Mana, no Mana-triggered reversion, button affordability, client/Worker math parity, malformed/expired start state, and real local Worker/D1 rejection without persisted state mutation.
+- **Battle authority / rewards:** Worker owns HP, Mana, enemy HP, status, turn count, action resolution, and reward settlement. Client action requests carry the ability and observed turn only; forged client combat/reward fields are ignored. Reward receipts/idempotency are merged on main; PR #12 adds broader recovery/concurrency coverage. No client-side economic grant was introduced.
+- **Deployment/persistence assumptions:** `wrangler.toml` remains source of truth for binding `DB`, database `DEGEN`, and `db/migrations`. `deploy-worker.yml` applies base schema, then tracked migrations, then Worker code. No deployment config, secret, binding, or production database was changed during this review. A merge of the Worker/migration slice can trigger the configured production deploy workflow; verify that workflow and migration result before claiming LIVE.
+- **Remaining release blockers:** PR #12 overlaps PRs #9–#11 and duplicate PR #15; consolidate through this already-tested candidate rather than merging duplicates independently. Production Pages origin/CORS is still a separate open change (PR #7). Signed Discord/Telegram identity verification and per-request player ownership are not wired; public economic gameplay remains blocked until that is implemented and tested.
+- **Miles canon blocker:** none. Prototype Mana values remain scaffolding only; no balance/content changes were made.
+- **Best next task:** finalize the consolidated PR #12 review against its exact-head CI, merge only this candidate if all checks remain green, then verify the resulting migration/deploy workflow. Next engineering slice is fail-closed Discord/Telegram identity and per-request ownership before public economic release; keep Shield/status work behind that release gate.
