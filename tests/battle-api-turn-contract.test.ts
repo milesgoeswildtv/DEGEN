@@ -281,3 +281,21 @@ test('successful terminal action responses require Worker-consistent victory or 
     );
   }
 });
+
+
+test('battle action rejects unsafe expected turn counts before issuing a request', async () => {
+  let requests = 0;
+  const { GameApi } = createApi(async () => {
+    requests += 1;
+    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  const api = new GameApi();
+
+  for (const turnCount of [-1, 1.5, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(
+      api.actUnderpass('player-1', 'permit-1', 'crack', turnCount),
+      /Invalid expected battle turn count/,
+    );
+  }
+  assert.equal(requests, 0);
+});
