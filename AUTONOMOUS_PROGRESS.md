@@ -283,3 +283,10 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Exact-head CI run `39923282854` on `c0ecfe5`: deterministic tests **65/65 PASS**; reward concurrency, Underpass cycle reservation/rollover, atomic defeat rollback, Shield Worker/D1 persistence, and web build all passed. The Chromium vertical slice then failed before its overflow assertion because Chrome reported `window.innerWidth = 472` after the harness requested 320 CSS pixels.
 - This is a browser-emulation setup failure, not evidence of an observed app overflow. The harness now launches with a deterministic window size, uses explicit screen metrics and CSS-pixel scale, and waits for 390px/320px viewport changes before measuring the long-name layout. Fresh exact-head CI must validate both the viewport setup and actual overflow assertion.
 - No production Shield migration or Worker deployment occurred. Current main remains `687510dc5e01d70f05734c5c5c50e3354404d1c0`; Shield migration remains PR-only as `0007_degen_shield.sql`.
+
+
+### Shield compact-layout diagnostic — 2026-10-23
+
+- Exact-head CI run `39923789368` passed deterministic tests, all four local Worker/D1 concurrency/fault-injection harnesses, Shield Worker/D1 persistence, and `npm run build`. The browser vertical slice still failed at the compact Map check.
+- The viewport wait reached 320px before the long-name probe, but `window.innerWidth` measured 472 after the probe. The previous assertion stopped before reporting the scroll-width result. The test now asserts the viewport before mutation, checks actual horizontal overflow first, and then verifies the long name cannot expand the viewport. Fresh exact-head CI will distinguish a real layout overflow from a viewport-emulation defect.
+- No production Shield migration/deploy. Migration 0007 remains branch-only pending green browser QA.

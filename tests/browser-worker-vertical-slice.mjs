@@ -130,6 +130,8 @@ try {
       width: 320, height: 568, deviceScaleFactor: 1, mobile: true, screenWidth: 320, screenHeight: 568,
     });
     await until(route + ' 320px compact viewport', () => cdp.evaluate('window.innerWidth === 320'), 5000);
+    const widthBeforeLongName = await cdp.evaluate('window.innerWidth');
+    assert.equal(widthBeforeLongName, 320, route + ' compact viewport width');
     const dimensions = await cdp.evaluate(`(() => {
       const label = document.querySelector('.player-chip span');
       const original = label?.textContent;
@@ -138,8 +140,8 @@ try {
       if (label) label.textContent = original;
       return result;
     })()`);
-    assert.equal(dimensions.width, 320, route + ' compact viewport width');
     assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
+    assert.equal(dimensions.width, 320, route + ' long display name must not expand the viewport');
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
     });
