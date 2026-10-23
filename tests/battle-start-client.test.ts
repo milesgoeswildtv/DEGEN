@@ -114,3 +114,79 @@ test('battle action conflicts preserve the Worker authoritative state for safe c
     globalThis.fetch = oldFetch;
   }
 });
+
+
+test('successful battle actions reject malformed or out-of-turn Worker state before presentation', async () => {
+  const valid = {
+    permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0,
+    enemyHp: 20, turnCount: 4,
+  };
+  const invalidResponses = [
+    { ...valid, permitId: 'another-permit' },
+    { ...valid, turnCount: 5 },
+    { ...valid, playerMana: TEST_DEGEN.maxMana + 1 },
+    { ...valid, status: 'active', playerHp: 0 },
+    { ...valid, status: 'active', enemyHp: 0 },
+    { ...valid, status: 'victory', enemyHp: 20 },
+    { ...valid, status: 'victory', playerHp: 0, enemyHp: 0 },
+    { ...valid, status: 'defeat', playerHp: 70 },
+    { ...valid, status: 'defeat', playerHp: 0, enemyHp: 0 },
+    { ...valid, status: 'unknown' },
+    { ...valid, turnCount: Number.MAX_SAFE_INTEGER + 1 },
+  ];
+
+  for (const responseBody of invalidResponses) {
+    const oldFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify(responseBody), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+    try {
+      await assert.rejects(
+        new GameApi().actUnderpass('player-1', 'permit-1', 'crack', 3),
+        /Malformed authoritative battle action response/,
+        JSON.stringify(responseBody),
+      );
+    } finally {
+      globalThis.fetch = oldFetch;
+    }
+  }
+});
+
+test('successful terminal battle actions accept only Worker-consistent victory and defeat states', async () => {
+  const terminalStates = [
+    { permitId: 'permit-1', status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 1 },
+    { permitId: 'permit-1', status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 20, turnCount: 1 },
+  ];
+
+  for (const state of terminalStates) {
+    const oldFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify(state), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+    try {
+      assert.deepEqual(await new GameApi().actUnderpass('player-1', 'permit-1', 'crack', 0), state);
+    } finally {
+      globalThis.fetch = oldFetch;
+    }
+  }
+});
+
+test('battle action rejects unsafe expected turn counts before issuing a request', async () => {
+  const oldFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    for (const turnCount of [-1, 1.5, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1]) {
+      await assert.rejects(
+        new GameApi().actUnderpass('player-1', 'permit-1', 'crack', turnCount),
+        /Invalid expected turn count/,
+      );
+    }
+    assert.equal(requests, 0);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
