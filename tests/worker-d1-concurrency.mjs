@@ -212,17 +212,19 @@ try {
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),('expired-player','Expired Victory'),('vertical-player','Vertical Slice'),
-      ('race-player','Action Completion Race'),('duplicate-player','Duplicate Completion Race');
+      ('race-player','Action Completion Race'),('duplicate-player','Duplicate Completion Race'),('stale-player','Stale Claim Recovery');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES('integration-player',1,0,0,'test-degen'),('expired-player',1,0,0,'test-degen'),
         ('vertical-player',1,0,0,'test-degen'),('race-player',1,0,0,'test-degen'),
-        ('duplicate-player',1,0,0,'test-degen');
+        ('duplicate-player',1,0,0,'test-degen'),('stale-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('closed-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('expired-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+      VALUES('stale-cycle','underpass',datetime('now','-90 minutes'),datetime('now','-5 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -234,6 +236,7 @@ try {
       ('duplicate-completion-race','duplicate-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('expired','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',120,4,30,0),
       ('expired-victory','expired-player','underpass','expired-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3),
+      ('stale-claim','stale-player','underpass','stale-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,0,0,3),
       ('zero-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,0,60,0),
       ('paid-kill','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,4,30,0),
       ('forged-paid','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',120,12,92,0),
@@ -249,6 +252,10 @@ try {
       ('legacy-terminal-null-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-1 minute'),'victory',70,NULL,0,3);
     UPDATE battle_permits SET started_at=datetime('now','-30 minutes') WHERE id='expired';
     UPDATE battle_permits SET started_at=datetime('now','-10 minutes') WHERE id IN ('closed-cycle-valid','expired-victory');
+    INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
+      VALUES('stale-player','underpass','stale-cycle',1);
+    UPDATE battle_permits SET reward_state='claiming', reward_claim_token='stale-token',
+      reward_claimed_at=datetime('now','-61 seconds'), reward_clear_number=1 WHERE id='stale-claim';
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -399,6 +406,44 @@ try {
   assert.equal(replayedExpiredVictory.status, 200, JSON.stringify(replayedExpiredVictory));
   assert.equal(replayedExpiredVictory.data.worldEvent.fullRewardClears, 1,
     'expired-victory recovery must replay the persisted receipt without duplicating the clear');
+  const staleClaimSnapshot = () => {
+    const rows = queryRows(`SELECT json_object(
+      'permit', json((SELECT json_object('reward_state', reward_state,
+        'reward_clear_number', reward_clear_number, 'completed_at', completed_at)
+        FROM battle_permits WHERE id='stale-claim')),
+      'character', json((SELECT json_object('xp', xp, 'currency', currency)
+        FROM characters WHERE player_id='stale-player')),
+      'clear', json((SELECT json_object('full_reward_clears', full_reward_clears)
+        FROM world_event_clears WHERE player_id='stale-player'
+          AND event_key='underpass' AND cycle_id='stale-cycle')),
+      'history', json((SELECT count(*) FROM battle_history WHERE id='stale-claim:victory')),
+      'inventory', json((SELECT count(*) FROM player_inventory WHERE player_id='stale-player'))
+    ) AS snapshot`, ['snapshot']);
+    return JSON.parse(rows[0].snapshot);
+  };
+  const staleBefore = staleClaimSnapshot();
+  assert.equal(staleBefore.permit.reward_state, 'claiming');
+  assert.equal(staleBefore.permit.reward_clear_number, 1);
+  assert.deepEqual(staleBefore.character, { xp: 0, currency: 0 });
+
+  const recoveredStale = await complete('stale-claim', 'stale-player');
+  assert.equal(recoveredStale.status, 200, JSON.stringify(recoveredStale));
+  assert.equal(recoveredStale.data.reward.tier, 'full');
+  assert.equal(recoveredStale.data.worldEvent.fullRewardClears, 1);
+  const staleAfter = staleClaimSnapshot();
+  assert.equal(staleAfter.permit.reward_state, 'awarded');
+  assert.equal(staleAfter.permit.reward_clear_number, 1);
+  assert.ok(staleAfter.permit.completed_at);
+  assert.deepEqual(staleAfter.character, { xp: 75, currency: 30 });
+  assert.equal(staleAfter.clear.full_reward_clears, 1);
+  assert.equal(staleAfter.history, 1);
+  assert.equal(staleAfter.inventory, 2);
+
+  const replayedStale = await complete('stale-claim', 'stale-player');
+  assert.equal(replayedStale.status, 200, JSON.stringify(replayedStale));
+  assert.deepEqual(staleClaimSnapshot(), staleAfter,
+    'stale claim replay must not duplicate rewards or clear count');
+
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
 
   // Race two completion requests for the same server-earned victory. A losing
