@@ -118,6 +118,10 @@ try {
     level: 1, xp: 0, currency: 0, last_reward_claim_token: null,
   }], 'a failed D1 batch must not partially grant progression');
 
+  // Simulate the permit expiring while the award service is recovering. Once
+  // a clear number is reserved, the authoritative victory remains claimable.
+  sql("UPDATE battle_permits SET expires_at = datetime('now', '-1 minute') WHERE id = 'permit-recovery'");
+  assert.equal(sql("SELECT julianday(expires_at) < julianday('now') AS expired FROM battle_permits WHERE id = 'permit-recovery'")[0]?.expired, 1);
   sql('DROP TRIGGER qa_fail_victory_receipt');
   await start();
   const recovered = await complete();
