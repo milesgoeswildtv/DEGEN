@@ -355,8 +355,43 @@ try {
   assert.equal(closureStart.initialState.status, 'active');
   assert.equal(closureStart.initialState.turnCount, 0);
 
+  const expiredClosureStartResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'closure-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  const expiredClosureStart = await expiredClosureStartResponse.json();
+  assert.equal(expiredClosureStartResponse.status, 200, JSON.stringify(expiredClosureStart));
+
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE world_event_cycles SET closes_at = datetime('now','-1 minute') WHERE id = 'closure-cycle'"]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    `--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = '${expiredClosureStart.permitId}'`]);
+
+  const expiredAfterClosureResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: expiredClosureStart.permitId,
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const expiredAfterClosure = await expiredAfterClosureResponse.json();
+  assert.equal(expiredAfterClosureResponse.status, 409, 'cycle closure does not extend a permit past its own expiry');
+  assert.match(expiredAfterClosure.error, /invalid, expired, or already completed/i);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${expiredClosureStart.permitId}'
+    AND battle_status = 'active' AND turn_count = 0
+    AND player_hp = ${expiredClosureStart.initialState.playerHp}
+    AND player_mana = ${expiredClosureStart.initialState.playerMana}
+    AND enemy_hp = ${expiredClosureStart.initialState.enemyHp}`), 1,
+    'an expired permit must remain unchanged even when its event cycle is closed');
 
   let closureResult = closureStart.initialState;
   for (let expectedTurnCount = 0; expectedTurnCount < 3; expectedTurnCount += 1) {
