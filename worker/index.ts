@@ -243,8 +243,6 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
     const verified = await verifyTelegramInitData(input.telegramInitData ?? '', env.TELEGRAM_BOT_TOKEN);
     if (!verified) return fail(request, env, 'Telegram identity proof is invalid or expired.', 401);
     identity = { platform: 'telegram', platformUserId: verified.platformUserId };
-    input.platform = 'telegram';
-    input.telegramInitData = undefined;
     // Only the verified provider name is used below; the caller's display name is ignored.
     const accepted = await bootstrapVerifiedIdentity(env, request, identity, verified.displayName);
     return accepted;
