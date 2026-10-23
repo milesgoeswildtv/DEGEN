@@ -56,7 +56,7 @@ async function bootstrap(initData, claimedPlayerId = 'attacker') {
   const raw = await response.text();
   let data;
   try { data = raw ? JSON.parse(raw) : undefined; } catch { data = raw; }
-  return { status: response.status, data };
+  return { status: response.status, data, cacheControl: response.headers.get('cache-control') };
 }
 async function startWorker() {
   logs = '';
@@ -148,6 +148,7 @@ try {
 
   const first = await bootstrap(signedInitData({ id: 42, first_name: 'Verified', last_name: 'Player' }));
   assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(first.cacheControl, 'no-store', 'verified bootstrap responses must not be cached');
   assert.ok(first.data.player.id && first.data.player.id !== 'attacker',
     'client-supplied playerId cannot select an existing account');
   assert.equal(first.data.player.displayName, 'Verified Player', 'display name comes from verified provider data');
@@ -207,6 +208,7 @@ try {
     headers: { authorization: 'Bearer ' + repeated.data.session.token },
   });
   assert.equal(ownerWorld.status, 200, 'authenticated world lookup uses the session owner, not the query');
+  assert.equal(ownerWorld.headers.get('cache-control'), 'no-store', 'player-specific world responses must not be cached');
   assert.equal((await ownerWorld.json()).source, 'server');
 
   const expiredToken = Buffer.alloc(32, 4).toString('base64url');
