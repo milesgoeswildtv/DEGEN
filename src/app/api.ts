@@ -43,6 +43,7 @@ export class GameApiError extends Error {
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const SESSION_STORAGE_KEY = 'degen.player.session.v1';
+const SESSION_PLAYER_ID_KEY = 'degen.player.session-owner.v1';
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export class GameApi {
@@ -59,7 +60,11 @@ export class GameApi {
   constructor() {
     try {
       const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
-      if (stored && SESSION_TOKEN_PATTERN.test(stored)) this.sessionToken = stored;
+      if (stored && SESSION_TOKEN_PATTERN.test(stored)) {
+        this.sessionToken = stored;
+        const storedPlayerId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY);
+        if (storedPlayerId && storedPlayerId.trim()) this.sessionPlayerId = storedPlayerId;
+      }
     } catch { /* Storage can be unavailable in embedded/private contexts. */ }
   }
 
@@ -94,7 +99,10 @@ export class GameApi {
     }
     this.sessionToken = result.session.token;
     this.sessionPlayerId = result.player.id;
-    try { sessionStorage.setItem(SESSION_STORAGE_KEY, this.sessionToken); } catch { /* In-memory session remains valid. */ }
+    try {
+      sessionStorage.setItem(SESSION_PLAYER_ID_KEY, result.player.id);
+      sessionStorage.setItem(SESSION_STORAGE_KEY, this.sessionToken);
+    } catch { /* In-memory session remains valid. */ }
     return result.player;
   }
 
@@ -168,7 +176,10 @@ export class GameApi {
         return this.request<T>(path, init, false);
       }
       this.sessionToken = undefined;
-      try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* Ignore unavailable storage. */ }
+      try {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
+      } catch { /* Ignore unavailable storage. */ }
       const publicAuthRoute = path === '/api/player/bootstrap' || path === '/api/auth/discord/challenge'
         || path === '/api/auth/logout';
       if (!publicAuthRoute && allowRefresh && this.identityProvider) {
