@@ -379,20 +379,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   if (receipt.reward_state === 'awarded') return respond(receipt);
 
   const token = crypto.randomUUID();
-  const claim = await env.DB.prepare(`UPDATE battle_permits
-    SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
-      (reward_state = 'pending' AND completed_at IS NULL AND (julianday(expires_at) > julianday('now') OR reward_clear_number IS NOT NULL))
-      OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
-    ) RETURNING cycle_id, encounter_key, reward_clear_number`)
-    .bind(token, input.permitId, input.playerId)
-    .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
-  if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
-
-  // Release this permit's lease when a post-claim read/write fails. The clear
-  // number is intentionally retained: retries must not consume another slot.
-  // If D1 is still unavailable, the existing 60-second stale-lease path remains
-  // the fallback and the claim token continues to prevent duplicate awards.
+  // The token-scoped cleanup also covers an ambiguous failure while acquiring
+  // the lease: if the UPDATE committed but its response failed, release only
+  // this token. If it did not commit, the cleanup is a harmless no-op.
   const releaseClaim = async () => {
     try {
       await env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
@@ -404,6 +393,15 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     }
   };
   try {
+    const claim = await env.DB.prepare(`UPDATE battle_permits
+    SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
+      (reward_state = 'pending' AND completed_at IS NULL AND (julianday(expires_at) > julianday('now') OR reward_clear_number IS NOT NULL))
+      OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
+    ) RETURNING cycle_id, encounter_key, reward_clear_number`)
+    .bind(token, input.permitId, input.playerId)
+    .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
+    if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 
   if (claim.reward_clear_number === null) {
     await env.DB.batch([
