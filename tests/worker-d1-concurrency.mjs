@@ -370,6 +370,22 @@ try {
 
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE world_event_cycles SET closes_at = datetime('now','-1 minute') WHERE id = 'closure-cycle'"]);
+
+  const closedCycleStartResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      eventKey: 'underpass',
+      cycleId: 'closure-cycle',
+      encounterKey: 'tunnel-maw',
+    }),
+  });
+  assert.equal(closedCycleStartResponse.status, 409,
+    'a closed cycle cannot issue a new permit even while an earlier permit remains valid');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE cycle_id = 'closure-cycle'"), 2,
+    'failed entry after closure must not create another permit');
+
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     `--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = '${expiredClosureStart.permitId}'`]);
 
