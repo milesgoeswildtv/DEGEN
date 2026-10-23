@@ -32,5 +32,7 @@ jobs:
         run: node tests/worker-d1-defeat-atomic.mjs
       - name: Build web app
         run: npm run build
+      - name: Verify signed platform auth in real Chromium + local Worker/D1
+        run: node tests/browser-platform-auth.mjs
       - name: Validate Cloudflare Worker
         run: npm run check:worker
