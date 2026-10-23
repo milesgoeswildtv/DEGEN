@@ -48,6 +48,12 @@ const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 export class GameApi {
   readonly enabled = API_BASE.length > 0;
   private sessionToken: string | undefined;
+  private identityProvider: (() => Promise<PlatformIdentity>) | undefined;
+  private refreshInFlight: Promise<void> | undefined;
+
+  setIdentityProvider(provider: () => Promise<PlatformIdentity>): void {
+    this.identityProvider = provider;
+  }
 
   constructor() {
     try {
@@ -142,14 +148,32 @@ export class GameApi {
     });
   }
 
-  private async request<T = void>(path: string, init?: RequestInit): Promise<T> {
+  private async request<T = void>(path: string, init?: RequestInit, allowRefresh = true): Promise<T> {
+    const tokenUsed = this.sessionToken;
     const headers = new Headers(init?.headers);
     if (init?.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
-    if (this.sessionToken) headers.set('authorization', `Bearer ${this.sessionToken}`);
+    if (tokenUsed) headers.set('authorization', `Bearer ${tokenUsed}`);
     const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
-    if (response.status === 401 && path !== '/api/player/bootstrap' && path !== '/api/auth/discord/challenge') {
+    if (response.status === 401) {
+      if (tokenUsed && this.sessionToken && this.sessionToken !== tokenUsed) {
+        return this.request<T>(path, init, false);
+      }
       this.sessionToken = undefined;
       try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* Ignore unavailable storage. */ }
+      const publicAuthRoute = path === '/api/player/bootstrap' || path === '/api/auth/discord/challenge'
+        || path === '/api/auth/logout';
+      if (!publicAuthRoute && allowRefresh && this.identityProvider) {
+        if (!this.refreshInFlight) {
+          const refresh = (async () => {
+            const identity = await this.identityProvider!();
+            const player = await this.bootstrap(identity);
+            if (!player) throw new Error('Platform reauthentication did not return a player.');
+          })();
+          this.refreshInFlight = refresh.finally(() => { this.refreshInFlight = undefined; });
+        }
+        await this.refreshInFlight;
+        return this.request<T>(path, init, false);
+      }
     }
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
