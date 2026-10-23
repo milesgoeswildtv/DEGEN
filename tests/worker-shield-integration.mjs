@@ -68,6 +68,9 @@ try {
     ) VALUES(
       'shielded','shield-player','underpass','shield-cycle','tunnel-maw',
       datetime('now','+20 minutes'),'active',120,0,5,92,0
+    ), (
+      'shield-carryover','shield-player','underpass','shield-cycle','tunnel-maw',
+      datetime('now','+20 minutes'),'active',120,0,12,92,0
     );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -103,6 +106,33 @@ try {
   assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shielded'"),
     [{ player_hp: 115, player_shield: 0, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'D1 state must persist one Shield absorption and the corresponding HP result');
+
+
+  // An unaffordable paid action must not consume or rewrite the server-owned Shield.
+  const rejected = await post('/api/battle/action', {
+    playerId: 'shield-player', permitId: 'shield-carryover', abilityId: 'crack', expectedTurnCount: 0,
+  });
+  assert.equal(rejected.status, 409);
+  assert.deepEqual(rejected.data.battleState, {
+    permitId: 'shield-carryover', status: 'active', playerHp: 120, playerMana: 0,
+    playerShield: 12, shieldAbsorbed: 0, enemyHp: 92, turnCount: 0,
+  });
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
+    [{ player_hp: 120, player_shield: 12, player_mana: 0, enemy_hp: 92, turn_count: 0, battle_status: 'active' }],
+    'rejected paid action must not mutate HP, Mana, Shield, enemy HP, or turn');
+
+  // A free ability remains available at zero Mana and only the absorbed portion is consumed.
+  const carryover = await post('/api/battle/action', {
+    playerId: 'shield-player', permitId: 'shield-carryover', abilityId: 'slash', expectedTurnCount: 0,
+  });
+  assert.equal(carryover.status, 200);
+  assert.deepEqual([
+    carryover.data.playerHp, carryover.data.playerMana, carryover.data.playerShield,
+    carryover.data.shieldAbsorbed, carryover.data.enemyHp, carryover.data.turnCount,
+  ], [120, 0, 2, 10, 63, 1]);
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
+    [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
+    'remaining Shield must persist after absorbing retaliation');
 
   console.log('PASS isolated Worker/D1: authoritative Shield initialization, absorption, and persistence');
 } catch (error) {
