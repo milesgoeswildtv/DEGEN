@@ -345,3 +345,12 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 assumptions:** `wrangler.toml` remains source of truth (binding `DB`, database `DEGEN`, migrations `db/migrations`). This merge adds no migration and performs no remote D1 operation or deployment. Deploy workflow remains schema → tracked migrations → Worker.
 - **Release gate:** PR #8 stays draft/unmerged. PR #21 signed Discord/Telegram session ownership and controlled production credential/live verification remain external gates; do not merge housing ahead of the approved auth integration and do not invent legacy-account linking behavior.
 - **Best next task:** verify exact-head PR #8 CI, then keep its housing changes staged for a combined auth/housing integration after the production auth gate is satisfied.
+
+
+### Mobile browser housing persistence test added — 2026-10-23
+
+- Added `tests/browser-housing-persistence.mjs`: real Chromium at 390×844, Vite, and isolated local Wrangler/D1. It exercises the actual Home controls to place furniture, verify the server save, reload and verify the saved placement, clear the room, reload again, and verify bootstrap preserves the intentionally empty room. It also asserts the room-cell tap target remains at least 32×32 CSS pixels.
+- CI now runs this browser test after the production build. **Exact-head CI is pending** for this new browser harness; do not reuse the prior green result as proof of browser persistence.
+- The prior merged housing/reward-recovery head `e9e4963fe98bfa116dd3e28e92c3e97c6ee0be52` passed CI run `40040546710`: deterministic tests, Worker/D1 reward concurrency, transient reward recovery, Underpass cycle race/rollover, atomic defeat history, build, and Worker dry-run all passed.
+- No production D1 operation, migration, Worker deployment, or visual design change. PR #8 remains draft/unmerged behind PR #21's signed-session and controlled live-auth release gate.
+- Best next task: verify the exact-head browser housing run and fix only evidenced harness/runtime failures.
