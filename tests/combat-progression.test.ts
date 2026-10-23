@@ -130,6 +130,62 @@ test('turn resolution rejects a paid ability when the Degen lacks Mana', () => {
   }), /Insufficient Mana/);
 });
 
+test('temporary Degen Shield absorbs retaliation before HP and is consumed', () => {
+  const slash = TEST_DEGEN.abilities.find((ability) => ability.id === 'slash');
+  assert.ok(slash);
+  const guardedSlash = { ...slash, shieldGain: 3 };
+
+  const result = resolveCombatTurn({
+    playerHp: 50,
+    playerMana: 0,
+    playerShield: 4,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: guardedSlash,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+
+  assert.equal(result.retaliationDamage, 10);
+  assert.equal(result.shieldAbsorbed, 7);
+  assert.equal(result.playerShield, 0);
+  assert.equal(result.playerHp, 47);
+});
+
+test('a killing blow grants no retaliation damage to Shield or HP', () => {
+  const crack = TEST_DEGEN.abilities.find((ability) => ability.id === 'crack');
+  assert.ok(crack);
+  const shieldedCrack = { ...crack, shieldGain: 6 };
+
+  const result = resolveCombatTurn({
+    playerHp: 5,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 2,
+    enemyHp: 20,
+    ability: shieldedCrack,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+
+  assert.equal(result.status, 'victory');
+  assert.equal(result.playerHp, 5);
+  assert.equal(result.playerShield, 8);
+  assert.equal(result.shieldAbsorbed, 0);
+  assert.equal(result.retaliationDamage, 0);
+});
+
+
+test('unused Degen Shield remains available for the next turn', () => {
+  const slash = TEST_DEGEN.abilities.find((ability) => ability.id === 'slash');
+  assert.ok(slash);
+  const result = resolveCombatTurn({
+    playerHp: 50, playerMana: 0, playerShield: 12,
+    enemyHp: TUNNEL_MAW.maxHp, ability: slash, degen: TEST_DEGEN, enemy: TUNNEL_MAW,
+  });
+  assert.equal(result.shieldAbsorbed, 10);
+  assert.equal(result.playerShield, 2);
+  assert.equal(result.playerHp, 50);
+});
+
 test('Underpass rewards are full for the first three clears and reduced after', () => {
   for (let clear = 1; clear <= UNDERPASS_FULL_REWARD_LIMIT; clear += 1) {
     const reward = underpassRewardForClear(clear);
