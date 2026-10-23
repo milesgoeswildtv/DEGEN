@@ -346,3 +346,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Exact-head CI for this follow-up assertion is **pending**. The previous green run does not cover the newest Discord-specific assertion.
 - No runtime code, mainline code, secret, deployment setting, or remote D1 was changed. Mana and reward authority remain complete on main; session migration 0007 and Shield migration 0008 remain PR-only.
 - Best next task: verify exact-head CI for `7f7b3cb654a6c4101b20258b33eddfb99fd0df8e`, then keep PR #21 gated on approved credentials and live platform verification before integrating PR #20.
+
+### Server-backed Underpass sync failure hardening — 2026-10-23
+
+- **PUSHED / PR #21 ONLY:** `src/app/AppController.ts` no longer falls back to a locally generated preview cycle when a configured Worker world-snapshot request fails. It clears the snapshot so the UI stays in a syncing/unavailable state; local preview remains unchanged when `VITE_API_BASE` is not configured. This prevents an expired session or Worker/network failure from presenting a fabricated Underpass phase as authoritative.
+- Added `tests/server-world-fallback.test.ts` for both branches: server-backed failure must not call the preview generator, while offline preview still uses it. Commits: runtime `3c61ee95273381bd1cb2f2eff4373b694d86d14d`; test `765e635951aa818d3fd890fb108bb031c84a3101`.
+- Prior head `738d12bf1279215816e2faff67886406547acaec` passed CI run `39954678557` (78/78 tests, Worker/D1 integration suite, production build, Chromium vertical slice, Worker dry-run). CI for the added Discord missing-credential assertion and the new world-sync behavior/tests is **pending** on newer heads. Do not treat the earlier green run as proof for these changes.
+- No mainline/runtime deployment, remote D1, credentials, or deployment settings changed. Main SHA remains `687510dc5e01d70f05734c5c5c50e3354404d1c0`; Mana is complete on main; PR #21 remains open/unmerged.
+- Best next task: verify exact-head CI for the new auth/world-sync regressions, then review the release gate for credential setup and live platform verification before merging PR #21; retain session-before-Shield migration order.
