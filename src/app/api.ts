@@ -48,6 +48,7 @@ const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 export class GameApi {
   readonly enabled = API_BASE.length > 0;
   private sessionToken: string | undefined;
+  private sessionPlayerId: string | undefined;
   private identityProvider: (() => Promise<PlatformIdentity>) | undefined;
   private refreshInFlight: Promise<void> | undefined;
 
@@ -86,11 +87,13 @@ export class GameApi {
         discordState: identity.discordState,
       }),
     });
-    if (!result?.player || !result.session || !SESSION_TOKEN_PATTERN.test(result.session.token)
+    if (!result?.player || typeof result.player.id !== 'string' || !result.player.id.trim()
+      || !result.session || !SESSION_TOKEN_PATTERN.test(result.session.token)
       || !Number.isSafeInteger(result.session.expiresAtMs) || result.session.expiresAtMs <= Date.now()) {
       throw new Error('The Worker returned an invalid player session.');
     }
     this.sessionToken = result.session.token;
+    this.sessionPlayerId = result.player.id;
     try { sessionStorage.setItem(SESSION_STORAGE_KEY, this.sessionToken); } catch { /* In-memory session remains valid. */ }
     return result.player;
   }
@@ -150,6 +153,7 @@ export class GameApi {
 
   private async request<T = void>(path: string, init?: RequestInit, allowRefresh = true): Promise<T> {
     const tokenUsed = this.sessionToken;
+    const playerIdUsed = this.sessionPlayerId;
     const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) };
     if (init?.body && !Object.keys(headers).some((key) => key.toLowerCase() === 'content-type')) {
       headers['content-type'] = 'application/json';
@@ -157,7 +161,10 @@ export class GameApi {
     if (tokenUsed) headers.authorization = `Bearer ${tokenUsed}`;
     const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
     if (response.status === 401) {
-      if (tokenUsed && this.sessionToken && this.sessionToken !== tokenUsed) {
+      if (this.sessionToken && this.sessionToken !== tokenUsed) {
+        if (this.sessionPlayerId !== playerIdUsed) {
+          throw new GameApiError(401, { error: 'Authenticated player changed while request was in flight.' }, 'DEGEN API 401: authenticated player changed while the request was in flight.');
+        }
         return this.request<T>(path, init, false);
       }
       this.sessionToken = undefined;
@@ -174,6 +181,9 @@ export class GameApi {
           this.refreshInFlight = refresh.finally(() => { this.refreshInFlight = undefined; });
         }
         await this.refreshInFlight;
+        if (playerIdUsed && this.sessionPlayerId !== playerIdUsed) {
+          throw new GameApiError(401, { error: 'Authenticated player changed while request was in flight.' }, 'DEGEN API 401: authenticated player changed while the request was in flight.');
+        }
         return this.request<T>(path, init, false);
       }
     }
