@@ -195,6 +195,9 @@ try {
     'concurrent bootstrap retries for one verified identity converge: ' + JSON.stringify(races));
   assert.equal(new Set(races.map(result => result.data.player.id)).size, 1,
     'concurrent bootstrap creates exactly one player identity');
+  const racePlayerId = races[0].data.player.id;
+  assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + racePlayerId + "'")[0].n, 1,
+    'concurrent first bootstrap creates exactly one starter placement');
   assert.equal(sql("SELECT COUNT(*) AS n FROM platform_identities WHERE platform='telegram' AND platform_user_id='99'")[0].n, 1);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM players WHERE id NOT IN ('attacker','empty-room','${first.data.player.id}')`)[0].n, 1,
     'the race creates one account, not orphan accounts');
