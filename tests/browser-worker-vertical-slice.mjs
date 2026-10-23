@@ -93,6 +93,7 @@ try {
   launch('chrome', chromeBinary(), [
     '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--remote-allow-origins=*', '--remote-debugging-port=9222',
+    '--window-size=390,844', '--force-device-scale-factor=1',
     '--user-data-dir=' + join(scratch, 'chrome'), 'about:blank',
   ]);
   const target = await until('Chrome debugger', async () => {
@@ -120,11 +121,15 @@ try {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
   const assertFitsMobile = async route => {
+    await until(route + ' 390px mobile viewport', () => cdp.evaluate('window.innerWidth === 390'), 5000);
     assert.equal(await cdp.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
       true, route + ' must not overflow horizontally');
   };
   const assertFitsCompact = async (route) => {
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 2, mobile: true });
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 320, height: 568, deviceScaleFactor: 1, mobile: true, screenWidth: 320, screenHeight: 568,
+    });
+    await until(route + ' 320px compact viewport', () => cdp.evaluate('window.innerWidth === 320'), 5000);
     const dimensions = await cdp.evaluate(`(() => {
       const label = document.querySelector('.player-chip span');
       const original = label?.textContent;
@@ -135,13 +140,16 @@ try {
     })()`);
     assert.equal(dimensions.width, 320, route + ' compact viewport width');
     assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
+    });
+    await until(route + ' restored 390px viewport', () => cdp.evaluate('window.innerWidth === 390'), 5000);
   };
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   // Exercise the entire Worker-backed slice in mobile portrait; not physical-device QA.
   await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: 390, height: 844, deviceScaleFactor: 2, mobile: true,
+    width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
   });
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });

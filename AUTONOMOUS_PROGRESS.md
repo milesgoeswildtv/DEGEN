@@ -276,3 +276,10 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - D1 remains binding `DB`, database `DEGEN`, migrations `db/migrations`; deploy order remains schema → tracked migrations → Worker. No database ID/config changes.
 - Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is still not authenticated identity.
 - Best next task: require green exact-head CI, review and merge the Shield slice, verify migration/deployment completion, then continue the universal status engine using only approved vocabulary.
+
+
+### Shield CI follow-up — compact viewport emulation (2026-10-23)
+
+- Exact-head CI run `39923282854` on `c0ecfe5`: deterministic tests **65/65 PASS**; reward concurrency, Underpass cycle reservation/rollover, atomic defeat rollback, Shield Worker/D1 persistence, and web build all passed. The Chromium vertical slice then failed before its overflow assertion because Chrome reported `window.innerWidth = 472` after the harness requested 320 CSS pixels.
+- This is a browser-emulation setup failure, not evidence of an observed app overflow. The harness now launches with a deterministic window size, uses explicit screen metrics and CSS-pixel scale, and waits for 390px/320px viewport changes before measuring the long-name layout. Fresh exact-head CI must validate both the viewport setup and actual overflow assertion.
+- No production Shield migration or Worker deployment occurred. Current main remains `687510dc5e01d70f05734c5c5c50e3354404d1c0`; Shield migration remains PR-only as `0007_degen_shield.sql`.
