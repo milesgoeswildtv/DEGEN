@@ -282,3 +282,9 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Exact-head CI run `39923438874` exposed a stale migration filename in the copied Shield migration-order test and atomic-defeat SQLite fixture: both referenced `0007_degen_shield.sql`, while the coordinated Shield file is `0008_degen_shield.sql`.
 - Corrected the migration-order test and removed the stale 0007 entry from the local SQLite migration list. The 52 tests that completed before the path errors passed; fresh exact-head CI is required.
 - This is test/migration-path correction only; the runtime migration remains 0008 and no production database was touched.
+
+### Shield CI follow-up 3 — 2026-10-23
+
+- Exact-head CI run `39923596457` passed all 65 deterministic tests, including the Shield migration/deploy-order tests and atomic-defeat tests after the migration filename correction.
+- The next local Worker/D1 reward concurrency harness failed because two existing conflict-state assertions still expected the pre-Shield response shape. Updated those fixtures to include the authoritative `playerShield` and zero `shieldAbsorbed` fields. Fresh exact-head CI is required.
+- Runtime behavior was not changed by this assertion-only correction; no remote D1 or production deployment was performed.
