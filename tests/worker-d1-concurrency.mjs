@@ -35,6 +35,14 @@ async function eventuallyComplete(id) {
   }
   throw new Error('Reward retry exhausted for ' + id);
 }
+function countRows(query) {
+  const r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  assert.equal(r.status, 0, 'local D1 query failed: ' + r.stderr);
+  const result = JSON.parse(r.stdout);
+  const row = Array.isArray(result) ? result[0]?.results?.[0] : result.results?.[0];
+  return row?.n;
+}
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
@@ -56,6 +64,7 @@ try {
       ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,100,0),
+      ('permit-e','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,1,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -283,7 +292,46 @@ try {
   assert.equal(final.worldEvent.fullRewardClears, 4);
   assert.equal(final.player.inventory.filter(x => x === 'underpass-scrap').length, 3);
   assert.equal((await complete('expired')).status, 409);
-  console.log('PASS isolated Worker/D1: concurrent grants, replay, expiry, reward tiers, level-up');
+
+  // Race a killing action against completion: only a Worker-resolved victory may award.
+  const [raceActionResponse, earlyCompletion] = await Promise.all([
+    fetch(base + '/api/battle/action', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'integration-player', permitId: 'permit-e',
+        abilityId: 'slash', expectedTurnCount: 0,
+      }),
+    }),
+    complete('permit-e'),
+  ]);
+  const raceAction = await raceActionResponse.json();
+  assert.equal(raceActionResponse.status, 200, JSON.stringify(raceAction));
+  assert.equal(raceAction.status, 'victory');
+  assert.equal(raceAction.enemyHp, 0);
+  assert.equal(raceAction.turnCount, 1);
+  assert.ok([200, 409].includes(earlyCompletion.status),
+    'completion may observe either active state (409) or the committed server victory (200)');
+
+  // Two simultaneous completion attempts must converge on the same persisted receipt.
+  const [completionA, completionB] = await Promise.all([
+    eventuallyComplete('permit-e'),
+    eventuallyComplete('permit-e'),
+  ]);
+  assert.equal(completionA.reward.tier, 'reduced', 'fifth clear should use the existing reduced tier');
+  assert.equal(completionB.reward.tier, completionA.reward.tier);
+  assert.equal(completionB.reward.xp, completionA.reward.xp);
+  assert.equal(completionB.reward.currency, completionA.reward.currency);
+  assert.equal(completionA.player.currency, final.player.currency + completionA.reward.currency,
+    'concurrent completion must apply currency exactly once');
+  assert.equal(completionB.player.currency, completionA.player.currency);
+  assert.equal(completionA.player.inventory.filter(x => x === 'underpass-scrap').length, 3,
+    'reduced duplicate completion must not add another scrap');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-e:victory'"), 1,
+    'one victory receipt/history row must exist for the permit');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id = 'permit-e' AND reward_state = 'awarded' AND battle_status = 'victory' AND enemy_hp = 0 AND turn_count = 1"), 1,
+    'the completed permit must retain one authoritative terminal state');
+
+  console.log('PASS isolated Worker/D1: action/completion race, duplicate receipt, expiry, reward tiers, level-up');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
