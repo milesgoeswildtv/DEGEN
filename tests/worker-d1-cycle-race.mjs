@@ -1,7 +1,8 @@
 // Real isolated local Worker/D1 concurrent cycle test; never touches remote D1.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,8 @@ const scratch = mkdtempSync(join(tmpdir(), 'degen-cycle-d1-'));
 const persist = join(scratch, 'state');
 const base = 'http://127.0.0.1:8793';
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
+const SESSION_TOKEN = Buffer.alloc(32, 11).toString('base64url');
+const SESSION_HASH = createHash('sha256').update(SESSION_TOKEN).digest('hex');
 let server;
 let logs = '';
 function cli(args) {
@@ -20,7 +23,7 @@ function cli(args) {
   if (r.error || r.status !== 0) throw new Error('wrangler ' + args.join(' ') + ': ' + (r.error ?? '') + r.stdout + r.stderr);
 }
 async function world(i) {
-  const r = await fetch(base + '/api/world/underpass?playerId=cycle-test-' + i, { signal: AbortSignal.timeout(8000) });
+  const r = await fetch(base + '/api/world/underpass?playerId=cycle-test-' + i, { headers: { authorization: 'Bearer ' + SESSION_TOKEN }, signal: AbortSignal.timeout(8000) });
   assert.equal(r.status, 200, 'world request ' + i);
   const data = await r.json();
   assert.equal(data.eventKey, 'underpass');
@@ -31,6 +34,11 @@ async function world(i) {
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
+  const authSeed = join(scratch, 'auth.sql');
+  writeFileSync(authSeed, `INSERT INTO players(id,display_name) VALUES('cycle-owner','Cycle Owner');
+    INSERT INTO player_sessions(token_hash,player_id,created_at_ms,expires_at_ms,revoked_at_ms)
+    VALUES('${SESSION_HASH}','cycle-owner',${Date.now()},${Date.now()+3600000},NULL);`);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + authSeed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8793'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [server.stdout, server.stderr]) stream.on('data', d => { logs = (logs + d.toString()).slice(-12000); });
   let ready = false;

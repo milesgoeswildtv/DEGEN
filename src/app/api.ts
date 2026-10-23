@@ -42,36 +42,88 @@ export class GameApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+const SESSION_STORAGE_KEY = 'degen.player.session.v1';
+const SESSION_PLAYER_ID_KEY = 'degen.player.session-owner.v1';
+const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export class GameApi {
   readonly enabled = API_BASE.length > 0;
+  private sessionToken: string | undefined;
+  private sessionPlayerId: string | undefined;
+  private identityProvider: (() => Promise<PlatformIdentity>) | undefined;
+  private refreshInFlight: Promise<void> | undefined;
 
-  async bootstrap(playerId: string, identity: PlatformIdentity): Promise<PlayerState | undefined> {
-    if (!this.enabled) return undefined;
-    return this.request<PlayerState>('/api/player/bootstrap', {
-      method: 'POST',
-      body: JSON.stringify({ playerId, displayName: identity.displayName, platform: identity.platform, platformUserId: identity.platformUserId }),
-    });
+  setIdentityProvider(provider: () => Promise<PlatformIdentity>): void {
+    this.identityProvider = provider;
   }
 
-  async saveHousing(playerId: string, housing: HousingState): Promise<void> {
+  constructor() {
+    try {
+      const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (stored && SESSION_TOKEN_PATTERN.test(stored)) {
+        this.sessionToken = stored;
+        const storedPlayerId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY);
+        if (storedPlayerId && storedPlayerId.trim()) this.sessionPlayerId = storedPlayerId;
+      }
+    } catch { /* Storage can be unavailable in embedded/private contexts. */ }
+  }
+
+  async createDiscordChallenge(): Promise<string> {
+    if (!this.enabled) throw new Error('Discord authentication requires the DEGEN Worker API.');
+    const challenge = await this.request<{ state: string; expiresAtMs: number }>('/api/auth/discord/challenge', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    if (!challenge || !SESSION_TOKEN_PATTERN.test(challenge.state)
+      || !Number.isSafeInteger(challenge.expiresAtMs) || challenge.expiresAtMs <= Date.now()) {
+      throw new Error('Discord authentication challenge was malformed.');
+    }
+    return challenge.state;
+  }
+
+  async bootstrap(identity: PlatformIdentity): Promise<PlayerState | undefined> {
+    if (!this.enabled) return undefined;
+    const result = await this.request<{ player: PlayerState; session: { token: string; expiresAtMs: number } }>('/api/player/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify({
+        platform: identity.platform,
+        telegramInitData: identity.telegramInitData,
+        discordAuthorizationCode: identity.discordAuthorizationCode,
+        discordState: identity.discordState,
+      }),
+    });
+    if (!result?.player || typeof result.player.id !== 'string' || !result.player.id.trim()
+      || !result.session || !SESSION_TOKEN_PATTERN.test(result.session.token)
+      || !Number.isSafeInteger(result.session.expiresAtMs) || result.session.expiresAtMs <= Date.now()) {
+      throw new Error('The Worker returned an invalid player session.');
+    }
+    this.sessionToken = result.session.token;
+    this.sessionPlayerId = result.player.id;
+    try {
+      sessionStorage.setItem(SESSION_PLAYER_ID_KEY, result.player.id);
+      sessionStorage.setItem(SESSION_STORAGE_KEY, this.sessionToken);
+    } catch { /* In-memory session remains valid. */ }
+    return result.player;
+  }
+
+  async saveHousing(_playerId: string, housing: HousingState): Promise<void> {
     if (!this.enabled) return;
     await this.request('/api/player/housing', {
       method: 'PUT',
-      body: JSON.stringify({ playerId, housing }),
+      body: JSON.stringify({ housing }),
     });
   }
 
-  async getUnderpass(playerId: string): Promise<WorldEventSnapshot | undefined> {
+  async getUnderpass(_playerId: string): Promise<WorldEventSnapshot | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<WorldEventSnapshot>(`/api/world/underpass?playerId=${encodeURIComponent(playerId)}`);
+    return this.request<WorldEventSnapshot>('/api/world/underpass');
   }
 
   async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
     const permit = await this.request<BattlePermit>('/api/battle/start', {
       method: 'POST',
-      body: JSON.stringify({ playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
+      body: JSON.stringify({ eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
     });
     if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()
       || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
@@ -91,7 +143,7 @@ export class GameApi {
     }
     const result = await this.request<BattleActionResult>('/api/battle/action', {
       method: 'POST',
-      body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
+      body: JSON.stringify({ permitId, abilityId, expectedTurnCount }),
     });
     if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
       throw new Error('Malformed authoritative battle action response.');
@@ -103,15 +155,49 @@ export class GameApi {
     if (!this.enabled) return undefined;
     return this.request<BattleCompletionResult>('/api/battle/complete', {
       method: 'POST',
-      body: JSON.stringify({ playerId, permitId }),
+      body: JSON.stringify({ permitId }),
     });
   }
 
-  private async request<T = void>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
-    });
+  private async request<T = void>(path: string, init?: RequestInit, allowRefresh = true): Promise<T> {
+    const tokenUsed = this.sessionToken;
+    const playerIdUsed = this.sessionPlayerId;
+    const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) };
+    if (init?.body && !Object.keys(headers).some((key) => key.toLowerCase() === 'content-type')) {
+      headers['content-type'] = 'application/json';
+    }
+    if (tokenUsed) headers.authorization = `Bearer ${tokenUsed}`;
+    const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    if (response.status === 401) {
+      if (this.sessionToken && this.sessionToken !== tokenUsed) {
+        if (this.sessionPlayerId !== playerIdUsed) {
+          throw new GameApiError(401, { error: 'Authenticated player changed while request was in flight.' }, 'DEGEN API 401: authenticated player changed while the request was in flight.');
+        }
+        return this.request<T>(path, init, false);
+      }
+      this.sessionToken = undefined;
+      try {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
+      } catch { /* Ignore unavailable storage. */ }
+      const publicAuthRoute = path === '/api/player/bootstrap' || path === '/api/auth/discord/challenge'
+        || path === '/api/auth/logout';
+      if (!publicAuthRoute && allowRefresh && this.identityProvider) {
+        if (!this.refreshInFlight) {
+          const refresh = (async () => {
+            const identity = await this.identityProvider!();
+            const player = await this.bootstrap(identity);
+            if (!player) throw new Error('Platform reauthentication did not return a player.');
+          })();
+          this.refreshInFlight = refresh.finally(() => { this.refreshInFlight = undefined; });
+        }
+        await this.refreshInFlight;
+        if (this.sessionPlayerId !== playerIdUsed) {
+          throw new GameApiError(401, { error: 'Authenticated player changed while request was in flight.' }, 'DEGEN API 401: authenticated player changed while the request was in flight.');
+        }
+        return this.request<T>(path, init, false);
+      }
+    }
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
       let payload: unknown;
