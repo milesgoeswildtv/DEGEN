@@ -251,3 +251,14 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - No schema/migration change. CI uses local Wrangler/D1 only. Production push-triggered deploy after prior Worker merges remains unverified because the available Actions query only surfaces PR-triggered runs.
 - Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
 - Best next task: run exact-head CI for this integration test; if green, merge it, then implement the signed platform identity and per-request player ownership gate before public economic release.
+
+## Latest verified run — 2026-10-23 (Shield foundation successor)
+
+- Authoritative main SHA: `693a7c5d483066839dc53c537ad85c4d8252ff97`. Mana rollout PR #15, atomic Underpass cycle-CAS PR #16, and action/completion concurrency regression PR #17 are merged. PR #17 exact-head CI `39920825468` passed 49/49 deterministic tests plus reward/action/completion, cycle reservation, cycle rollover, build, and Worker dry-run checks.
+- New Shield successor branch: `automation/degen/shield-foundation-v02`, based directly on that main SHA because the earlier Shield branch predates the merged Mana/cycle changes. No generic move pool or new ability is added; optional `AbilityDefinition.shieldGain` is support for approved bespoke abilities only.
+- Shield behavior: Degen-only temporary Shield absorbs incoming retaliation before HP, persists between authoritative turns, initializes to zero on battle start, and is stored on the battle permit. Killing blows do not trigger retaliation. Monsters gain no Shield/Mana fields.
+- Added tracked migration `0008_degen_shield.sql`, deterministic absorption/carryover/killing-blow tests, isolated local Worker/D1 persistence coverage, and a real Chromium/Vite/Wrangler browser vertical slice that checks the visible Shield value.
+- Migration sequencing blocker: session-store PR #14 still owns migration `0007_player_sessions.sql`; Shield `0008` must not be merged/deployed before 0007 is integrated or explicitly resequenced. No production D1 operation or deployment is performed by this branch.
+- Deployment assumptions remain `wrangler.toml` binding `DB` → `DEGEN`, migration directory `db/migrations`, deploy order schema → migrations → Worker. Production push-triggered deployment status after prior Worker merges remains unverified.
+- Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
+- Best next task: run exact-head CI for this Shield successor; fix failures, then coordinate PR #14's 0007 migration before considering Shield merge.
