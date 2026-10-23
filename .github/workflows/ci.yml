@@ -28,6 +28,8 @@ jobs:
         run: node tests/worker-d1-cycle-rollover.mjs
       - name: Verify atomic defeat history on isolated local Worker/D1
         run: node tests/worker-d1-defeat-atomic.mjs
+      - name: Verify immutable platform identity binding on isolated local Worker/D1
+        run: node tests/worker-d1-identity-binding.mjs
       - name: Build web app
         run: npm run build
       - name: Validate Cloudflare Worker
