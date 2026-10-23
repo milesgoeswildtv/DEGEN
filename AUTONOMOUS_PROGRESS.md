@@ -1,4 +1,16 @@
 # DEGEN — AUTONOMOUS PROGRESS
+
+## Latest run — 2026-10-23 (server-session retention cleanup)
+
+- Authoritative `main` SHA observed at start: `42a53321f79440351fef19b321391aea6fb52b79`. Continued the existing `automation/degen/identity-binding-immutability-v02` / PR #21 branch; did not create a competing auth branch.
+- **PUSHED / PR #21:** `worker/auth/sessionStore.ts` prunes expired or revoked sessions for the logging-in player before issuing a new session. Cleanup is scoped by `player_id`, uses the existing player/expiry index, and does not delete another player's active session. No schema change or token-format change.
+- **PUSHED / PR #21:** `tests/player-session-store.test.ts` now checks that expired and revoked rows are pruned on login, a fresh session resolves, and another player's active session remains valid.
+- Mutation commits: implementation `e00be3fcaee1aba86f51e40cb75c116b72018781`; regression test `599ff76111bec8549749c07b27b3cb99ed19734b`. Exact-head CI is pending; no local full checkout was available to run `npm test`, `npm run build`, or `npm run check:worker` in this runtime. Do not claim green until the branch CI completes.
+- Mana remains complete/merged on main. Battle action authority, reward receipt/idempotency, event-cycle reservation/rollover, atomic defeat history, and event-closure permit continuity remain on main. This change touches no combat math, rewards, player data, migration ordering, or deployment configuration.
+- D1 assumptions remain `wrangler.toml` binding `DB`, database `DEGEN`, migration directory `db/migrations`; auth migration `0007_player_sessions.sql` is still PR-only and no production D1 mutation/deployment occurred.
+- **Release gate unchanged:** PR #21's signed Discord/Telegram identity and session ownership code remains unmerged/undeployed pending approved production credentials/configuration and controlled live verification. Shield PR #20 remains sequenced after auth migration 0007.
+- Best next task: inspect exact-head CI for PR #21; if green, keep the credential/live-platform release gate explicit and reconcile PR #20 against the authenticated Worker/client before considering its migration.
+
 Updated: 2026-10-23
 
 ## Latest verified run — 2026-10-23 (production Pages CORS preflight on auth branch)
