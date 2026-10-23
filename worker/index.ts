@@ -100,8 +100,8 @@ async function ensurePlayer(
 
   if (identity) {
     statements.push(db.prepare(`INSERT INTO platform_identities
-      (platform, platform_user_id, player_id, display_name)
-      SELECT ?, ?, ?, ? WHERE ${guard}
+      (platform, platform_user_id, player_id, display_name, verified_at)
+      SELECT ?, ?, ?, ?, CURRENT_TIMESTAMP WHERE ${guard}
       ON CONFLICT(platform, platform_user_id) DO UPDATE SET display_name = excluded.display_name
       WHERE platform_identities.player_id = excluded.player_id
       RETURNING player_id`)
@@ -121,7 +121,7 @@ async function ensurePlayer(
 
   if (identity) {
     const linked = await db.prepare(`SELECT player_id FROM platform_identities
-      WHERE platform = ? AND platform_user_id = ? AND player_id = ?`)
+      WHERE platform = ? AND platform_user_id = ? AND player_id = ? AND verified_at IS NOT NULL`)
       .bind(identity.platform, identity.platformUserId, playerId).first<{ player_id: string }>();
     if (!linked) return false;
   }
@@ -272,18 +272,23 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
 async function bootstrapVerifiedIdentity(
   env: Env, request: Request, identity: PlatformIdentity, displayName: string,
 ): Promise<Response> {
-  const existing = await env.DB.prepare(`SELECT player_id FROM platform_identities
+  const existing = await env.DB.prepare(`SELECT player_id, verified_at FROM platform_identities
     WHERE platform = ? AND platform_user_id = ?`).bind(identity.platform, identity.platformUserId)
-    .first<{ player_id: string }>();
+    .first<{ player_id: string; verified_at: string | null }>();
+  // Older builds accepted caller-supplied provider IDs. Preserve those rows for
+  // account recovery, but never let an unverified legacy mapping choose an owner.
+  if (existing && !existing.verified_at) {
+    return fail(request, env, 'This legacy platform identity needs account recovery before sign-in.', 409);
+  }
   let playerId = existing?.player_id ?? crypto.randomUUID();
 
   let accepted = await ensurePlayer(env.DB, playerId, displayName, identity);
   if (!accepted) {
     // Concurrent first bootstrap for the same verified identity converges on the
     // single D1 winner; a caller can never choose which player owns the identity.
-    const winner = await env.DB.prepare(`SELECT player_id FROM platform_identities
-      WHERE platform = ? AND platform_user_id = ?`).bind(identity.platform, identity.platformUserId)
-      .first<{ player_id: string }>();
+    const winner = await env.DB.prepare(`SELECT player_id, verified_at FROM platform_identities
+      WHERE platform = ? AND platform_user_id = ? AND verified_at IS NOT NULL`).bind(identity.platform, identity.platformUserId)
+      .first<{ player_id: string; verified_at: string }>();
     if (!winner) return fail(request, env, 'Platform identity could not be bound safely.', 409);
     playerId = winner.player_id;
     accepted = await ensurePlayer(env.DB, playerId, displayName, identity);
