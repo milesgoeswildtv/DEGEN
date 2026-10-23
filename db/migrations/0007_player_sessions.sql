@@ -1,3 +1,7 @@
+-- Rows written by pre-auth builds may contain caller-supplied provider IDs.
+-- Preserve them for recovery, but never treat them as verified account ownership.
+ALTER TABLE platform_identities ADD COLUMN verified_at TEXT;
+
 -- Server-issued bearer sessions; only SHA-256 digests are persisted.
 CREATE TABLE IF NOT EXISTS player_sessions (
   token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
