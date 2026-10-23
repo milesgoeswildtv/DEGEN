@@ -354,3 +354,10 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Prior head `738d12bf1279215816e2faff67886406547acaec` passed CI run `39954678557` (78/78 tests, Worker/D1 integration suite, production build, Chromium vertical slice, Worker dry-run). CI for the added Discord missing-credential assertion and the new world-sync behavior/tests is **pending** on newer heads. Do not treat the earlier green run as proof for these changes.
 - No mainline/runtime deployment, remote D1, credentials, or deployment settings changed. Main SHA remains `687510dc5e01d70f05734c5c5c50e3354404d1c0`; Mana is complete on main; PR #21 remains open/unmerged.
 - Best next task: verify exact-head CI for the new auth/world-sync regressions, then review the release gate for credential setup and live platform verification before merging PR #21; retain session-before-Shield migration order.
+
+### World-sync test harness correction — 2026-10-23
+
+- First CI run `39955379583` failed immediately in the new `tests/server-world-fallback.test.ts`: escaped newline/word-boundary sequences were double-escaped, so the VM source still contained import statements. This was a test-harness issue; no runtime assertions ran on that head.
+- Re-read the test file and corrected the import-stripping regex and appended VM expression. Commit: `39a339747671b44baee42591edb282805f4ed112`. Runtime fix remains `3c61ee95273381bd1cb2f2eff4373b694d86d14d`.
+- Fresh exact-head CI is pending. The previous green CI covers the auth/session/credential changes but not the corrected world-sync test.
+- Best next task: verify the corrected world-sync tests and full exact-head CI, fix any real assertion/runtime issue, then keep PR #21 gated on operational credentials and live platform verification.
