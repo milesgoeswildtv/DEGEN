@@ -15,6 +15,8 @@ export interface AbilityDefinition {
   description: string;
   damage: number;
   manaCost: number;
+  /** Optional one-turn Shield gain for a bespoke Degen ability. */
+  shieldGain?: number;
 }
 
 export interface DegenDefinition {
@@ -113,6 +115,8 @@ export interface BattleActionResult {
   status: 'active' | 'victory' | 'defeat';
   playerHp: number;
   playerMana: number;
+  playerShield: number;
+  shieldAbsorbed: number;
   enemyHp: number;
   turnCount: number;
 }
