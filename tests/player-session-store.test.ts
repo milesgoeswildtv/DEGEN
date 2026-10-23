@@ -146,6 +146,11 @@ test('session issuance prunes only expired and revoked sessions for that player'
 
   const rows = raw.prepare('SELECT player_id, token_hash FROM player_sessions ORDER BY player_id').all() as Array<{player_id:string;token_hash:string}>;
   assert.equal(rows.length, 2, 'only the fresh player-a session and active player-b session remain');
-  assert.ok(rows.every(row => row.token_hash !== expired.token && row.token_hash !== revoked.token));
+  const expiredHash = createHash('sha256').update(expired.token).digest('hex');
+  const revokedHash = createHash('sha256').update(revoked.token).digest('hex');
+  const freshHash = createHash('sha256').update(fresh.token).digest('hex');
+  const otherHash = createHash('sha256').update(otherPlayer.token).digest('hex');
+  assert.deepEqual(rows.map(row => row.token_hash).sort(), [freshHash, otherHash].sort());
+  assert.ok(rows.every(row => row.token_hash !== expiredHash && row.token_hash !== revokedHash));
   raw.close();
 });
