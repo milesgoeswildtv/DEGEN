@@ -354,3 +354,12 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - The prior merged housing/reward-recovery head `e9e4963fe98bfa116dd3e28e92c3e97c6ee0be52` passed CI run `40040546710`: deterministic tests, Worker/D1 reward concurrency, transient reward recovery, Underpass cycle race/rollover, atomic defeat history, build, and Worker dry-run all passed.
 - No production D1 operation, migration, Worker deployment, or visual design change. PR #8 remains draft/unmerged behind PR #21's signed-session and controlled live-auth release gate.
 - Best next task: verify the exact-head browser housing run and fix only evidenced harness/runtime failures.
+
+
+### Exact-head CI result — mobile housing persistence — 2026-10-23
+
+- **Code/test head:** `ecc68f945ef6b678e81d454ab6b6039e17106386`. GitHub Actions CI run `40041016352` **SUCCESS** on this exact SHA. Deterministic suite: **83 passed / 0 failed**. Also green: isolated Worker/D1 reward concurrency and housing HTTP validation; injected transient reward failure/retry/idempotency; Underpass cycle race and rollover; atomic defeat history; production Vite build; mobile browser housing persistence; and `npm run check:worker`.
+- **Real-browser evidence:** Chromium at a 390×844 mobile viewport with Vite and isolated local Wrangler/D1 successfully placed the Plastic Chair, confirmed the authoritative D1 placement, reloaded and confirmed the placement remained, removed the chair and bed, reloaded again, and confirmed the room stayed intentionally empty. The room-cell target measured at least 32×32 CSS pixels. Test log: `PASS real Chromium mobile viewport + Vite + local Worker/D1: housing placement persists after reload, empty room remains empty, and room cells remain tappable`.
+- The earlier intermediate browser-test commits were superseded by the corrected selector and canonical furniture display name. This result applies only to code/test head `ecc68f945ef6b678e81d454ab6b6039e17106386`.
+- A documentation-only continuity commit follows this verified code/test head; its own CI remains pending until observed. No production D1 operation, schema migration, Worker deployment, or merge occurred.
+- **Best next task:** resolve PR #21's signed Discord/Telegram session ownership and approved controlled live-verification gate, then reconcile housing and Shield together without bypassing authentication or inventing account-link policy.
