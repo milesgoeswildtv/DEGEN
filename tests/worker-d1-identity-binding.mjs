@@ -152,8 +152,13 @@ try {
       'access-control-request-headers': 'content-type,authorization',
     },
   });
-  assert.notEqual(previewPreflight.headers.get('access-control-allow-origin'), previewOrigin,
-    'unlisted Pages preview origins must remain disallowed');
+  assert.equal(previewPreflight.headers.get('access-control-allow-origin'), null,
+    'unlisted Pages preview origins must receive no Access-Control-Allow-Origin header');
+
+  const originlessHealth = await request('/api/health');
+  assert.equal(originlessHealth.status, 200);
+  assert.equal(originlessHealth.headers.get('access-control-allow-origin'), null,
+    'non-browser requests without an Origin must not receive an allowlisted origin');
 
   const noProof = await request('/api/player/bootstrap', {
     method: 'POST', headers: { 'content-type': 'application/json' },
