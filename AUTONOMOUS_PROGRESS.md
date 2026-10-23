@@ -312,3 +312,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - D1 source of truth remains `wrangler.toml`: binding `DB`, database `DEGEN`, migration directory `db/migrations`; deployment order remains base schema → tracked migrations → Worker. No production D1 operation or deployment was performed.
 - Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
 - Best next task: verify exact-head CI for PR #20 after the migration resequence. If green, mark it ready for review; keep PR #14 draft until its migration is renumbered and its session-store tests are committed.
+
+
+### Shield migration-collision regression — 2026-10-23
+
+- Renumbered the Shield D1 migration to `0007_degen_shield.sql`, following merged Mana migration 0006 and removing the unused session-store PR as a prerequisite. Updated both migration consumers: `tests/degen-shield-migration-deploy-order.test.ts` and the SQLite migration list in `tests/worker-defeat-atomic.test.ts`.
+- Added a deterministic guard that reads the tracked migration directory and asserts Mana migration 0006 precedes Shield 0007 and every numeric migration prefix is unique. This prevents the still-draft PR #14 session migration from silently colliding at 0007; before future integration it must become `0008_player_sessions.sql`.
+- Exact-head CI run `39925772021` passed after the initial rename: deterministic tests, reward concurrency, cycle reservation/rollover, atomic defeat, Shield persistence, Vite build, Chromium + local Wrangler/D1 vertical slice, and Worker validation. A second run `39926007151` is in progress for the new migration-collision regression test at head `882124dd64e4ee35dc19d5a887aca7ffb5f0044a`; do not call that new test green until its run completes.
+- No production D1 migration/deploy or protected-main write occurred. PR #20 remains draft until the newest run is green. The prior Mana/reward authority and no-monster-resource canon remain unchanged.
