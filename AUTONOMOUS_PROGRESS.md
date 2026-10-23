@@ -276,3 +276,9 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Deployment source remains `wrangler.toml` binding `DB` → `DEGEN`, migrations `db/migrations`, deploy order schema → migrations → Worker. Production push-triggered deployment status after prior Worker merges remains unverified.
 - Public economic release remains gated on signed Discord/Telegram identity verification and per-request player ownership; caller-supplied `playerId` is not authenticated identity.
 - Best next task: run exact-head CI on this clean Shield successor; fix failures and coordinate PR #14 migration 0007 before any Shield merge.
+
+### Shield CI follow-up 2 — 2026-10-23
+
+- Exact-head CI run `39923438874` exposed a stale migration filename in the copied Shield migration-order test and atomic-defeat SQLite fixture: both referenced `0007_degen_shield.sql`, while the coordinated Shield file is `0008_degen_shield.sql`.
+- Corrected the migration-order test and removed the stale 0007 entry from the local SQLite migration list. The 52 tests that completed before the path errors passed; fresh exact-head CI is required.
+- This is test/migration-path correction only; the runtime migration remains 0008 and no production database was touched.
