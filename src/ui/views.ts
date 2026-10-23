@@ -1,6 +1,7 @@
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
+import { canAffordManaCost } from '../game/combat/rules';
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>'\"]/g, (char) => ({
@@ -142,7 +143,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
           <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
-            <small>${ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}</small>
+            <small>${!Number.isSafeInteger(ability.manaCost) || ability.manaCost < 0 ? 'INVALID COST' : ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}</small>
           </button>
         `).join('')}
       </div>
@@ -159,8 +160,12 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   log.innerHTML = snapshot.log.map((entry) => `<div>${escapeHtml(entry)}</div>`).join('');
 
   document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
-    const manaCost = Number(button.dataset.manaCost ?? 0);
-    button.disabled = snapshot.status !== 'active' || manaCost > snapshot.playerMana;
+    const rawManaCost = button.dataset.manaCost;
+    const manaCost = rawManaCost === undefined || rawManaCost.trim() === ''
+      ? Number.NaN
+      : Number(rawManaCost);
+    button.disabled = snapshot.status !== 'active'
+      || !canAffordManaCost(manaCost, snapshot.playerMana);
   });
 
   if (snapshot.status !== 'active') {
