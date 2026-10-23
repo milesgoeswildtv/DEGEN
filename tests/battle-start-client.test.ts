@@ -85,7 +85,7 @@ test('battle action sends the displayed authoritative turn as a replay precondit
   try {
     await new GameApi().actUnderpass('player-1', 'permit-1', 'crack', 3);
     assert.deepEqual(sent, {
-      playerId: 'player-1', permitId: 'permit-1', abilityId: 'crack', expectedTurnCount: 3,
+      permitId: 'permit-1', abilityId: 'crack', expectedTurnCount: 3,
     });
   } finally {
     globalThis.fetch = oldFetch;
