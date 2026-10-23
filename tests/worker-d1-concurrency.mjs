@@ -43,6 +43,13 @@ function countRows(query) {
   const row = Array.isArray(result) ? result[0]?.results?.[0] : result.results?.[0];
   return row?.n;
 }
+function assertPersistedPermitState(permitId, state) {
+  const query = `SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
+    AND completed_at IS NULL AND battle_status = '${state.status}'
+    AND player_hp = ${state.playerHp} AND player_mana = ${state.playerMana}
+    AND enemy_hp = ${state.enemyHp} AND turn_count = ${state.turnCount}`;
+  assert.equal(countRows(query), 1, `persisted Worker state must match the authoritative snapshot for ${permitId}`);
+}
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
@@ -126,6 +133,7 @@ try {
   assert.equal(firstAction.enemyHp, started.initialState.enemyHp - 35);
   assert.equal(firstAction.turnCount, started.initialState.turnCount + 1);
   assert.equal(firstAction.status, 'active');
+  assertPersistedPermitState(started.permitId, firstAction);
 
   const staleReplayResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -147,6 +155,7 @@ try {
     enemyHp: firstAction.enemyHp,
     turnCount: firstAction.turnCount,
   });
+  assertPersistedPermitState(started.permitId, firstAction);
 
   const freeActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -184,6 +193,7 @@ try {
     permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
     enemyHp: 50, turnCount: 0,
   });
+  assertPersistedPermitState('permit-mana-zero', unaffordable.battleState);
 
   const freeAtZeroResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -201,6 +211,7 @@ try {
   assert.equal(freeAtZero.turnCount, 1, 'rejected paid action must not advance the turn');
   assert.equal(freeAtZero.playerHp, 70, 'only the accepted free action may apply retaliation');
   assert.equal(freeAtZero.enemyHp, 21, 'only the accepted free action may damage the enemy');
+  assertPersistedPermitState('permit-mana-zero', freeAtZero);
 
   const killingBlowResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -219,6 +230,7 @@ try {
   assert.equal(killingBlow.playerMana, 0, 'the killing blow must deduct its Mana cost exactly once');
   assert.equal(killingBlow.enemyHp, 0);
   assert.equal(killingBlow.turnCount, 1);
+  assertPersistedPermitState('permit-killing-blow', killingBlow);
 
   const defeatResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -237,6 +249,7 @@ try {
   assert.equal(defeat.playerMana, 0, 'zero-cost action at zero Mana remains usable on defeat');
   assert.equal(defeat.enemyHp, 63);
   assert.equal(defeat.turnCount, 1);
+  assertPersistedPermitState('permit-defeat', defeat);
 
   const malformedTurnResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -271,6 +284,7 @@ try {
   assert.equal(rejectedRace.battleState.playerHp, acceptedRace.playerHp);
   assert.equal(rejectedRace.battleState.playerMana, acceptedRace.playerMana);
   assert.equal(rejectedRace.battleState.enemyHp, acceptedRace.enemyHp);
+  assertPersistedPermitState('permit-turn-race', acceptedRace);
 
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
