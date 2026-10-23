@@ -20,7 +20,7 @@ jobs:
         run: npm install
       - name: Run deterministic game tests
         run: npm test
-      - name: Verify immutable platform identity binding on isolated local Worker/D1
+      - name: Verify signed platform auth and session ownership on isolated local Worker/D1
         run: node tests/worker-d1-identity-binding.mjs
       - name: Exercise isolated local Worker/D1 reward concurrency
         run: node tests/worker-d1-concurrency.mjs
