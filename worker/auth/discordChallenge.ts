@@ -1,4 +1,4 @@
-import { digestToken, type SessionDatabase } from './sessionStore';
+import { digestToken, type SessionDatabase } from './sessionStore.ts';
 
 const STATE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const STATE_TTL_MS = 2 * 60 * 1000;
