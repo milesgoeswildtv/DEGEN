@@ -18,6 +18,8 @@ const { GameApi, GameApiError } = runInNewContext(stripTypeScriptTypes(source, {
   GameApi: new () => {
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
+    bootstrap(identity: { platform: 'telegram'; displayName: string; telegramInitData?: string }): Promise<unknown>;
+    setIdentityProvider(provider: () => Promise<{ platform: 'telegram'; displayName: string; telegramInitData?: string }>): void;
   };
   GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
 };
@@ -125,7 +127,7 @@ test('player-owned API requests use the server session and never submit playerId
 
 test('expired session retries only after a fresh verified platform bootstrap', async () => {
   const api = new GameApi();
-  const identity = { platform: 'telegram', displayName: 'Verified', telegramInitData: 'signed-proof' };
+  const identity = { platform: 'telegram' as const, displayName: 'Verified', telegramInitData: 'signed-proof' };
   const tokens = ['A'.repeat(43), 'B'.repeat(43)];
   const oldFetch = globalThis.fetch;
   let bootstraps = 0;
