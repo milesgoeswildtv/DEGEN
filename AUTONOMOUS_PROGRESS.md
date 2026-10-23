@@ -361,3 +361,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Re-read the test file and corrected the import-stripping regex and appended VM expression. Commit: `39a339747671b44baee42591edb282805f4ed112`. Runtime fix remains `3c61ee95273381bd1cb2f2eff4373b694d86d14d`.
 - Fresh exact-head CI is pending. The previous green CI covers the auth/session/credential changes but not the corrected world-sync test.
 - Best next task: verify the corrected world-sync tests and full exact-head CI, fix any real assertion/runtime issue, then keep PR #21 gated on operational credentials and live platform verification.
+
+### Final exact-head QA — 2026-10-23 (world-sync fail-closed)
+
+- Exact-head CI run `39955536139` **PASS** on code/test head `39a339747671b44baee42591edb282805f4ed112`. The suite completed **80/80 deterministic tests** (0 failures), including both server-backed world-sync failure and offline-preview preservation regressions.
+- The same CI run passed isolated local Worker/D1 signed Telegram/session/identity/CORS checks (including no-store and missing-provider-credential assertions), reward/action-completion concurrency, 60-request cycle reservation, 60-request rollover, atomic defeat rollback/retry, production Vite build, real Chromium + Vite + local Worker/D1 signed-Telegram startup, and `npm run check:worker` Wrangler dry-run.
+- The follow-on commit `0435d15dc6083ac076f9ede4b9d6347ba52a5be2` only updates this continuity log; no runtime/test code changed after the green code/test head. PR #21 is open, unmerged, and not deployed.
+- Mana status and main deployment remain unchanged: Degen-only Mana is merged; main `687510dc5e01d70f05734c5c5c50e3354404d1c0` passed CI `39922412143` and Worker deploy `39922412044`. No production secret or remote D1 change was made in this run.
+- Next task: coordinate approved Worker/frontend credential configuration and live Telegram/Discord verification, then review PR #21 integration and keep PR #20 Shield after migration 0007 sessions / 0008 Shield.
