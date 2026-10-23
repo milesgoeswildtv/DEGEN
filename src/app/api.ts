@@ -14,6 +14,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
     && isBoundedSafeInteger(state.playerShield, 0, Number.MAX_SAFE_INTEGER)
     && state.shieldAbsorbed === 0
+    && state.retaliationDamage === 0
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
 };
 
@@ -24,6 +25,7 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   const playerMana = state.playerMana;
   const playerShield = state.playerShield;
   const shieldAbsorbed = state.shieldAbsorbed;
+  const retaliationDamage = state.retaliationDamage;
   const enemyHp = state.enemyHp;
   const turnCount = state.turnCount;
   if (state.permitId !== permitId
@@ -32,11 +34,12 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
     || !isBoundedSafeInteger(playerMana, 0, TEST_DEGEN.maxMana)
     || !isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
     || !isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(retaliationDamage, 0, TUNNEL_MAW.damage)
     || !isBoundedSafeInteger(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   if (state.status === 'active') return playerHp > 0 && enemyHp > 0;
-  if (state.status === 'victory') return playerHp > 0 && enemyHp === 0;
+  if (state.status === 'victory') return playerHp > 0 && enemyHp === 0 && retaliationDamage === 0;
   return playerHp === 0 && enemyHp > 0;
 };
 
