@@ -76,7 +76,7 @@ test('battle start returns exactly the authoritative HP/Mana/Shield state it per
     permitId: string;
     initialState: {
       permitId: string; status: string; playerHp: number; playerMana: number;
-      playerShield: number; shieldAbsorbed: number; enemyHp: number; turnCount: number;
+      playerShield: number; shieldAbsorbed: number; retaliationDamage: number; enemyHp: number; turnCount: number;
     };
   };
 
@@ -88,6 +88,7 @@ test('battle start returns exactly the authoritative HP/Mana/Shield state it per
     playerMana: TEST_DEGEN.maxMana,
     playerShield: 0,
     shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   });
