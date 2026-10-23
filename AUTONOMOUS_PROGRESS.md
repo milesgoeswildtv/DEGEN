@@ -288,3 +288,9 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Exact-head CI run `39923596457` passed all 65 deterministic tests, including the Shield migration/deploy-order tests and atomic-defeat tests after the migration filename correction.
 - The next local Worker/D1 reward concurrency harness failed because two existing conflict-state assertions still expected the pre-Shield response shape. Updated those fixtures to include the authoritative `playerShield` and zero `shieldAbsorbed` fields. Fresh exact-head CI is required.
 - Runtime behavior was not changed by this assertion-only correction; no remote D1 or production deployment was performed.
+
+### Shield/browser CI follow-up 4 — 2026-10-23
+
+- Exact-head CI run `39923790445` passed all 65 deterministic tests, the Worker/D1 reward concurrency harness, cycle race/rollover, atomic defeat harness, Shield persistence harness, build, and Worker validation; the Chromium vertical slice reached the compact-viewport check.
+- The browser test exposed a genuine mobile overflow edge case: a long player display name could expand the topbar's flex item and make the compact viewport report 472px instead of 320px. Added responsive `min-width: 0`, a viewport-relative max width, and `overflow-wrap: anywhere` for the display-name span rather than weakening the test.
+- Fresh exact-head browser/CI verification is required after this CSS correction. This is a responsive overflow fix; no gameplay balance or canon changed.
