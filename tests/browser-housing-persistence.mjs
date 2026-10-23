@@ -175,7 +175,7 @@ try {
   await click('[data-route="home"]');
   await until('home and starter furniture', async () => {
     const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
-    return text.includes('Make it yours.') && text.includes('Starter Chair') ? text : null;
+    return text.includes('Make it yours.') && text.includes('Plastic Chair') ? text : null;
   });
 
   const cellSize = await cdp.evaluate("(() => { const r = document.querySelector('[data-room-x=\"0\"][data-room-y=\"0\"]').getBoundingClientRect(); return { width: r.width, height: r.height }; })()");
@@ -188,7 +188,7 @@ try {
   await click('[data-room-x="3"][data-room-y="2"]');
   await until('chair rendered in the selected room cell', async () => {
     const label = await cdp.evaluate("document.querySelector('[data-room-x=\"3\"][data-room-y=\"2\"]')?.getAttribute('aria-label') || ''");
-    return label.includes('Starter Chair') ? label : null;
+    return label.includes('Plastic Chair') ? label : null;
   });
   await until('chair saved to local D1', async () =>
     sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + playerId +
@@ -202,7 +202,7 @@ try {
   await click('[data-route="home"]');
   await until('persisted chair after browser reload', async () => {
     const label = await cdp.evaluate("document.querySelector('[data-room-x=\"3\"][data-room-y=\"2\"]')?.getAttribute('aria-label') || ''");
-    return label.includes('Starter Chair') ? label : null;
+    return label.includes('Plastic Chair') ? label : null;
   });
 
   await click('[data-clear-selection]');
