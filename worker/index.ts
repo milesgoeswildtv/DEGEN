@@ -389,6 +389,22 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
   if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 
+  // Release this permit's lease when a post-claim read/write fails. The clear
+  // number is intentionally retained: retries must not consume another slot.
+  // If D1 is still unavailable, the existing 60-second stale-lease path remains
+  // the fallback and the claim token continues to prevent duplicate awards.
+  const releaseClaim = async () => {
+    try {
+      await env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
+          reward_claim_token = NULL, reward_claimed_at = NULL
+        WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
+        .bind(input.permitId, input.playerId, token).run();
+    } catch {
+      // Do not hide the original failure. A later retry can reclaim a stale lease.
+    }
+  };
+  try {
+
   if (claim.reward_clear_number === null) {
     await env.DB.batch([
       env.DB.prepare(`INSERT OR IGNORE INTO world_event_clears
@@ -412,9 +428,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
     .bind(input.permitId, input.playerId, token)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
-  if (!owned?.reward_clear_number) return fail(request, env, 'Unable to assign authoritative reward clear.', 409);
+  if (!owned?.reward_clear_number) {
+    await releaseClaim();
+    return fail(request, env, 'Unable to assign authoritative reward clear.', 409);
+  }
 
-const reward = underpassRewardForClear(owned.reward_clear_number);
+  const reward = underpassRewardForClear(owned.reward_clear_number);
   const owns = `EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
     AND reward_state = 'claiming' AND reward_claim_token = ?)`;
   const applied = `EXISTS (SELECT 1 FROM characters WHERE player_id = ?
@@ -426,7 +445,10 @@ const reward = underpassRewardForClear(owned.reward_clear_number);
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const character = await env.DB.prepare(`SELECT level, xp, currency, degen_key FROM characters WHERE player_id = ?`)
       .bind(input.playerId).first<CharacterRow>();
-    if (!character) return fail(request, env, 'Player character not found.', 404);
+    if (!character) {
+      await releaseClaim();
+      return fail(request, env, 'Player character not found.', 404);
+    }
     const progression = advanceLevel(character.level, character.xp, reward.xp);
     const writes: D1PreparedStatement[] = [
       env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?,
@@ -477,17 +499,19 @@ const reward = underpassRewardForClear(owned.reward_clear_number);
       .first<ReceiptRow & { reward_claim_token: string | null }>();
     if (awarded?.reward_state === 'awarded') return respond(awarded);
     if (awarded?.reward_state !== 'claiming' || awarded.reward_claim_token !== token) {
+      await releaseClaim();
       return fail(request, env, 'Reward claim changed; retry.', 409);
     }
   }
 
   // Release only this token after bounded contention; retain its reserved
   // clear number for a later retry, even if the permit has since expired.
-  await env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
-      reward_claim_token = NULL, reward_claimed_at = NULL
-    WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
-    .bind(input.permitId, input.playerId, token).run();
+  await releaseClaim();
   return fail(request, env, 'Concurrent reward updates; retry completion.', 409);
+  } catch (error) {
+    await releaseClaim();
+    throw error;
+  }
 }
 
 export default {
