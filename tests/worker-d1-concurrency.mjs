@@ -1,5 +1,6 @@
 // Isolated local Worker/D1 integration test; never connects to production.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,16 +14,21 @@ const scratch = mkdtempSync(join(tmpdir(), 'degen-worker-d1-'));
 const persist = join(scratch, 'state');
 const base = 'http://127.0.0.1:8789';
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
+const SESSION_TOKEN = Buffer.alloc(32, 7).toString('base64url');
+const SESSION_HASH = createHash('sha256').update(SESSION_TOKEN).digest('hex');
+const WRONG_SESSION_TOKEN = Buffer.alloc(32, 8).toString('base64url');
+const WRONG_SESSION_HASH = createHash('sha256').update(WRONG_SESSION_TOKEN).digest('hex');
+const AUTH_HEADERS = { 'content-type': 'application/json', authorization: 'Bearer ' + SESSION_TOKEN };
 let server;
 let logs = '';
 function cli(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
 }
-async function complete(permitId, playerId = 'integration-player') {
+async function complete(permitId, sessionToken = SESSION_TOKEN) {
   const r = await fetch(base + '/api/battle/complete', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId, permitId }),
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + sessionToken },
+    body: JSON.stringify({ permitId }),
   });
   return { status: r.status, data: await r.json() };
 }
@@ -49,8 +55,12 @@ try {
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES('integration-player','Integration');
+    INSERT INTO players(id,display_name) VALUES('wrong-player','Wrong Player');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES('integration-player',1,0,0,'test-degen');
+    INSERT INTO player_sessions(token_hash,player_id,created_at_ms,expires_at_ms,revoked_at_ms)
+      VALUES('${SESSION_HASH}','integration-player',${Date.now()},${Date.now()+3600000},NULL),
+            ('${WRONG_SESSION_HASH}','wrong-player',${Date.now()},${Date.now()+3600000},NULL);
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
@@ -86,7 +96,7 @@ try {
   assert.ok(ready, 'Worker did not start: ' + logs);
   const startResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: AUTH_HEADERS,
     body: JSON.stringify({
       playerId: 'integration-player',
       eventKey: 'underpass',
@@ -273,7 +283,7 @@ try {
   assert.equal(rejectedRace.battleState.enemyHp, acceptedRace.enemyHp);
 
   assert.equal((await complete('expired')).status, 409);
-  assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
+  assert.equal((await complete('permit-a', WRONG_SESSION_TOKEN)).status, 409);
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
   assert.equal(a.reward.xp, 75);
   assert.equal(b.reward.xp, 75);
