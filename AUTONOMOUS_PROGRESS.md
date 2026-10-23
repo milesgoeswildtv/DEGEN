@@ -462,3 +462,10 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - This confirms the current-main persisted-Mana assertions and permit/event-closure tests coexist with signed Telegram/Discord identity and session ownership on the tested code head. The following commit is continuity-only; no runtime, migration, or test code changed after the verified head. Fresh CI for the documentation-only head is pending and is not claimed green.
 - PR #21 is now current with main and mergeable, but remains unmerged by design. Exact production credentials/configuration and controlled live platform verification are still outstanding; CI uses test credentials and isolated local D1 only.
 - Best next task: obtain the approved production credentials/config and run controlled Telegram/Discord live auth smoke tests; do not merge/deploy before that gate or invent account-link/merge policy.
+
+
+### Documentation-head CI confirmation — 2026-10-23 (auth branch)
+
+- The continuity-only head `518740642ec6c0948635f5a198fafdaf9ec86860` also passed GitHub Actions CI run `40020993299` (**SUCCESS**), including signed platform auth/session ownership on local Worker/D1, reward concurrency, cycle race/rollover, atomic defeat history, production build, Chromium platform-auth vertical slice, and Worker validation.
+- The tested implementation head remains `f51739078bb69bbd4253db6145200c592deb88de`, already green on run `40020523925`. This entry is documentation-only; no runtime, schema, or test behavior changed.
+- PR #21 remains unmerged because approved production credentials/configuration and controlled live identity verification are still required. Best next task remains the controlled auth smoke test once those approved inputs are available.
