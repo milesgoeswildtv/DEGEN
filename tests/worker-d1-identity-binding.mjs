@@ -54,6 +54,15 @@ try {
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
 
+  const missingIdentity = await fetch(base + '/api/player/bootstrap', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ platform: 'telegram', playerId: 'missing-provider-id', displayName: 'Missing' }),
+    signal: AbortSignal.timeout(15000),
+  });
+  assert.equal(missingIdentity.status, 400, 'provider bootstrap must fail closed when the provider ID is absent');
+  await missingIdentity.text();
+
   const first = await bootstrap('discord', 'uid', 'owner', 'Owner');
   assert.equal(first.status, 200);
   const stolen = await bootstrap('discord', 'uid', 'attacker', 'Impostor');
@@ -85,7 +94,7 @@ try {
   assert.equal(rows.find(row => row.platform === 'discord' && row.platform_user_id === 'uid').display_name, 'Renamed');
 
   const accountOutput = cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    "--command=SELECT (SELECT COUNT(*) FROM players WHERE id LIKE 'racer-%' OR id = 'late-attacker') AS players, (SELECT COUNT(*) FROM characters WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS characters, (SELECT COUNT(*) FROM player_inventory WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS inventory, (SELECT COUNT(*) FROM unlocked_locations WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS locations, (SELECT COUNT(*) FROM housing_placements WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS housing", '--json']);
+    "--command=SELECT (SELECT COUNT(*) FROM players WHERE id LIKE 'racer-%' OR id = 'late-attacker' OR id = 'missing-provider-id') AS players, (SELECT COUNT(*) FROM characters WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS characters, (SELECT COUNT(*) FROM player_inventory WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS inventory, (SELECT COUNT(*) FROM unlocked_locations WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS locations, (SELECT COUNT(*) FROM housing_placements WHERE player_id LIKE 'racer-%' OR player_id = 'late-attacker') AS housing", '--json']);
   const accountParsed = JSON.parse(accountOutput);
   const accountRows = Array.isArray(accountParsed) ? accountParsed[0]?.results : accountParsed.results;
   assert.ok(Array.isArray(accountRows), 'D1 must return bootstrap side-effect counts');
