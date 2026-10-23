@@ -330,3 +330,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Removed the duplicate `.player-chip` declaration by folding the existing mobile width/wrapping constraints into its original rule. This preserves the same computed properties while honoring the no-duplicate-CSS constraint; no visual design or combat behavior was changed.
 - The merged code/test head `7b57604b297062f2a800f4bddd1c4b7623b8e0e7` passed CI run `40020343593`, including real Chromium + Vite + isolated Worker/D1, Shield persistence, build, and Worker validation. This CSS cleanup creates a new code head; exact-head CI is pending and must be observed before calling the updated branch green.
 - Best next task: complete current exact-head CI, then reconcile auth PR #21 with Shield after the signed-platform release gate; do not merge or deploy Shield ahead of migration 0007.
+
+
+### Exact-head CI after mobile CSS cleanup — 2026-10-23
+
+- Updated code/test head `2f47939bfc757a631c7f584faf42fb2b2e57be93` passed GitHub Actions CI run `40020951607` (**SUCCESS**). All observed steps passed: deterministic tests, isolated Worker/D1 reward concurrency, Underpass cycle race/rollover, atomic defeat history, Shield initialization/absorption/persistence integration, Vite build, real Chromium + Vite + local Wrangler/D1 vertical slice, and Worker validation.
+- The duplicate `.player-chip` rule was consolidated without changing computed properties, and the actual Chromium vertical-slice step passed on this code head. This continuity-only commit follows the verified code/test head; its own CI is pending and is not claimed green.
+- PR #20 remains draft/unmerged, current with main, and behind the auth integration/release gate. No production D1 or Worker deployment occurred.
+- Best next task: complete the auth branch's current-head CI and approved live verification, then merge the auth changes into the Shield branch and rerun the combined suite.
