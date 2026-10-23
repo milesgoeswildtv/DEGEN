@@ -290,3 +290,10 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Exact-head CI run `39923789368` passed deterministic tests, all four local Worker/D1 concurrency/fault-injection harnesses, Shield Worker/D1 persistence, and `npm run build`. The browser vertical slice still failed at the compact Map check.
 - The viewport wait reached 320px before the long-name probe, but `window.innerWidth` measured 472 after the probe. The previous assertion stopped before reporting the scroll-width result. The test now asserts the viewport before mutation, checks actual horizontal overflow first, and then verifies the long name cannot expand the viewport. Fresh exact-head CI will distinguish a real layout overflow from a viewport-emulation defect.
 - No production Shield migration/deploy. Migration 0007 remains branch-only pending green browser QA.
+
+
+### Shield responsive-header fix — 2026-10-23
+
+- Exact-head CI run `39924063124`: deterministic tests **65/65 PASS**; reward concurrency, Underpass cycle reservation/rollover, atomic defeat rollback, Shield Worker/D1 persistence, and web build all passed. The real Chromium vertical slice reached the compact 320px probe and exposed actual horizontal overflow (`scrollWidth = 472`) when a long unbroken display name was inserted into the header.
+- Fixed the general responsive layout rather than weakening the test: the header may wrap, the player chip can shrink to available width, and the display-name span may break long unspaced text. The browser harness continues to assert no overflow at 320px and 390px and exercises Map → Home → Underpass → Degen battle → Worker reward → Home trophy.
+- Exact-head CI is pending for this CSS fix. The Worker dry-run step was skipped after the browser assertion failed; no production Shield migration or deployment occurred.
