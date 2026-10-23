@@ -5,8 +5,8 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
-  .replace(/\\bexport class /g, 'class ');
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/\bexport class /g, 'class ');
 
 type EventSnapshot = {
   eventKey: string;
@@ -22,7 +22,7 @@ type EventSnapshot = {
 function loadController(preview: EventSnapshot) {
   let previewCalls = 0;
   const loaded = runInNewContext(
-    stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ AppController });',
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ AppController });',
     {
       getPreviewUnderpass: () => {
         previewCalls += 1;
