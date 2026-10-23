@@ -328,3 +328,11 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - The new migration-number uniqueness regression passed in that 66-test suite. It confirms the Shield migration follows Mana migration 0006 and prevents duplicate numeric prefixes such as the still-draft session migration's current 0007.
 - The continuity-only commit `1c1f10bb2e7e46fcfd614d4006279e71bb1d0792` triggered CI run `39926116538`; at the time of this log update it was still running the same suite. The latest continuity update is also documentation-only; it changes no runtime or test files and will trigger another exact-head CI run.
 - Existing non-failing warnings: Node `punycode` / experimental API warnings, the GitHub Actions Node 20 deprecation warning, and Vite's large-chunk warning. No production D1 migration or Worker deployment was performed by this feature branch.
+
+
+### Exact-head CI completion — 2026-10-23
+
+- Exact current code/test head `882124dd64e4ee35dc19d5a887aca7ffb5f0044a` passed run `39926007151`; exact continuity head `1c1f10bb2e7e46fcfd614d4006279e71bb1d0792` passed run `39926116538`; the latest continuity head `e00eed6fdf2794c94008e8e95380d40e72fdafcd` passed run `39926427973`.
+- Run `39926427973` finished SUCCESS across all CI steps: 66/66 deterministic tests, Worker/D1 reward/action/completion concurrency, 60-request cycle reservation and rollover, atomic defeat rollback/retry, Shield initialization/absorption/persistence, Vite build, Chromium browser vertical slice at compact width, and Wrangler Worker dry-run.
+- No runtime/test edits followed the green code/test head; only continuity/PR metadata changed. The next continuity-only commit will trigger another CI run, but the tested code remains the same.
+- PR #20 is ready to move from draft to review. It remains a feature-branch change only at this point; no production D1 migration, merge, or Worker deployment has been performed.
