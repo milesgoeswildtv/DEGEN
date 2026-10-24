@@ -282,7 +282,7 @@ test('a successful in-flight response from an old account is discarded after acc
       fullRewardClears: 0, fullRewardLimit: 3, source: 'server',
     }));
 
-    await assert.rejects(staleWorld, /authenticated player changed while request was in flight/i);
+    await assert.rejects(staleWorld, /authenticated player changed while the request was in flight/i);
     const currentWorld = await api.getUnderpass('player-B');
     assert.equal((currentWorld as { cycleId: string }).cycleId, 'cycle-B');
     assert.deepEqual(worldTokens, ['Bearer ' + tokenA, 'Bearer ' + tokenB]);
