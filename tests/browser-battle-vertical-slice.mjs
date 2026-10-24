@@ -129,7 +129,8 @@ try {
       true, route + ' must not overflow horizontally');
   };
   const assertFitsCompact = async (route) => {
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, screenWidth: 320, screenHeight: 568, deviceScaleFactor: 2, mobile: true });
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 2, mobile: true });
+    await until('compact viewport resize', () => cdp.evaluate('window.innerWidth === 320'));
     const dimensions = await cdp.evaluate(`(() => {
       const label = document.querySelector('.player-chip span');
       const original = label?.textContent;
