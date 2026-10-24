@@ -35,9 +35,9 @@ function makeEnv(
           return {
             first: async () => {
               if (sql.includes('INSERT INTO battle_permits')) {
-                assert.match(sql, /WHERE EXISTS\\s*\\(\\s*SELECT 1 FROM world_event_cycles/);
-                assert.match(sql, /julianday\\(opens_at\\)\\s*<=\\s*julianday\\('now'\\)/);
-                assert.match(sql, /julianday\\(closes_at\\)\\s*>\\s*julianday\\('now'\\)/);
+                assert.match(sql, /WHERE EXISTS\s*\(\s*SELECT 1 FROM world_event_cycles/);
+                assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\('now'\)/);
+                assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
                 if (!permitInsertAllowed) return null;
                 inserts.push(params);
                 return { id: params[0] };
