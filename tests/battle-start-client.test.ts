@@ -10,7 +10,7 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
   .replace('import.meta.env.VITE_API_BASE', 'globalThis.__API_BASE')
   .replace(/\bexport class /g, 'class ')
   .replace(/\bexport const /g, 'const ');
-const { GameApi, GameApiError } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError });', {
+const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError, isAuthoritativeBattleActionState });', {
   __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW,
   fetch: (...args: any[]) => globalThis.fetch(...args), Response, URL, AbortController, setTimeout, clearTimeout,
   Date, Number, JSON, Error, encodeURIComponent, console,
@@ -20,6 +20,7 @@ const { GameApi, GameApiError } = runInNewContext(stripTypeScriptTypes(source, {
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
   };
   GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
+  isAuthoritativeBattleActionState: (value: unknown, permitId: string) => boolean;
 };
 
 const validPermit = () => {
@@ -211,4 +212,22 @@ test('battle action rejects unsafe expected turn counts before issuing a request
   } finally {
     globalThis.fetch = oldFetch;
   }
+});
+
+
+test('client battle-state validation mirrors Worker active-turn and terminal-state invariants', () => {
+  const active = {
+    permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0,
+    enemyHp: 20, turnCount: Number.MAX_SAFE_INTEGER - 1,
+  };
+  assert.equal(isAuthoritativeBattleActionState(active, 'permit-1'), true,
+    'the last incrementable active snapshot remains valid before an action');
+  assert.equal(isAuthoritativeBattleActionState({ ...active, turnCount: Number.MAX_SAFE_INTEGER }, 'permit-1'), false,
+    'an active snapshot at the terminal safe-integer boundary is invalid');
+  assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'victory', enemyHp: 0, turnCount: 0 }, 'permit-1'), false,
+    'victory requires at least one resolved turn');
+  assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, turnCount: 0 }, 'permit-1'), false,
+    'defeat requires at least one resolved turn');
+  assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'victory', enemyHp: 0, turnCount: 1 }, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, turnCount: 1 }, 'permit-1'), true);
 });

@@ -96,6 +96,8 @@ try {
       ('permit-invalid-negative-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,-1),
       ('permit-invalid-active-terminal','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',0,12,92,0),
       ('permit-invalid-turn-overflow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,9007199254740991),
+      ('permit-turn-boundary-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,9007199254740990),
+      ('permit-turn-boundary-victory','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,20,9007199254740990),
       ('permit-invalid-victory-enemy','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,1,1),
       ('permit-invalid-victory-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,0),
       ('permit-invalid-defeat-player','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'defeat',1,0,92,1),
@@ -152,6 +154,46 @@ try {
   await assertInvalidActionState('permit-invalid-negative-turn', { status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: -1 });
   await assertInvalidActionState('permit-invalid-active-terminal', { status: 'active', playerHp: 0, playerMana: 12, enemyHp: 92, turnCount: 0 });
   await assertInvalidActionState('permit-invalid-turn-overflow', { status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: 9007199254740991 });
+
+  const activeBoundaryResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-turn-boundary-active',
+      abilityId: 'slash',
+      expectedTurnCount: 9007199254740990,
+    }),
+  });
+  const activeBoundary = await activeBoundaryResponse.json();
+  assert.equal(activeBoundaryResponse.status, 409,
+    'a non-terminal action must not persist an active state at Number.MAX_SAFE_INTEGER');
+  assert.equal(activeBoundary.error, 'Battle turn limit reached.');
+  assert.equal('battleState' in activeBoundary, false);
+  assertPersistedPermitState('permit-turn-boundary-active', {
+    status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: 9007199254740990,
+  });
+
+  const victoryBoundaryResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-turn-boundary-victory',
+      abilityId: 'crack',
+      expectedTurnCount: 9007199254740990,
+    }),
+  });
+  const victoryBoundary = await victoryBoundaryResponse.json();
+  assert.equal(victoryBoundaryResponse.status, 200, JSON.stringify(victoryBoundary));
+  assert.equal(victoryBoundary.status, 'victory',
+    'a terminal victory may resolve on the final safe turn');
+  assert.equal(victoryBoundary.playerMana, 0);
+  assert.equal(victoryBoundary.enemyHp, 0);
+  assert.equal(victoryBoundary.turnCount, 9007199254740991);
+  assertPersistedPermitState('permit-turn-boundary-victory', {
+    status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 9007199254740991,
+  });
 
   const invalidVictory = await complete('permit-invalid-victory-mana');
   assert.equal(invalidVictory.status, 409, 'a victory with out-of-range persisted Mana must not award rewards');
