@@ -57,6 +57,34 @@ type BattlePermitStateRow = {
   turn_count: number;
 };
 
+const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
+
+// A persisted permit must satisfy the same bounds and terminal-state invariants
+// enforced by the client snapshot parser before it can advance another turn.
+const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
+  const playerHp = state.player_hp;
+  const playerMana = state.player_mana;
+  const enemyHp = state.enemy_hp;
+  const turnCount = state.turn_count;
+
+  if (!isSafeIntegerBetween(playerHp, 0, TEST_DEGEN.maxHp)
+    || !isSafeIntegerBetween(playerMana, 0, TEST_DEGEN.maxMana)
+    || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
+    || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
+
+  switch (state.battle_status) {
+    case 'active':
+      return playerHp > 0 && enemyHp > 0;
+    case 'victory':
+      return playerHp > 0 && enemyHp === 0;
+    case 'defeat':
+      return playerHp === 0 && enemyHp > 0;
+    default:
+      return false;
+  }
+};
+
 async function ensurePlayer(db: D1Database, playerId: string, displayName: string): Promise<void> {
   await db.batch([
     db.prepare(`INSERT INTO players (id, display_name) VALUES (?, ?)
@@ -259,6 +287,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
   if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
+  }
+  if (!isValidBattlePermitState(permit)) {
+    return fail(request, env, 'Battle state is invalid.', 409);
   }
   const battleState = {
     permitId: input.permitId,
