@@ -50,6 +50,18 @@ function assertPersistedPermitState(permitId, state) {
     AND enemy_hp = ${state.enemyHp} AND turn_count = ${state.turnCount}`;
   assert.equal(countRows(query), 1, `persisted Worker state must match the authoritative snapshot for ${permitId}`);
 }
+
+async function assertInvalidActionState(permitId, state) {
+  const response = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash' }),
+  });
+  const data = await response.json();
+  assert.equal(response.status, 409, `${permitId} must fail closed`);
+  assert.equal(data.error, 'Battle state is invalid.');
+  assert.equal('battleState' in data, false, 'invalid persisted state must not be echoed as authoritative');
+  assertPersistedPermitState(permitId, state);
+}
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
@@ -68,9 +80,21 @@ try {
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
+      ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
+      ('permit-invalid-negative-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,-1,92,0),
+      ('permit-invalid-fractional-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,1.5,92,0),
+      ('permit-invalid-victory-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,13,0,3),
+      ('permit-invalid-player-hp','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',121,12,92,0),
+      ('permit-invalid-enemy-hp','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,93,0),
+      ('permit-invalid-negative-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,-1),
+      ('permit-invalid-active-terminal','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',0,12,92,0),
+      ('permit-invalid-turn-overflow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,9007199254740991),
+      ('permit-invalid-victory-enemy','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,1,1),
+      ('permit-invalid-victory-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,0),
+      ('permit-invalid-defeat-player','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'defeat',1,0,92,1),
       ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
-      ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,100,0),
+      ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-e','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,1,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0);
@@ -92,6 +116,55 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  const invalidManaResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-invalid-mana',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const invalidMana = await invalidManaResponse.json();
+  assert.equal(invalidManaResponse.status, 409, 'persisted Mana above the Degen maximum must fail closed');
+  assert.equal(invalidMana.error, 'Battle state is invalid.');
+  assert.equal('battleState' in invalidMana, false, 'invalid persisted state must not be echoed as authoritative');
+  assertPersistedPermitState('permit-invalid-mana', {
+    status: 'active', playerHp: 80, playerMana: 13, enemyHp: 92, turnCount: 0,
+  });
+  await assertInvalidActionState('permit-invalid-negative-mana', { status: 'active', playerHp: 80, playerMana: -1, enemyHp: 92, turnCount: 0 });
+  await assertInvalidActionState('permit-invalid-fractional-mana', { status: 'active', playerHp: 80, playerMana: 1.5, enemyHp: 92, turnCount: 0 });
+
+  await assertInvalidActionState('permit-invalid-player-hp', { status: 'active', playerHp: 121, playerMana: 12, enemyHp: 92, turnCount: 0 });
+  await assertInvalidActionState('permit-invalid-enemy-hp', { status: 'active', playerHp: 80, playerMana: 12, enemyHp: 93, turnCount: 0 });
+  await assertInvalidActionState('permit-invalid-negative-turn', { status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: -1 });
+  await assertInvalidActionState('permit-invalid-active-terminal', { status: 'active', playerHp: 0, playerMana: 12, enemyHp: 92, turnCount: 0 });
+  await assertInvalidActionState('permit-invalid-turn-overflow', { status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: 9007199254740991 });
+
+  const invalidVictory = await complete('permit-invalid-victory-mana');
+  assert.equal(invalidVictory.status, 409, 'a victory with out-of-range persisted Mana must not award rewards');
+  assert.equal(invalidVictory.data.error, 'Battle state is invalid.');
+  assertPersistedPermitState('permit-invalid-victory-mana', {
+    status: 'victory', playerHp: 70, playerMana: 13, enemyHp: 0, turnCount: 3,
+  });
+  for (const [permitId, state] of [
+    ['permit-invalid-victory-enemy', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 1, turnCount: 1 }],
+    ['permit-invalid-victory-turn', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 0 }],
+  ]) {
+    const invalid = await complete(permitId);
+    assert.equal(invalid.status, 409, `${permitId} must not award an inconsistent victory`);
+    assert.equal(invalid.data.error, 'Battle state is invalid.');
+    assertPersistedPermitState(permitId, state);
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
+      AND reward_state = 'pending' AND reward_clear_number IS NULL AND completed_at IS NULL`), 1,
+      `${permitId} must retain its untouched pending claim`);
+  }
+  await assertInvalidActionState('permit-invalid-defeat-player', { status: 'defeat', playerHp: 1, playerMana: 0, enemyHp: 92, turnCount: 1 });
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM characters
+    WHERE player_id = 'integration-player' AND xp = 0 AND currency = 0`), 1,
+    'invalid victories must not grant XP or currency');
 
   const expiredActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -355,7 +428,14 @@ try {
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
   assert.equal(a.reward.xp, 75);
   assert.equal(b.reward.xp, 75);
-  const replay = await eventuallyComplete('permit-a');
+  // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_mana = 13 WHERE id = 'permit-a'"]);
+  const replayResponse = await complete('permit-a');
+  assert.equal(replayResponse.status, 200, 'an already-awarded receipt must remain idempotent despite a later invalid snapshot');
+  const replay = replayResponse.data;
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-a:victory'"), 1,
+    'replaying an awarded receipt must not create a second victory history row');
   assert.equal(replay.player.level, 2);
   assert.equal(replay.player.xp, 50);
   assert.equal(replay.player.currency, 60);
