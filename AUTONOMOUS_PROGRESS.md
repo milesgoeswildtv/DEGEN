@@ -1,18 +1,3 @@
-## Latest run — 2026-10-24 (Worker Mana rejection atomicity coverage)
-
-- **Authoritative main SHA:** `0ee2ae8f1d2cbdfca90a387c0afce0edd6ac5795`.
-- **PUSHED / PR #44 OPEN:** `automation/degen/mana-worker-rejection-atomicity-v01`; current head `edf4faf09abbb9957747d6aeb5bc10d181866423`. No direct-main write. This task is test-only and is not merged or deployed.
-- **Files changed:** `tests/worker-d1-concurrency.mjs` seeds a valid active permit with 0 Mana, submits the paid `crack` ability, and verifies HTTP 409, the unchanged authoritative response, unchanged persisted HP/Mana/enemy HP/turn count, no terminal battle history, and no reward reservation/claim. It then submits zero-cost `slash` to the same permit and verifies a single turn advances, player HP/enemy HP resolve deterministically, Mana remains 0, and persisted state matches the response.
-- **QA status:** no local checkout/test execution is claimed. Exact-head GitHub Actions for PR #44 is pending inspection; do not call the new integration coverage green until the actual workflow completes. No live HTTP, production D1 operation, or deployment was performed for this change.
-- **Mana status:** implementation remains COMPLETE / MERGED on main: Degen-only `maxMana`/bespoke `manaCost`, server-owned start/action state, persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, terminal victory/defeat handling, client/Worker math parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. PR #44 closes a missing Worker-level integration assertion; it changes no production behavior or prototype balance values.
-- **Battle authority / rewards:** main retains Worker-resolved victory, persisted-state bounds/terminal invariants, action compare-and-swap and stale-turn guards, owner/expiry checks, idempotent reward receipts and transient-D1 recovery, full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, and permit validity through event closure until permit expiry. No reward/economy code changed.
-- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; the existing CI harness applies the base schema and tracked migrations to isolated local D1. This PR adds no migration and performs no remote/destructive D1 operation.
-- **Legacy Mana branch check:** `sidekick/degen-mana-foundation-v01` exists but is 11 commits ahead and 45 behind main, with a divergent merge base; its implementation is stale/superseded. The current task was started from exact current main rather than cherry-picking it or competing with its old implementation.
-- **Miles blocker:** verified-platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not auto-link identities or bypass this gate; keep Shield/housing integration gated.
-- **Best next task:** verify exact-head CI for PR #44, then reassess the already-tested Underpass permit-issuance race fix in PR #43. Keep the auth release gate explicit; do not claim live platform verification.
-
----
-
 ## Latest run — 2026-10-24 (Mana zero-state canon regression coverage)
 
 - **Authoritative main SHA:** `daea488c89e7b10911dbc584302de867baf09f45`.
