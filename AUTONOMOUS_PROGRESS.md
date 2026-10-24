@@ -2,6 +2,18 @@
 
 Updated: 2026-10-24
 
+## Latest run — 2026-10-24 (production Pages CORS merged and Worker deployed)
+
+- **Authoritative main SHA at start:** `2a8c535d1c409586f1fb6a4181b949e4092fa86c`. **MERGED via PR #26** on 2026-10-24; main merge SHA is `76941c9b091bf45ceccb5e7c4c76450c4a69844b`.
+- **Feature delivered:** `wrangler.toml` now allowlists the exact production Pages origin `https://degen-8ze.pages.dev`; `worker/index.ts` only emits `Access-Control-Allow-Origin` for a non-empty exact allowlisted Origin, with no wildcard fallback. `tests/pages-cors.test.ts` covers production, legacy/local, unapproved preview, scheme mismatch, wildcard, originless requests, and JSON preflight headers. No game rules, D1 schema/migrations, economy, auth routes, or secrets changed by PR #26.
+- **QA / deployment evidence:** exact PR-head CI [40075971092](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40075971092) passed. Post-merge main CI [40078518443](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40078518443) passed; Pages preview [40078518407](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40078518407) succeeded; production Worker deployment [40078518430](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40078518430) succeeded. The deploy workflow applies the current schema and tracked D1 migrations before Worker deployment. A direct live HTTP health/CORS smoke could not run from this runner because its DNS lookup for the Worker hostname failed; no live request is claimed.
+- **Mana:** COMPLETE / MERGED on main—Degen-only `maxMana`/bespoke `manaCost`, server-owned battle Mana, rejection without mutation, exact deduction, zero-cost actions at zero, terminal victory/defeat, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no zero-Mana reversion.
+- **Battle authority / rewards:** main retains victory-only completion, persisted receipts and transient-failure recovery, action/completion concurrency coverage, reward tiers and shared level-up math, atomic defeat history, invalid/expired/terminal action guards, Underpass cycle reservation/rollover, and valid issued permits through event closure until expiry.
+- **D1 assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`. PR #26 added no migration. Production deploy used only the migrations already tracked on main; auth migration `0007_player_sessions.sql` remains unmerged on PR #21 and was not deployed by this run.
+- **Current feature branch / blocker:** PR #21 branch `automation/degen/identity-binding-immutability-v02` was reconciled to current main SHA `76941c9b091bf45ceccb5e7c4c76450c4a69844b` by merge commit `c0397c4ef31f9fc0d1ea57dca7a3d49a150de182`. Its exact-head CI is running; it remains unmerged. Approved production Telegram/Discord credentials/configuration, controlled live identity/session verification, and a Miles-approved recovery/link policy for unverified legacy identity collisions remain required. No auto-linking or auth bypass.
+- **Best next task:** finish exact-head CI on PR #21, resolve any authenticated browser/Worker integration failures, and keep the auth release gate explicit before Shield/housing integration.
+
+
 
 ## Latest run — 2026-10-24 (production Pages CORS PR reconciliation)
 
