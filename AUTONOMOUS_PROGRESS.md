@@ -17,6 +17,18 @@ Updated: 2026-10-24
 - World navigation is map/location based, not open-world traversal.
 - Server owns persistent progression, rewards, world events, permits, housing, and other economic truth.
 
+## Latest run — 2026-10-24 (PR #28 monster resource namespace guard continuation)
+
+- **Authoritative main SHA at sync:** `aa95eed8c751720b4c11c455f36008988fc657c3`; PR #27's mobile browser vertical-slice regression has been merged through the normal PR path. PR #29's expired/terminal permit-action regression is also merged at `2c7994b5ee793b201c1e3f4fdd301a61fe90be69`.
+- **PUSHED / PR #28 OPEN:** `automation/degen/monster-resource-canon-guard-v01`; implementation/test head `a2f2a3660fbb41e6d471e191d17705612c902a40`. This continuity update is documentation-only; no combat runtime, enemy stats, Degen kit, schema, migration, or deployment configuration changed.
+- **Task/files:** `src/domain/combatCanon.ts` adds a compile-time tripwire against universal enemy Mana-equivalent fields, and `tests/monster-resource-canon.test.ts` asserts the current enemy runtime object exposes none. Approved monster-specific signatures/statuses/moves remain possible. The test guard is narrow and does not alter gameplay or rebalance content.
+- **QA evidence:** exact implementation/test head passed CI run [40066979501](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40066979501), with 60/60 deterministic tests, Worker/D1 harnesses, build/type-check, and Worker dry-run. Continuity-only head `24f4ddbb406573bc00893deb0952fae0777edcec` passed [40067477317](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40067477317). Current docs-only head needs fresh exact-head CI; no new run is currently visible, so the prior green code/test head is the evidence being reported.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana`/costs, authoritative persisted state, zero-cost use at zero, rejection without mutation, client/Worker parity, cost-aware controls, migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no zero-Mana reversion remain verified.
+- **Battle authority / rewards:** PR #29 now covers expired-active permits, wrong-player use, and terminal-victory action rejection with persisted HP/Mana/enemy HP/status/turn assertions; PR #27 adds the real mobile-portrait browser vertical slice. Server-owned reward receipts/recovery, action CAS, level-up math, and event-cycle safety remain in main.
+- **D1 assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. No remote D1 operation, secret change, or production deployment occurred.
+- **Miles blocker:** PR #21 still requires approved production Discord/Telegram credentials/configuration and controlled live identity/session verification. Preserve legacy identity collisions and do not invent an account-link/merge policy. Keep Shield PR #20 and housing PR #8 gated until auth is integrated and their branches are reconciled.
+- **Best next task:** finish PR #28's clean merge path and exact-head CI, then keep the external verified-platform-auth gate explicit before Shield/housing work.
+
 ## Completed production milestones
 - Stability/Break removed from prototype combat engine, types, data, and battle UI.
 - Underpass combat actions are server-validated through `POST /api/battle/action`.
