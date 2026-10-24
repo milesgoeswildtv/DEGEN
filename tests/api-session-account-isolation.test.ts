@@ -291,3 +291,75 @@ test('a successful in-flight response from an old account is discarded after acc
     globalThis.fetch = oldFetch;
   }
 });
+
+test('a response body finishing after account switch is discarded', async () => {
+  const api = new GameApi();
+  const identityA = { platform: 'telegram' as const, displayName: 'Player A', telegramInitData: 'proof-A' };
+  const identityB = { platform: 'telegram' as const, displayName: 'Player B', telegramInitData: 'proof-B' };
+  const tokenA = 'E'.repeat(43);
+  const tokenB = 'F'.repeat(43);
+  const oldFetch = globalThis.fetch;
+  let bootstrapCount = 0;
+  let worldCalls = 0;
+  const worldTokens: string[] = [];
+  let markJsonRead!: () => void;
+  const jsonReadStarted = new Promise<void>((resolve) => { markJsonRead = resolve; });
+  let releaseJson!: (value: unknown) => void;
+  const pendingJson = new Promise<unknown>((resolve) => { releaseJson = resolve; });
+
+  globalThis.fetch = async (input, init) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    if (path === '/api/player/bootstrap') {
+      bootstrapCount += 1;
+      const isFirst = bootstrapCount === 1;
+      return jsonResponse({
+        player: { id: isFirst ? 'player-A' : 'player-B', displayName: isFirst ? 'Player A' : 'Player B' },
+        session: { token: isFirst ? tokenA : tokenB, expiresAtMs: Date.now() + 60_000 },
+      });
+    }
+    if (path === '/api/world/underpass') {
+      worldCalls += 1;
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      worldTokens.push(headers.authorization ?? '');
+      if (worldCalls === 1) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          body: null,
+          text: async () => '',
+          json: () => { markJsonRead(); return pendingJson; },
+        } as unknown as Response;
+      }
+      return jsonResponse({
+        eventKey: 'underpass', cycleId: 'cycle-B', phase: 'open',
+        opensAt: new Date(Date.now() - 1_000).toISOString(),
+        closesAt: new Date(Date.now() + 60_000).toISOString(),
+        fullRewardClears: 0, fullRewardLimit: 3, source: 'server',
+      });
+    }
+    throw new Error('Unexpected API request: ' + path);
+  };
+
+  try {
+    await api.bootstrap(identityA);
+    const staleWorld = api.getUnderpass('player-A');
+    await jsonReadStarted;
+
+    await api.bootstrap(identityB);
+    releaseJson({
+      eventKey: 'underpass', cycleId: 'cycle-A', phase: 'open',
+      opensAt: new Date(Date.now() - 1_000).toISOString(),
+      closesAt: new Date(Date.now() + 60_000).toISOString(),
+      fullRewardClears: 0, fullRewardLimit: 3, source: 'server',
+    });
+
+    await assert.rejects(staleWorld, /authenticated player changed while the request was in flight/i);
+    const currentWorld = await api.getUnderpass('player-B');
+    assert.equal((currentWorld as { cycleId: string }).cycleId, 'cycle-B');
+    assert.deepEqual(worldTokens, ['Bearer ' + tokenA, 'Bearer ' + tokenB]);
+    assert.equal(bootstrapCount, 2);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
