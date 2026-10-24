@@ -2,10 +2,23 @@
 
 Updated: 2026-10-24
 
+
+## Latest run — 2026-10-24 (production Pages CORS PR reconciliation)
+
+- **Authoritative main SHA at start:** `2a8c535d1c409586f1fb6a4181b949e4092fa86c`. Main CI run [40074321042](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40074321042) passed; Deploy Preview [40074320997](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40074320997) passed. This is preview evidence, not a production deployment.
+- **Current branch / PR:** continued `automation/degen/pages-cors-production-v02` / PR #26; implementation/test head `c75400781e6419414771832bd050583d7da3b38b`; continuity-only head `4654d43380ac886c326a24a8d072f9ace27ecd93` passed CI run [40075719790](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40075719790). No competing branch or direct `main` write. The branch contains current main `2a8c535d1c409586f1fb6a4181b949e4092fa86c` as a merge parent and has zero commits behind main.
+- **Scoped feature:** `wrangler.toml` adds the exact production Pages origin `https://degen-8ze.pages.dev`. `worker/index.ts` now emits `Access-Control-Allow-Origin` only for a non-empty exact allowlisted origin; missing/unlisted origins receive no grant and there is no wildcard fallback. `tests/pages-cors.test.ts` exercises the real Worker OPTIONS/health handlers for production, legacy/local, preview, scheme-mismatch, wildcard, and originless requests; it also asserts that JSON `content-type` is permitted by the preflight response. No auth route, game rules, D1 schema/migrations, economy, or secrets changed.
+- **QA evidence:** exact implementation/test head `c75400781e6419414771832bd050583d7da3b38b` passed CI run [40075534133](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40075534133): deterministic `npm test`, isolated Worker/D1 reward concurrency and transient recovery, Underpass cycle reservation/rollover, atomic defeat history, production build, Chromium mobile battle vertical slice, and `npm run check:worker` all passed. Cloudflare Pages preview build for the same head succeeded at `https://f76448b9.degen-8ze.pages.dev`; this is a preview, not a production deployment. Continuity-only head `4654d43380ac886c326a24a8d072f9ace27ecd93` passed exact-head CI [40075719790](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40075719790); no runtime or test code changed after implementation/test head `c75400781e6419414771832bd050583d7da3b38b`. This new documentation-only sync is not separately CI-verified. A complete local checkout is unavailable, so no separate local npm commands are claimed.
+- **Mana:** COMPLETE / MERGED on main—authoritative Degen-only Mana, persisted `player_mana`, exact cost deduction, rejection without turn/damage mutation, zero-cost use at zero, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no zero-Mana reversion.
+- **Battle authority / rewards:** current main includes Worker-resolved victory gating, persisted reward receipts/recovery, action/completion race coverage, invalid/expired/terminal-action guards, atomic defeat history, cycle reservation/rollover, and permit continuity across event closure until expiry.
+- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; this CORS slice adds no migration and runs no remote D1 operation. No production Worker deployment or secret/config mutation was performed.
+- **Miles blocker:** PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved path for preserved legacy identity collisions. Do not auto-link accounts or bypass the release gate. PR #20 Shield and PR #8 housing remain gated behind auth reconciliation.
+- **Best next task:** complete review/merge of PR #26 through the normal PR path after current-head checks; then reconcile PR #21 against the new CORS function while preserving its Authorization header and keep it gated until approved production credentials, live identity/session verification, and a legacy-collision recovery policy are in place.
+
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
 - Integration branch: `main`
-- Authoritative main SHA at this run: `d12df26b164dcd08f7b9452632e3f307e9e985a2`.
+- Authoritative main SHA at this run: `2a8c535d1c409586f1fb6a4181b949e4092fa86c`.
 - Stack: TypeScript + Vite + Phaser + DOM/CSS; Cloudflare Worker + D1.
 - Core vertical slice: Map -> Home -> Underpass -> Battle -> Loot -> Home.
 
