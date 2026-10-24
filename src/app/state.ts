@@ -92,6 +92,10 @@ export class PlayerStore {
       : undefined;
     this.state = placements ? { ...player, housing: { ...player.housing, placements } } : player;
     this.commitLocal();
+
+    // If this account has an unsaved queued layout, retry it when the account
+    // becomes active again instead of waiting for an unrelated future edit.
+    if (pending) void this.persistHousing();
   }
 
   applyReward(reward: BattleReward): void {
