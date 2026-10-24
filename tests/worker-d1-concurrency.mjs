@@ -19,16 +19,16 @@ function cli(args) {
   const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
 }
-async function complete(permitId, playerId = 'integration-player') {
+async function complete(permitId, playerId = 'integration-player', extraFields = {}) {
   const r = await fetch(base + '/api/battle/complete', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId, permitId }),
+    body: JSON.stringify({ ...extraFields, playerId, permitId }),
   });
   return { status: r.status, data: await r.json() };
 }
-async function eventuallyComplete(id) {
+async function eventuallyComplete(id, extraFields = {}) {
   for (let n = 0; n < 10; n++) {
-    const r = await complete(id);
+    const r = await complete(id, 'integration-player', extraFields);
     if (r.status === 200) return r.data;
     if (r.status !== 409 && r.status !== 500) throw new Error(id + ': ' + JSON.stringify(r));
     await sleep(100 + 50 * n);
@@ -125,6 +125,30 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  // Client claims cannot turn an active permit into a victory or grant a reward.
+  const forgedActiveCompletion = await complete('permit-mana-zero', 'integration-player', {
+    victory: true,
+    status: 'victory',
+    playerHp: 0,
+    playerMana: 999,
+    enemyHp: 0,
+    turnCount: 999,
+    xp: 999999,
+    currency: 999999,
+    items: ['admin-item'],
+    reward: { xp: 999999, currency: 999999, items: ['admin-item'], tier: 'full' },
+  });
+  assert.equal(forgedActiveCompletion.status, 409,
+    'client-supplied victory and reward fields must not complete an active permit');
+  assert.equal(forgedActiveCompletion.data.error, 'Battle is not an authoritative victory.');
+  assertPersistedPermitState('permit-mana-zero', {
+    status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
+  });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-mana-zero:victory','permit-mana-zero:defeat')"), 0,
+    'forged completion must not write victory or defeat history');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-mana-zero' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
+    'forged completion must not reserve or claim rewards');
 
   const invalidManaResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -481,15 +505,58 @@ try {
 
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
-  const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
-  assert.equal(a.reward.xp, 75);
+  const forgedVictoryRewardPayload = {
+    victory: false,
+    status: 'defeat',
+    playerHp: 1,
+    playerMana: 999,
+    enemyHp: 1,
+    turnCount: 999,
+    xp: 999999,
+    currency: 999999,
+    items: ['admin-item'],
+    reward: { xp: 999999, currency: 999999, items: ['admin-item'], tier: 'reduced' },
+  };
+  const [a, b] = await Promise.all([
+    eventuallyComplete('permit-a', forgedVictoryRewardPayload),
+    eventuallyComplete('permit-b'),
+  ]);
+  assert.deepEqual({
+    xp: a.reward.xp,
+    currency: a.reward.currency,
+    tier: a.reward.tier,
+    items: a.reward.items,
+    furniture: a.reward.furniture,
+  }, {
+    xp: 75,
+    currency: 30,
+    tier: 'full',
+    items: ['underpass-scrap'],
+    furniture: ['tunnel-trophy'],
+  }, 'the Worker must return the persisted canonical reward, ignoring client reward fields');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-a' AND reward_xp=75 AND reward_currency=30 AND reward_tier='full'"), 1,
+    'client reward fields must not alter the stored reward receipt');
   assert.equal(b.reward.xp, 75);
   // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET player_mana = 13 WHERE id = 'permit-a'"]);
-  const replayResponse = await complete('permit-a');
-  assert.equal(replayResponse.status, 200, 'an already-awarded receipt must remain idempotent despite a later invalid snapshot');
+  const replayResponse = await complete('permit-a', 'integration-player', {
+    victory: false,
+    status: 'defeat',
+    playerHp: 1,
+    playerMana: 999,
+    enemyHp: 1,
+    turnCount: 999,
+    xp: 0,
+    currency: 0,
+    items: [],
+    reward: { xp: 0, currency: 0, items: [], tier: 'reduced' },
+  });
+  assert.equal(replayResponse.status, 200,
+    'an already-awarded receipt must remain idempotent despite later invalid state and hostile client reward fields');
   const replay = replayResponse.data;
+  assert.deepEqual(replay.reward, a.reward,
+    'an idempotent replay must return the original canonical receipt, not caller-supplied reward values');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-a:victory'"), 1,
     'replaying an awarded receipt must not create a second victory history row');
   assert.equal(replay.player.level, 2);
