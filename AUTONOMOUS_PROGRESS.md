@@ -1,3 +1,18 @@
+## Latest run — 2026-10-24 (Worker Mana rejection atomicity follow-up)
+
+- **Authoritative main SHA:** `0ee2ae8f1d2cbdfca90a387c0afce0edd6ac5795`.
+- **PUSHED / PR #44 OPEN:** `automation/degen/mana-worker-rejection-atomicity-v01`; implementation/test commit `edf4faf09abbb9957747d6aeb5bc10d181866423`. PR #44 is intentionally test-only; its branch does not change production combat, rewards, D1 schema/migrations, or deployment configuration. No direct-main write; this task is not merged/deployed.
+- **Files changed for PR #44:** `tests/worker-d1-concurrency.mjs` seeds a valid active permit at 0 Mana, verifies a paid `crack` request returns HTTP 409 with unchanged authoritative state and no persisted HP/Mana/enemy HP/turn-count, battle-history, or reward-claim mutation, then verifies zero-cost `slash` remains usable at 0 Mana and persists exactly one normal turn.
+- **QA status:** GitHub Actions exact-head CI was queued/in progress at the time of this note; no pass is claimed until the current PR head's CI finishes. A local clone attempt could not resolve `github.com`, so no local `npm test`, build, Worker dry-run, or browser run is claimed. The configured CI workflow runs deterministic tests, isolated Worker/D1 integration, production build, Chromium mobile vertical slice, and Wrangler dry-run.
+- **Mana status:** implementation is COMPLETE / MERGED on main. The remaining gap addressed here is an end-to-end Worker/D1 assertion for the unaffordable-action rejection path at a valid 0-Mana state; production behavior itself is unchanged.
+- **Battle authority / rewards:** existing main coverage retains server-resolved victory, persisted-state validation, action CAS/stale-turn guards, owner/expiry checks, idempotent receipts/recovery, reward tiers, level-up math, concurrent action/completion checks, atomic defeat history, and valid issued permits through event closure until expiry.
+- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; CI applies base schema then tracked migrations to isolated local D1. No new migration, remote D1 operation, or Worker deployment is part of PR #44.
+- **Branch authority:** legacy `sidekick/degen-mana-foundation-v01` remains divergent (11 commits ahead, 45 behind main); do not cherry-pick its stale implementation over main.
+- **Miles blocker:** verified-platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not auto-link identities or bypass this gate; keep Shield/housing integration gated.
+- **Best next task:** verify the latest exact-head CI for PR #44, then reassess PR #43's already-tested Underpass permit-issuance race fix; keep platform-auth release gates explicit.
+
+---
+
 ## Latest run — 2026-10-24 (Underpass permit issuance closure-race guard)
 
 - **Authoritative main SHA at branch creation:** `0ee2ae8f1d2cbdfca90a387c0afce0edd6ac5795`. PR #42 (zero-Mana canon/UI regression tests) was merged through its PR; post-merge main CI run [40112308625](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40112308625) passed. No direct-main write.
