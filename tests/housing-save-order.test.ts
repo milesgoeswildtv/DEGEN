@@ -243,7 +243,7 @@ test('queued housing edits for separate accounts only save under the active acco
     [placement.furnitureId, placement.x, placement.y]).sort(),
   [['starter-bed', 1, 1], ['starter-chair', 2, 2], ['starter-lamp', 3, 3]],
   'reactivating an account must restore its newest queued layout');
-  store.placeFurniture('starter-rug', 6, 6);
+  store.placeFurniture('starter-rug', 6, 5);
 
   calls[0]!.resolve();
   await flush();
@@ -252,7 +252,7 @@ test('queued housing edits for separate accounts only save under the active acco
     'the queue must not send the second account snapshot with the first account active');
   assert.deepEqual(calls[1]!.housing.placements.map((placement: any) =>
     [placement.furnitureId, placement.x, placement.y]).sort(),
-  [['starter-bed', 1, 1], ['starter-chair', 2, 2], ['starter-lamp', 3, 3], ['starter-rug', 6, 6]]);
+  [['starter-bed', 1, 1], ['starter-chair', 2, 2], ['starter-lamp', 3, 3], ['starter-rug', 6, 5]]);
   calls[1]!.resolve();
   await flush();
   assert.equal(calls.length, 2, 'the second account snapshot stays queued while the first account is active');
@@ -263,13 +263,13 @@ test('queued housing edits for separate accounts only save under the active acco
     [placement.furnitureId, placement.x, placement.y]).sort(),
   [['starter-chair', 4, 4], ['starter-lamp', 5, 5]],
   'the second account must retain its own queued layout');
-  store.placeFurniture('starter-rug', 6, 6);
+  store.placeFurniture('starter-rug', 6, 5);
   await flush();
   assert.equal(calls.length, 3);
   assert.equal(calls[2]!.playerId, secondPlayerId);
   assert.deepEqual(calls[2]!.housing.placements.map((placement: any) =>
     [placement.furnitureId, placement.x, placement.y]).sort(),
-  [['starter-chair', 4, 4], ['starter-lamp', 5, 5], ['starter-rug', 6, 6]]);
+  [['starter-chair', 4, 4], ['starter-lamp', 5, 5], ['starter-rug', 6, 5]]);
   calls[2]!.resolve();
   await flush();
   assert.equal(calls.length, 3);
