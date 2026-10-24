@@ -316,3 +316,34 @@ test('reactivating an account retries its queued housing layout without requirin
   calls[1]!.resolve();
   await flush();
 });
+
+
+test('reactivation during an in-flight housing save retries once if that save fails', async () => {
+  const calls: Array<{ playerId: string; housing: any; resolve: () => void; reject: (error: Error) => void }> = [];
+  const store = makeStore((playerId, housing) => new Promise<void>((resolve, reject) => {
+    calls.push({ playerId, housing: structuredClone(housing), resolve, reject });
+  }));
+  const firstPlayerId = store.snapshot.id;
+
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(calls.length, 1);
+
+  store.replaceFromServer({ ...store.snapshot, id: 'second-account',
+    housing: { inventory: ['starter-lamp'], placements: [] } });
+  store.replaceFromServer({ ...store.snapshot, id: firstPlayerId,
+    housing: { inventory: ['starter-bed', 'starter-chair', 'starter-lamp'], placements: [] } });
+  assert.ok(store.snapshot.housing.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 2 && placement.y === 2));
+
+  calls[0]!.reject(new Error('original save failed after reactivation'));
+  await flush();
+  assert.equal(calls.length, 2, 'reactivation during the in-flight request should permit one retry');
+  assert.equal(calls[1]!.playerId, firstPlayerId);
+  assert.ok(calls[1]!.housing.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 2 && placement.y === 2));
+
+  calls[1]!.reject(new Error('retry also failed'));
+  await flush();
+  assert.equal(calls.length, 2, 'a repeated outage must not spin in a tight retry loop');
+});
