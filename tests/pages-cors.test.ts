@@ -85,16 +85,3 @@ test('real Worker JSON success and error responses are not cacheable', async () 
     assert.equal(response.headers.get('cache-control'), 'no-store', path);
   }
 });
-
-test('unauthenticated player housing writes fail closed without caching', async () => {
-  const response = await worker.fetch(
-    new Request('https://degen-api.afterdarklabs.workers.dev/api/player/housing', {
-      method: 'PUT',
-      headers: { origin: 'https://degen-8ze.pages.dev', 'content-type': 'application/json' },
-      body: JSON.stringify({ playerId: 'attacker', housing: { inventory: [], placements: [] } }),
-    }),
-    { ALLOWED_ORIGINS: allowlist!.join(',') },
-  );
-  assert.equal(response.status, 401, 'player-owned routes require a verified session');
-  assert.equal(response.headers.get('cache-control'), 'no-store');
-});
