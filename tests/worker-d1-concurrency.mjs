@@ -152,16 +152,26 @@ try {
       eventKey: 'underpass',
       cycleId: 'integration-cycle',
       encounterKey: 'tunnel-maw',
+      // A forged start snapshot must be ignored; the Worker owns every combat field.
+      playerHp: 1,
+      playerMana: 0,
+      enemyHp: 1,
+      turnCount: 999,
+      status: 'victory',
     }),
   });
   const started = await startResponse.json();
   assert.equal(startResponse.status, 200, JSON.stringify(started));
   assert.equal(started.initialState.permitId, started.permitId);
   assert.equal(started.initialState.status, 'active');
-  assert.ok(Number.isSafeInteger(started.initialState.playerHp) && started.initialState.playerHp > 0);
-  assert.ok(Number.isSafeInteger(started.initialState.playerMana) && started.initialState.playerMana >= 0);
-  assert.ok(Number.isSafeInteger(started.initialState.enemyHp) && started.initialState.enemyHp > 0);
-  assert.equal(started.initialState.turnCount, 0);
+  assert.ok(Number.isSafeInteger(started.initialState.playerHp) && started.initialState.playerHp > 1,
+    'forged playerHp=1 must not initialize the server-owned encounter');
+  assert.ok(Number.isSafeInteger(started.initialState.playerMana) && started.initialState.playerMana > 0,
+    'forged playerMana=0 must not initialize the server-owned encounter');
+  assert.ok(Number.isSafeInteger(started.initialState.enemyHp) && started.initialState.enemyHp > 1,
+    'forged enemyHp=1 must not initialize the server-owned encounter');
+  assert.equal(started.initialState.turnCount, 0, 'forged turnCount=999 must be ignored');
+  assert.equal(started.initialState.status, 'active', 'forged victory status must be ignored');
 
   const firstActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
