@@ -237,6 +237,30 @@ try {
   assertPersistedPermitState('permit-insufficient-mana', {
     status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
   });
+
+  // Replaying the accepted action with its original turn must not apply damage twice.
+  const duplicateActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-insufficient-mana',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const duplicateAction = await duplicateActionResponse.json();
+  assert.equal(duplicateActionResponse.status, 409);
+  assert.equal(duplicateActionResponse.headers.get('cache-control'), 'no-store');
+  assert.equal(duplicateAction.error, 'Stale battle turn.');
+  assert.deepEqual(duplicateAction.battleState, {
+    permitId: 'permit-insufficient-mana', status: 'active',
+    playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
+  assertPersistedPermitState('permit-insufficient-mana', {
+    status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
+
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-insufficient-mana:victory','permit-insufficient-mana:defeat')"), 0,
     'a non-terminal zero-cost action must not create battle history');
   await assertInvalidActionState('permit-invalid-negative-mana', { status: 'active', playerHp: 80, playerMana: -1, enemyHp: 92, turnCount: 0 });
