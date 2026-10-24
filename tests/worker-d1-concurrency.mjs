@@ -47,6 +47,7 @@ function assertPersistedPermitState(permitId, state) {
   const query = `SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
     AND completed_at IS NULL AND battle_status = '${state.status}'
     AND player_hp = ${state.playerHp} AND player_mana = ${state.playerMana}
+    AND player_shield = ${state.playerShield ?? 0}
     AND enemy_hp = ${state.enemyHp} AND turn_count = ${state.turnCount}`;
   assert.equal(countRows(query), 1, `persisted Worker state must match the authoritative snapshot for ${permitId}`);
 }
@@ -205,6 +206,9 @@ try {
     status: firstAction.status,
     playerHp: firstAction.playerHp,
     playerMana: firstAction.playerMana,
+    playerShield: firstAction.playerShield,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: firstAction.enemyHp,
     turnCount: firstAction.turnCount,
   });
@@ -244,7 +248,7 @@ try {
   assert.equal(unaffordableResponse.status, 409, 'an unaffordable ability must reject');
   assert.deepEqual(unaffordable.battleState, {
     permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
-    enemyHp: 50, turnCount: 0,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 50, turnCount: 0,
   });
   assertPersistedPermitState('permit-mana-zero', unaffordable.battleState);
 

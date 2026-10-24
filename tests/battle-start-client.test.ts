@@ -29,7 +29,7 @@ const validPermit = () => {
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     initialState: {
       permitId, status: 'active', playerHp: TEST_DEGEN.maxHp,
-      playerMana: 0, enemyHp: TUNNEL_MAW.maxHp, turnCount: 0,
+      playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: TUNNEL_MAW.maxHp, turnCount: 0,
     },
   };
 };
@@ -79,7 +79,7 @@ test('battle action sends the displayed authoritative turn as a replay precondit
   globalThis.fetch = async (_input, init) => {
     sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
     return new Response(JSON.stringify({
-      permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0, enemyHp: 20, turnCount: 4,
+      permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 20, turnCount: 4,
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   try {
@@ -95,7 +95,7 @@ test('battle action sends the displayed authoritative turn as a replay precondit
 test('battle action conflicts preserve the Worker authoritative state for safe client recovery', async () => {
   const oldFetch = globalThis.fetch;
   const battleState = {
-    permitId: 'permit-1', status: 'active', playerHp: 54, playerMana: 0, enemyHp: 13, turnCount: 2,
+    permitId: 'permit-1', status: 'active', playerHp: 54, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 13, turnCount: 2,
   };
   globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Stale battle turn.', battleState }), {
     status: 409, headers: { 'content-type': 'application/json' },
@@ -119,6 +119,7 @@ test('battle action conflicts preserve the Worker authoritative state for safe c
 test('successful battle actions reject malformed or out-of-turn Worker state before presentation', async () => {
   const valid = {
     permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
     enemyHp: 20, turnCount: 4,
   };
   const invalidResponses = [
@@ -133,6 +134,10 @@ test('successful battle actions reject malformed or out-of-turn Worker state bef
     { ...valid, status: 'defeat', playerHp: 0, enemyHp: 0 },
     { ...valid, status: 'unknown' },
     { ...valid, turnCount: Number.MAX_SAFE_INTEGER + 1 },
+    { ...valid, retaliationDamage: -1 },
+    { ...valid, retaliationDamage: TUNNEL_MAW.damage + 1 },
+    { ...valid, retaliationDamage: 0.5 },
+    { ...valid, status: 'victory', enemyHp: 0, retaliationDamage: 1 },
   ];
 
   for (const responseBody of invalidResponses) {
@@ -154,8 +159,8 @@ test('successful battle actions reject malformed or out-of-turn Worker state bef
 
 test('successful terminal battle actions accept only Worker-consistent victory and defeat states', async () => {
   const terminalStates = [
-    { permitId: 'permit-1', status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 1 },
-    { permitId: 'permit-1', status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 20, turnCount: 1 },
+    { permitId: 'permit-1', status: 'victory', playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 0, turnCount: 1 },
+    { permitId: 'permit-1', status: 'defeat', playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 20, turnCount: 1 },
   ];
 
   for (const state of terminalStates) {

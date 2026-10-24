@@ -137,6 +137,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
     <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
     <div class="battle-controls">
       <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
+      <div id="battle-shield" class="battle-shield" aria-live="polite">SHIELD 0</div>
       <div class="ability-grid">
         ${degen.abilities.map((ability) => `
           <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
@@ -157,6 +158,9 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   if (!log) return;
 
   log.innerHTML = snapshot.log.map((entry) => `<div>${escapeHtml(entry)}</div>`).join('');
+
+  const shield = document.querySelector<HTMLElement>('#battle-shield');
+  if (shield) shield.textContent = `SHIELD ${snapshot.playerShield}`;
 
   document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
     const manaCost = Number(button.dataset.manaCost ?? 0);

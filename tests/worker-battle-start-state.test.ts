@@ -62,7 +62,7 @@ function request(cycleId = 'open-cycle') {
   });
 }
 
-test('battle start returns exactly the authoritative HP/Mana state it persists on the permit', async () => {
+test('battle start returns exactly the authoritative HP/Mana/Shield state it persists on the permit', async () => {
   const cycle = {
     id: 'open-cycle',
     event_key: 'underpass',
@@ -76,7 +76,7 @@ test('battle start returns exactly the authoritative HP/Mana state it persists o
     permitId: string;
     initialState: {
       permitId: string; status: string; playerHp: number; playerMana: number;
-      enemyHp: number; turnCount: number;
+      playerShield: number; shieldAbsorbed: number; retaliationDamage: number; enemyHp: number; turnCount: number;
     };
   };
 
@@ -86,6 +86,9 @@ test('battle start returns exactly the authoritative HP/Mana state it persists o
     status: 'active',
     playerHp: TEST_DEGEN.maxHp,
     playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   });

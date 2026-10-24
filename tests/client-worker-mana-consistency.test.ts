@@ -25,6 +25,9 @@ const { BattleEngine } = runInNewContext(
       status: 'active';
       playerHp: number;
       playerMana: number;
+      playerShield: number;
+      shieldAbsorbed: number;
+      retaliationDamage: number;
       enemyHp: number;
       turnCount: number;
     },
@@ -58,6 +61,9 @@ test('client battle engine and shared Worker resolver agree on one paid turn', (
     status: 'active',
     playerHp: input.playerHp,
     playerMana: input.playerMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: input.enemyHp,
     turnCount: 0,
   });
