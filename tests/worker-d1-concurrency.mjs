@@ -426,7 +426,14 @@ try {
   const [a, b] = await Promise.all([eventuallyComplete('permit-a'), eventuallyComplete('permit-b')]);
   assert.equal(a.reward.xp, 75);
   assert.equal(b.reward.xp, 75);
-  const replay = await eventuallyComplete('permit-a');
+  // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_mana = 13 WHERE id = 'permit-a'"]);
+  const replayResponse = await complete('permit-a');
+  assert.equal(replayResponse.status, 200, 'an already-awarded receipt must remain idempotent despite a later invalid snapshot');
+  const replay = replayResponse.data;
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-a:victory'"), 1,
+    'replaying an awarded receipt must not create a second victory history row');
   assert.equal(replay.player.level, 2);
   assert.equal(replay.player.xp, 50);
   assert.equal(replay.player.currency, 60);
