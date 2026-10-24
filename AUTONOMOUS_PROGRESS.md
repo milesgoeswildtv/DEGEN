@@ -26,6 +26,18 @@ Updated: 2026-10-24
 - D1 migration for authoritative battle Mana/state is tracked and deploy ordering applies schema + migrations before Worker code.
 - Client and Worker share one deterministic turn resolver.
 
+## Latest run — 2026-10-24 (PR #27 browser vertical-slice QA continuation)
+
+- **Authoritative main SHA at sync:** `2c7994b5ee793b201c1e3f4fdd301a61fe90be69`; PR #29 was merged through the normal PR path with no Worker/runtime or D1 change.
+- **PUSHED / PR #27 OPEN:** `automation/degen/mana-browser-vertical-slice-v01`; code/test head `bb73366e1ce62d8526bb07e8e1538d07c06094c1`. This branch's current continuity commit is docs-only; the exact current-head CI lookup is not yet returning a run, so the older green run is not being misrepresented as current-head proof.
+- **Task/files:** existing `tests/browser-battle-vertical-slice.mjs` exercises Map → Home → Underpass → manifested Degen battle → Worker-settled reward → Home trophy in headless Chromium with local Vite/Wrangler/D1. It checks actual Phaser-rendered Mana from 12/12 to 8/12, 4/12, 0/12 after accepted paid turns and confirms MANIFESTED remains rendered at zero. `.github/workflows/ci.yml` makes the test part of required CI. No gameplay code changed in this continuity update.
+- **QA evidence:** code/test head `bb73366e1ce62d8526bb07e8e1538d07c06094c1` passed exact-head CI run [40065568637](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40065568637); follow-up continuity head `06f690ac385e0fd21c4903ed3359a4ec3a4d1f28` passed [40065818291](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40065818291). Those runs passed deterministic tests, local Worker/D1 harnesses, production build, Chromium vertical slice, and Worker dry-run. Fresh CI is still required for the current continuity-only head before merging.
+- **Mana:** COMPLETE / MERGED on main—Degen max Mana/costs, authoritative persisted state, reject-without-mutation, exact deduction, zero-cost at zero, terminal-turn behavior, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`; no monster Mana and no zero-Mana reversion.
+- **Battle authority / rewards:** server-owned action CAS, victory-only completion, persisted receipts/recovery, reward tiers/level-up math, action/completion races, atomic defeat history, cycle reservation/rollover, and permit continuity through event closure until expiry remain in main. PR #29's expired-active, wrong-owner, and terminal-action persisted-state assertions are merged.
+- **D1 assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. No remote D1 operation, secret change, or production deployment occurred in this run.
+- **Miles blocker:** PR #21 still requires approved production Discord/Telegram credentials/configuration and controlled live identity/session verification. Preserve legacy identity collisions and do not invent an account-link/merge policy. Keep Shield PR #20 and housing PR #8 gated until auth is integrated and branches are reconciled.
+- **Best next task:** finish exact-head CI and merge PR #27's browser vertical-slice regression through the normal PR path, then sync and review PR #28's monster resource namespace guard against the resulting main SHA.
+
 ## Historical PR #5 slice — merged on 2026-10-08
 - PR #5: `automation/degen/reward-authority-v22` -> `main`.
 - Reward lifecycle is persisted as pending/claiming/awarded with a 60-second stale-claim lease.
