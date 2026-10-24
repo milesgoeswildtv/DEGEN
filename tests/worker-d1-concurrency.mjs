@@ -172,6 +172,7 @@ try {
     'forged enemyHp=1 must not initialize the server-owned encounter');
   assert.equal(started.initialState.turnCount, 0, 'forged turnCount=999 must be ignored');
   assert.equal(started.initialState.status, 'active', 'forged victory status must be ignored');
+  assertPersistedPermitState(started.permitId, started.initialState);
 
   const firstActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
