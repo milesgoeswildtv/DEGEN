@@ -19,8 +19,12 @@ const handleStartBattle = runInNewContext(handlerSource, {
   crypto: globalThis.crypto, Request, Response, URL, console, Uint32Array,
 }) as (request: Request, env: { DB: unknown }) => Promise<Response>;
 
-function makeEnv(cycle: { id: string; event_key: string; opens_at: string; closes_at: string }) {
+function makeEnv(
+  cycle: { id: string; event_key: string; opens_at: string; closes_at: string },
+  permitInsertAllowed = true,
+) {
   const inserts: unknown[][] = [];
+  const attempts: Array<{ sql: string; params: unknown[] }> = [];
   const db = {
     prepare(sql: string) {
       return {
@@ -31,22 +35,21 @@ function makeEnv(cycle: { id: string; event_key: string; opens_at: string; close
         bind(...params: unknown[]) {
           return {
             first: async () => {
+              if (sql.includes('INSERT INTO battle_permits')) {
+                attempts.push({ sql, params });
+                if (!permitInsertAllowed) return null;
+                inserts.push(params);
+                return { id: params[0] };
+              }
               if (sql.includes('FROM world_event_cycles')) return cycle;
               throw new Error('Unexpected bound Worker query: ' + sql);
-            },
-            run: async () => {
-              if (!sql.includes('INSERT INTO battle_permits')) {
-                throw new Error('Unexpected Worker write: ' + sql);
-              }
-              inserts.push(params);
-              return { success: true };
             },
           };
         },
       };
     },
   };
-  return { env: { DB: db }, inserts };
+  return { env: { DB: db }, inserts, attempts };
 }
 
 function request(cycleId = 'open-cycle', extraFields: Record<string, unknown> = {}) {
@@ -103,6 +106,24 @@ test('battle start ignores forged client combat state and returns exactly the De
     ['player-1', cycle.id, TUNNEL_MAW.id, result.initialState.playerHp,
       result.initialState.playerMana, result.initialState.enemyHp],
   );
+  assert.match(attempts[0]!.sql, /WHERE EXISTS/);
+  assert.match(attempts[0]!.sql, /julianday\(opens_at\) <= julianday\('now'\)/);
+  assert.match(attempts[0]!.sql, /julianday\(closes_at\) > julianday\('now'\)/);
+});
+
+test('battle start rejects a permit if the cycle closes before the conditional insert succeeds', async () => {
+  const cycle = {
+    id: 'open-cycle',
+    event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const { env, inserts, attempts } = makeEnv(cycle, false);
+  const response = await handleStartBattle(request(cycle.id), env);
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, 'The Underpass is sealed.');
+  assert.equal(attempts.length, 1);
+  assert.equal(inserts.length, 0);
 });
 
 test('monster definitions do not acquire a Mana resource namespace', () => {
