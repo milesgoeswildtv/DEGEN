@@ -24,6 +24,8 @@ async function complete(permitId, playerId = 'integration-player', extraFields =
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...extraFields, playerId, permitId }),
   });
+  assert.equal(r.headers.get('cache-control'), 'no-store',
+    '/api/battle/complete success and error responses must not be cached');
   return { status: r.status, data: await r.json() };
 }
 async function eventuallyComplete(id, extraFields = {}) {
@@ -370,6 +372,8 @@ try {
   });
   const started = await startResponse.json();
   assert.equal(startResponse.status, 200, JSON.stringify(started));
+  assert.equal(startResponse.headers.get('cache-control'), 'no-store',
+    'server-issued battle permit snapshots must not be cached');
   assert.equal(started.initialState.permitId, started.permitId);
   assert.equal(started.initialState.status, 'active');
   assert.ok(Number.isSafeInteger(started.initialState.playerHp) && started.initialState.playerHp > 1,
@@ -399,6 +403,8 @@ try {
   });
   const firstAction = await firstActionResponse.json();
   assert.equal(firstActionResponse.status, 200, JSON.stringify(firstAction));
+  assert.equal(firstActionResponse.headers.get('cache-control'), 'no-store',
+    'authoritative battle action snapshots must not be cached');
   assert.equal(firstAction.permitId, started.permitId);
   assert.equal(firstAction.playerMana, started.initialState.playerMana - 4);
   assert.equal(firstAction.playerHp, started.initialState.playerHp - 10);
@@ -419,6 +425,8 @@ try {
   });
   const staleReplay = await staleReplayResponse.json();
   assert.equal(staleReplayResponse.status, 409, 'replaying the observed turn must not apply a second action');
+  assert.equal(staleReplayResponse.headers.get('cache-control'), 'no-store',
+    'authoritative conflict snapshots must not be cached');
   assert.deepEqual(staleReplay.battleState, {
     permitId: started.permitId,
     status: firstAction.status,
@@ -461,6 +469,8 @@ try {
   });
   const unaffordable = await unaffordableResponse.json();
   assert.equal(unaffordableResponse.status, 409, 'an unaffordable ability must reject');
+  assert.equal(unaffordableResponse.headers.get('cache-control'), 'no-store',
+    'unaffordable-action state and error responses must not be cached');
   assert.deepEqual(unaffordable.battleState, {
     permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
     enemyHp: 50, turnCount: 0,
@@ -479,6 +489,8 @@ try {
   });
   const freeAtZero = await freeAtZeroResponse.json();
   assert.equal(freeAtZeroResponse.status, 200, JSON.stringify(freeAtZero));
+  assert.equal(freeAtZeroResponse.headers.get('cache-control'), 'no-store',
+    'zero-Mana action results must not be cached');
   assert.equal(freeAtZero.playerMana, 0);
   assert.equal(freeAtZero.turnCount, 1, 'rejected paid action must not advance the turn');
   assert.equal(freeAtZero.playerHp, 70, 'only the accepted free action may apply retaliation');

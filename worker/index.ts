@@ -31,7 +31,7 @@ const corsHeaders = (request: Request, env: Env): HeadersInit => {
 const json = (request: Request, env: Env, data: unknown, status = 200): Response =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...corsHeaders(request, env) },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...corsHeaders(request, env) },
   });
 
 const fail = (request: Request, env: Env, message: string, status = 400): Response =>
@@ -224,7 +224,7 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)
       .bind(item.instanceId, input.playerId, item.furnitureId, item.x, item.y, item.rotation ?? 0)),
   ]);
-  return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+  return new Response(null, { status: 204, headers: { 'cache-control': 'no-store', ...corsHeaders(request, env) } });
 }
 
 async function handleStartBattle(request: Request, env: Env): Promise<Response> {
