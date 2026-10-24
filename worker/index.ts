@@ -386,16 +386,17 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   const input = await body<{ playerId?: string; permitId?: string }>(request);
   if (!input.playerId || !input.permitId) return fail(request, env, 'playerId and permitId are required');
 
-  type ReceiptRow = BattlePermitStateRow & {
-    reward_state: 'pending' | 'claiming' | 'awarded';
+  type ReceiptRow = {
+    cycle_id: string; encounter_key: string; reward_state: 'pending' | 'claiming' | 'awarded';
     reward_clear_number: number | null; reward_xp: number | null; reward_currency: number | null;
     reward_tier: 'full' | 'reduced' | null;
   };
+  type ValidatedReceiptRow = BattlePermitStateRow & ReceiptRow;
   const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana,
       enemy_hp, battle_status, turn_count, reward_state, reward_clear_number,
       reward_xp, reward_currency, reward_tier
     FROM battle_permits WHERE id = ? AND player_id = ? AND battle_status = 'victory'`)
-    .bind(input.permitId, input.playerId).first<ReceiptRow>();
+    .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
 
   const respond = async (row: ReceiptRow) => {
