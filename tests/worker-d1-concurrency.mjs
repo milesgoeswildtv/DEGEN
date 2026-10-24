@@ -69,6 +69,7 @@ try {
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
+      ('permit-invalid-victory-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,13,0,3),
       ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,100,0),
@@ -111,6 +112,20 @@ try {
   assertPersistedPermitState('permit-invalid-mana', {
     status: 'active', playerHp: 80, playerMana: 13, enemyHp: 92, turnCount: 0,
   });
+
+  const invalidVictory = await complete('permit-invalid-victory-mana');
+  assert.equal(invalidVictory.status, 409, 'a victory with out-of-range persisted Mana must not award rewards');
+  assert.equal(invalidVictory.data.error, 'Battle state is invalid.');
+  assertPersistedPermitState('permit-invalid-victory-mana', {
+    status: 'victory', playerHp: 70, playerMana: 13, enemyHp: 0, turnCount: 3,
+  });
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = 'permit-invalid-victory-mana' AND reward_state = 'pending'
+      AND reward_clear_number IS NULL AND completed_at IS NULL`), 1,
+    'invalid victory must leave its reward claim pending and untouched');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM characters
+    WHERE player_id = 'integration-player' AND xp = 0 AND currency = 0`), 1,
+    'invalid victory must not grant XP or currency');
 
   const expiredActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
