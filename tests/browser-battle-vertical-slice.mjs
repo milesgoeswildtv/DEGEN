@@ -140,13 +140,13 @@ try {
     })()`);
     assert.equal(dimensions.width, 320, route + ' compact viewport width');
     assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 2, mobile: true });
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true });
   };
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   // Exercise the entire Worker-backed slice in mobile portrait; not physical-device QA.
   await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 2, mobile: true,
+    width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true,
   });
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
