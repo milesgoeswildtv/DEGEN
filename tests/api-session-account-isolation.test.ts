@@ -96,6 +96,54 @@ test('housing saves reject a stale queued owner instead of writing under the cur
   }
 });
 
+test('failed reauthentication clears the stale in-memory session owner', async () => {
+  const api = new GameApi();
+  const oldFetch = globalThis.fetch;
+  let bootstrapCount = 0;
+  let housingRequests = 0;
+  globalThis.fetch = async (input, init) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    if (path === '/api/player/bootstrap') {
+      bootstrapCount += 1;
+      if (bootstrapCount === 1) {
+        return jsonResponse({
+          player: { id: 'player-A', displayName: 'Player A' },
+          session: { token: 'A'.repeat(43), expiresAtMs: Date.now() + 60_000 },
+        });
+      }
+      return jsonResponse({ error: 'identity provider is temporarily unavailable' }, 503);
+    }
+    if (path === '/api/battle/action' || path === '/api/player/housing') {
+      if (path === '/api/player/housing') housingRequests += 1;
+      return jsonResponse({ error: 'expired' }, 401);
+    }
+    throw new Error('Unexpected API request: ' + path);
+  };
+
+  try {
+    await api.bootstrap({ platform: 'telegram', displayName: 'Player A', telegramInitData: 'proof-A' });
+    api.setIdentityProvider(async () => ({
+      platform: 'telegram', displayName: 'Player B', telegramInitData: 'proof-B',
+    }));
+
+    await assert.rejects(
+      api.actUnderpass('player-A', 'permit-1', 'slash', 0),
+      /DEGEN API 503/,
+    );
+    assert.equal(bootstrapCount, 2, 'the first reauthentication attempt fails after the old session expires');
+
+    await assert.rejects(
+      api.saveHousing('player-B', { inventory: [], placements: [] }),
+      /DEGEN API 503/,
+    );
+    assert.equal(housingRequests, 1,
+      'a stale in-memory Player A owner must not block Player B from entering the normal refresh path');
+    assert.equal(bootstrapCount, 3, 'housing retries the configured identity refresh instead of failing locally on stale owner state');
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
 test('an expired account session never replays an in-flight action under a different player', async () => {
   const api = new GameApi();
   const identityA = { platform: 'telegram' as const, displayName: 'Player A', telegramInitData: 'proof-A' };
