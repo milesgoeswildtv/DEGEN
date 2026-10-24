@@ -2,6 +2,18 @@
 
 Updated: 2026-10-24
 
+## Latest run — 2026-10-24 (fractional persisted Mana rejection coverage)
+
+- **Authoritative main SHA observed:** `aabf575a472553cc495d3938d7bbc7284a327562` (current main ref at audit time).
+- **PUSHED / PR #37 OPEN:** continued `automation/degen/active-permit-mana-invariant-v01`; implementation remains scoped to fail-closed persisted battle-state validation and Worker/D1 regression coverage. This run adds a fractional-Mana corruption case to `tests/worker-d1-concurrency.mjs`: a persisted `player_mana = 1.5` must be rejected with HTTP 409, without returning it as authoritative state or mutating the stored permit. Test commit: `8959fbf520ce0669e8d0c2b2c47559e5e0ee7a61`.
+- **QA status at documentation write:** previous continuity head `336a454ef2cd5c2421aa6a159573f9e5bf8eb503` passed full CI run [40095426077](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40095426077), including 70/70 deterministic tests, isolated Worker/D1 reward/action concurrency and recovery, Underpass cycle reservation/rollover, atomic defeat history, production build, Chromium mobile vertical slice, and Worker dry-run. The new fractional-Mana test change still requires exact-head CI; no local checkout execution is claimed.
+- **Mana:** implementation is already merged on main, including Degen-only `maxMana`/bespoke `manaCost`, persisted `player_mana`, authoritative start/action state, no-mutation unaffordable rejection, exact deduction, zero-cost actions at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no zero-Mana reversion. PR #37 hardens corrupt persisted-state handling; it does not rebalance or change schema.
+- **Battle authority / rewards:** server-resolved victory, action compare-and-swap, invalid/expired/terminal permit guards, persisted idempotent reward receipts, token-scoped transient-D1 recovery, concurrent completion/action coverage, full/reduced clear tiers, shared level-up math, atomic defeat history, and Underpass cycle reservation/rollover remain the established baseline. PR #37 preserves replay of an already-awarded receipt while rejecting a malformed unawarded victory.
+- **D1 / deployment:** `wrangler.toml` remains the authority for binding `DB` to `DEGEN` and `db/migrations`; migration order remains schema → tracked migrations → Worker. This test-only addition requires no migration, remote D1 operation, secret/configuration change, or deployment.
+- **Miles blocker:** PR #21 verified-platform auth remains gated on approved production Telegram/Discord credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass the gate; keep Shield/housing gated until approval and branch reconciliation.
+- **Best next task:** obtain exact-head CI for PR #37 and review any remaining persisted-state/reward-receipt edge case; then resolve the verified-platform-auth release gate before integrating Shield/housing.
+
+
 ## Latest run — 2026-10-24 (battle-start D1 authority regression merged)
 
 - **Authoritative main SHA:** `b2ba3d4677631cd5a773dc8cc624d8f88823c59b`. PR #35 was merged by squash as this commit; post-merge main CI run [40087395169](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40087395169) and Deploy Preview [40087395166](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40087395166) were running when this note was written. No production Worker deployment is expected from the test/docs-only merge.
