@@ -227,6 +227,7 @@ try {
     body: JSON.stringify({ playerId: 'attacker', housing: { placements: [] } }),
   });
   assert.equal(spoofedHousing.status, 204, 'valid session owns housing regardless of body playerId');
+  assert.equal(spoofedHousing.headers.get('cache-control'), 'no-store', 'player housing write responses must not be cached');
   assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='attacker'")[0].n, 1,
     'body playerId cannot delete another player housing');
   assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + first.data.player.id + "'")[0].n, 0,
@@ -275,6 +276,7 @@ try {
     body: JSON.stringify({ playerId: 'attacker' }),
   });
   assert.equal(logout.status, 204);
+  assert.equal(logout.headers.get('cache-control'), 'no-store', 'logout responses must not be cached');
   const afterLogout = await request('/api/world/underpass', { headers: { authorization: 'Bearer ' + token } });
   assert.equal(afterLogout.status, 401, 'logout revokes the server-side session');
   await afterLogout.text();

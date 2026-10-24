@@ -364,7 +364,7 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)
       .bind(item.instanceId, input.playerId, item.furnitureId, item.x, item.y, item.rotation ?? 0)),
   ]);
-  return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+  return new Response(null, { status: 204, headers: { 'cache-control': 'no-store', ...corsHeaders(request, env) } });
 }
 
 async function handleStartBattle(request: Request, env: Env): Promise<Response> {
@@ -731,7 +731,7 @@ export default {
       if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
         const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get('authorization') ?? '')?.[1];
         if (!await revokePlayerSession(env.DB, token)) return fail(request, env, 'Player session is no longer valid.', 401);
-        return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+        return new Response(null, { status: 204, headers: { 'cache-control': 'no-store', ...corsHeaders(request, env) } });
       }
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
         return json(request, env, await worldSnapshot(env.DB, session.playerId));
