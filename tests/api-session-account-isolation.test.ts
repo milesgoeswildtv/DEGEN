@@ -43,6 +43,9 @@ const { GameApi } = runInNewContext(
     setIdentityProvider(provider: () => Promise<{ platform: 'telegram'; displayName: string; telegramInitData: string }>): void;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<{ turnCount: number } | undefined>;
     getUnderpass(playerId: string): Promise<unknown>;
+    startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
+    completeUnderpass(playerId: string, permitId: string): Promise<unknown>;
+    readonly authenticatedPlayerId?: string;
     saveHousing(playerId: string, housing: { inventory: string[]; placements: unknown[] }): Promise<void>;
   };
 };
@@ -359,6 +362,93 @@ test('a response body finishing after account switch is discarded', async () => 
     assert.equal((currentWorld as { cycleId: string }).cycleId, 'cycle-B');
     assert.deepEqual(worldTokens, ['Bearer ' + tokenA, 'Bearer ' + tokenB]);
     assert.equal(bootstrapCount, 2);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+
+test('player-bound world and battle requests fail closed when the active session belongs to another account', async () => {
+  const api = new GameApi();
+  const oldFetch = globalThis.fetch;
+  let bootstrapCount = 0;
+  let protectedRequests = 0;
+  globalThis.fetch = async (input) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    if (path === '/api/player/bootstrap') {
+      bootstrapCount += 1;
+      const isFirst = bootstrapCount === 1;
+      return jsonResponse({
+        player: { id: isFirst ? 'player-A' : 'player-B', displayName: isFirst ? 'Player A' : 'Player B' },
+        session: { token: isFirst ? 'G'.repeat(43) : 'H'.repeat(43), expiresAtMs: Date.now() + 60_000 },
+      });
+    }
+    protectedRequests += 1;
+    return jsonResponse({});
+  };
+
+  try {
+    await api.bootstrap({ platform: 'telegram', displayName: 'Player A', telegramInitData: 'proof-A' });
+    await api.bootstrap({ platform: 'telegram', displayName: 'Player B', telegramInitData: 'proof-B' });
+
+    await assert.rejects(api.getUnderpass('player-A'), /authenticated player mismatch/i);
+    await assert.rejects(api.startUnderpass('player-A', 'cycle-A'), /authenticated player mismatch/i);
+    await assert.rejects(api.actUnderpass('player-A', 'permit-A', 'slash', 0), /authenticated player mismatch/i);
+    await assert.rejects(api.completeUnderpass('player-A', 'permit-A'), /authenticated player mismatch/i);
+    await assert.rejects(api.saveHousing('player-A', { inventory: [], placements: [] }), /authenticated player mismatch/i);
+    assert.equal(api.authenticatedPlayerId, 'player-B');
+    assert.equal(protectedRequests, 0, 'no Player A request may be sent with Player B session');
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test('a detached Worker victory is exposed only for issuing-account reward recovery', async () => {
+  const api = new GameApi();
+  const identityA = { platform: 'telegram' as const, displayName: 'Player A', telegramInitData: 'proof-A' };
+  const identityB = { platform: 'telegram' as const, displayName: 'Player B', telegramInitData: 'proof-B' };
+  const tokenA = 'J'.repeat(43);
+  const tokenB = 'K'.repeat(43);
+  const oldFetch = globalThis.fetch;
+  let bootstrapCount = 0;
+  let actionToken = '';
+  let releaseAction!: (response: Response) => void;
+  const pendingAction = new Promise<Response>((resolve) => { releaseAction = resolve; });
+
+  globalThis.fetch = async (input, init) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    if (path === '/api/player/bootstrap') {
+      bootstrapCount += 1;
+      const isFirst = bootstrapCount === 1;
+      return jsonResponse({
+        player: { id: isFirst ? 'player-A' : 'player-B', displayName: isFirst ? 'Player A' : 'Player B' },
+        session: { token: isFirst ? tokenA : tokenB, expiresAtMs: Date.now() + 60_000 },
+      });
+    }
+    if (path === '/api/battle/action') {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      actionToken = headers.authorization ?? '';
+      return pendingAction;
+    }
+    throw new Error('Unexpected API request: ' + path);
+  };
+
+  try {
+    await api.bootstrap(identityA);
+    const action = api.actUnderpass('player-A', 'permit-A', 'crack', 0);
+    assert.equal(actionToken, 'Bearer ' + tokenA);
+    await api.bootstrap(identityB);
+    releaseAction(jsonResponse({
+      permitId: 'permit-A', status: 'victory', playerHp: 100, playerMana: 0, enemyHp: 0, turnCount: 1,
+    }));
+
+    await assert.rejects(action, error => {
+      const detached = (error as { payload?: { detachedBattleAction?: { permitId?: string; status?: string } } })
+        .payload?.detachedBattleAction;
+      return detached?.permitId === 'permit-A' && detached.status === 'victory';
+    });
+    assert.equal(api.authenticatedPlayerId, 'player-B');
+    assert.equal(bootstrapCount, 2, 'detached recovery metadata must not reauthenticate or overwrite Player B');
   } finally {
     globalThis.fetch = oldFetch;
   }
