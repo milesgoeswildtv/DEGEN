@@ -1,3 +1,18 @@
+## Latest run — 2026-10-24 (housing reliability reconciled onto current main; exact-head CI pending)
+
+- **Authoritative main SHA at start:** `8cc62254d3852e6f47b5bdb1eb9d866e8a2db9b8`.
+- **Current feature branch:** `automation/degen/housing-reliability-main-sync-v01`, created from that exact main SHA. The older housing PR #8 branch was 44 commits ahead / 19 behind and GitHub reported it unmergeable; its relevant housing changes are being ported narrowly onto current main rather than carrying divergent history. No direct-main write.
+- **Implementation:** `worker/index.ts` now seeds the starter bed only on initial character creation in the bootstrap batch, so an intentionally empty room stays empty. Housing saves validate the entire requested layout against server-owned D1 furniture quantities, unique placement IDs/cells, and grid bounds before deleting any existing placements. Malformed or over-quantity layouts return HTTP 400 without mutation; valid replacements remain one D1 batch. Existing `Cache-Control: no-store` behavior is preserved. `src/app/state.ts` serializes and coalesces immutable housing snapshots so overlapping edits cannot let an older request overwrite the latest layout, with bounded retry behavior.
+- **Files changed:** `worker/index.ts`, new `worker/housingQuantityGuard.ts`, `src/app/state.ts`, new `tests/housing-bootstrap-seed.test.ts`, `tests/housing-save-order.test.ts`, `tests/housingQuantityGuard.test.ts`, `tests/browser-housing-persistence.mjs`, `tests/worker-d1-concurrency.mjs`, and `.github/workflows/ci.yml`.
+- **QA status:** exact-head CI is pending. Required gates include `npm test`, isolated local Worker/D1 housing + reward-concurrency/recovery/cycle/defeat checks, real 390×844 Chromium housing persistence, production build, and Worker dry-run. Do not call this verified until the actual run is green.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative start/action Mana, persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost actions at 0, killing-blow/defeat behavior, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion remain the current main baseline. Prototype values are scaffolding, not final balance canon.
+- **Battle authority / rewards:** server-resolved victory-only rewards, persisted-state bounds/terminal invariants, stale-turn/action guards, idempotent reward receipts and transient-D1 recovery, full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, Underpass cycle reservation/rollover, and already-issued permit validity through cycle closure until expiry remain on main.
+- **D1 / deployment:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order is base schema → tracked migrations → Worker. This housing slice requires no migration and performs no production D1 mutation or deployment.
+- **Miles blocker:** auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass the release gate.
+- **Best next task:** verify the exact-head CI and browser housing test; after green evidence, close the stale housing PR as superseded and resume the gated platform-auth release work without bypassing its requirements.
+
+---
+
 ## Latest run — 2026-10-24 (Worker request validation hardened; exact-head CI green)
 
 - **Authoritative main SHA:** `0ecf3d2267571e3775987c855c83c0c1815e4b57`.
