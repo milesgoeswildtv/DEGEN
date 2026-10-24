@@ -1,10 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import type { BattleSnapshot } from '../src/game/combat/engine.ts';
-import { battleView, updateBattleDom } from '../src/ui/views.ts';
 import type { PlayerState } from '../src/domain/types.ts';
+
+const viewsSource = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf8')
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/\bexport const /g, 'const ');
+const viewContext: Record<string, unknown> = {
+  FURNITURE_CATALOG: [],
+  WORLD_LOCATIONS: [],
+  getFurniture: () => undefined,
+};
+const { battleView, updateBattleDom } = runInNewContext(
+  stripTypeScriptTypes(viewsSource, { mode: 'transform' }) + '\n({ battleView, updateBattleDom });',
+  viewContext,
+) as {
+  battleView: (player: PlayerState, degen: typeof TEST_DEGEN) => string;
+  updateBattleDom: (snapshot: BattleSnapshot) => void;
+};
 
 const player: PlayerState = {
   id: 'mana-ui-player',
@@ -48,15 +66,10 @@ test('ability controls disable only unaffordable abilities and preserve free act
     { dataset: { manaCost: '0' }, disabled: false },
     { dataset: { manaCost: '4' }, disabled: false },
   ];
-  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
-
-  Object.defineProperty(globalThis, 'document', {
-    configurable: true,
-    value: {
-      querySelector: () => log,
-      querySelectorAll: () => buttons,
-    },
-  });
+  viewContext.document = {
+    querySelector: () => log,
+    querySelectorAll: () => buttons,
+  };
 
   try {
     updateBattleDom(snapshot(0));
@@ -67,7 +80,6 @@ test('ability controls disable only unaffordable abilities and preserve free act
     assert.equal(buttons[0].disabled, false);
     assert.equal(buttons[1].disabled, false, 'paid action becomes available once affordable');
   } finally {
-    if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
-    else Reflect.deleteProperty(globalThis, 'document');
+    Reflect.deleteProperty(viewContext, 'document');
   }
 });
