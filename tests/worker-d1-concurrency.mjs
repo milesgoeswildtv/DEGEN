@@ -206,6 +206,9 @@ try {
     status: 'active',
     playerHp: 80,
     playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: 92,
     turnCount: 0,
   }, 'rejection must return the unchanged server-authoritative snapshot');
@@ -256,7 +259,8 @@ try {
   assert.equal(duplicateAction.error, 'Stale battle turn.');
   assert.deepEqual(duplicateAction.battleState, {
     permitId: 'permit-insufficient-mana', status: 'active',
-    playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+    playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-insufficient-mana', {
     status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
