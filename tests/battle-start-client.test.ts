@@ -116,7 +116,7 @@ test('player-owned API requests use the server session and never submit playerId
   };
   try {
     await api.bootstrap({ platform: 'telegram', displayName: 'Untrusted', telegramInitData: 'signed-proof' });
-    await api.actUnderpass('client-claimed-player', 'permit-1', 'crack', 3);
+    await api.actUnderpass('server-player', 'permit-1', 'crack', 3);
     const action = calls.find(call => call.path === '/api/battle/action');
     assert.ok(action);
     assert.equal(action.headers.authorization, 'Bearer ' + token);
