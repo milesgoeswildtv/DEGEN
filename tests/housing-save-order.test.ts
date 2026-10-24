@@ -183,6 +183,40 @@ test('an in-flight housing save cannot leak placements across player identities'
 });
 
 
+test('switching back while a layout is only in flight preserves it for the next edit', async () => {
+  const calls: Array<{ playerId: string; housing: any; resolve: () => void }> = [];
+  const store = makeStore((playerId, housing) => new Promise<void>((resolve) => {
+    calls.push({ playerId, housing: structuredClone(housing), resolve });
+  }));
+  const firstPlayerId = store.snapshot.id;
+
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.playerId, firstPlayerId);
+
+  store.replaceFromServer({ ...store.snapshot, id: 'second-account',
+    housing: { inventory: ['starter-lamp'], placements: [] } });
+  assert.equal(store.snapshot.housing.placements.length, 0, 'another account must not inherit the in-flight layout');
+
+  store.replaceFromServer({ ...store.snapshot, id: firstPlayerId,
+    housing: { inventory: ['starter-chair', 'starter-lamp'], placements: [] } });
+  assert.ok(store.snapshot.housing.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 2 && placement.y === 2),
+  'reactivating the first account must restore its in-flight placement');
+
+  store.placeFurniture('starter-lamp', 3, 3);
+  calls[0]!.resolve();
+  await flush();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1]!.playerId, firstPlayerId);
+  assert.deepEqual(calls[1]!.housing.placements.map((placement: any) =>
+    [placement.furnitureId, placement.x, placement.y]).sort(),
+  [['starter-chair', 2, 2], ['starter-lamp', 3, 3]]);
+  calls[1]!.resolve();
+  await flush();
+});
+
 test('queued housing edits for separate accounts only save under the active account', async () => {
   const calls: Array<{ playerId: string; housing: any; resolve: () => void }> = [];
   const store = makeStore((playerId, housing) => new Promise<void>((resolve) => {
@@ -190,37 +224,52 @@ test('queued housing edits for separate accounts only save under the active acco
   }));
   const firstPlayerId = store.snapshot.id;
   const secondPlayerId = 'second-account';
+  const furniture = ['starter-chair', 'starter-lamp', 'starter-rug'];
 
   store.placeFurniture('starter-chair', 2, 2);
   await flush();
   assert.equal(calls.length, 1);
   assert.equal(calls[0]!.playerId, firstPlayerId);
+  store.placeFurniture('starter-lamp', 3, 3);
 
   store.replaceFromServer({ ...store.snapshot, id: secondPlayerId,
-    housing: { inventory: ['starter-chair'], placements: [] } });
-  store.placeFurniture('starter-chair', 3, 3);
-  store.replaceFromServer({ ...store.snapshot, id: firstPlayerId,
-    housing: { inventory: ['starter-chair'], placements: [] } });
+    housing: { inventory: furniture, placements: [] } });
   store.placeFurniture('starter-chair', 4, 4);
+  store.placeFurniture('starter-lamp', 5, 5);
+
+  store.replaceFromServer({ ...store.snapshot, id: firstPlayerId,
+    housing: { inventory: furniture, placements: [] } });
+  assert.deepEqual(store.snapshot.housing.placements.map((placement: any) =>
+    [placement.furnitureId, placement.x, placement.y]).sort(),
+  [['starter-chair', 2, 2], ['starter-lamp', 3, 3]],
+  'reactivating an account must restore its newest queued layout');
+  store.placeFurniture('starter-rug', 6, 6);
 
   calls[0]!.resolve();
   await flush();
   assert.equal(calls.length, 2);
   assert.equal(calls[1]!.playerId, firstPlayerId,
     'the queue must not send the second account snapshot with the first account active');
-  assert.equal(calls[1]!.housing.placements[0].x, 4);
+  assert.deepEqual(calls[1]!.housing.placements.map((placement: any) =>
+    [placement.furnitureId, placement.x, placement.y]).sort(),
+  [['starter-chair', 2, 2], ['starter-lamp', 3, 3], ['starter-rug', 6, 6]]);
   calls[1]!.resolve();
   await flush();
   assert.equal(calls.length, 2, 'the second account snapshot stays queued while the first account is active');
 
   store.replaceFromServer({ ...store.snapshot, id: secondPlayerId,
-    housing: { inventory: ['starter-chair'], placements: [] } });
-  store.placeFurniture('starter-chair', 5, 5);
+    housing: { inventory: furniture, placements: [] } });
+  assert.deepEqual(store.snapshot.housing.placements.map((placement: any) =>
+    [placement.furnitureId, placement.x, placement.y]).sort(),
+  [['starter-chair', 4, 4], ['starter-lamp', 5, 5]],
+  'the second account must retain its own queued layout');
+  store.placeFurniture('starter-rug', 6, 6);
   await flush();
   assert.equal(calls.length, 3);
   assert.equal(calls[2]!.playerId, secondPlayerId);
-  assert.equal(calls[2]!.housing.placements[0].x, 5,
-    'the second account receives its own newest snapshot after it becomes active');
+  assert.deepEqual(calls[2]!.housing.placements.map((placement: any) =>
+    [placement.furnitureId, placement.x, placement.y]).sort(),
+  [['starter-chair', 4, 4], ['starter-lamp', 5, 5], ['starter-rug', 6, 6]]);
   calls[2]!.resolve();
   await flush();
   assert.equal(calls.length, 3);
