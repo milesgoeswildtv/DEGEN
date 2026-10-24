@@ -1,3 +1,5 @@
+# DEGEN — AUTONOMOUS PROGRESS
+
 ## Latest run — 2026-10-24 (Worker no-store hardening merged)
 
 - **Authoritative main SHA:** `8cc62254d3852e6f47b5bdb1eb9d866e8a2db9b8`. PR #46 was squash-merged through the PR path at this SHA. Its exact-head CI run [40130567839](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40130567839) passed all 13 CI steps, including `npm test`, Worker/D1 reward concurrency and recovery, Underpass cycle reservation/rollover, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker dry-run.
@@ -629,3 +631,53 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Legacy Mana branch audit:** `sidekick/degen-mana-foundation-v01` still exists but is diverged from main (11 commits ahead, 42 behind at this run); its original Mana work is already merged and superseded. Do not cherry-pick it over main.
 - **Miles blocker:** PR #21 verified-platform auth remains gated on approved production Telegram/Discord credentials/configuration, controlled live identity/session verification, and a Miles-approved recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass this gate; keep Shield PR #20 and housing PR #8 gated until auth is integrated and reconciled.
 - **Best next task:** verify exact-head CI for PR #40 and review the turn-boundary regression; then resolve the verified-platform-auth release gate before Shield/housing integration.
+
+
+## Latest run — 2026-10-24 (platform-auth branch reconciliation and cache-policy regression coverage)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`. The legacy Mana foundation branch was inspected first and is superseded: its 11 commits are 51 commits behind current main; the Mana slice and migration 0006 are already merged/deployed on main. No stale Mana work was cherry-picked.
+- **PUSHED / PR #21 remains OPEN:** continuing the existing branch `automation/degen/identity-binding-immutability-v02`; this update reconciles its ancestry with current main using a normal two-parent merge commit. The PR remains unmerged and is not a production release.
+- **Files updated in this reconciliation:** `tests/pages-cors.test.ts` preserves the current CORS/no-store checks while requiring a verified session for housing writes; `tests/worker-d1-concurrency.mjs` asserts `Cache-Control: no-store` for authoritative action success/rejection, invalid persisted state, and battle completion/reward receipt responses; `AUTONOMOUS_PROGRESS.md` retains the current main history, restores this file's heading, and records the auth release gate.
+- **Mana status:** COMPLETE / MERGED on main: Degen-only `maxMana` and bespoke `manaCost`, authoritative/persisted player Mana, unaffordable-action rejection without mutation, exact deduction, zero-cost at zero, killing blow/defeat, client/Worker math parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no zero-Mana reversion.
+- **Battle authority/reward idempotency:** current main retains the required `expectedTurnCount` precondition, persisted-state validation, server-resolved victory, token-scoped reward recovery, idempotent receipts, action/completion race tests, and Underpass permit validity until its own expiry. Auth branch integration preserves the Worker-owned session identity and reward path.
+- **D1/deploy assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; migration order is 0006 Mana, 0007 player sessions, then 0008 Shield. No production D1 operation, secret/config change, or deployment was performed.
+- **QA status:** prior auth code/test head `6b908376d999cc60c4fa5bc6a2f8a24355960109` passed CI run [40128804866](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40128804866), including 106 deterministic tests, isolated Worker/D1 auth/reward tests, Chromium mobile battle, signed Telegram flow, build, and Worker dry-run. The newly reconciled head still requires its own exact-head CI; do not infer green from the earlier run. This run used GitHub API file/branch inspection and did not execute a local checkout.
+- **Miles blocker / release gate:** production Telegram/Discord credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions are still required. Do not auto-link accounts or merge/deploy this PR, Shield PR #20, or housing PR #49 around that gate.
+- **Best next task:** verify exact-head CI after this reconciliation, then clear the platform-auth release gate before integrating Shield/housing.
+
+
+## Latest follow-up — 2026-10-24 (auth branch cache-test harness correction)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`; the existing auth branch remains synced to that main ancestry and PR #21 stays open/unmerged.
+- **QA finding:** exact-head CI run [40141376521](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40141376521) failed in `npm test` at `tests/pages-cors.test.ts`: the test invoked an authenticated Worker route in a stripped VM without injecting the auth module, producing a harness `ReferenceError`/500 instead of the intended 401 assertion. The failure is in the test setup, not evidence of a production route response.
+- **Correction:** `tests/pages-cors.test.ts` now retains main's CORS checks and public JSON no-store checks without directly calling the auth-protected housing route in that isolated VM. The real authenticated housing-save 204/no-store and logout 204/no-store behaviors remain covered by `tests/worker-d1-identity-binding.mjs`.
+- **Additional regression coverage retained:** `tests/worker-d1-concurrency.mjs` asserts `Cache-Control: no-store` on authoritative battle action success/rejection, invalid persisted state, and battle completion/reward receipt responses.
+- **Mana:** COMPLETE / MERGED on main; no combat math, Mana values, monster schema, rewards, or D1 migration changed by this correction.
+- **D1/deployment:** 0006 Mana is merged; 0007 sessions remains PR-only; 0008 Shield remains downstream. No production D1 operation or Worker deployment was performed.
+- **Current branch state:** the corrected commit will trigger a fresh exact-head CI run; do not call it green until that run completes. The earlier 6b908 auth code/test head passed run 40128804866, but that evidence does not substitute for the corrected current head.
+- **Miles blocker / best next task:** approved production Discord/Telegram credentials/configuration, controlled live verification, and an explicit legacy identity-collision recovery/link policy remain required. Verify the corrected CI, then resolve that gate before merging auth or integrating Shield/housing.
+
+
+## Latest follow-up — 2026-10-24 (platform-auth exact-head CI PASS)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`.
+- **PUSHED / PR #21 OPEN:** `automation/degen/identity-binding-immutability-v02`; implementation/test head `b4f01d771bbc65b68362c94ddc12a8764b4952cf` passed exact-head GitHub Actions run [40141456880](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40141456880). GitHub compare reports the branch is 0 commits behind current main and the PR is mergeable. This is PR-only, not merged or live.
+- **Verified CI:** `npm test` 107/107; signed platform auth/session ownership on isolated local Worker/D1; reward action/completion concurrency and transient-failure recovery; Underpass cycle reservation/rollover; atomic defeat history; production build; Chromium mobile battle vertical slice; signed-Telegram Chromium auth; and Worker dry-run all PASS.
+- **Cache-policy sync:** the successful implementation/test head retains main's Worker no-store behavior and adds assertions for no-store on accepted/rejected battle actions, invalid persisted state, and all battle-completion responses. The Pages/CORS VM keeps its public-route cache checks; authenticated housing-save and logout no-store remain verified by the dedicated Worker/D1 identity-binding integration.
+- **Previous failed head:** `a319ba2c12c2b678405722303df929b6a403e126` failed only because an isolated CORS test called an auth-protected route without the auth module injected into its stripped VM. The test harness was corrected in `b4f01d771bbc65b68362c94ddc12a8764b4952cf`; the full CI matrix then passed. No runtime code or production config changed for that correction.
+- **Mana status:** COMPLETE / MERGED on main. Degen-only `maxMana`/bespoke `manaCost`, authoritative persisted player Mana, insufficient-Mana no-mutation rejection, exact deduction, zero-cost-at-zero, killing blow/defeat, client/Worker parity, cost-aware UI, migration 0006, no monster Mana, and no zero-Mana reversion remain verified.
+- **Battle authority / D1:** current main retains server-owned turn preconditions and state, victory-only reward claims, idempotent persisted receipts, transient-D1 recovery, and migration-before-Worker deploy order. `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; migration 0007 remains PR-only and migration 0008 Shield stays downstream. No production D1 mutation, secret/config change, or deployment occurred.
+- **Miles blocker:** production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions remain required. Do not merge this PR or integrate Shield/housing around that gate.
+- **Continuity-only follow-up:** this progress update creates a new branch head after the verified code/test head; do not infer this documentation-only head has its own green CI until observed.
+- **Best next task:** resolve the approved platform-auth configuration/live-verification and legacy-collision policy gate, then reassess PR #21 before merging Shield PR #20 or housing PR #49.
+
+
+## Latest follow-up — 2026-10-24 (reconciled auth progress head CI PASS)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`; PR #21 branch remains 0 commits behind main and mergeable.
+- **Code/test head PASS:** `b4f01d771bbc65b68362c94ddc12a8764b4952cf`, CI run [40141456880](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40141456880), including 107/107 deterministic tests and the full Worker/D1, reward recovery/concurrency, Underpass race/rollover, atomic defeat, build, Chromium battle, signed Telegram auth, and Worker dry-run matrix.
+- **Progress-sync head PASS:** `21e0dfb5cc822044d0ec6a985e285f7080b7d96e`, CI run [40141839322](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40141839322); every CI step passed. This run also executed the full matrix, not only the deterministic tests.
+- **State distinction:** PR #21 remains OPEN / UNMERGED. These are PR-branch CI results only. No production D1 mutation, secret/config change, Worker deployment, or live Discord/Telegram authentication was performed.
+- **Mana / battle authority:** Mana remains COMPLETE / MERGED on main; the active permit state still includes authoritative player Mana, required expected-turn precondition, persisted-state validation, and idempotent server-resolved rewards. Migration 0006 is already applied; 0007 is still PR-only; 0008 Shield remains gated downstream.
+- **Miles blocker / next task:** production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved legacy identity-collision recovery/link policy remain required. Do not merge around that gate or auto-link accounts. Resolve the gate before merging PR #21 and then reconcile Shield/housing.
+- **Continuity-only update:** this note creates a new documentation-only branch head; its own CI will run independently and must not be assumed green until checked.

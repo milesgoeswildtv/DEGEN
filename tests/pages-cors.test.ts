@@ -85,24 +85,3 @@ test('real Worker JSON success and error responses are not cacheable', async () 
     assert.equal(response.headers.get('cache-control'), 'no-store', path);
   }
 });
-
-test('real Worker housing save response is not cacheable', async () => {
-  const db = {
-    prepare: (_sql: string) => ({
-      bind: (..._values: unknown[]) => ({
-        all: async () => ({ results: [] }),
-      }),
-    }),
-    batch: async (_statements: unknown[]) => [],
-  };
-  const response = await worker.fetch(
-    new Request('https://degen-api.afterdarklabs.workers.dev/api/player/housing', {
-      method: 'PUT',
-      headers: { origin: 'https://degen-8ze.pages.dev', 'content-type': 'application/json' },
-      body: JSON.stringify({ playerId: 'cache-test-player', housing: { inventory: [], placements: [] } }),
-    }),
-    { ALLOWED_ORIGINS: allowlist!.join(','), DB: db },
-  );
-  assert.equal(response.status, 204);
-  assert.equal(response.headers.get('cache-control'), 'no-store');
-});

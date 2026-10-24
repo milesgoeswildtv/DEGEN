@@ -24,6 +24,7 @@ function makeEnv(
   permitInsertAllowed = true,
 ) {
   const inserts: unknown[][] = [];
+  const attempts: Array<{ sql: string; params: unknown[] }> = [];
   const db = {
     prepare(sql: string) {
       return {
@@ -35,9 +36,7 @@ function makeEnv(
           return {
             first: async () => {
               if (sql.includes('INSERT INTO battle_permits')) {
-                assert.match(sql, /WHERE EXISTS\s*\(\s*SELECT 1 FROM world_event_cycles/);
-                assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\('now'\)/);
-                assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
+                attempts.push({ sql, params });
                 if (!permitInsertAllowed) return null;
                 inserts.push(params);
                 return { id: params[0] };
@@ -50,7 +49,7 @@ function makeEnv(
       };
     },
   };
-  return { env: { DB: db }, inserts };
+  return { env: { DB: db }, inserts, attempts };
 }
 
 function request(cycleId = 'open-cycle', extraFields: Record<string, unknown> = {}) {
@@ -74,7 +73,7 @@ test('battle start ignores forged client combat state and returns exactly the De
     opens_at: new Date(Date.now() - 60_000).toISOString(),
     closes_at: new Date(Date.now() + 60_000).toISOString(),
   };
-  const { env, inserts } = makeEnv(cycle);
+  const { env, inserts, attempts } = makeEnv(cycle);
   const response = await handleStartBattle(request(cycle.id, {
     playerHp: 1,
     playerMana: 0,
@@ -107,24 +106,26 @@ test('battle start ignores forged client combat state and returns exactly the De
     ['player-1', cycle.id, TUNNEL_MAW.id, result.initialState.playerHp,
       result.initialState.playerMana, result.initialState.enemyHp],
   );
+  assert.match(attempts[0]!.sql, /WHERE EXISTS/);
+  assert.match(attempts[0]!.sql, /julianday\(opens_at\) <= julianday\('now'\)/);
+  assert.match(attempts[0]!.sql, /julianday\(closes_at\) > julianday\('now'\)/);
 });
 
-
-test('battle start rechecks the Underpass window atomically before issuing a permit', async () => {
+test('battle start rejects a permit if the cycle closes before the conditional insert succeeds', async () => {
   const cycle = {
     id: 'open-cycle',
     event_key: 'underpass',
     opens_at: new Date(Date.now() - 60_000).toISOString(),
     closes_at: new Date(Date.now() + 60_000).toISOString(),
   };
-  // The first snapshot is open, but the conditional D1 insert models the cycle
-  // closing before the permit-issuing statement executes.
-  const { env, inserts } = makeEnv(cycle, false);
+  const { env, inserts, attempts } = makeEnv(cycle, false);
   const response = await handleStartBattle(request(cycle.id), env);
   assert.equal(response.status, 409);
-  assert.deepEqual(await response.json(), { error: 'The Underpass is sealed.' });
-  assert.equal(inserts.length, 0, 'no permit may be issued after the cycle closes');
+  assert.equal((await response.json()).error, 'The Underpass is sealed.');
+  assert.equal(attempts.length, 1);
+  assert.equal(inserts.length, 0);
 });
+
 test('monster definitions do not acquire a Mana resource namespace', () => {
   assert.equal(Object.keys(TUNNEL_MAW).some((key) => /mana/i.test(key)), false);
 });

@@ -1,5 +1,6 @@
 // Isolated Chromium + Vite + local Wrangler/D1 vertical slice. NEVER use --remote.
 import assert from 'node:assert/strict';
+import { createHash, createHmac } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,6 +10,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'degen-browser-'));
+const botToken = 'degen-browser-test-bot-token';
 const persist = join(scratch, 'd1');
 const wrangler = resolve(root, 'node_modules/.bin/wrangler');
 const vite = resolve(root, 'node_modules/.bin/vite');
@@ -41,6 +43,15 @@ async function until(label, check, timeout = 30000) {
     await sleep(200);
   }
   throw Error('Timeout waiting for ' + label + (last ? ': ' + last : ''));
+}
+function signedInitData(user) {
+  const authDate = Math.floor(Date.now() / 1000);
+  const params = new URLSearchParams({ auth_date: String(authDate), user: JSON.stringify(user) });
+  const check = [...params.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, value]) => key + '=' + value).join('\n');
+  const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
+  params.set('hash', createHmac('sha256', secret).update(check).digest('hex'));
+  return params.toString();
 }
 function chromeBinary() {
   for (const exe of [process.env.CHROME_BIN, '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
@@ -85,14 +96,15 @@ try {
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, "INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('browser-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));\n");
   command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
-  launch('worker', wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789']);
+  launch('worker', wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789', '--var', 'TELEGRAM_BOT_TOKEN:' + botToken]);
   await until('local Worker', async () => (await fetch('http://127.0.0.1:8789/api/health', { signal: AbortSignal.timeout(800) })).ok);
   const origin = 'http://localhost:5173';
   const preflight = await fetch('http://127.0.0.1:8789/api/player/bootstrap', {
-    method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
+    method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,authorization' },
   });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
+  assert.match(preflight.headers.get('access-control-allow-headers') ?? '', /authorization/i);
   launch('vite', vite, ['--host', '0.0.0.0', '--port=5173', '--strictPort'], { VITE_API_BASE: 'http://127.0.0.1:8789' });
   await until('Vite', async () => (await fetch('http://127.0.0.1:5173', { signal: AbortSignal.timeout(800) })).ok);
   launch('chrome', chromeBinary(), [
@@ -151,16 +163,36 @@ try {
       };
     })();`,
   });
+  await cdp.send('Network.enable');
+  await cdp.send('Network.setBlockedURLs', { urls: ['*telegram.org/js/telegram-web-app.js*'] });
+  const initData = signedInitData({ id: 42, first_name: 'Browser', last_name: 'QA' });
+  const initDataUnsafe = JSON.stringify({ id: 42, first_name: 'Browser', last_name: 'QA' });
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    if (location.search.includes('auth=1')) {
+      window.Telegram = { WebApp: {
+        initData: ${JSON.stringify(initData)},
+        initDataUnsafe: { user: ${initDataUnsafe} },
+        ready() {}, expand() {}
+      }};
+    }
+  ` });
   // Exercise the entire Worker-backed slice in mobile portrait; not physical-device QA.
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true,
   });
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-  const nav = await cdp.send('Page.navigate', { url: origin });
+  const nav = await cdp.send('Page.navigate', { url: origin + '/?auth=1' });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
-  assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
+  const sessionToken = await cdp.evaluate("sessionStorage.getItem('degen.player.session.v1') || ''");
+  assert.ok(playerId && playerId !== 'attacker', 'the app must use the Worker-resolved player ID');
+  assert.match(sessionToken, /^[A-Za-z0-9_-]{43}$/, 'signed Telegram bootstrap must issue a bearer session');
+  const sessionHash = createHash('sha256').update(sessionToken).digest('hex');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM platform_identities WHERE platform='telegram' AND platform_user_id='42'")[0]?.n, 1);
+  assert.equal(sql("SELECT COUNT(*) AS n FROM player_sessions WHERE token_hash='" + sessionHash + "' AND player_id='" + playerId + "' AND revoked_at_ms IS NULL")[0]?.n, 1);
+  assert.equal(sql("SELECT COUNT(*) AS n FROM player_sessions WHERE token_hash='" + sessionToken + "'")[0]?.n, 0,
+    'only the session digest is persisted');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
   await assertFitsCompact('Map');
@@ -224,7 +256,7 @@ try {
   assert.equal(finalPermit?.player_mana, 0);
   assert.equal(finalPermit?.turn_count, 3);
   assert.ok(finalPermit?.completed_at, 'Worker should persist completion after awarding the victory receipt');
-  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy');
+  console.log('PASS authenticated Chromium + Vite + local Wrangler/D1: signed Telegram > Map > Home > Underpass > Mana battle > Worker reward > Home trophy');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
   for (const [name, output] of logs) console.error(name + ' logs:\n' + output);
