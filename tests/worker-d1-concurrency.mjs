@@ -114,7 +114,9 @@ try {
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-e','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,1,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
-      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0);
+      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
+      ('permit-turn-boundary','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,9007199254740990),
+      ('permit-terminal-boundary','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,9007199254740990);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -429,6 +431,38 @@ try {
   assert.equal(rejectedRace.battleState.playerMana, acceptedRace.playerMana);
   assert.equal(rejectedRace.battleState.enemyHp, acceptedRace.enemyHp);
   assertPersistedPermitState('permit-turn-race', acceptedRace);
+
+  const turnBoundaryResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: AUTH_HEADERS,
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-turn-boundary',
+      abilityId: 'slash', expectedTurnCount: Number.MAX_SAFE_INTEGER - 1,
+    }),
+  });
+  const turnBoundary = await turnBoundaryResponse.json();
+  assert.equal(turnBoundaryResponse.status, 409, 'non-terminal action at the final safe turn must fail closed');
+  assert.equal(turnBoundary.error, 'Battle turn limit reached.');
+  assertPersistedPermitState('permit-turn-boundary', {
+    status: 'active', playerHp: 80, playerMana: 0, enemyHp: 92,
+    turnCount: Number.MAX_SAFE_INTEGER - 1,
+  });
+
+  const terminalBoundaryResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: AUTH_HEADERS,
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-terminal-boundary',
+      abilityId: 'crack', expectedTurnCount: Number.MAX_SAFE_INTEGER - 1,
+    }),
+  });
+  const terminalBoundary = await terminalBoundaryResponse.json();
+  assert.equal(terminalBoundaryResponse.status, 200, JSON.stringify(terminalBoundary));
+  assert.equal(terminalBoundary.status, 'victory');
+  assert.equal(terminalBoundary.enemyHp, 0);
+  assert.equal(terminalBoundary.turnCount, Number.MAX_SAFE_INTEGER);
+  assertPersistedPermitState('permit-terminal-boundary', {
+    status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0,
+    turnCount: Number.MAX_SAFE_INTEGER,
+  });
 
   assert.equal((await complete('expired')).status, 409);
   assert.equal((await complete('permit-a', WRONG_SESSION_TOKEN)).status, 409);
