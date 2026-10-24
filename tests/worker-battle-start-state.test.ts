@@ -19,7 +19,10 @@ const handleStartBattle = runInNewContext(handlerSource, {
   crypto: globalThis.crypto, Request, Response, URL, console, Uint32Array,
 }) as (request: Request, env: { DB: unknown }) => Promise<Response>;
 
-function makeEnv(cycle: { id: string; event_key: string; opens_at: string; closes_at: string }) {
+function makeEnv(
+  cycle: { id: string; event_key: string; opens_at: string; closes_at: string },
+  permitInsertAllowed = true,
+) {
   const inserts: unknown[][] = [];
   const db = {
     prepare(sql: string) {
@@ -31,15 +34,16 @@ function makeEnv(cycle: { id: string; event_key: string; opens_at: string; close
         bind(...params: unknown[]) {
           return {
             first: async () => {
+              if (sql.includes('INSERT INTO battle_permits')) {
+                assert.match(sql, /WHERE EXISTS\s*\(\s*SELECT 1 FROM world_event_cycles/);
+                assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\('now'\)/);
+                assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
+                if (!permitInsertAllowed) return null;
+                inserts.push(params);
+                return { id: params[0] };
+              }
               if (sql.includes('FROM world_event_cycles')) return cycle;
               throw new Error('Unexpected bound Worker query: ' + sql);
-            },
-            run: async () => {
-              if (!sql.includes('INSERT INTO battle_permits')) {
-                throw new Error('Unexpected Worker write: ' + sql);
-              }
-              inserts.push(params);
-              return { success: true };
             },
           };
         },
@@ -105,6 +109,22 @@ test('battle start ignores forged client combat state and returns exactly the De
   );
 });
 
+
+test('battle start rechecks the Underpass window atomically before issuing a permit', async () => {
+  const cycle = {
+    id: 'open-cycle',
+    event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  // The first snapshot is open, but the conditional D1 insert models the cycle
+  // closing before the permit-issuing statement executes.
+  const { env, inserts } = makeEnv(cycle, false);
+  const response = await handleStartBattle(request(cycle.id), env);
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: 'The Underpass is sealed.' });
+  assert.equal(inserts.length, 0, 'no permit may be issued after the cycle closes');
+});
 test('monster definitions do not acquire a Mana resource namespace', () => {
   assert.equal(Object.keys(TUNNEL_MAW).some((key) => /mana/i.test(key)), false);
 });
