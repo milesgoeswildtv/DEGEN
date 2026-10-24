@@ -1,11 +1,11 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-23
+Updated: 2026-10-24
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
 - Integration branch: `main`
-- Authoritative main SHA at this run: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Authoritative main SHA at this run: `2c7994b5ee793b201c1e3f4fdd301a61fe90be69`.
 - Stack: TypeScript + Vite + Phaser + DOM/CSS; Cloudflare Worker + D1.
 - Core vertical slice: Map -> Home -> Underpass -> Battle -> Loot -> Home.
 
@@ -334,9 +334,22 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Best next task:** re-check exact-head main CI after it finishes; then resolve the approved production auth/config and live-verification gate before merging Shield. If credentials cannot be configured in this environment, keep that release gate explicit rather than treating local CI or Worker deployment as proof of a fully playable authenticated production game.
 
 
+## Latest run — 2026-10-24 (invalid, expired, and terminal battle-action regression coverage)
+
+- **Authoritative main SHA at branch creation:** `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
+- **MERGED via PR #29 on 2026-10-24:** `automation/degen/expired-permit-action-guard-v01`; tested implementation head `2bc9cc06e9c7e7908c91ae8acd2ecef4a7de6432`; merged main commit `2c7994b5ee793b201c1e3f4fdd301a61fe90be69`. Delivery used the normal PR merge path; no direct-main file write, Worker deploy, or production D1 operation.
+- **Files changed:** `tests/worker-d1-concurrency.mjs` adds an expired-but-still-marked-active permit and verifies `POST /api/battle/action` returns 409 without changing persisted HP, Mana, enemy HP, battle status, or turn count. It also verifies a permit cannot be used with another player ID and that a server-resolved victory rejects further actions without state mutation. `AUTONOMOUS_PROGRESS.md` now records the current authoritative main SHA and this run.
+- **Exact implementation/test head CI PASS:** run [40071645228](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40071645228) on `2bc9cc06e9c7e7908c91ae8acd2ecef4a7de6432`. Logs confirm `npm test` **59/59 PASS**, local Worker/D1 action/completion concurrency and permit-closure coverage PASS, transient reward-recovery fault injection PASS, 60-request Underpass cycle reservation PASS, 60-request rollover PASS, atomic defeat-history harness PASS, `npm run build` PASS, and `npm run check:worker` dry-run PASS. The Worker/D1 harness uses `--local`; no production database was used. This runtime has no complete checkout, so no separate local test execution is claimed.
+- **Exact latest PR-head CI PASS:** run [40072424380](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40072424380) completed successfully on continuity head `4f0764b18f46dd92f4b13e6339a846b9952959a0`; deterministic tests and the Worker/D1 integration job both completed green.
+- **Mana status:** COMPLETE / MERGED on main. Degen `maxMana`, bespoke `manaCost`, authoritative battle start/action state, persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost actions at 0, killing-blow/defeat handling, client/Worker parity, cost-aware controls, migration `0006_backfill_active_battle_mana.sql`, no monster Mana fields, and no Mana-triggered reversion remain present.
+- **Battle authority / reward idempotency:** main retains server-owned action CAS and stale-turn rejection, victory-only completion, persisted receipts and transient D1 recovery, full/reduced clear tiers, level-up math, concurrent action/completion coverage, atomic defeat history, cycle reservation/rollover, and issued-permit validity across event closure until expiry. This PR adds test coverage only; Worker runtime and reward math are unchanged.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`. Deployment applies schema → tracked migrations → Worker. No migration, deployment configuration, remote D1 operation, or production deployment changed in this PR.
+- **Open release gates:** PR #21 still requires approved production Discord/Telegram credentials/configuration and controlled live identity/session verification. PR #26 separately carries the exact production Pages-origin CORS fix. PR #27 (mobile Chromium Worker/D1 vertical slice) and PR #28 (monster resource namespace guard) have their own green exact-head CI but remain separate and unmerged. Do not bypass auth or invent account-link/merge policy; keep Shield PR #20 and housing PR #8 gated until auth is integrated and branches are reconciled.
+- **Best next task:** synchronize PR #27's mobile browser vertical-slice tests and PR #28's monster-resource namespace guard with the newly advanced main, rerun exact-head CI, then reassess the external verified-platform-auth release gate before Shield or housing integration.
+
 ## Latest run — 2026-10-24 (monster resource namespace regression guard)
 
-- **Authoritative main SHA:** `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
+- **Main SHA at guard-branch creation:** `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
 - **PUSHED / PR #28 OPEN:** `automation/degen/monster-resource-canon-guard-v01`, based on exact main SHA `9997002df0ea48ab54ae82a2efcf084734f00fdb`. The implementation/test head is `a2f2a3660fbb41e6d471e191d17705612c902a40`; subsequent branch-tip commits are continuity documentation only. No direct-main write, merge, production D1 operation, or deployment.
 - **Files changed:** `tests/monster-resource-canon.test.ts` adds a runtime assertion that the current enemy definition exposes no universal Mana-equivalent resource fields. `src/domain/combatCanon.ts` adds a source-compiled TypeScript tripwire against adding common universal resource fields to `EnemyDefinition`, while leaving approved monster-specific behavior/status/move fields possible. No combat runtime, enemy stats, Degen kits, balance, schema, or deployment config changed.
 - **Tests / QA:** exact implementation/test head CI **PASS**: run [40066979501](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40066979501) on `a2f2a3660fbb41e6d471e191d17705612c902a40`. `npm test` **60/60 PASS**; Worker/D1 action/completion concurrency, transient reward-failure recovery, Underpass cycle reservation/rollover, atomic defeat-history harnesses, production build/type-check, and `npm run check:worker` dry-run all passed. The subsequent commit is continuity documentation only; no gameplay code changed after the tested head. This runtime cannot resolve `github.com` for a separate local checkout, so no local test execution is claimed. Chromium mobile vertical-slice evidence remains separate in PR #27 (exact-head CI run [40065818291](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40065818291)).
@@ -345,3 +358,13 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 assumptions:** `wrangler.toml` remains source of truth (`DB` → `DEGEN`, `db/migrations`). Deploy order remains schema → tracked migrations → Worker. No migration or remote D1 operation in this run.
 - **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration and controlled live identity/session verification; preserve legacy identity collisions and do not invent an account-link/merge policy. PR #26 independently carries the production Pages-origin CORS fix. Shield PR #20 and housing PR #8 remain gated until auth is integrated and their branches are reconciled.
 - **Best next task:** resolve the external auth/configuration gate before reconciling Shield and housing. The implementation/test head has green CI, and later branch commits only update continuity documentation; do not bypass the gate with insecure fallback identity behavior.
+
+
+## Latest run — 2026-10-24 (PR #28 continuity sync after PR #29 merge)
+
+- **Authoritative main SHA at sync:** `2c7994b5ee793b201c1e3f4fdd301a61fe90be69`.
+- **PUSHED / PR #28 OPEN:** `automation/degen/monster-resource-canon-guard-v01`; this continuity commit reconciles `AUTONOMOUS_PROGRESS.md` with the just-merged PR #29 and preserves the existing type/runtime monster-resource guard. No combat runtime, enemy stats, Degen kit, schema, migration, or deployment configuration changed.
+- **QA state:** the prior implementation/test head `a2f2a3660fbb41e6d471e191d17705612c902a40` passed exact-head CI run [40066979501](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40066979501); later continuity head `24f4ddbb406573bc00893deb0952fae0777edcec` passed run [40067477317](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40067477317). This sync needs fresh exact-head CI; do not infer that result before it completes.
+- **Mana:** COMPLETE / MERGED on main. Monster resource namespace guard remains test/type-only and allows approved monster-specific signatures/status/moves while preventing universal Mana-equivalent fields.
+- **Battle authority / D1:** PR #29's invalid/expired/terminal action regression is now merged. `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; schema → migrations → Worker remains the deployment order. No D1 operation or Worker deployment was performed by this docs-only sync.
+- **Blocker / next task:** PR #21 still needs approved production Discord/Telegram credentials/configuration and controlled live identity/session verification. After exact-head CI passes, review the refreshed PR #27 and PR #28; do not bypass auth or invent an account-link/merge policy.
