@@ -728,8 +728,8 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return json(request, env, { ok: true, service: 'degen-api' });
       }
-      if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return handleBootstrap(request, env);
-      if (request.method === 'POST' && url.pathname === '/api/auth/discord/challenge') return handleDiscordChallenge(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return await handleBootstrap(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/auth/discord/challenge') return await handleDiscordChallenge(request, env);
 
       const playerRoute = (request.method === 'PUT' && url.pathname === '/api/player/housing')
         || (request.method === 'GET' && url.pathname === '/api/world/underpass')
@@ -753,10 +753,10 @@ export default {
       // Strip authority from caller-controlled body fields by replacing playerId
       // with the owner resolved from the hashed, unexpired bearer session.
       const ownedRequest = await injectAuthenticatedPlayer(request, session.playerId);
-      if (request.method === 'PUT' && url.pathname === '/api/player/housing') return handleHousing(ownedRequest, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/start') return handleStartBattle(ownedRequest, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/action') return handleBattleAction(ownedRequest, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/complete') return handleCompleteBattle(ownedRequest, env);
+      if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(ownedRequest, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/start') return await handleStartBattle(ownedRequest, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/action') return await handleBattleAction(ownedRequest, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/complete') return await handleCompleteBattle(ownedRequest, env);
       return fail(request, env, 'Not found', 404);
     } catch (error) {
       if (error instanceof InvalidRequestBodyError) {
