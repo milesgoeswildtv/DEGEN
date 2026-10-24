@@ -77,9 +77,9 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
     case 'active':
       return playerHp > 0 && enemyHp > 0;
     case 'victory':
-      return playerHp > 0 && enemyHp === 0;
+      return turnCount > 0 && playerHp > 0 && enemyHp === 0;
     case 'defeat':
-      return playerHp === 0 && enemyHp > 0;
+      return turnCount > 0 && playerHp === 0 && enemyHp > 0;
     default:
       return false;
   }
@@ -355,7 +355,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       FROM battle_permits WHERE id = ? AND player_id = ?`)
       .bind(input.permitId, input.playerId)
       .first<BattlePermitStateRow>();
-    if (latest && latest.player_hp !== null && latest.player_mana !== null && latest.enemy_hp !== null) {
+    if (latest && isValidBattlePermitState(latest)) {
       return json(request, env, {
         error: 'Battle state changed; synchronized from the latest authoritative state.',
         battleState: {
@@ -386,16 +386,18 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   const input = await body<{ playerId?: string; permitId?: string }>(request);
   if (!input.playerId || !input.permitId) return fail(request, env, 'playerId and permitId are required');
 
-  type ReceiptRow = {
-    cycle_id: string; encounter_key: string; reward_state: 'pending' | 'claiming' | 'awarded';
+  type ReceiptRow = BattlePermitStateRow & {
+    reward_state: 'pending' | 'claiming' | 'awarded';
     reward_clear_number: number | null; reward_xp: number | null; reward_currency: number | null;
     reward_tier: 'full' | 'reduced' | null;
   };
-  const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, reward_state, reward_clear_number,
+  const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana,
+      enemy_hp, battle_status, turn_count, reward_state, reward_clear_number,
       reward_xp, reward_currency, reward_tier
     FROM battle_permits WHERE id = ? AND player_id = ? AND battle_status = 'victory'`)
     .bind(input.permitId, input.playerId).first<ReceiptRow>();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
+  if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
 
   const respond = async (row: ReceiptRow) => {
     const player = await loadPlayer(env.DB, input.playerId!);
