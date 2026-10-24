@@ -263,16 +263,26 @@ test('queued housing edits for separate accounts only save under the active acco
     [placement.furnitureId, placement.x, placement.y]).sort(),
   [['starter-chair', 4, 4], ['starter-lamp', 5, 5]],
   'the second account must retain its own queued layout');
-  store.placeFurniture('starter-rug', 6, 5);
   await flush();
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 3, 'switching back should automatically retry the queued layout');
   assert.equal(calls[2]!.playerId, secondPlayerId);
   assert.deepEqual(calls[2]!.housing.placements.map((placement: any) =>
     [placement.furnitureId, placement.x, placement.y]).sort(),
-  [['starter-chair', 4, 4], ['starter-lamp', 5, 5], ['starter-rug', 6, 5]]);
+  [['starter-chair', 4, 4], ['starter-lamp', 5, 5]]);
+
+  store.placeFurniture('starter-rug', 6, 5);
+  await flush();
+  assert.equal(calls.length, 3, 'the latest edit should coalesce behind the retry already in flight');
   calls[2]!.resolve();
   await flush();
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
+  assert.equal(calls[3]!.playerId, secondPlayerId);
+  assert.deepEqual(calls[3]!.housing.placements.map((placement: any) =>
+    [placement.furnitureId, placement.x, placement.y]).sort(),
+  [['starter-chair', 4, 4], ['starter-lamp', 5, 5], ['starter-rug', 6, 5]]);
+  calls[3]!.resolve();
+  await flush();
+  assert.equal(calls.length, 4);
 });
 
 
