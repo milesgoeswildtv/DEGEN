@@ -56,7 +56,7 @@ function assertPersistedPermitState(permitId, state) {
 async function assertInvalidActionState(permitId, state) {
   const response = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash' }),
+    body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash', expectedTurnCount: 0 }),
   });
   const data = await response.json();
   assert.equal(response.status, 409, `${permitId} must fail closed`);
@@ -128,6 +128,21 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  // A valid action without the turn precondition is rejected before any combat mutation.
+  const missingTurnPreconditionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'permit-mana-zero', abilityId: 'slash' }),
+  });
+  const missingTurnPrecondition = await missingTurnPreconditionResponse.json();
+  assert.equal(missingTurnPreconditionResponse.status, 400);
+  assert.equal(missingTurnPreconditionResponse.headers?.['cache-control'], undefined);
+  assert.equal(missingTurnPrecondition.error,
+    'expectedTurnCount is required and must be a non-negative safe integer.');
+  assertPersistedPermitState('permit-mana-zero', {
+    status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
+  });
 
   // Client claims cannot turn an active permit into a victory or grant a reward.
   const forgedActiveCompletion = await complete('permit-mana-zero', 'integration-player', {
