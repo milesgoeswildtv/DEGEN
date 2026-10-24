@@ -22,6 +22,8 @@ jobs:
         run: npm test
       - name: Exercise isolated local Worker/D1 reward concurrency
         run: node tests/worker-d1-concurrency.mjs
+      - name: Verify reward recovery after transient local D1 failure
+        run: node tests/worker-d1-reward-recovery.mjs
       - name: Exercise isolated local Worker/D1 Underpass cycle concurrency
         run: node tests/worker-d1-cycle-race.mjs
       - name: Exercise isolated local Worker/D1 Underpass rollover concurrency
@@ -32,6 +34,8 @@ jobs:
         run: node tests/worker-shield-integration.mjs
       - name: Build web app
         run: npm run build
+      - name: Exercise real Chromium mobile battle vertical slice with local Worker/D1
+        run: node tests/browser-battle-vertical-slice.mjs
       - name: Exercise real browser with isolated Vite and Wrangler/D1
         run: node tests/browser-worker-vertical-slice.mjs
       - name: Validate Cloudflare Worker
