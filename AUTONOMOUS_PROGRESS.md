@@ -5,7 +5,7 @@ Updated: 2026-10-23
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
 - Integration branch: `main`
-- Authoritative main SHA at this run: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Authoritative main SHA at this run: `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
 - Stack: TypeScript + Vite + Phaser + DOM/CSS; Cloudflare Worker + D1.
 - Core vertical slice: Map -> Home -> Underpass -> Battle -> Loot -> Home.
 
@@ -402,3 +402,17 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1/deploy assumptions:** `wrangler.toml` remains the source of truth (`DB` → `DEGEN`, `db/migrations`); deployment order remains schema → tracked migrations → Worker. No remote D1 operation, migration, or deployment was performed.
 - **Miles blocker:** PR #21 still requires approved production Discord/Telegram credentials and controlled live identity/session verification; legacy identity collisions need an approved recovery/link policy. PR #8 remains draft/unmerged behind that gate; Shield PR #20 must not bypass it.
 - **Best next task:** verify CI for this continuity-only head, then continue authenticated client/Worker integration only within the existing PR #21 release gate.
+
+
+## Latest run — 2026-10-23 (retry queued housing layout on account reactivation)
+
+- **Authoritative main SHA at run start:** `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
+- **Continued existing feature branch / PR:** `automation/degen/housing-reliability-v01` / PR #8. Code/test head `59454e282a2ca34bd42b5473843b12417db9c1fe`; still PR-only, draft, unmerged, and undeployed.
+- **Implementation:** `src/app/state.ts` now retries an already-queued housing snapshot when that same account becomes active again. This closes a case where a failed write for an inactive account could remain queued until an unrelated future edit. The retry only triggers when a pending snapshot exists; an in-flight-only snapshot does not cause an unnecessary duplicate write.
+- **Regression coverage:** `tests/housing-save-order.test.ts` verifies queued-layout retry after account reactivation without another edit and updates the multi-account queue test to assert the retry happens only under the matching active account.
+- **Exact code/test head QA PASS:** GitHub Actions run [40055218531](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40055218531) on `59454e282a2ca34bd42b5473843b12417db9c1fe`. `npm test`: **87 passed / 0 failed**. Worker/D1 reward concurrency, transient reward recovery, Underpass cycle reservation and rollover, atomic defeat-history harnesses, `npm run build`, real Chromium housing persistence at 390×844 with Vite + isolated local Worker/D1, and `npm run check:worker` all passed. The two earlier heads failed because the existing queue test expected a queued snapshot to wait for a later edit; that assertion was updated to match the new automatic reactivation retry, and the exact code/test head is green.
+- **Mana:** COMPLETE / MERGED on main. `maxMana`, bespoke `manaCost`, authoritative start/action state, persisted `player_mana`, rejection without mutation, exact deduction, zero-cost use at 0, terminal-turn behavior, client/Worker parity, cost-aware UI, no monster Mana, and no zero-Mana reversion remain verified. Migration `0006_backfill_active_battle_mana.sql` remains tracked and ordered before Worker deployment.
+- **Battle authority / rewards:** authoritative turn CAS, stale-turn rejection, victory-only completion, persisted receipts, transient D1 recovery, full/reduced rewards, XP/level-up math, action/completion races, atomic defeat history, Underpass cycle race/rollover, and event-closure permit validity remain on main.
+- **D1/deploy assumptions:** `wrangler.toml` binding `DB`, database `DEGEN`, and `db/migrations` are unchanged. No schema change, migration, remote D1 mutation, or deployment in this run.
+- **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials and controlled live identity/session verification; legacy identity collisions require an approved recovery/link policy. PR #8 stays draft/unmerged behind that gate; do not bypass it with Shield PR #20.
+- **Best next task:** once the auth gate is satisfied, reconcile this housing slice and the existing Shield slice with authenticated client/Worker code and rerun the combined exact-head browser/D1 suite.
