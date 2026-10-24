@@ -80,6 +80,7 @@ try {
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
+      ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
       ('permit-invalid-negative-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,-1,92,0),
       ('permit-invalid-fractional-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,1.5,92,0),
@@ -167,6 +168,60 @@ try {
   assertPersistedPermitState('permit-invalid-mana', {
     status: 'active', playerHp: 80, playerMana: 13, enemyHp: 92, turnCount: 0,
   });
+
+  // A valid zero-Mana permit must reject a paid move without applying any part of the turn.
+  const insufficientManaResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-insufficient-mana',
+      abilityId: 'crack',
+      expectedTurnCount: 0,
+    }),
+  });
+  const insufficientMana = await insufficientManaResponse.json();
+  assert.equal(insufficientManaResponse.status, 409);
+  assert.equal(insufficientMana.error, 'Not enough Mana for that ability.');
+  assert.deepEqual(insufficientMana.battleState, {
+    permitId: 'permit-insufficient-mana',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 0,
+    enemyHp: 92,
+    turnCount: 0,
+  }, 'rejection must return the unchanged server-authoritative snapshot');
+  assertPersistedPermitState('permit-insufficient-mana', {
+    status: 'active', playerHp: 80, playerMana: 0, enemyHp: 92, turnCount: 0,
+  });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-insufficient-mana:victory','permit-insufficient-mana:defeat')"), 0,
+    'an unaffordable action must not write terminal battle history');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-insufficient-mana' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
+    'an unaffordable action must not reserve or claim rewards');
+
+  // The same permit remains playable at zero Mana with a zero-cost bespoke ability.
+  const zeroManaActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-insufficient-mana',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const zeroManaAction = await zeroManaActionResponse.json();
+  assert.equal(zeroManaActionResponse.status, 200, JSON.stringify(zeroManaAction));
+  assert.equal(zeroManaAction.status, 'active');
+  assert.equal(zeroManaAction.playerHp, 70);
+  assert.equal(zeroManaAction.playerMana, 0, 'a zero-cost action at zero Mana must spend exactly zero');
+  assert.equal(zeroManaAction.enemyHp, 63);
+  assert.equal(zeroManaAction.turnCount, 1);
+  assertPersistedPermitState('permit-insufficient-mana', {
+    status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-insufficient-mana:victory','permit-insufficient-mana:defeat')"), 0,
+    'a non-terminal zero-cost action must not create battle history');
   await assertInvalidActionState('permit-invalid-negative-mana', { status: 'active', playerHp: 80, playerMana: -1, enemyHp: 92, turnCount: 0 });
   await assertInvalidActionState('permit-invalid-fractional-mana', { status: 'active', playerHp: 80, playerMana: 1.5, enemyHp: 92, turnCount: 0 });
   await assertInvalidActionState('permit-invalid-fractional-player-hp', { status: 'active', playerHp: 80.5, playerMana: 12, enemyHp: 92, turnCount: 0 });
