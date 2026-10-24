@@ -187,6 +187,19 @@ test('successful battle actions reject malformed or out-of-turn Worker state bef
   }
 });
 
+test('battle action rejects an empty 204 response without treating it as authoritative', async () => {
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  try {
+    await assert.rejects(
+      new GameApi().actUnderpass('player-1', 'permit-1', 'slash', 0),
+      /Malformed authoritative battle action response/,
+    );
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
 test('successful terminal battle actions accept only Worker-consistent victory and defeat states', async () => {
   const terminalStates = [
     { permitId: 'permit-1', status: 'victory', playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 0, turnCount: 1 },
