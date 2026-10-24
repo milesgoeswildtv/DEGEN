@@ -386,12 +386,24 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   };
-  await env.DB.prepare(`INSERT INTO battle_permits (
+  // Recheck the selected cycle in the same D1 statement that issues the permit.
+  // The earlier phase read is advisory; closure can win before this write.
+  const issuedPermit = await env.DB.prepare(`INSERT INTO battle_permits (
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count
-    ) VALUES (?, ?, 'underpass', ?, ?, ?, ?, ?, ?, 'active', 0)`)
+    )
+    SELECT ?, ?, 'underpass', ?, ?, ?, ?, ?, ?, 'active', 0
+    WHERE EXISTS (
+      SELECT 1 FROM world_event_cycles
+      WHERE id = ? AND event_key = 'underpass'
+        AND julianday(opens_at) <= julianday('now')
+        AND julianday(closes_at) > julianday('now')
+    )
+    RETURNING id`)
     .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt,
-      initialState.playerHp, initialState.playerMana, initialState.enemyHp).run();
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id)
+    .first<{ id: string }>();
+  if (!issuedPermit) return fail(request, env, 'The Underpass is sealed.', 409);
 
   return json(request, env, {
     permitId,
@@ -458,6 +470,11 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     enemy: TUNNEL_MAW,
   });
   const { playerHp, playerMana, enemyHp, status } = turn;
+
+  // Reject a non-terminal turn at the last safe boundary before any D1 mutation.
+  if (status === 'active' && permit.turn_count >= Number.MAX_SAFE_INTEGER - 1) {
+    return fail(request, env, 'Battle turn limit reached.', 409);
+  }
 
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
