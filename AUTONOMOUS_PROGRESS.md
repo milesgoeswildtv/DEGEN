@@ -377,3 +377,14 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 assumptions:** `wrangler.toml` remains source of truth (binding `DB`, database `DEGEN`, migrations `db/migrations`); deploy order is schema → tracked migrations → Worker. No migration, remote D1 operation, or Worker deployment was performed.
 - **Miles blocker:** PR #21's signed Discord/Telegram identity/session ownership still requires approved production credentials and controlled live verification; legacy identity collisions need an approved recovery/link policy. Keep PR #8 draft/unmerged until the authentication gate and combined branch review are satisfied.
 - **Best next task:** verify exact-head CI for this housing retry fix, then reconcile housing and Shield against the approved auth branch without bypassing its release gate.
+
+
+### Follow-up — queued housing writes stay bound to the active account
+
+- Authoritative `main` SHA: `9997002df0ea48ab54ae82a2efcf084734f00fdb`. Continued PR #8 on `automation/degen/housing-reliability-v01`; **new code/test head** `8c3a23ce270b463ab8870c7aba5c46241ea820a6`. No direct `main` writes.
+- Updated `src/app/state.ts` so the queue drains only snapshots for the currently active player. Saves for another account remain queued until that account is active again. This prevents a future auth-enabled `GameApi` session from accidentally sending a stale account's housing snapshot under a different player's bearer session. The earlier bounded retry-on-next-edit behavior remains.
+- Updated `tests/housing-save-order.test.ts` to assert that a queued second-account layout is not sent while the first account is active, that the first account's latest layout saves, and that the second account's latest layout is saved only after switching back.
+- Exact-head CI for `8c3a23ce270b463ab8870c7aba5c46241ea820a6` is pending/unobserved. The prior code/test head `ef18e8f66e88ee5a7a2ca8adf5169a655e97561e` passed run `40045849060` with 85/85 deterministic tests and all Worker/D1, mobile Chromium, build, and Wrangler checks; that does not certify this newer account-scoping change.
+- Mana and battle authority remain complete on main; no combat, rewards, schema, or migration changes. No remote D1 operation or deployment.
+- Release gate unchanged: PR #21 still requires approved production Discord/Telegram credentials and controlled live auth verification; legacy identity collisions require an approved recovery/link policy. Keep PR #8 draft/unmerged.
+- **Best next task:** obtain exact-head CI for the active-account queue scoping change, then reconcile housing and Shield with the authenticated client/Worker after the release gate is satisfied.
