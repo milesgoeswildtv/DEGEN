@@ -207,8 +207,13 @@ try {
     const displayedMana = `MANA ${expected.player_mana}/12`;
     await until('rendered authoritative Mana HUD after turn ' + turn,
       () => cdp.evaluate(`window.__degenRenderedBattleText?.includes(${JSON.stringify(displayedMana)})`));
-    assert.equal(await cdp.evaluate("window.__degenRenderedBattleText?.includes('MANIFESTED')"), true,
-      'the Degen remains manifested even when authoritative Mana reaches zero');
+    const hudOrder = await cdp.evaluate(`(() => {
+      const rendered = window.__degenRenderedBattleText || [];
+      return { mana: rendered.lastIndexOf(${JSON.stringify(displayedMana)}), manifested: rendered.lastIndexOf('MANIFESTED') };
+    })()`);
+    assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
+    assert.ok(hudOrder.manifested > hudOrder.mana,
+      'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
