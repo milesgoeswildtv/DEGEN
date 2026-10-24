@@ -397,7 +397,6 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     FROM battle_permits WHERE id = ? AND player_id = ? AND battle_status = 'victory'`)
     .bind(input.permitId, input.playerId).first<ReceiptRow>();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
-  if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
 
   const respond = async (row: ReceiptRow) => {
     const player = await loadPlayer(env.DB, input.playerId!);
@@ -412,6 +411,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     }, worldEvent: event });
   };
   if (receipt.reward_state === 'awarded') return respond(receipt);
+  if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
 
   const token = crypto.randomUUID();
   // The token-scoped cleanup also covers an ambiguous failure while acquiring
