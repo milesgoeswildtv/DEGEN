@@ -2,18 +2,6 @@
 
 Updated: 2026-10-24
 
-## Shield branch continuation note — 2026-10-24
-
-- **Authoritative main SHA inspected:** `5247fd58201b385d35f7e6f72f81907dfef9b214`. **Current feature branch / PR:** `automation/degen/shield-foundation-v03`, PR #20 (draft), code/test head `5cd086e4e283d1956ca5411340c2d8d9c6330250`. GitHub reports PR #20 mergeable against main; it remains unmerged and undeployed.
-- **Task / files:** continued the existing Shield slice without creating a competing feature branch. Preserved `db/migrations/0008_degen_shield.sql`, player-only temporary Shield state, Shield absorption/retaliation reporting, and the isolated Worker/D1 + browser tests. Kept the feature branch's CI additions separate so current main's reward-recovery and mobile-browser checks are included by the PR merge ref.
-- **Branch-sync attempt:** temporary PR #33 (main → Shield branch) was closed unmerged after GitHub reported reverse-direction merge conflicts. No main write or merge occurred. PR #20 is the supported product PR.
-- **Exact-head CI PASS:** GitHub Actions run [40081361932](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40081361932) completed successfully for the PR's current tested head `5cd086e4e283d1956ca5411340c2d8d9c6330250`. Verified steps: deterministic tests, Worker/D1 reward concurrency, transient reward recovery, Underpass cycle race and rollover, atomic defeat history, Shield state/persistence integration, browser Worker/D1 vertical slice, production build, Chromium mobile battle vertical slice, and `npm run check:worker`. The D1/browser harnesses are isolated local fixtures, not production D1 or live-platform proof. No separate local checkout tests are claimed.
-- **Mana status:** COMPLETE / MERGED on main. Degen-only `maxMana`/bespoke `manaCost`, authoritative start/action snapshots, persisted `player_mana`, rejection without mutation, exact deduction, free actions at zero, killing-blow/defeat parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no zero-Mana reversion remain intact.
-- **Battle authority / reward idempotency:** current main retains server-owned action CAS and stale-turn rejection, server-resolved victory-only rewards, persisted receipts/transient-failure recovery, full/reduced reward tiers, level-up math, action/completion race coverage, atomic defeat history, Underpass cycle reservation/rollover, and valid issued permits across event closure until expiry. Shield changes only player-owned temporary protection and do not change reward math or monster resources.
-- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment applies schema → tracked migrations → Worker. Migration `0008_degen_shield.sql` adds only `player_shield` and must follow auth/session migration `0007_player_sessions.sql` when auth is approved/integrated. No production D1 operation, secret change, or Worker deployment occurred.
-- **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for preserved unverified legacy identity collisions. Keep PR #20 draft/unmerged until that release gate is cleared; do not invent account-link/merge behavior.
-- **Best next task:** preserve the green Shield branch, then integrate Shield only after the auth release gate and migration order are resolved.
-
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
 - Integration branch: `main`
@@ -62,6 +50,19 @@ Updated: 2026-10-24
 
 ## Best next task
 Deliver the active-permit Mana backfill as a focused PR with malformed-expiry and migration-before-Worker deployment regressions. After exact-head CI is green, implement and test the authoritative battle-start snapshot contract before Shield/status work.
+
+## Shield branch continuation note — 2026-10-24
+
+- **Authoritative main SHA inspected:** `5247fd58201b385d35f7e6f72f81907dfef9b214`. **Current feature branch / PR:** `automation/degen/shield-foundation-v03`, PR #20 (draft), tested code/test head `5cd086e4e283d1956ca5411340c2d8d9c6330250`. GitHub reported PR #20 mergeable against main before this continuity-only update; it remains unmerged and undeployed.
+- **Task / files:** continued the existing Shield slice without creating a competing feature branch. Preserved `db/migrations/0008_degen_shield.sql`, player-only temporary Shield state, authoritative Shield absorption/retaliation reporting, and isolated Worker/D1 + browser tests. The feature branch keeps Shield-specific CI additions separate so current main's reward-recovery and mobile-browser checks are included by the PR merge ref.
+- **Branch-sync attempt:** temporary PR #33 (main → Shield branch) was closed unmerged after GitHub reported reverse-direction merge conflicts. No main write or merge occurred. PR #20 is the supported product PR.
+- **Exact-head CI PASS:** GitHub Actions run [40081361932](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40081361932) completed successfully for code/test head `5cd086e4e283d1956ca5411340c2d8d9c6330250`. Verified: deterministic tests, Worker/D1 reward concurrency, transient reward recovery, Underpass cycle race and rollover, atomic defeat history, Shield state/persistence integration, browser Worker/D1 vertical slice, production build, Chromium mobile battle vertical slice, and `npm run check:worker`. D1/browser harnesses use isolated local fixtures, not production D1 or live-platform proof. Progress-only head `b51a70ce1f4d094b0551c1a9cd3f3e5a641f1e35` has no separately observed CI result.
+- **Mana status:** COMPLETE / MERGED on main. Degen-only `maxMana`/bespoke `manaCost`, authoritative start/action snapshots, persisted `player_mana`, rejection without mutation, exact deduction, free actions at zero, killing-blow/defeat parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no zero-Mana reversion remain intact.
+- **Battle authority / reward idempotency:** current main retains server-owned action CAS and stale-turn rejection, server-resolved victory-only rewards, persisted receipts/transient-failure recovery, full/reduced reward tiers, level-up math, action/completion race coverage, atomic defeat history, Underpass cycle reservation/rollover, and valid issued permits across event closure until expiry. Shield changes only player-owned temporary protection and do not change reward math or monster resources.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment applies schema → tracked migrations → Worker. Migration `0008_degen_shield.sql` adds only `player_shield` and must follow auth/session migration `0007_player_sessions.sql` when auth is approved/integrated. No production D1 operation, secret change, or Worker deployment occurred.
+- **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for preserved unverified legacy identity collisions. Keep PR #20 draft/unmerged until that release gate is cleared; do not invent account-link/merge behavior.
+- **Best next task:** preserve the green Shield branch, then integrate Shield only after the auth release gate and migration order are resolved.
+
 
 ## Latest verified run — 2026-10-08
 - Main SHA: `2df79a123a022212721634c048147d8bf935566a`.
