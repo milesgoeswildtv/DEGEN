@@ -658,3 +658,16 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 / deployment assumptions:** migration `0008_degen_shield.sql` remains tracked on PR #20 and adds only player-owned `player_shield`. The repository binding/config remains authoritative (`DB`, database `DEGEN`, migrations directory `db/migrations`); CI verifies base schema and migrations run before Worker deployment. Player-session migration `0007_player_sessions.sql` is still not merged to main; do not merge/deploy migration 0008 ahead of PR #21's approved identity/session release gate. No production D1 mutation or Worker deployment occurred.
 - **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Keep PR #20 draft and do not bypass that gate.
 - **Best next task:** finish CI for the progress-updated PR #20 head, record the exact result, and keep the product PR gated until the identity/session release gate is explicitly approved.
+
+
+## CI verification — 2026-10-24 (Shield invariants)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`; main was not modified.
+- **Code/test head:** `0c594844d8d6c7bd86c2b72e713f10362197a3f8`. Exact-head CI run [40143919620](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40143919620) **PASSED all 13 substantive steps**: deterministic tests, D1 reward concurrency and recovery, Underpass cycle and rollover concurrency, atomic defeat history, Shield Worker/D1 integration, production web build, Chromium mobile battle vertical slice, and `npm run check:worker`.
+- **Current branch head:** `3f3a2781d92e4fafd94765ab5da6f72338cd2934` adds only this progress record. Its exact-head CI is pending; no runtime code changed after the passing code/test head.
+- **Test correction trail:** intermediate head `3ffef1bfbf6f96ef65d840aa3aa5641ac26a019f` failed one deterministic assertion because an overflow guard's error text had changed. The original error contract was restored and the redundant extra test removed. The subsequent code/test head `82c4aecc3a548491b4c13f509487cd1f004fa842` also passed all CI steps; the latest `0c594...` run additionally verifies safe handling of an empty 204 action response.
+- **Mana:** COMPLETE / MERGED on main; no Mana balance values changed.
+- **Battle authority / rewards:** Worker owns combat and reward state. New checks only harden impossible Shield result/state rejection; they do not change reward calculations or completion authority.
+- **D1 / deployment:** migration 0008 remains PR-only; no production database or Worker deployment was touched. Migration 0007 identity/session work is still not merged.
+- **Miles blocker:** PR #21 still requires approved production Discord/Telegram credentials, controlled identity/session verification, and a decision on unverified legacy identity collisions. PR #20 remains draft/unmerged by design.
+- **Best next task:** confirm CI for the progress-only branch head, then keep PR #20 gated until the identity/session release gate is approved.
