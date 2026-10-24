@@ -152,8 +152,10 @@ export class PlayerStore {
         // only once in this drain so a persistent outage cannot spin forever or
         // block queued saves for other accounts. A newer snapshot for the same
         // player remains eligible even if an earlier snapshot failed.
+        const activePlayerId = this.state.id;
         const next = [...this.pendingHousingSaves.entries()]
-          .find(([playerId, housing]) => failedSnapshots.get(playerId) !== housing);
+          .find(([playerId, housing]) =>
+            playerId === activePlayerId && failedSnapshots.get(playerId) !== housing);
         if (!next) break;
         const [playerId, housing] = next;
         this.pendingHousingSaves.delete(playerId);
