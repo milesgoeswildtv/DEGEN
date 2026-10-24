@@ -178,7 +178,15 @@ export class GameApi {
       headers['content-type'] = 'application/json';
     }
     if (tokenUsed) headers.authorization = `Bearer ${tokenUsed}`;
+    const publicAuthRoute = path === '/api/player/bootstrap' || path === '/api/auth/discord/challenge'
+      || path === '/api/auth/logout';
     const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    // A response started under one account must never be applied after another account becomes active.
+    // Same-player token refreshes remain safe; account-owner changes fail closed before parsing data.
+    if (!publicAuthRoute && this.sessionPlayerId !== playerIdUsed) {
+      void response.body?.cancel().catch(() => undefined);
+      throw new GameApiError(401, { error: 'Authenticated player changed while request was in flight.' }, 'DEGEN API 401: authenticated player changed while the request was in flight.');
+    }
     if (response.status === 401) {
       if (this.sessionToken && this.sessionToken !== tokenUsed) {
         if (this.sessionPlayerId !== playerIdUsed) {
@@ -192,8 +200,6 @@ export class GameApi {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
       } catch { /* Ignore unavailable storage. */ }
-      const publicAuthRoute = path === '/api/player/bootstrap' || path === '/api/auth/discord/challenge'
-        || path === '/api/auth/logout';
       if (!publicAuthRoute && allowRefresh && this.identityProvider) {
         if (!this.refreshInFlight) {
           const refresh = (async () => {
