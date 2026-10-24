@@ -670,3 +670,14 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blocker:** production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions remain required. Do not merge this PR or integrate Shield/housing around that gate.
 - **Continuity-only follow-up:** this progress update creates a new branch head after the verified code/test head; do not infer this documentation-only head has its own green CI until observed.
 - **Best next task:** resolve the approved platform-auth configuration/live-verification and legacy-collision policy gate, then reassess PR #21 before merging Shield PR #20 or housing PR #49.
+
+
+## Latest follow-up — 2026-10-24 (reconciled auth progress head CI PASS)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`; PR #21 branch remains 0 commits behind main and mergeable.
+- **Code/test head PASS:** `b4f01d771bbc65b68362c94ddc12a8764b4952cf`, CI run [40141456880](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40141456880), including 107/107 deterministic tests and the full Worker/D1, reward recovery/concurrency, Underpass race/rollover, atomic defeat, build, Chromium battle, signed Telegram auth, and Worker dry-run matrix.
+- **Progress-sync head PASS:** `21e0dfb5cc822044d0ec6a985e285f7080b7d96e`, CI run [40141839322](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40141839322); every CI step passed. This run also executed the full matrix, not only the deterministic tests.
+- **State distinction:** PR #21 remains OPEN / UNMERGED. These are PR-branch CI results only. No production D1 mutation, secret/config change, Worker deployment, or live Discord/Telegram authentication was performed.
+- **Mana / battle authority:** Mana remains COMPLETE / MERGED on main; the active permit state still includes authoritative player Mana, required expected-turn precondition, persisted-state validation, and idempotent server-resolved rewards. Migration 0006 is already applied; 0007 is still PR-only; 0008 Shield remains gated downstream.
+- **Miles blocker / next task:** production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved legacy identity-collision recovery/link policy remain required. Do not merge around that gate or auto-link accounts. Resolve the gate before merging PR #21 and then reconcile Shield/housing.
+- **Continuity-only update:** this note creates a new documentation-only branch head; its own CI will run independently and must not be assumed green until checked.
