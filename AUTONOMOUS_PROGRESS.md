@@ -525,3 +525,14 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1/deploy assumptions:** `wrangler.toml` remains source of truth (`DB` → `DEGEN`, `db/migrations`); deployment applies schema → tracked migrations → Worker. Auth migration `0007_player_sessions.sql` remains PR #21-only and must not be applied/deployed without the approved auth rollout.
 - **Miles blocker:** production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a policy for legacy identity collisions remain external release gates. Do not merge or deploy auth based on local/CI proof alone.
 - **Best next task:** verify exact-head CI for the stale-success response guard, then keep the auth release gate explicit and reconcile housing/Shield only after authenticated rollout is approved.
+
+
+### Follow-up — guard the response-body parsing race
+
+- Continued PR #21 on `automation/degen/identity-binding-immutability-v02`; authoritative main remains `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
+- Tightened `src/app/api.ts`: account ownership is checked both when fetch resolves and after asynchronous response-body parsing (including error-body reads). This closes the narrow window where Player A's response begins parsing before the switch but finishes after Player B becomes active. Same-player token renewal remains permitted.
+- Added `tests/api-session-account-isolation.test.ts` coverage with a deferred JSON body: the response starts under Player A, Player B signs in while parsing is pending, then Player A's body completes and must be discarded; the next request must use Player B's token.
+- **QA status:** exact-head CI is pending for this follow-up. No full local checkout is available in this runtime; no production secret, D1, or deployment operation was performed.
+- Mana and battle/reward authority remain unchanged and complete on main. Auth migration `0007_player_sessions.sql` remains PR-only.
+- Release gate remains approved production Discord/Telegram credentials, controlled live identity/session verification, and a Miles-approved policy for legacy identity collisions.
+- Best next task: obtain exact-head green CI for the stale-response/body-parsing guard, then preserve the auth release gate before housing/Shield integration.
