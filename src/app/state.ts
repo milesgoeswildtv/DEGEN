@@ -145,14 +145,15 @@ export class PlayerStore {
     this.pendingHousingSaves.set(this.state.id, structuredClone(this.state.housing));
     if (this.housingSaveInFlight) return;
     this.housingSaveInFlight = true;
-    const failedPlayerIds = new Set<string>();
+    const failedSnapshots = new Map<string, PlayerState['housing']>();
     try {
       while (this.pendingHousingSaves.size > 0) {
         // A failed latest snapshot stays queued for the next edit, but is attempted
         // only once in this drain so a persistent outage cannot spin forever or
-        // block queued saves for other accounts.
+        // block queued saves for other accounts. A newer snapshot for the same
+        // player remains eligible even if an earlier snapshot failed.
         const next = [...this.pendingHousingSaves.entries()]
-          .find(([playerId]) => !failedPlayerIds.has(playerId));
+          .find(([playerId, housing]) => failedSnapshots.get(playerId) !== housing);
         if (!next) break;
         const [playerId, housing] = next;
         this.pendingHousingSaves.delete(playerId);
@@ -162,7 +163,7 @@ export class PlayerStore {
         } catch (error) {
           if (!this.pendingHousingSaves.has(playerId)) {
             this.pendingHousingSaves.set(playerId, housing);
-            failedPlayerIds.add(playerId);
+            failedSnapshots.set(playerId, housing);
           }
           console.warn('Housing save failed; local copy retained for retry on the next edit.', error);
         } finally {
