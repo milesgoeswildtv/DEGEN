@@ -181,11 +181,16 @@ export class GameApi {
     const publicAuthRoute = path === '/api/player/bootstrap' || path === '/api/auth/discord/challenge'
       || path === '/api/auth/logout';
     const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
-    // A response started under one account must never be applied after another account becomes active.
-    // Same-player token refreshes remain safe; account-owner changes fail closed before parsing data.
-    if (!publicAuthRoute && this.sessionPlayerId !== playerIdUsed) {
+    const sessionOwnerChanged = () => !publicAuthRoute && this.sessionPlayerId !== playerIdUsed;
+    const staleResponseError = () => new GameApiError(
+      401,
+      { error: 'Authenticated player changed while request was in flight.' },
+      'DEGEN API 401: authenticated player changed while the request was in flight.',
+    );
+    // Reject before consuming a body if a different account became active while fetch was pending.
+    if (sessionOwnerChanged()) {
       void response.body?.cancel().catch(() => undefined);
-      throw new GameApiError(401, { error: 'Authenticated player changed while request was in flight.' }, 'DEGEN API 401: authenticated player changed while the request was in flight.');
+      throw staleResponseError();
     }
     if (response.status === 401) {
       if (this.sessionToken && this.sessionToken !== tokenUsed) {
@@ -218,11 +223,15 @@ export class GameApi {
     }
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
+      if (sessionOwnerChanged()) throw staleResponseError();
       let payload: unknown;
       try { payload = detail ? JSON.parse(detail) as unknown : undefined; } catch { /* non-JSON API error */ }
       throw new GameApiError(response.status, payload, `DEGEN API ${response.status}: ${detail || response.statusText}`);
     }
     if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+    const payload = await response.json() as T;
+    // The account can change while a streamed response body is being read.
+    if (sessionOwnerChanged()) throw staleResponseError();
+    return payload;
   }
 }
