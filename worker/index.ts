@@ -429,14 +429,13 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 }
 
 async function handleBattleAction(request: Request, env: Env): Promise<Response> {
-  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount?: number }>(request);
+  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount: number }>(request);
   if (!input.playerId || !input.permitId || !input.abilityId) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
   }
   // This is a compare-and-swap precondition only; combat state remains Worker-owned.
-  if (input.expectedTurnCount !== undefined
-    && (!Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0)) {
-    return fail(request, env, 'expectedTurnCount must be a non-negative safe integer.', 400);
+  if (!Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0) {
+    return fail(request, env, 'expectedTurnCount is required and must be a non-negative safe integer.', 400);
   }
 
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === input.abilityId);
@@ -466,7 +465,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     turnCount: permit.turn_count,
   };
   const conflict = (message: string) => json(request, env, { error: message, battleState }, 409);
-  if (input.expectedTurnCount !== undefined && input.expectedTurnCount !== permit.turn_count) {
+  if (input.expectedTurnCount !== permit.turn_count) {
     return conflict('Stale battle turn.');
   }
   if (permit.battle_status !== 'active') return conflict(`Battle is already ${permit.battle_status}.`);
