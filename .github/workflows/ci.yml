@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, automation/degen/identity-binding-immutability-v02]
 
 jobs:
   build:
