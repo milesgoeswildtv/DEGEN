@@ -187,6 +187,7 @@ export class GameApi {
         return this.request<T>(path, init, false);
       }
       this.sessionToken = undefined;
+      this.sessionPlayerId = undefined;
       try {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
