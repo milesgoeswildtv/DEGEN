@@ -1,3 +1,18 @@
+## Latest run — 2026-10-24 (Worker response cache hardening)
+
+- **Authoritative main SHA at branch creation:** `0ecf3d2267571e3775987c855c83c0c1815e4b57`.
+- **PUSHED / PR #46 OPEN:** `automation/degen/no-store-api-responses-v01`; implementation/test head before this continuity update: `46bbfcbd89e622b595a6e56680cb4e280602f0e8`. No direct-main write.
+- **Files changed:** `worker/index.ts`, `tests/pages-cors.test.ts`; this entry updates `AUTONOMOUS_PROGRESS.md`.
+- **Implementation:** all Worker JSON success and error responses now set `Cache-Control: no-store`; the successful 204 housing-save response does too. The real Worker-handler tests cover health JSON, not-found JSON, and a housing-save response with a minimal D1 adapter. No auth/session behavior, reward math, schema, migration, D1 binding, or deployment configuration changed.
+- **QA:** exact-head CI is required for PR #46, including `npm test`, `npm run build`, `npm run check:worker`, and the existing isolated Worker/D1/browser suite. This runner cannot resolve GitHub from the local shell, so no separate local commands or live HTTP proof are claimed. No production D1 operation or Worker deployment was performed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` and bespoke `manaCost`, authoritative start/action state, persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost at zero, killing-blow/defeat parity, client/Worker math consistency, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no zero-Mana reversion remain verified.
+- **Battle authority / reward idempotency:** current main retains persisted-state bounds and terminal invariants, action CAS/stale-turn guards, server-resolved victory-only rewards, token-scoped transient-D1 recovery, persisted reward receipts, full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, cycle reservation/rollover, and permits valid across event closure until expiry. PR #46 does not alter combat or rewards.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment applies base schema → tracked migrations → Worker. No migration is required. Because `worker/index.ts` changes, a future merge will trigger the existing Worker deployment workflow, but this PR itself is not deployed.
+- **Miles blocker:** PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved recovery/link policy for preserved unverified legacy identity collisions. Do not bypass this gate or auto-link accounts; keep Shield PR #20 and housing PR #8 gated until auth is integrated and branches are reconciled.
+- **Best next task:** continue the authenticated identity/session release work once the approved credential/configuration and legacy-collision policy are available; then reconcile Shield/housing with the authenticated Worker and rerun the combined browser/D1 suite.
+
+---
+
 ## Latest run — 2026-10-24 (Mana rejection atomicity merged; Underpass entry race guarded)
 
 - **Authoritative main SHA:** `b03c2c3ea1adc3909bfdc63e3e19f8910e081703`. PR #44 (test-only Mana rejection atomicity coverage) was merged by squash at this SHA. Post-merge CI [run 40121741969](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40121741969) is in progress; no result is claimed yet. This merge did not change Worker or D1 files and does not itself trigger Worker deployment.
