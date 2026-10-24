@@ -501,3 +501,13 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Battle authority/reward idempotency remains server-owned with persisted receipts, CAS action turns, transient D1 reward recovery, and terminal defeat atomicity. No remote D1 operation, secret access/change, or Worker deployment.
 - **Miles blocker:** approved production Telegram/Discord credentials/configuration and controlled live identity/session verification remain required; legacy identity collisions need an approved recovery/link policy. PR #21 remains open and unmerged.
 - **Best next task:** verify exact-head CI for the stale-housing-owner guard, then keep housing and Shield behind the approved auth/live-verification release gate.
+
+
+### Follow-up — clear stale in-memory session ownership after 401
+
+- Continued PR #21 on `automation/degen/identity-binding-immutability-v02`; **new code/test head** `0291fc916d31643139042d3bb9cad9b4a5907fd4`. Authoritative `main` remains `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
+- Updated `src/app/api.ts` so a rejected bearer session clears both the token and its paired in-memory player ID before any reauthentication attempt. Previously, if refresh failed, the old in-memory owner could remain while the token and storage entries were gone; the new housing-owner guard could then incorrectly reject a subsequent new-account save locally instead of allowing the normal refresh path.
+- Added a deterministic regression to `tests/api-session-account-isolation.test.ts`: after Player A's session expires and reauthentication fails, a Player B housing save enters the normal request/refresh path instead of being blocked by stale Player A ownership.
+- Exact-head CI for `0291fc916d31643139042d3bb9cad9b4a5907fd4` is pending/unobserved. Previous code/test head `49638972c254284a24c8bb735efdbff76c02214a` passed CI run `40046736846` with 85/85 deterministic tests and all Worker/D1, browser auth, build, and Wrangler checks; that does not certify this new session-clear regression.
+- No Mana/combat/reward/schema changes; no secret access/change, remote D1 mutation, or Worker deployment. Production auth/live verification and legacy-account recovery policy remain Miles release gates.
+- **Best next task:** verify exact-head CI for the paired-session clear fix, then preserve the auth release gate before merging housing or Shield.
