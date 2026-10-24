@@ -49,6 +49,7 @@ test('real Worker OPTIONS responds to production Pages origin', async () => {
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://degen-8ze.pages.dev');
   assert.equal(response.headers.get('vary'), 'Origin');
   assert.match(response.headers.get('access-control-allow-methods') ?? '', /POST/);
+  assert.match(response.headers.get('access-control-allow-headers') ?? '', /content-type/i);
 });
 
 test('real Worker OPTIONS preserves legacy and local origins', async () => {
