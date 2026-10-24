@@ -29,6 +29,7 @@ export class PlayerStore {
   private listeners = new Set<(state: PlayerState) => void>();
   private housingSaveInFlight = false;
   private housingSavePlayerId?: string;
+  private housingSaveSnapshot?: PlayerState['housing'];
   // Coalesce per player, not globally: a pending save for one account must not
   // be discarded when another account edits housing before the first resolves.
   private pendingHousingSaves = new Map<string, PlayerState['housing']>();
@@ -78,10 +79,17 @@ export class PlayerStore {
   }
 
   replaceFromServer(player: PlayerState): void {
-    // Preserve same-account placement edits while a save is pending; the
-    // receipt remains authoritative for inventory and all progression.
-    const saving = this.housingSavePlayerId === player.id || this.pendingHousingSaves.has(player.id);
-    const placements = saving && this.state.id === player.id ? structuredClone(this.state.housing.placements) : undefined;
+    // Preserve unsaved placement edits for this account even if another account
+    // was active while the save was queued or in flight. Inventory and progression
+    // always come from the server response.
+    const pending = this.pendingHousingSaves.get(player.id);
+    const inFlight = this.housingSavePlayerId === player.id ? this.housingSaveSnapshot : undefined;
+    const unsavedHousing = pending ?? inFlight;
+    const placements = unsavedHousing
+      ? structuredClone(this.state.id === player.id
+        ? this.state.housing.placements
+        : unsavedHousing.placements)
+      : undefined;
     this.state = placements ? { ...player, housing: { ...player.housing, placements } } : player;
     this.commitLocal();
   }
@@ -160,6 +168,7 @@ export class PlayerStore {
         const [playerId, housing] = next;
         this.pendingHousingSaves.delete(playerId);
         this.housingSavePlayerId = playerId;
+        this.housingSaveSnapshot = structuredClone(housing);
         try {
           await this.api.saveHousing(playerId, housing);
         } catch (error) {
@@ -170,6 +179,7 @@ export class PlayerStore {
           console.warn('Housing save failed; local copy retained for retry on the next edit.', error);
         } finally {
           this.housingSavePlayerId = undefined;
+          this.housingSaveSnapshot = undefined;
         }
       }
     } finally {
