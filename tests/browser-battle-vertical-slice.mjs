@@ -146,7 +146,7 @@ try {
       Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
-        if (typeof text === 'string' && /^(MANA \\d+\\/\\d+|MANIFESTED)$/.test(text)) rendered.push(text);
+        if (typeof text === 'string' && (text.startsWith('MANA ') || text === 'MANIFESTED')) rendered.push(text);
         return original.call(this, text, ...args);
       };
     })();`,
