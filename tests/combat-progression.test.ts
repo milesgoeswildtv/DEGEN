@@ -7,11 +7,18 @@ import { runInNewContext } from 'node:vm';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
+import {
+  UNDERPASS_FULL_REWARD_LIMIT,
+  advanceLevel,
+  underpassRewardForClear,
+  xpNeededForLevel,
+} from '../src/game/progression.ts';
+
 const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
-  .replace(/\\bexport class /g, 'class ');
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/\bexport class /g, 'class ');
 const { BattleEngine } = runInNewContext(
-  stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\\n({ BattleEngine });',
+  stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
   { canUseAbility, resolveCombatTurn },
 ) as {
   BattleEngine: new (
@@ -23,12 +30,6 @@ const { BattleEngine } = runInNewContext(
     snapshot: { playerMana: number; status: string; playerName: string };
   };
 };
-import {
-  UNDERPASS_FULL_REWARD_LIMIT,
-  advanceLevel,
-  underpassRewardForClear,
-  xpNeededForLevel,
-} from '../src/game/progression.ts';
 
 test('prototype combat resolves the same deterministic turn every time', () => {
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
