@@ -110,6 +110,23 @@ try {
     status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: 0,
   });
 
+  const wrongOwnerActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'someone-else',
+      permitId: 'permit-mana-zero',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const wrongOwnerAction = await wrongOwnerActionResponse.json();
+  assert.equal(wrongOwnerActionResponse.status, 409, 'a permit cannot be used by a different player ID');
+  assert.match(wrongOwnerAction.error, /invalid, expired, or already completed/i);
+  assertPersistedPermitState('permit-mana-zero', {
+    status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
+  });
+
   const terminalActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
