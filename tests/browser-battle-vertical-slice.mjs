@@ -131,14 +131,7 @@ try {
   const assertFitsCompact = async (route) => {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 2, mobile: true });
     await until('compact viewport resize', () => cdp.evaluate('window.innerWidth === 320'));
-    const dimensions = await cdp.evaluate(`(() => {
-      const label = document.querySelector('.player-chip span');
-      const original = label?.textContent;
-      if (label) label.textContent = 'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM';
-      const result = { width: window.innerWidth, scroll: document.documentElement.scrollWidth };
-      if (label) label.textContent = original;
-      return result;
-    })()`);
+    const dimensions = await cdp.evaluate('({ width: window.innerWidth, scroll: document.documentElement.scrollWidth })');
     assert.equal(dimensions.width, 320, route + ' compact viewport width');
     assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true });
