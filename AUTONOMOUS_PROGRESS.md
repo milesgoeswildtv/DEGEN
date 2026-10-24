@@ -1,11 +1,11 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
-Updated: 2026-10-23
+Updated: 2026-10-24
 
 ## Authoritative runtime
 - Repository: `milesgoeswildtv/DEGEN`
 - Integration branch: `main`
-- Authoritative main SHA at this run: `33e7477961d2a6ab7b79bf52d78a93901e19f658`.
+- Authoritative main SHA at this run: `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
 - Stack: TypeScript + Vite + Phaser + DOM/CSS; Cloudflare Worker + D1.
 - Core vertical slice: Map -> Home -> Underpass -> Battle -> Loot -> Home.
 
@@ -332,3 +332,18 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Open release gate:** PR #21 (`automation/degen/identity-binding-immutability-v02`) remains unmerged. Its exact-head CI passed, but production Telegram/Discord credentials/configuration and controlled live platform identity/session verification remain external requirements. Current main `wrangler.toml` still does not include the production Pages origin added by PR #21. Keep Shield PR #20 draft/blocked behind auth; do not invent an account-link/merge policy for existing progressed accounts. No new Miles design decision was inferred.
 - **D1 boundary:** the deploy ran the existing configured schema/migration/deploy sequence; no new migration or manual destructive D1 operation was authored in this run. No production credentials were read or changed.
 - **Best next task:** re-check exact-head main CI after it finishes; then resolve the approved production auth/config and live-verification gate before merging Shield. If credentials cannot be configured in this environment, keep that release gate explicit rather than treating local CI or Worker deployment as proof of a fully playable authenticated production game.
+
+
+## Latest run — 2026-10-24 (mobile browser Mana vertical slice)
+
+- **Authoritative main SHA:** `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
+- **PUSHED / PR #27 OPEN:** `automation/degen/mana-browser-vertical-slice-v01`; tested code/test head `fbacafba70ebaf4e0b9d6b2d7b18828e51f8d54f`. No direct-main write and no merge/deploy.
+- **Files changed:** `.github/workflows/ci.yml` now runs `tests/browser-battle-vertical-slice.mjs`; the new test drives a real headless Chromium browser against Vite plus an isolated local Wrangler/D1 Worker in portrait mode.
+- **Browser assertions:** Map → Home → Underpass → manifested Degen battle → server-settled reward → Home trophy. It checks visible `4 MANA` / `NO MANA` labels, authoritative battle-start HP/Mana/enemy HP/turn state, each of three accepted paid turns against persisted D1 HP/Mana/enemy HP/status/turn count, and the final awarded victory receipt at 0 Mana / turn 3. The test uses only local D1; it never uses `--remote`.
+- **Exact code/test head CI PASS:** run [40064424071](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40064424071) on `fbacafba70ebaf4e0b9d6b2d7b18828e51f8d54f`. `npm test` **59/59 PASS**; Worker/D1 reward concurrency, transient reward-failure recovery, Underpass cycle reservation/rollover, atomic defeat history, production build, Chromium/Vite/local Worker/D1 battle vertical slice, and `npm run check:worker` dry-run all passed. The final browser step printed: `PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy`.
+- **Harness correction:** earlier runs failed the compact viewport assertion because the test mutated a long display name while measuring Chromium's viewport. The final test uses the proven compact emulation configuration and measures viewport width without that layout mutation. No gameplay/runtime code changed.
+- **Mana status:** COMPLETE / MERGED on main. Degen-only `maxMana`, bespoke `manaCost`, authoritative start/action Mana, persisted `player_mana`, rejection without mutation, exact deduction, zero-cost use at 0, killing-blow/defeat behavior, client/Worker resolver parity, cost-aware UI, no monster Mana fields, and no Mana-triggered reversion remain intact.
+- **Battle authority/reward idempotency:** server-owned action CAS, stale-turn rejection, victory-only completion, persisted receipts, transient D1 recovery, full/reduced reward tiers, level-up math, action/completion race coverage, atomic defeat history, Underpass cycle reservation/rollover, and permit continuity across event closure until expiry remain on main.
+- **D1/deploy assumptions:** `wrangler.toml` remains the source of truth (`DB` → `DEGEN`, migrations in `db/migrations`); deployment remains schema → tracked migrations → Worker. No migration, remote D1 mutation, production credential change, or deployment was performed by PR #27.
+- **Open release gate / Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration and controlled live identity/session verification; PR #26 separately carries the exact production Pages-origin CORS fix. Do not treat local browser/D1 CI as live platform proof. Keep Shield PR #20 and housing PR #8 unmerged until the authentication integration gate is resolved and their branches are reconciled with the authenticated client/Worker.
+- **Best next task:** resolve the verified-platform-auth configuration and live-verification gate; then reconcile PR #8 housing and PR #20 Shield with the authenticated Worker/client and rerun the combined exact-head browser/D1 suite.
