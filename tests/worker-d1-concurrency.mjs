@@ -87,6 +87,10 @@ try {
       ('permit-invalid-fractional-enemy-hp','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92.5,0),
       ('permit-invalid-fractional-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0.5),
       ('permit-invalid-victory-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,13,0,3),
+      ('permit-invalid-victory-fractional-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,1.5,0,3),
+      ('permit-invalid-victory-fractional-player-hp','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70.5,0,0,3),
+      ('permit-invalid-victory-fractional-enemy-hp','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0.5,3),
+      ('permit-invalid-victory-fractional-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3.5),
       ('permit-invalid-player-hp','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',121,12,92,0),
       ('permit-invalid-enemy-hp','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,93,0),
       ('permit-invalid-negative-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,-1),
@@ -158,6 +162,10 @@ try {
   for (const [permitId, state] of [
     ['permit-invalid-victory-enemy', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 1, turnCount: 1 }],
     ['permit-invalid-victory-turn', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 0 }],
+    ['permit-invalid-victory-fractional-mana', { status: 'victory', playerHp: 70, playerMana: 1.5, enemyHp: 0, turnCount: 3 }],
+    ['permit-invalid-victory-fractional-player-hp', { status: 'victory', playerHp: 70.5, playerMana: 0, enemyHp: 0, turnCount: 3 }],
+    ['permit-invalid-victory-fractional-enemy-hp', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0.5, turnCount: 3 }],
+    ['permit-invalid-victory-fractional-turn', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3.5 }],
   ]) {
     const invalid = await complete(permitId);
     assert.equal(invalid.status, 409, `${permitId} must not award an inconsistent victory`);
