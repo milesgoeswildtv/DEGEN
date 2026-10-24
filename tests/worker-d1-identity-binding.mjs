@@ -167,6 +167,19 @@ try {
   assert.equal(noProof.status, 401, 'unsigned provider identifiers must not authenticate');
   await noProof.text();
 
+  const malformedJson = await request('/api/player/bootstrap', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{',
+  });
+  assert.equal(malformedJson.status, 400, 'malformed JSON is a client error, not an internal server error');
+  assert.equal((await malformedJson.json()).error, 'Request body must be valid JSON.');
+  assert.equal(malformedJson.headers.get('cache-control'), 'no-store');
+
+  const nonObjectBody = await request('/api/player/bootstrap', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: 'null',
+  });
+  assert.equal(nonObjectBody.status, 400, 'API handlers only accept JSON objects');
+  assert.equal((await nonObjectBody.json()).error, 'Request body must be a JSON object.');
+
   const validHash = signedInitData({ id: 42, first_name: 'Verified' });
   const forgedHash = validHash.replace(/hash=([a-f0-9])/, (_match, first) => 'hash=' + (first === '0' ? '1' : '0'));
   assert.equal((await bootstrap(forgedHash)).status, 401, 'tampered Telegram initData must reject');
