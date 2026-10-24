@@ -274,3 +274,35 @@ test('queued housing edits for separate accounts only save under the active acco
   await flush();
   assert.equal(calls.length, 3);
 });
+
+
+test('reactivating an account retries its queued housing layout without requiring another edit', async () => {
+  const calls: Array<{ playerId: string; housing: any; resolve: () => void; reject: (error: Error) => void }> = [];
+  const store = makeStore((playerId, housing) => new Promise<void>((resolve, reject) => {
+    calls.push({ playerId, housing: structuredClone(housing), resolve, reject });
+  }));
+  const firstPlayerId = store.snapshot.id;
+
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(calls.length, 1);
+  store.placeFurniture('starter-lamp', 3, 3);
+
+  store.replaceFromServer({ ...store.snapshot, id: 'second-account',
+    housing: { inventory: ['starter-chair', 'starter-lamp'], placements: [] } });
+  calls[0]!.reject(new Error('temporary network failure'));
+  await flush();
+  assert.equal(calls.length, 1, 'inactive account writes stay queued');
+
+  store.replaceFromServer({ ...store.snapshot, id: firstPlayerId,
+    housing: { inventory: ['starter-bed', 'starter-chair', 'starter-lamp'], placements: [] } });
+  await flush();
+
+  assert.equal(calls.length, 2, 'reactivation should retry the queued layout without another edit');
+  assert.equal(calls[1]!.playerId, firstPlayerId);
+  assert.deepEqual(calls[1]!.housing.placements.map((placement: any) =>
+    [placement.furnitureId, placement.x, placement.y]).sort(),
+  [['starter-bed', 1, 1], ['starter-chair', 2, 2], ['starter-lamp', 3, 3]]);
+  calls[1]!.resolve();
+  await flush();
+});
