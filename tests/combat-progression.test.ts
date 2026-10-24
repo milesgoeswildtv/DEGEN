@@ -270,3 +270,19 @@ test('monster definitions do not expose a Mana resource', () => {
     'monster combat state must not acquire a Mana-equivalent field',
   );
 });
+
+
+test('Shield accumulation rejects unsafe integer overflow before resolving the turn', () => {
+  const slash = TEST_DEGEN.abilities.find((ability) => ability.id === 'slash');
+  assert.ok(slash);
+
+  assert.throws(() => resolveCombatTurn({
+    playerHp: 50,
+    playerMana: 0,
+    playerShield: Number.MAX_SAFE_INTEGER,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: { ...slash, shieldGain: 1 },
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  }), /Invalid player Shield total/);
+});

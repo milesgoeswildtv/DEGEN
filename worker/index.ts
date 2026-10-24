@@ -83,7 +83,8 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
     case 'victory':
       return turnCount > 0 && playerHp > 0 && enemyHp === 0;
     case 'defeat':
-      return turnCount > 0 && playerHp === 0 && enemyHp > 0;
+      // A defeated Degen took HP damage after Shield was exhausted.
+      return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0;
     default:
       return false;
   }

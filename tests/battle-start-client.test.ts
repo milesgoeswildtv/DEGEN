@@ -243,4 +243,6 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
     'defeat requires at least one resolved turn');
   assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'victory', enemyHp: 0, turnCount: 1 }, 'permit-1'), true);
   assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, turnCount: 1 }, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, playerShield: 1, turnCount: 1 }, 'permit-1'), false,
+    'a defeated Degen cannot retain Shield after taking HP damage');
 });

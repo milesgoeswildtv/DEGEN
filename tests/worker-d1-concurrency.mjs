@@ -105,6 +105,7 @@ try {
       ('permit-invalid-victory-enemy','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,1,1),
       ('permit-invalid-victory-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,0),
       ('permit-invalid-defeat-player','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'defeat',1,0,92,1),
+      ('permit-invalid-defeat-shield','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'defeat',0,0,92,1),
       ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
@@ -113,6 +114,8 @@ try {
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_shield = 1 WHERE id = 'permit-invalid-defeat-shield'"]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
     cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -343,6 +346,7 @@ try {
       `${permitId} must retain its untouched pending claim`);
   }
   await assertInvalidActionState('permit-invalid-defeat-player', { status: 'defeat', playerHp: 1, playerMana: 0, enemyHp: 92, turnCount: 1 });
+  await assertInvalidActionState('permit-invalid-defeat-shield', { status: 'defeat', playerHp: 0, playerMana: 0, playerShield: 1, enemyHp: 92, turnCount: 1 });
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM characters
     WHERE player_id = 'integration-player' AND xp = 0 AND currency = 0`), 1,
     'invalid victories must not grant XP or currency');

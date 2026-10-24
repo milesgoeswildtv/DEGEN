@@ -66,10 +66,7 @@ export const resolveCombatTurn = ({
   const shieldGain = ability.shieldGain ?? 0;
   const shieldBeforeRetaliation = playerShield + shieldGain;
   if (!Number.isSafeInteger(shieldBeforeRetaliation)) {
-    throw new Error('Shield total must be a non-negative safe integer.');
-  }
-  if (!Number.isSafeInteger(shieldBeforeRetaliation)) {
-    throw new RangeError('Invalid player Shield');
+    throw new RangeError('Invalid player Shield total');
   }
   const playerDamage = ability.damage + Math.floor(degen.power * 0.5);
   const nextEnemyHp = Math.max(0, enemyHp - playerDamage);

@@ -42,7 +42,7 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
 
   if (state.status === 'active') return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
   if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0 && retaliationDamage === 0;
-  return turnCount > 0 && playerHp === 0 && enemyHp > 0;
+  return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0;
 };
 
 export class GameApiError extends Error {
