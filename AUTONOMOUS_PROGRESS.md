@@ -1,3 +1,17 @@
+## Latest run — 2026-10-24 (Mana zero-state canon regression coverage)
+
+- **Authoritative main SHA:** `daea488c89e7b10911dbc584302de867baf09f45`.
+- **PUSHED / PR #42 OPEN:** `automation/degen/mana-zero-canon-guard-v01`; test head before this continuity commit was `9e27985c7a744a71ea9919c77692be2cbe643a69`. No direct-main write.
+- **Files changed:** `tests/combat-progression.test.ts` adds an engine-level 0-Mana regression proving a zero-cost ability remains usable, the encounter stays active, the Degen identity remains manifested, and completion is not triggered by Mana depletion. It also asserts the current monster prototype has no Mana-named field. New `tests/battle-mana-ui.test.ts` checks cost labels and disabled-state behavior at 0 and sufficient Mana. This is test-only; no production rule, UI, Worker, reward, or data value changes.
+- **QA status:** exact-head CI is pending after PR creation; the continuity update below will create a new head and must itself pass CI before this run is considered green. No local checkout commands or live browser proof are claimed by this runner.
+- **Mana status:** COMPLETE / MERGED on main. Existing implementation already includes Degen-only `maxMana` and bespoke `manaCost`, server-owned start/action state, persisted `player_mana`, reject-without-mutation for unaffordable abilities, exact deduction, zero-cost actions at zero, killing-blow/defeat handling, client/Worker math parity, cost-aware UI, and migration `0006_backfill_active_battle_mana.sql`. This PR only makes two canon guarantees more explicit in tests. Prototype values remain scaffolding, not approved balance.
+- **Battle authority / rewards:** main retains server-resolved victory, action compare-and-swap/stale-turn guards, persisted state validation, owner/expiry/terminal checks, idempotent receipts and transient-D1 recovery, full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, and issued-permit validity through event closure until permit expiry. No reward or authority code changed.
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment applies base schema → tracked migrations → Worker. No migration, remote D1 operation, or deployment is part of PR #42.
+- **Miles blocker:** verified-platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass that gate; Shield PR #20 and housing PR #8 remain gated.
+- **Best next task:** verify exact-head CI for PR #42; then continue the auth branch's latest-main reconciliation and release-gate review without merging/deploying until Miles's external auth prerequisites are met.
+
+---
+
 ## Latest run — 2026-10-24 (persisted battle-state validation merged and deployed)
 
 - **Authoritative main SHA:** `e85b74915c8b6b236e38508b60cdcfb5f49f6375`. PR #37 (`fix(worker): reject invalid persisted battle Mana state`) merged by squash on 2026-10-24 as this commit.
