@@ -75,7 +75,8 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
 
   switch (state.battle_status) {
     case 'active':
-      return playerHp > 0 && enemyHp > 0;
+      // An accepted action must be able to increment turn_count without leaving safe-integer range.
+      return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
     case 'victory':
       return turnCount > 0 && playerHp > 0 && enemyHp === 0;
     case 'defeat':
