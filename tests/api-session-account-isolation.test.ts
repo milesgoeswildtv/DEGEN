@@ -43,11 +43,58 @@ const { GameApi } = runInNewContext(
     setIdentityProvider(provider: () => Promise<{ platform: 'telegram'; displayName: string; telegramInitData: string }>): void;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<{ turnCount: number } | undefined>;
     getUnderpass(playerId: string): Promise<unknown>;
+    saveHousing(playerId: string, housing: { inventory: string[]; placements: unknown[] }): Promise<void>;
   };
 };
 
 const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+test('housing saves reject a stale queued owner instead of writing under the current session', async () => {
+  const api = new GameApi();
+  const oldFetch = globalThis.fetch;
+  const housingRequests: Array<{ authorization: string; body: unknown }> = [];
+  let bootstraps = 0;
+  globalThis.fetch = async (input, init) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    if (path === '/api/player/bootstrap') {
+      bootstraps += 1;
+      const playerId = bootstraps === 1 ? 'player-A' : 'player-B';
+      const token = bootstraps === 1 ? 'A'.repeat(43) : 'B'.repeat(43);
+      return jsonResponse({
+        player: { id: playerId, displayName: playerId },
+        session: { token, expiresAtMs: Date.now() + 60_000 },
+      });
+    }
+    if (path === '/api/player/housing') {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      housingRequests.push({
+        authorization: headers.authorization ?? '',
+        body: JSON.parse(String(init?.body ?? '{}')),
+      });
+      return new Response(null, { status: 204 });
+    }
+    throw new Error('Unexpected API request: ' + path);
+  };
+
+  try {
+    await api.bootstrap({ platform: 'telegram', displayName: 'Player A', telegramInitData: 'proof-A' });
+    await api.bootstrap({ platform: 'telegram', displayName: 'Player B', telegramInitData: 'proof-B' });
+
+    await assert.rejects(
+      api.saveHousing('player-A', { inventory: [], placements: [] }),
+      /authenticated player mismatch/,
+    );
+    assert.equal(housingRequests.length, 0,
+      'a stale queued layout must not be sent with the new account bearer token');
+
+    await api.saveHousing('player-B', { inventory: [], placements: [] });
+    assert.equal(housingRequests.length, 1);
+    assert.equal(housingRequests[0]!.authorization, 'Bearer ' + 'B'.repeat(43));
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
 
 test('an expired account session never replays an in-flight action under a different player', async () => {
   const api = new GameApi();
