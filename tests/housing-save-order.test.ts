@@ -67,6 +67,31 @@ test('failed save does not block the next newer layout', async () => {
   await flush();
 });
 
+test('a failed latest save remains queued and retries on the next edit', async () => {
+  const calls: Array<{ housing: any; resolve: () => void; reject: (error: Error) => void }> = [];
+  const warnings: string[] = [];
+  const store = makeStore((_id, housing) => new Promise<void>((resolve, reject) => {
+    calls.push({ housing: structuredClone(housing), resolve, reject });
+  }), warnings);
+
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(calls.length, 1);
+  calls[0]!.reject(new Error('temporary network failure'));
+  await flush();
+  assert.equal(calls.length, 1, 'a failed snapshot must not be retried in a tight loop');
+  assert.equal(warnings.length, 1);
+
+  store.placeFurniture('starter-chair', 3, 3);
+  await flush();
+  assert.equal(calls.length, 2, 'the next edit should drain the retained latest snapshot');
+  assert.ok(calls[1]!.housing.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 3 && placement.y === 3));
+  calls[1]!.resolve();
+  await flush();
+  assert.equal(calls.length, 2);
+});
+
 test('100 rapid moves coalesce to first and final saves', async () => {
   const calls: Array<{ housing: any; resolve: () => void }> = [];
   const store = makeStore((_id, housing) => new Promise<void>((resolve) => {
