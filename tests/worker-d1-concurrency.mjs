@@ -30,6 +30,7 @@ async function complete(permitId, sessionToken = SESSION_TOKEN) {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + sessionToken },
     body: JSON.stringify({ permitId }),
   });
+  assert.equal(r.headers.get('cache-control'), 'no-store', 'battle completion responses must not be cached');
   return { status: r.status, data: await r.json() };
 }
 async function eventuallyComplete(id) {
@@ -63,6 +64,7 @@ async function assertInvalidActionState(permitId, state) {
     body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash', expectedTurnCount: 0 }),
   });
   const data = await response.json();
+  assert.equal(response.headers.get('cache-control'), 'no-store', `${permitId} rejection must not be cached`);
   assert.equal(response.status, 409, `${permitId} must fail closed`);
   assert.equal(data.error, 'Battle state is invalid.');
   assert.equal('battleState' in data, false, 'invalid persisted state must not be echoed as authoritative');
@@ -156,6 +158,7 @@ try {
     body: JSON.stringify({ playerId: 'integration-player', permitId: 'permit-replay', abilityId: 'slash', expectedTurnCount: 0 }),
   });
   const firstReplayPermitAction = await firstReplayPermitActionResponse.json();
+  assert.equal(firstReplayPermitActionResponse.headers.get('cache-control'), 'no-store');
   assert.equal(firstReplayPermitActionResponse.status, 200);
   assert.equal(firstReplayPermitAction.playerMana, 0);
   assert.equal(firstReplayPermitAction.playerHp, 70);
@@ -170,6 +173,7 @@ try {
     body: JSON.stringify({ playerId: 'integration-player', permitId: 'permit-replay', abilityId: 'slash', expectedTurnCount: 0 }),
   });
   const replayedAction = await replayedActionResponse.json();
+  assert.equal(replayedActionResponse.headers.get('cache-control'), 'no-store');
   assert.equal(replayedActionResponse.status, 409);
   assert.equal(replayedAction.error, 'Stale battle turn.');
   assert.deepEqual(replayedAction.battleState, {
@@ -187,6 +191,7 @@ try {
     }),
   });
   const invalidMana = await invalidManaResponse.json();
+  assert.equal(invalidManaResponse.headers.get('cache-control'), 'no-store');
   assert.equal(invalidManaResponse.status, 409, 'persisted Mana above the Degen maximum must fail closed');
   assert.equal(invalidMana.error, 'Battle state is invalid.');
   assert.equal('battleState' in invalidMana, false, 'invalid persisted state must not be echoed as authoritative');
@@ -236,6 +241,7 @@ try {
     body: JSON.stringify({ playerId: 'integration-player', permitId: 'expired-active', abilityId: 'slash', expectedTurnCount: 0 }),
   });
   const expiredAction = await expiredActionResponse.json();
+  assert.equal(expiredActionResponse.headers.get('cache-control'), 'no-store');
   assert.equal(expiredActionResponse.status, 409, 'an expired active permit must not accept another turn');
   assert.match(expiredAction.error, /invalid, expired, or already completed/i);
   assertPersistedPermitState('expired-active', {
@@ -251,6 +257,7 @@ try {
     }),
   });
   const wrongOwnerAction = await wrongOwnerActionResponse.json();
+  assert.equal(wrongOwnerActionResponse.headers.get('cache-control'), 'no-store');
   assert.equal(wrongOwnerActionResponse.status, 409, 'a different authenticated session cannot use this permit');
   assert.match(wrongOwnerAction.error, /invalid, expired, or already completed/i);
   assertPersistedPermitState('permit-mana-zero', {
@@ -265,6 +272,7 @@ try {
     }),
   });
   const terminalAction = await terminalActionResponse.json();
+  assert.equal(terminalActionResponse.headers.get('cache-control'), 'no-store');
   assert.equal(terminalActionResponse.status, 409, 'a server-resolved victory must not accept another turn');
   assert.equal(terminalAction.battleState.status, 'victory');
   assertPersistedPermitState('permit-a', {
@@ -284,6 +292,7 @@ try {
     }),
   });
   const started = await startResponse.json();
+  assert.equal(startResponse.headers.get('cache-control'), 'no-store');
   assert.equal(startResponse.status, 200, JSON.stringify(started));
   assert.equal(started.initialState.permitId, started.permitId);
   assert.equal(started.initialState.status, 'active');
@@ -315,6 +324,7 @@ try {
     }),
   });
   const firstAction = await firstActionResponse.json();
+  assert.equal(firstActionResponse.headers.get('cache-control'), 'no-store');
   assert.equal(firstActionResponse.status, 200, JSON.stringify(firstAction));
   assert.equal(firstAction.permitId, started.permitId);
   assert.equal(firstAction.playerMana, started.initialState.playerMana - 4);
@@ -335,6 +345,7 @@ try {
     }),
   });
   const staleReplay = await staleReplayResponse.json();
+  assert.equal(staleReplayResponse.headers.get('cache-control'), 'no-store');
   assert.equal(staleReplayResponse.status, 409, 'replaying the observed turn must not apply a second action');
   assert.deepEqual(staleReplay.battleState, {
     permitId: started.permitId,
@@ -357,6 +368,7 @@ try {
     }),
   });
   const freeAction = await freeActionResponse.json();
+  assert.equal(freeActionResponse.headers.get('cache-control'), 'no-store');
   assert.equal(freeActionResponse.status, 200, JSON.stringify(freeAction));
   assert.equal(freeAction.playerMana, firstAction.playerMana);
   assert.equal(freeAction.turnCount, firstAction.turnCount + 1);
@@ -377,6 +389,7 @@ try {
     }),
   });
   const unaffordable = await unaffordableResponse.json();
+  assert.equal(unaffordableResponse.headers.get('cache-control'), 'no-store');
   assert.equal(unaffordableResponse.status, 409, 'an unaffordable ability must reject');
   assert.deepEqual(unaffordable.battleState, {
     permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
@@ -395,6 +408,7 @@ try {
     }),
   });
   const freeAtZero = await freeAtZeroResponse.json();
+  assert.equal(freeAtZeroResponse.headers.get('cache-control'), 'no-store');
   assert.equal(freeAtZeroResponse.status, 200, JSON.stringify(freeAtZero));
   assert.equal(freeAtZero.playerMana, 0);
   assert.equal(freeAtZero.turnCount, 1, 'rejected paid action must not advance the turn');
@@ -413,6 +427,7 @@ try {
     }),
   });
   const killingBlow = await killingBlowResponse.json();
+  assert.equal(killingBlowResponse.headers.get('cache-control'), 'no-store');
   assert.equal(killingBlowResponse.status, 200, JSON.stringify(killingBlow));
   assert.equal(killingBlow.status, 'victory');
   assert.equal(killingBlow.playerHp, 80, 'a killing blow must not trigger enemy retaliation');
@@ -432,6 +447,7 @@ try {
     }),
   });
   const defeat = await defeatResponse.json();
+  assert.equal(defeatResponse.headers.get('cache-control'), 'no-store');
   assert.equal(defeatResponse.status, 200, JSON.stringify(defeat));
   assert.equal(defeat.status, 'defeat');
   assert.equal(defeat.playerHp, 0);
@@ -449,6 +465,7 @@ try {
     }),
   });
   assert.equal(malformedTurnResponse.status, 400, 'invalid expected-turn preconditions must reject');
+  assert.equal(malformedTurnResponse.headers.get('cache-control'), 'no-store');
 
   const raceRequest = () => fetch(base + '/api/battle/action', {
     method: 'POST',
