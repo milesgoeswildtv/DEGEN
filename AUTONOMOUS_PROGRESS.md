@@ -11,21 +11,6 @@
 
 ---
 
-## Latest run — 2026-10-24 (no-store coverage for authoritative battle/reward responses)
-
-- **Authoritative main SHA:** `8612103fb85260ed45dc38fe4fdffab1dd2b9eec`. PR #45's continuity update merged via the normal PR path; Worker deployment evidence remains for code SHA `0ecf3d2267571e3775987c855c83c0c1815e4b57`.
-- **PUSHED / PR #46 OPEN:** `automation/degen/no-store-api-responses-v01`. Original implementation/test head `46bbfcbd89e622b595a6e56680cb4e280602f0e8` passed CI `40126309462`; prior continuity head `1801b73d543c18784c02ee25d5166c6a4aa74418` passed CI `40126335263`. New Worker/D1 cache regression tests are on `2c4b54e21d9723d9f0b29cbc72c19d5b5465ce1c`, whose CI `40130113649` passed. This entry is being placed after the latest main progress section to avoid colliding with PR #45's insertion; the current continuity head still needs exact-head CI.
-- **Files changed:** `worker/index.ts`, `tests/pages-cors.test.ts`, `tests/worker-d1-concurrency.mjs`, and this continuity entry. No direct-main write.
-- **Implementation:** all Worker JSON success/error responses and the successful 204 housing-save response use `Cache-Control: no-store`. Real Worker/D1 assertions cover battle-start permit snapshots, accepted actions, stale-turn conflicts, unaffordable-action conflicts, zero-Mana actions, and all battle-completion responses including errors and reward-receipt replays. No combat, identity, reward math, or economy behavior changed.
-- **QA distinction:** CI `40130113649` passed on the code/test commit `2c4b54e21d9723d9f0b29cbc72c19d5b5465ce1c`; the subsequent progress reconciliation is docs-only and needs a fresh exact-head CI result before merge. No local shell execution, live HTTP proof, production D1 operation, merge of PR #46, or Worker deployment is claimed.
-- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana`/bespoke `manaCost`, authoritative start/action state, persisted `player_mana`, atomic rejection without turn/damage mutation, exact deduction, zero-cost use at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion.
-- **Battle authority / reward idempotency:** server-resolved victory-only rewards, persisted-state bounds and terminal invariants, action CAS/stale-turn guards, owner/expiry checks, idempotent receipts and transient-D1 recovery, full/reduced reward tiers, shared level-up math, action/completion concurrency tests, atomic defeat history, cycle reservation/rollover, and permits valid across Underpass closure until their own expiry remain on main. PR #46 is cache-policy-only.
-- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment applies schema → tracked migrations → Worker. No migration is required. Merging PR #46 will trigger the existing Worker deployment workflow because `worker/index.ts` changes; this branch is not deployed.
-- **Miles blocker:** auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass the gate. Reconcile overlapping no-store headers with PR #21 before merge.
-- **Best next task:** verify exact-head CI after this progress-only conflict-resolution commit, then complete normal review of PR #46 and reconcile its shared cache-header change with auth PR #21.
-
----
-
 ## Latest run — 2026-10-24 (authenticated 204 responses are no-store; exact-head CI green)
 
 - **Authoritative main SHA:** `0ecf3d2267571e3775987c855c83c0c1815e4b57`.
