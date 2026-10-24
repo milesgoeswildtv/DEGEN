@@ -319,6 +319,13 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   });
   const { playerHp, playerMana, enemyHp, status } = turn;
 
+  // Do not persist an active state at the terminal safe-integer boundary: the
+  // next increment would leave the active-state invariant. A victory or defeat
+  // may still resolve on this final safe turn.
+  if (status === 'active' && permit.turn_count >= Number.MAX_SAFE_INTEGER - 1) {
+    return fail(request, env, 'Battle turn limit reached.', 409);
+  }
+
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'

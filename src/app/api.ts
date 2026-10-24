@@ -29,9 +29,9 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
     || !isBoundedSafeInteger(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
-  if (state.status === 'active') return playerHp > 0 && enemyHp > 0;
-  if (state.status === 'victory') return playerHp > 0 && enemyHp === 0;
-  return playerHp === 0 && enemyHp > 0;
+  if (state.status === 'active') return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
+  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0;
+  return turnCount > 0 && playerHp === 0 && enemyHp > 0;
 };
 
 export class GameApiError extends Error {
