@@ -44,6 +44,28 @@ async function apiReturning(value: unknown) {
   finally { globalThis.fetch = oldFetch; }
 }
 
+test('battle start request sends no client-owned combat state', async () => {
+  const oldFetch = globalThis.fetch;
+  let sent: Record<string, unknown> | undefined;
+  globalThis.fetch = async (_input, init) => {
+    sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify(validPermit()), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    await new GameApi().startUnderpass('player-1', 'cycle-1');
+    assert.deepEqual(Object.keys(sent ?? {}).sort(), [
+      'cycleId', 'encounterKey', 'eventKey', 'playerId',
+    ]);
+    for (const key of ['playerHp', 'playerMana', 'enemyHp', 'turnCount', 'status']) {
+      assert.equal(key in (sent ?? {}), false, `battle start must not submit ${key}`);
+    }
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
 test('server-backed battle start accepts a valid authoritative zero-Mana snapshot', async () => {
   const permit = validPermit();
   const result = await apiReturning(permit) as typeof permit;
