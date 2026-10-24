@@ -49,7 +49,7 @@ function makeEnv(cycle: { id: string; event_key: string; opens_at: string; close
   return { env: { DB: db }, inserts };
 }
 
-function request(cycleId = 'open-cycle') {
+function request(cycleId = 'open-cycle', extraFields: Record<string, unknown> = {}) {
   return new Request('https://degen-api.example/api/battle/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -58,11 +58,12 @@ function request(cycleId = 'open-cycle') {
       eventKey: 'underpass',
       cycleId,
       encounterKey: TUNNEL_MAW.id,
+      ...extraFields,
     }),
   });
 }
 
-test('battle start returns exactly the authoritative HP/Mana state it persists on the permit', async () => {
+test('battle start ignores forged client combat state and returns exactly the Degen state persisted on the permit', async () => {
   const cycle = {
     id: 'open-cycle',
     event_key: 'underpass',
@@ -70,7 +71,13 @@ test('battle start returns exactly the authoritative HP/Mana state it persists o
     closes_at: new Date(Date.now() + 60_000).toISOString(),
   };
   const { env, inserts } = makeEnv(cycle);
-  const response = await handleStartBattle(request(cycle.id), env);
+  const response = await handleStartBattle(request(cycle.id, {
+    playerHp: 1,
+    playerMana: 0,
+    enemyHp: 1,
+    turnCount: 99,
+    status: 'victory',
+  }), env);
   assert.equal(response.status, 200);
   const result = await response.json() as {
     permitId: string;

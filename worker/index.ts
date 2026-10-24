@@ -68,6 +68,35 @@ type BattlePermitStateRow = {
   turn_count: number;
 };
 
+const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
+
+// A persisted permit must satisfy the same bounds and terminal-state invariants
+// enforced by the client snapshot parser before it can advance another turn.
+const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
+  const playerHp = state.player_hp;
+  const playerMana = state.player_mana;
+  const enemyHp = state.enemy_hp;
+  const turnCount = state.turn_count;
+
+  if (!isSafeIntegerBetween(playerHp, 0, TEST_DEGEN.maxHp)
+    || !isSafeIntegerBetween(playerMana, 0, TEST_DEGEN.maxMana)
+    || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
+    || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
+
+  switch (state.battle_status) {
+    case 'active':
+      // An accepted action must be able to increment turn_count without leaving safe-integer range.
+      return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
+    case 'victory':
+      return turnCount > 0 && playerHp > 0 && enemyHp === 0;
+    case 'defeat':
+      return turnCount > 0 && playerHp === 0 && enemyHp > 0;
+    default:
+      return false;
+  }
+};
+
 async function ensurePlayer(
   db: D1Database,
   playerId: string,
@@ -400,6 +429,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
   }
+  if (!isValidBattlePermitState(permit)) {
+    return fail(request, env, 'Battle state is invalid.', 409);
+  }
   const battleState = {
     permitId: input.permitId,
     status: permit.battle_status,
@@ -464,7 +496,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       FROM battle_permits WHERE id = ? AND player_id = ?`)
       .bind(input.permitId, input.playerId)
       .first<BattlePermitStateRow>();
-    if (latest && latest.player_hp !== null && latest.player_mana !== null && latest.enemy_hp !== null) {
+    if (latest && isValidBattlePermitState(latest)) {
       return json(request, env, {
         error: 'Battle state changed; synchronized from the latest authoritative state.',
         battleState: {
@@ -500,10 +532,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     reward_clear_number: number | null; reward_xp: number | null; reward_currency: number | null;
     reward_tier: 'full' | 'reduced' | null;
   };
-  const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, reward_state, reward_clear_number,
+  type ValidatedReceiptRow = BattlePermitStateRow & ReceiptRow;
+  const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana,
+      enemy_hp, battle_status, turn_count, reward_state, reward_clear_number,
       reward_xp, reward_currency, reward_tier
     FROM battle_permits WHERE id = ? AND player_id = ? AND battle_status = 'victory'`)
-    .bind(input.permitId, input.playerId).first<ReceiptRow>();
+    .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
 
   const respond = async (row: ReceiptRow) => {
@@ -519,6 +553,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     }, worldEvent: event });
   };
   if (receipt.reward_state === 'awarded') return respond(receipt);
+  if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
 
   const token = crypto.randomUUID();
   // The token-scoped cleanup also covers an ambiguous failure while acquiring

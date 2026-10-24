@@ -2,6 +2,16 @@
 
 Updated: 2026-10-24
 
+## Latest run — 2026-10-24 (auth branch reconciled with current main security hardening)
+
+- **Authoritative main SHA at sync:** `44e3260913d7c386678c43262634ea07aeb00716`.
+- **PUSHED / PR #21 OPEN:** continued `automation/degen/identity-binding-immutability-v02`. This normal two-parent branch sync preserves the authenticated-session implementation while bringing in main's persisted battle-state validation, forged battle-start-state coverage, and malformed-state D1 regressions. No auth merge, production D1 mutation, or deployment is performed by this branch sync.
+- **Files reconciled:** `worker/index.ts` validates persisted HP/Mana/enemy HP/turn bounds and terminal consistency before actions or unawarded rewards, while retaining the bearer-session ownership wrapper. `tests/worker-d1-concurrency.mjs` now exercises those malformed states through authenticated routes, tests forged battle-start fields against the actual Worker/D1 flow, and corrects the stale race fixture to the approved prototype enemy HP bound. `tests/battle-start-client.test.ts` asserts authenticated battle start sends no caller-owned combat state. `tests/worker-battle-start-state.test.ts` includes the forged-state regression.
+- **QA status:** exact-head CI for this reconciliation is pending; no pass is claimed yet. Main's persisted-state implementation/test head passed [CI 40098935081](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40098935081) with 70/70 deterministic tests and the full Worker/D1/browser/build/dry-run matrix; post-merge main CI [40099200425](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40099200425) and production Worker deployment [40099200467](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40099200467) passed. A live HTTP smoke remains unverified because runner DNS resolution failed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana`/bespoke `manaCost`, authoritative persisted `player_mana`, no-mutation rejection, exact deduction, zero-cost at zero, terminal handling, UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no zero-Mana reversion remain verified.
+- **Release gate:** PR #21 remains unmerged until approved production Telegram/Discord credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions are available. Do not auto-link accounts or bypass the gate. Keep Shield/housing integration gated.
+- **Best next task:** verify the exact-head CI for this branch sync, then keep PR #21 PR-only until the external verified-platform-auth release gate is cleared.
+
 ## Latest run — 2026-10-24 (production Pages CORS merged and Worker deployed)
 
 - **Authoritative main SHA at start:** `2a8c535d1c409586f1fb6a4181b949e4092fa86c`. **MERGED via PR #26** on 2026-10-24; main merge SHA is `76941c9b091bf45ceccb5e7c4c76450c4a69844b`.

@@ -46,6 +46,39 @@ async function apiReturning(value: unknown) {
   finally { globalThis.fetch = oldFetch; }
 }
 
+test('battle start request sends no client-owned combat state', async () => {
+  const api = new GameApi();
+  const token = 'A'.repeat(43);
+  const oldFetch = globalThis.fetch;
+  let sent: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    if (path === '/api/player/bootstrap') {
+      return new Response(JSON.stringify({
+        player: { id: 'server-player', displayName: 'Verified' },
+        session: { token, expiresAtMs: Date.now() + 60_000 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (path === '/api/battle/start') {
+      sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify(validPermit()), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    throw new Error('Unexpected API request: ' + path);
+  };
+  try {
+    await api.bootstrap({ platform: 'telegram', displayName: 'Verified', telegramInitData: 'signed-proof' });
+    await api.startUnderpass('server-player', 'cycle-1');
+    assert.deepEqual(Object.keys(sent ?? {}).sort(), ['cycleId', 'encounterKey', 'eventKey']);
+    for (const key of ['playerId', 'playerHp', 'playerMana', 'enemyHp', 'turnCount', 'status']) {
+      assert.equal(key in (sent ?? {}), false, `battle start must not submit ${key}`);
+    }
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
 test('server-backed battle start accepts a valid authoritative zero-Mana snapshot', async () => {
   const permit = validPermit();
   const result = await apiReturning(permit) as typeof permit;
