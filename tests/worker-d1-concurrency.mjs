@@ -72,7 +72,8 @@ try {
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,100,0),
       ('permit-e','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,1,0),
-      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3);
+      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
+      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -91,6 +92,58 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  const expiredActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'expired-active',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const expiredAction = await expiredActionResponse.json();
+  assert.equal(expiredActionResponse.status, 409, 'an expired active permit must not accept another turn');
+  assert.match(expiredAction.error, /invalid, expired, or already completed/i);
+  assertPersistedPermitState('expired-active', {
+    status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: 0,
+  });
+
+  const wrongOwnerActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'someone-else',
+      permitId: 'permit-mana-zero',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const wrongOwnerAction = await wrongOwnerActionResponse.json();
+  assert.equal(wrongOwnerActionResponse.status, 409, 'a permit cannot be used by a different player ID');
+  assert.match(wrongOwnerAction.error, /invalid, expired, or already completed/i);
+  assertPersistedPermitState('permit-mana-zero', {
+    status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
+  });
+
+  const terminalActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-a',
+      abilityId: 'slash',
+      expectedTurnCount: 3,
+    }),
+  });
+  const terminalAction = await terminalActionResponse.json();
+  assert.equal(terminalActionResponse.status, 409, 'a server-resolved victory must not accept another turn');
+  assert.equal(terminalAction.battleState.status, 'victory');
+  assertPersistedPermitState('permit-a', {
+    status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
+  });
+
   const startResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
