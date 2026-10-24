@@ -54,7 +54,7 @@ async function stop() {
 async function act(id, abilityId = 'slash') {
   const r=await fetch(origin+'/api/battle/action',{
     method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({playerId:'qa-player',permitId:id,abilityId}),
+    body:JSON.stringify({playerId:'qa-player',permitId:id,abilityId,expectedTurnCount:0}),
     signal:AbortSignal.timeout(15000),
   });
   const raw = await r.text();

@@ -91,11 +91,13 @@ try {
   });
   assert.equal(start.status, 200);
   assert.equal(start.data.initialState.retaliationDamage, 0, 'battle start has no retaliation event');
+  assert.equal(start.data.initialState.playerShield, 0, 'battle start initializes Degen Shield to zero');
+  assert.equal(start.data.initialState.shieldAbsorbed, 0, 'battle start has no Shield absorption event');
   assert.deepEqual(sql(`SELECT player_shield FROM battle_permits WHERE id='${start.data.permitId}'`), [{ player_shield: 0 }],
     'server battle start initializes player Shield to zero');
 
   const action = await post('/api/battle/action', {
-    playerId: 'shield-player', permitId: 'shielded', abilityId: 'slash',
+    playerId: 'shield-player', permitId: 'shielded', abilityId: 'slash', expectedTurnCount: 0,
   });
   assert.equal(action.status, 200);
   assert.deepEqual([

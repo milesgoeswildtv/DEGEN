@@ -143,7 +143,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
           <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
-            <small>${ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}</small>
+            <small>${ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}${ability.shieldGain ? ` · SHIELD +${ability.shieldGain}` : ''}</small>
           </button>
         `).join('')}
       </div>

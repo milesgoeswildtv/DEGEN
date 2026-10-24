@@ -20,6 +20,11 @@ function command(args) {
   if (r.error || r.status !== 0) throw Error('wrangler ' + args.join(' ') + ': ' + (r.error ?? '') + r.stdout + r.stderr);
   return r.stdout;
 }
+function sql(query) {
+  const parsed = JSON.parse(command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--json', '--command=' + query]));
+  const row = Array.isArray(parsed) ? parsed[0] : parsed;
+  return row?.results ?? row?.result?.[0]?.results ?? [];
+}
 function launch(name, exe, args, extra = {}) {
   const child = spawn(exe, args, { cwd: root, env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
   logs.set(name, '');
@@ -125,28 +130,37 @@ try {
   };
   const assertFitsCompact = async (route) => {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 2, mobile: true });
-    const dimensions = await cdp.evaluate(`(() => {
-      const label = document.querySelector('.player-chip span');
-      const original = label?.textContent;
-      if (label) label.textContent = 'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM';
-      const result = { width: window.innerWidth, scroll: document.documentElement.scrollWidth };
-      if (label) label.textContent = original;
-      return result;
-    })()`);
+    await until('compact viewport resize', () => cdp.evaluate('window.innerWidth === 320'));
+    const dimensions = await cdp.evaluate('({ width: window.innerWidth, scroll: document.documentElement.scrollWidth })');
     assert.equal(dimensions.width, 320, route + ' compact viewport width');
     assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true });
   };
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  // Observe the actual Phaser text canvas so the browser test proves the HUD follows
+  // Worker-confirmed Mana and keeps the Degen manifested at zero, not just D1 state.
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `(() => {
+      const rendered = [];
+      Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
+      const original = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
+        if (typeof text === 'string' && (text.startsWith('MANA ') || text === 'MANIFESTED')) rendered.push(text);
+        return original.call(this, text, ...args);
+      };
+    })();`,
+  });
   // Exercise the entire Worker-backed slice in mobile portrait; not physical-device QA.
   await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: 390, height: 844, deviceScaleFactor: 2, mobile: true,
+    width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true,
   });
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
+  const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
+  assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
   await assertFitsCompact('Map');
@@ -160,23 +174,66 @@ try {
   await until('Worker-authorized Underpass entry', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
   await tap("[data-start-battle]");
   await until('Manifested Degen abilities', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
-  await until('Visible Shield resource', () => cdp.evaluate('document.querySelector("#battle-shield")?.textContent === "SHIELD 0"'));
+  await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
+  const activeRows = sql("SELECT id, player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1");
+  assert.equal(activeRows.length, 1, 'Worker battle start should issue one persisted active permit');
+  const permitId = activeRows[0].id;
+  assert.equal(activeRows[0].player_hp, 120);
+  assert.equal(activeRows[0].player_mana, 12);
+  assert.equal(activeRows[0].player_shield, 0);
+  assert.equal(activeRows[0].enemy_hp, 92);
+  assert.equal(activeRows[0].battle_status, 'active');
+  assert.equal(activeRows[0].turn_count, 0);
   assert.equal(await cdp.evaluate('document.querySelector("[data-ability=crack]")?.dataset.manaCost'), '4');
+  assert.equal(await cdp.evaluate('document.querySelector("[data-ability=crack] small")?.textContent'), '4 MANA');
+  assert.equal(await cdp.evaluate('document.querySelector("[data-ability=slash] small")?.textContent'), 'NO MANA');
   await assertFitsMobile('Battle');
   await assertFitsCompact('Battle');
+  await until('rendered initial Shield HUD', () => cdp.evaluate('document.querySelector("#battle-shield")?.textContent === "SHIELD 0"'));
+  // Seed player-owned temporary protection in this isolated D1 fixture so the real browser
+  // path exercises a positive Shield value without inventing a production Degen ability.
+  command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_shield = 12 WHERE id = '" + permitId + "'"]);
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
     await tap("[data-ability=crack]");
     if (turn < 3) await until('Authoritative action ' + turn, () => cdp.evaluate('(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + turn));
+    const expected = {
+      player_hp: turn === 1 ? 120 : 112,
+      player_mana: 12 - turn * 4,
+      player_shield: turn === 1 ? 2 : 0,
+      enemy_hp: Math.max(0, 92 - turn * 35),
+      battle_status: turn === 3 ? 'victory' : 'active',
+      turn_count: turn,
+    };
+    const persisted = await until('D1 state for authoritative turn ' + turn, () => {
+      const row = sql("SELECT player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
+      return row?.turn_count === turn ? row : null;
+    });
+    for (const [key, value] of Object.entries(expected)) assert.equal(persisted[key], value, 'persisted turn ' + turn + ' ' + key);
+    const displayedMana = `MANA ${expected.player_mana}/12`;
+    await until('rendered authoritative Mana HUD after turn ' + turn,
+      () => cdp.evaluate(`window.__degenRenderedBattleText?.includes(${JSON.stringify(displayedMana)})`));
+    await until('rendered authoritative Shield HUD after turn ' + turn,
+      () => cdp.evaluate(`document.querySelector("#battle-shield")?.textContent === ${JSON.stringify('SHIELD ' + expected.player_shield)}`));
+    const hudOrder = await cdp.evaluate(`(() => {
+      const rendered = window.__degenRenderedBattleText || [];
+      return { mana: rendered.lastIndexOf(${JSON.stringify(displayedMana)}), manifested: rendered.lastIndexOf('MANIFESTED') };
+    })()`);
+    assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
+    assert.ok(hudOrder.manifested > hudOrder.mana,
+      'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
-  // Verify the browser produced a real server-settled receipt, not preview-only UI.
-  const query = "SELECT COUNT(*) AS awarded FROM battle_permits WHERE battle_status='victory' AND reward_state='awarded' AND player_mana=0 AND turn_count=3";
-  const raw = JSON.parse(command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--json', '--command=' + query]));
-  const rows = Array.isArray(raw) ? raw[0]?.results : raw?.results ?? raw?.result?.[0]?.results;
-  assert.equal(rows?.[0]?.awarded, 1, 'Browser victory must persist one authoritative D1 receipt');
+  const finalPermit = sql("SELECT battle_status, reward_state, player_mana, player_shield, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
+  assert.equal(finalPermit?.battle_status, 'victory');
+  assert.equal(finalPermit?.reward_state, 'awarded');
+  assert.equal(finalPermit?.player_mana, 0);
+  assert.equal(finalPermit?.player_shield, 0);
+  assert.equal(finalPermit?.turn_count, 3);
+  assert.ok(finalPermit?.completed_at, 'Worker should persist completion after awarding the victory receipt');
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);

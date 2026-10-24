@@ -16,20 +16,22 @@ const corsHeaders = (request: Request, env: Env): HeadersInit => {
   const origin = request.headers.get('origin') ?? '';
   const allowed = (env.ALLOWED_ORIGINS ?? 'https://milesgoeswildtv.github.io,http://localhost:5173')
     .split(',')
-    .map((value) => value.trim());
-  const allowOrigin = allowed.includes(origin) ? origin : allowed[0] ?? '*';
-  return {
-    'access-control-allow-origin': allowOrigin,
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const headers: Record<string, string> = {
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
     'access-control-allow-headers': 'content-type',
     'vary': 'Origin',
   };
+  // A missing or unlisted Origin must never receive an Access-Control-Allow-Origin grant.
+  if (origin && allowed.includes(origin)) headers['access-control-allow-origin'] = origin;
+  return headers;
 };
 
 const json = (request: Request, env: Env, data: unknown, status = 200): Response =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...corsHeaders(request, env) },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...corsHeaders(request, env) },
   });
 
 const fail = (request: Request, env: Env, message: string, status = 400): Response =>
@@ -54,6 +56,37 @@ type BattlePermitStateRow = {
   enemy_hp: number | null;
   battle_status: 'active' | 'victory' | 'defeat';
   turn_count: number;
+};
+
+const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
+
+// A persisted permit must satisfy the same bounds and terminal-state invariants
+// enforced by the client snapshot parser before it can advance another turn.
+const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
+  const playerHp = state.player_hp;
+  const playerMana = state.player_mana;
+  const playerShield = state.player_shield;
+  const enemyHp = state.enemy_hp;
+  const turnCount = state.turn_count;
+
+  if (!isSafeIntegerBetween(playerHp, 0, TEST_DEGEN.maxHp)
+    || !isSafeIntegerBetween(playerMana, 0, TEST_DEGEN.maxMana)
+    || !isSafeIntegerBetween(playerShield, 0, Number.MAX_SAFE_INTEGER)
+    || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
+    || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
+
+  switch (state.battle_status) {
+    case 'active':
+      // An accepted action must be able to increment turn_count without leaving safe-integer range.
+      return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
+    case 'victory':
+      return turnCount > 0 && playerHp > 0 && enemyHp === 0;
+    case 'defeat':
+      return turnCount > 0 && playerHp === 0 && enemyHp > 0;
+    default:
+      return false;
+  }
 };
 
 async function ensurePlayer(db: D1Database, playerId: string, displayName: string): Promise<void> {
@@ -194,7 +227,7 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)
       .bind(item.instanceId, input.playerId, item.furnitureId, item.x, item.y, item.rotation ?? 0)),
   ]);
-  return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+  return new Response(null, { status: 204, headers: { 'cache-control': 'no-store', ...corsHeaders(request, env) } });
 }
 
 async function handleStartBattle(request: Request, env: Env): Promise<Response> {
@@ -219,12 +252,24 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   };
-  await env.DB.prepare(`INSERT INTO battle_permits (
+  // Recheck the cycle inside the permit-issuing statement. The earlier phase
+  // read is advisory: the cycle can close between that read and this write.
+  const issuedPermit = await env.DB.prepare(`INSERT INTO battle_permits (
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count
-    ) VALUES (?, ?, 'underpass', ?, ?, ?, ?, ?, 0, ?, 'active', 0)`)
+    )
+    SELECT ?, ?, 'underpass', ?, ?, ?, ?, ?, 0, ?, 'active', 0
+    WHERE EXISTS (
+      SELECT 1 FROM world_event_cycles
+      WHERE id = ? AND event_key = 'underpass'
+        AND julianday(opens_at) <= julianday('now')
+        AND julianday(closes_at) > julianday('now')
+    )
+    RETURNING id`)
     .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt,
-      initialState.playerHp, initialState.playerMana, initialState.enemyHp).run();
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id)
+    .first<{ id: string }>();
+  if (!issuedPermit) return fail(request, env, 'The Underpass is sealed.', 409);
 
   return json(request, env, {
     permitId,
@@ -237,14 +282,13 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 }
 
 async function handleBattleAction(request: Request, env: Env): Promise<Response> {
-  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount?: number }>(request);
+  const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount: number }>(request);
   if (!input.playerId || !input.permitId || !input.abilityId) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
   }
   // This is a compare-and-swap precondition only; combat state remains Worker-owned.
-  if (input.expectedTurnCount !== undefined
-    && (!Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0)) {
-    return fail(request, env, 'expectedTurnCount must be a non-negative safe integer.', 400);
+  if (!Number.isSafeInteger(input.expectedTurnCount) || input.expectedTurnCount < 0) {
+    return fail(request, env, 'expectedTurnCount is required and must be a non-negative safe integer.', 400);
   }
 
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === input.abilityId);
@@ -262,6 +306,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (permit.player_hp === null || permit.player_mana === null || permit.player_shield === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
   }
+  if (!isValidBattlePermitState(permit)) {
+    return fail(request, env, 'Battle state is invalid.', 409);
+  }
   const battleState = {
     permitId: input.permitId,
     status: permit.battle_status,
@@ -274,7 +321,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     turnCount: permit.turn_count,
   };
   const conflict = (message: string) => json(request, env, { error: message, battleState }, 409);
-  if (input.expectedTurnCount !== undefined && input.expectedTurnCount !== permit.turn_count) {
+  if (input.expectedTurnCount !== permit.turn_count) {
     return conflict('Stale battle turn.');
   }
   if (permit.battle_status !== 'active') return conflict(`Battle is already ${permit.battle_status}.`);
@@ -292,6 +339,13 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     enemy: TUNNEL_MAW,
   });
   const { playerHp, playerMana, playerShield, enemyHp, status, shieldAbsorbed, retaliationDamage } = turn;
+
+  // Do not persist an active state at the terminal safe-integer boundary: the
+  // next increment would leave the active-state invariant. A victory or defeat
+  // may still resolve on this final safe turn.
+  if (status === 'active' && permit.turn_count >= Number.MAX_SAFE_INTEGER - 1) {
+    return fail(request, env, 'Battle turn limit reached.', 409);
+  }
 
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, player_shield = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
@@ -330,7 +384,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       FROM battle_permits WHERE id = ? AND player_id = ?`)
       .bind(input.permitId, input.playerId)
       .first<BattlePermitStateRow>();
-    if (latest && latest.player_hp !== null && latest.player_mana !== null && latest.player_shield !== null && latest.enemy_hp !== null) {
+    if (latest && isValidBattlePermitState(latest)) {
       return json(request, env, {
         error: 'Battle state changed; synchronized from the latest authoritative state.',
         battleState: {
@@ -372,10 +426,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     reward_clear_number: number | null; reward_xp: number | null; reward_currency: number | null;
     reward_tier: 'full' | 'reduced' | null;
   };
-  const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, reward_state, reward_clear_number,
+  type ValidatedReceiptRow = BattlePermitStateRow & ReceiptRow;
+  const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana, player_shield,
+      enemy_hp, battle_status, turn_count, reward_state, reward_clear_number,
       reward_xp, reward_currency, reward_tier
     FROM battle_permits WHERE id = ? AND player_id = ? AND battle_status = 'victory'`)
-    .bind(input.permitId, input.playerId).first<ReceiptRow>();
+    .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
 
   const respond = async (row: ReceiptRow) => {
@@ -391,9 +447,24 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     }, worldEvent: event });
   };
   if (receipt.reward_state === 'awarded') return respond(receipt);
+  if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
 
   const token = crypto.randomUUID();
-  const claim = await env.DB.prepare(`UPDATE battle_permits
+  // The token-scoped cleanup also covers an ambiguous failure while acquiring
+  // the lease: if the UPDATE committed but its response failed, release only
+  // this token. If it did not commit, the cleanup is a harmless no-op.
+  const releaseClaim = async () => {
+    try {
+      await env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
+          reward_claim_token = NULL, reward_claimed_at = NULL
+        WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
+        .bind(input.permitId, input.playerId, token).run();
+    } catch {
+      // Do not hide the original failure. A later retry can reclaim a stale lease.
+    }
+  };
+  try {
+    const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
       (reward_state = 'pending' AND completed_at IS NULL AND (julianday(expires_at) > julianday('now') OR reward_clear_number IS NOT NULL))
@@ -401,7 +472,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
-  if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
+    if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 
   if (claim.reward_clear_number === null) {
     await env.DB.batch([
@@ -426,9 +497,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
     .bind(input.permitId, input.playerId, token)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
-  if (!owned?.reward_clear_number) return fail(request, env, 'Unable to assign authoritative reward clear.', 409);
+  if (!owned?.reward_clear_number) {
+    await releaseClaim();
+    return fail(request, env, 'Unable to assign authoritative reward clear.', 409);
+  }
 
-const reward = underpassRewardForClear(owned.reward_clear_number);
+  const reward = underpassRewardForClear(owned.reward_clear_number);
   const owns = `EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
     AND reward_state = 'claiming' AND reward_claim_token = ?)`;
   const applied = `EXISTS (SELECT 1 FROM characters WHERE player_id = ?
@@ -440,7 +514,10 @@ const reward = underpassRewardForClear(owned.reward_clear_number);
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const character = await env.DB.prepare(`SELECT level, xp, currency, degen_key FROM characters WHERE player_id = ?`)
       .bind(input.playerId).first<CharacterRow>();
-    if (!character) return fail(request, env, 'Player character not found.', 404);
+    if (!character) {
+      await releaseClaim();
+      return fail(request, env, 'Player character not found.', 404);
+    }
     const progression = advanceLevel(character.level, character.xp, reward.xp);
     const writes: D1PreparedStatement[] = [
       env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?,
@@ -491,17 +568,19 @@ const reward = underpassRewardForClear(owned.reward_clear_number);
       .first<ReceiptRow & { reward_claim_token: string | null }>();
     if (awarded?.reward_state === 'awarded') return respond(awarded);
     if (awarded?.reward_state !== 'claiming' || awarded.reward_claim_token !== token) {
+      await releaseClaim();
       return fail(request, env, 'Reward claim changed; retry.', 409);
     }
   }
 
   // Release only this token after bounded contention; retain its reserved
   // clear number for a later retry, even if the permit has since expired.
-  await env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
-      reward_claim_token = NULL, reward_claimed_at = NULL
-    WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
-    .bind(input.permitId, input.playerId, token).run();
+  await releaseClaim();
   return fail(request, env, 'Concurrent reward updates; retry completion.', 409);
+  } catch (error) {
+    await releaseClaim();
+    throw error;
+  }
 }
 
 export default {

@@ -1,14 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
   advanceLevel,
   underpassRewardForClear,
   xpNeededForLevel,
 } from '../src/game/progression.ts';
+
+const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import.meta.url), 'utf8')
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/\bexport class /g, 'class ');
+const { BattleEngine } = runInNewContext(
+  stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
+  { canUseAbility, resolveCombatTurn },
+) as {
+  BattleEngine: new (
+    degen: typeof TEST_DEGEN,
+    enemy: typeof TUNNEL_MAW,
+    onComplete: () => void,
+  ) => {
+    useAbility(abilityId: string): void;
+    snapshot: { playerMana: number; status: string; playerName: string };
+  };
+};
 
 test('prototype combat resolves the same deterministic turn every time', () => {
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
@@ -174,6 +195,20 @@ test('a killing blow grants no retaliation damage to Shield or HP', () => {
 });
 
 
+test('Shield gain rejects safe-integer overflow before combat can mutate state', () => {
+  const slash = TEST_DEGEN.abilities.find((ability) => ability.id === 'slash');
+  assert.ok(slash);
+  assert.throws(() => resolveCombatTurn({
+    playerHp: 50,
+    playerMana: 0,
+    playerShield: Number.MAX_SAFE_INTEGER,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: { ...slash, shieldGain: 1 },
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  }), /Shield total must be a non-negative safe integer/);
+});
+
 test('unused Degen Shield remains available for the next turn', () => {
   const slash = TEST_DEGEN.abilities.find((ability) => ability.id === 'slash');
   assert.ok(slash);
@@ -207,4 +242,31 @@ test('level progression preserves overflow XP across one or more levels', () => 
 
   assert.deepEqual(advanceLevel(1, 90, 75), { level: 2, xp: 65 });
   assert.deepEqual(advanceLevel(1, 90, 400), { level: 3, xp: 215 });
+});
+
+
+test('zero Mana does not force reversion or end an active Degen encounter', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0, abilities: [free] };
+  let completionCalls = 0;
+  const engine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => {
+    completionCalls += 1;
+  });
+
+  engine.useAbility(free.id);
+
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.status, 'active');
+  assert.equal(engine.snapshot.playerName, zeroManaDegen.name);
+  assert.equal(completionCalls, 0, 'Mana depletion alone must not finish or revert combat');
+});
+
+test('monster definitions do not expose a Mana resource', () => {
+  assert.deepEqual(
+    Object.keys(TUNNEL_MAW).filter((key) => /mana/i.test(key)),
+    [],
+    'monster combat state must not acquire a Mana-equivalent field',
+  );
 });
