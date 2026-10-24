@@ -1,3 +1,18 @@
+# DEGEN — AUTONOMOUS PROGRESS
+
+Updated: 2026-10-24
+
+## Latest run — 2026-10-24 (persisted-state hardening merged; auth branch reconciled)
+
+- **Authoritative main SHA at this progress-branch creation:** `44e3260913d7c386678c43262634ea07aeb00716`. PR #38 was merged as this docs-only commit; the progress header is restored to the top of the document without discarding historical sections.
+- **MERGED / PR #37:** persisted battle-state bounds and terminal-state consistency now fail closed before actions or unawarded reward claims, while already-awarded receipts remain replayable. Main merge SHA `e85b74915c8b6b236e38508b60cdcfb5f49f6375`; production Worker deployment [40099200467](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40099200467) succeeded as version `1d93de1c-5d7a-44c0-8290-ef3f1fb410ad`. Main CI [40099200425](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40099200425) passed. Deployment steps verified schema → tracked migrations → Worker. Live `/api/health` HTTP smoke was attempted but runner DNS resolution failed; no live HTTP response is claimed.
+- **PR #21 branch reconciliation — PUSHED / PR remains OPEN:** `automation/degen/identity-binding-immutability-v02` now has zero commits behind main through merge commit `32cef07b7dba21294e48dc4784d62a5eb93b7bbf`; continuity head `c9b5dd65b74ff80d080a68b174b107903773c7b0`. Authenticated Worker code retains main's persisted-state validation, and the authenticated D1 harness covers malformed/fractional active and victory snapshots, forged battle-start state, and no caller-owned combat state on start.
+- **Exact-head auth branch QA PASS:** [CI run 40100136556](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40100136556) on `c9b5dd65b74ff80d080a68b174b107903773c7b0`: `npm test` **100/100**; signed Telegram/session ownership on local Worker/D1; action/completion concurrency and duplicate receipts; transient reward recovery; Underpass cycle reservation/rollover; atomic defeat history; build; Chromium mobile battle vertical slice; signed-Telegram Chromium auth; and Wrangler dry-run. This is source/local integration proof, not production platform-auth proof.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` and bespoke `manaCost`, authoritative/persisted `player_mana`, rejection without mutation, exact deduction, zero-cost at zero, killing-blow/defeat, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no zero-Mana reversion remain verified.
+- **Battle authority / D1:** server-resolved victory, action CAS, invalid/expired/terminal permit guards, idempotent receipts and transient-failure recovery, reward tiers, shared level-up math, atomic defeat history, cycle reservation/rollover, and valid permits across event closure until expiry remain in main. Auth migration `0007_player_sessions.sql` remains PR-only and was not applied by the main Worker deployment.
+- **Miles release blocker:** PR #21 remains unmerged pending approved production Telegram/Discord credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not auto-link or bypass the gate. Keep Shield/housing integration gated.
+- **Best next task:** obtain the approved credential/configuration path and controlled live platform verification, then reassess PR #21; do not merge it until the external release gate is explicitly cleared.
+
 ## Latest run — 2026-10-24 (persisted battle-state validation merged and deployed)
 
 - **Authoritative main SHA:** `e85b74915c8b6b236e38508b60cdcfb5f49f6375`. PR #37 (`fix(worker): reject invalid persisted battle Mana state`) merged by squash on 2026-10-24 as this commit.
@@ -11,10 +26,6 @@
 - **Miles blocker:** verified-platform-auth PR #21 remains unmerged pending approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass this gate; keep Shield/housing integration gated.
 - **Current continuity branch:** `automation/degen/progress-sync-persisted-state-merge-v01`, created from exact main SHA `e85b74915c8b6b236e38508b60cdcfb5f49f6375`; this branch updates only this progress record.
 - **Best next task:** resolve the verified-platform-auth release gate; then reconcile PR #21 with current main and rerun the authenticated browser/Worker/D1 vertical slice. Do not treat a successful Worker deployment or local integration suite as live platform-auth verification.
-
-# DEGEN — AUTONOMOUS PROGRESS
-
-Updated: 2026-10-24
 
 ## Latest run — 2026-10-24 (fractional persisted combat-state coverage expanded)
 
