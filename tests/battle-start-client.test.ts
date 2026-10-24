@@ -106,7 +106,7 @@ test('battle action sends the displayed authoritative turn as a replay precondit
   globalThis.fetch = async (_input, init) => {
     sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
     return new Response(JSON.stringify({
-      permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 20, turnCount: 4,
+      permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 20, turnCount: 4,
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   try {
@@ -146,7 +146,7 @@ test('battle action conflicts preserve the Worker authoritative state for safe c
 test('successful battle actions reject malformed or out-of-turn Worker state before presentation', async () => {
   const valid = {
     permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0,
-    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
     enemyHp: 20, turnCount: 4,
   };
   const invalidResponses = [
@@ -159,6 +159,9 @@ test('successful battle actions reject malformed or out-of-turn Worker state bef
     { ...valid, status: 'victory', playerHp: 0, enemyHp: 0 },
     { ...valid, status: 'defeat', playerHp: 70 },
     { ...valid, status: 'defeat', playerHp: 0, enemyHp: 0 },
+    { ...valid, retaliationDamage: 0 },
+    { ...valid, status: 'defeat', playerHp: 0, enemyHp: 20, shieldAbsorbed: 10, retaliationDamage: 10 },
+    { ...valid, status: 'defeat', playerHp: 0, enemyHp: 20, playerShield: 1, retaliationDamage: 10 },
     { ...valid, status: 'unknown' },
     { ...valid, turnCount: Number.MAX_SAFE_INTEGER + 1 },
     { ...valid, retaliationDamage: -1 },
@@ -187,7 +190,7 @@ test('successful battle actions reject malformed or out-of-turn Worker state bef
 test('successful terminal battle actions accept only Worker-consistent victory and defeat states', async () => {
   const terminalStates = [
     { permitId: 'permit-1', status: 'victory', playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 0, turnCount: 1 },
-    { permitId: 'permit-1', status: 'defeat', playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 20, turnCount: 1 },
+    { permitId: 'permit-1', status: 'defeat', playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 20, turnCount: 1 }
   ];
 
   for (const state of terminalStates) {

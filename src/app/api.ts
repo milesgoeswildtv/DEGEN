@@ -104,7 +104,11 @@ export class GameApi {
       method: 'POST',
       body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
     });
-    if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
+    const impossibleRetaliation = (result.status === 'active' && result.retaliationDamage < 1)
+      || (result.status === 'defeat' && (result.playerShield !== 0 || result.retaliationDamage <= result.shieldAbsorbed));
+    if (!isAuthoritativeBattleActionState(result, permitId)
+      || result.turnCount !== expectedTurnCount + 1
+      || impossibleRetaliation) {
       throw new Error('Malformed authoritative battle action response.');
     }
     return result;
