@@ -60,7 +60,7 @@ function assertPersistedPermitState(permitId, state) {
 async function assertInvalidActionState(permitId, state) {
   const response = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: AUTH_HEADERS,
-    body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash' }),
+    body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash', expectedTurnCount: 0 }),
   });
   const data = await response.json();
   assert.equal(response.status, 409, `${permitId} must fail closed`);
@@ -90,6 +90,7 @@ try {
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
+      ('permit-replay','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
       ('permit-invalid-negative-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,-1,92,0),
       ('permit-invalid-fractional-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,1.5,92,0),
@@ -135,6 +136,48 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  // A valid action without a turn precondition cannot mutate an authenticated battle permit.
+  const missingTurnPreconditionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: AUTH_HEADERS,
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'permit-replay', abilityId: 'slash' }),
+  });
+  const missingTurnPrecondition = await missingTurnPreconditionResponse.json();
+  assert.equal(missingTurnPreconditionResponse.status, 400);
+  assert.equal(missingTurnPreconditionResponse.headers.get('cache-control'), 'no-store');
+  assert.equal(missingTurnPrecondition.error,
+    'expectedTurnCount is required and must be a non-negative safe integer.');
+  assertPersistedPermitState('permit-replay', {
+    status: 'active', playerHp: 80, playerMana: 0, enemyHp: 92, turnCount: 0,
+  });
+
+  const firstReplayPermitActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: AUTH_HEADERS,
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'permit-replay', abilityId: 'slash', expectedTurnCount: 0 }),
+  });
+  const firstReplayPermitAction = await firstReplayPermitActionResponse.json();
+  assert.equal(firstReplayPermitActionResponse.status, 200);
+  assert.equal(firstReplayPermitAction.playerMana, 0);
+  assert.equal(firstReplayPermitAction.playerHp, 70);
+  assert.equal(firstReplayPermitAction.enemyHp, 63);
+  assert.equal(firstReplayPermitAction.turnCount, 1);
+  assertPersistedPermitState('permit-replay', {
+    status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
+
+  const replayedActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: AUTH_HEADERS,
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'permit-replay', abilityId: 'slash', expectedTurnCount: 0 }),
+  });
+  const replayedAction = await replayedActionResponse.json();
+  assert.equal(replayedActionResponse.status, 409);
+  assert.equal(replayedAction.error, 'Stale battle turn.');
+  assert.deepEqual(replayedAction.battleState, {
+    permitId: 'permit-replay', status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
+  assertPersistedPermitState('permit-replay', {
+    status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
 
   const invalidManaResponse = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: AUTH_HEADERS,
