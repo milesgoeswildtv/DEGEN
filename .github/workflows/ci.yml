@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, automation/degen/identity-binding-immutability-v02]
+    branches: [main]
 
 jobs:
   build:
@@ -34,6 +34,8 @@ jobs:
         run: node tests/worker-d1-defeat-atomic.mjs
       - name: Build web app
         run: npm run build
+      - name: Exercise real Chromium mobile battle vertical slice with local Worker/D1
+        run: node tests/browser-battle-vertical-slice.mjs
       - name: Verify signed platform auth in real Chromium + local Worker/D1
         run: node tests/browser-platform-auth.mjs
       - name: Validate Cloudflare Worker
