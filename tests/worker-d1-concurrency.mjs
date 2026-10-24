@@ -68,6 +68,7 @@ try {
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
+      ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
       ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,100,0),
@@ -92,6 +93,24 @@ try {
     await sleep(250);
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
+
+  const invalidManaResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-invalid-mana',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const invalidMana = await invalidManaResponse.json();
+  assert.equal(invalidManaResponse.status, 409, 'persisted Mana above the Degen maximum must fail closed');
+  assert.equal(invalidMana.error, 'Battle state is invalid.');
+  assert.equal('battleState' in invalidMana, false, 'invalid persisted state must not be echoed as authoritative');
+  assertPersistedPermitState('permit-invalid-mana', {
+    status: 'active', playerHp: 80, playerMana: 13, enemyHp: 92, turnCount: 0,
+  });
 
   const expiredActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
