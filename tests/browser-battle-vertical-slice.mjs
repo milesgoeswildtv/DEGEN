@@ -197,7 +197,7 @@ try {
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
     await tap("[data-ability=crack]");
-    if (turn < 3) await until('Authoritative action ' + turn, () => cdp.evaluate('(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + turn));
+    // The D1 turn-count CAS below is the authoritative completion signal; combat logs also include Shield events.
     const expected = {
       player_hp: turn === 1 ? 120 : 112,
       player_mana: 12 - turn * 4,
