@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { BattleEngine } from '../src/game/combat/engine.ts';
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
   advanceLevel,
@@ -151,4 +152,31 @@ test('level progression preserves overflow XP across one or more levels', () => 
 
   assert.deepEqual(advanceLevel(1, 90, 75), { level: 2, xp: 65 });
   assert.deepEqual(advanceLevel(1, 90, 400), { level: 3, xp: 215 });
+});
+
+
+test('zero Mana does not force reversion or end an active Degen encounter', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0, abilities: [free] };
+  let completionCalls = 0;
+  const engine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => {
+    completionCalls += 1;
+  });
+
+  engine.useAbility(free.id);
+
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.status, 'active');
+  assert.equal(engine.snapshot.playerName, zeroManaDegen.name);
+  assert.equal(completionCalls, 0, 'Mana depletion alone must not finish or revert combat');
+});
+
+test('monster definitions do not expose a Mana resource', () => {
+  assert.deepEqual(
+    Object.keys(TUNNEL_MAW).filter((key) => /mana/i.test(key)),
+    [],
+    'monster combat state must not acquire a Mana-equivalent field',
+  );
 });
