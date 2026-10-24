@@ -58,9 +58,17 @@ test('real Worker OPTIONS preserves legacy and local origins', async () => {
   }
 });
 
-test('real Worker OPTIONS never echoes an unapproved origin', async () => {
+test('real Worker OPTIONS gives no CORS grant to unapproved origins', async () => {
   for (const origin of ['null', 'https://7f122271.degen-8ze.pages.dev', 'https://degen-8ze.pages.dev.evil.example']) {
     const response = await preflight(origin);
-    assert.notEqual(response.headers.get('access-control-allow-origin'), origin);
+    assert.equal(response.headers.get('access-control-allow-origin'), null);
   }
+});
+
+test('originless Worker requests receive no cross-origin grant', async () => {
+  const response = await worker.fetch(new Request('https://degen-api.afterdarklabs.workers.dev/api/health'), {
+    method: 'GET',
+  }, { ALLOWED_ORIGINS: allowlist!.join(',') });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
