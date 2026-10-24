@@ -363,3 +363,17 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - The earlier intermediate browser-test commits were superseded by the corrected selector and canonical furniture display name. This result applies only to code/test head `ecc68f945ef6b678e81d454ab6b6039e17106386`.
 - A documentation-only continuity commit follows this verified code/test head; its own CI remains pending until observed. No production D1 operation, schema migration, Worker deployment, or merge occurred.
 - **Best next task:** resolve PR #21's signed Discord/Telegram session ownership and approved controlled live-verification gate, then reconcile housing and Shield together without bypassing authentication or inventing account-link policy.
+
+
+## Latest run — 2026-10-23 (retain failed housing saves for retry)
+
+- Authoritative `main` SHA: `9997002df0ea48ab54ae82a2efcf084734f00fdb`.
+- Continued existing branch `automation/degen/housing-reliability-v01` / PR #8; no competing branch and no direct `main` writes. **Code/test head:** `ef18e8f66e88ee5a7a2ca8adf5169a655e97561e`. PR remains draft and unmerged.
+- Changed `src/app/state.ts`: if the latest housing save fails and no newer snapshot is queued, retain that immutable snapshot for retry on the next edit. A failed snapshot is attempted at most once per queue drain, so a persistent outage cannot create a tight retry loop or block other players. A newer snapshot remains eligible even if an older snapshot for that player failed while another player's save was in flight.
+- Changed `tests/housing-save-order.test.ts`: added deterministic coverage for retrying the latest snapshot after a subsequent edit and for a newer same-player snapshot surviving a failure while a different account's save is in flight.
+- Exact-head CI for `ef18e8f66e88ee5a7a2ca8adf5169a655e97561e` is **pending/unobserved** at this record; do not reuse the previous `ecc68f9` result as proof for the new code. Required checks remain `npm test`, `npm run build`, `npm run check:worker`, Worker/D1 harnesses, and the mobile Chromium housing persistence flow.
+- **Mana:** COMPLETE / MERGED on main: authoritative Degen Mana, paid-action rejection without mutation, exact deduction, zero-cost at 0, killing-blow/defeat parity, client/Worker math parity, cost-aware UI, no monster Mana, and no zero-Mana reversion. Migration `0006_backfill_active_battle_mana.sql` remains tracked.
+- **Battle authority/reward idempotency:** server-resolved victory, authoritative action CAS, persisted reward receipts/recovery, transient D1 failure retry, cycle reservation/rollover, atomic defeat history, and permit continuity across event closure remain on main. This housing-only change does not alter combat or rewards.
+- **D1 assumptions:** `wrangler.toml` remains source of truth (binding `DB`, database `DEGEN`, migrations `db/migrations`); deploy order is schema → tracked migrations → Worker. No migration, remote D1 operation, or Worker deployment was performed.
+- **Miles blocker:** PR #21's signed Discord/Telegram identity/session ownership still requires approved production credentials and controlled live verification; legacy identity collisions need an approved recovery/link policy. Keep PR #8 draft/unmerged until the authentication gate and combined branch review are satisfied.
+- **Best next task:** verify exact-head CI for this housing retry fix, then reconcile housing and Shield against the approved auth branch without bypassing its release gate.
