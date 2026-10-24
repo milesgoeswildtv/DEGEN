@@ -227,6 +227,7 @@ test('battle action rejects unsafe expected turn counts before issuing a request
 test('client battle-state validation mirrors Worker active-turn and terminal-state invariants', () => {
   const active = {
     permitId: 'permit-1', status: 'active', playerHp: 70, playerMana: 0,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
     enemyHp: 20, turnCount: Number.MAX_SAFE_INTEGER - 1,
   };
   assert.equal(isAuthoritativeBattleActionState(active, 'permit-1'), true,
