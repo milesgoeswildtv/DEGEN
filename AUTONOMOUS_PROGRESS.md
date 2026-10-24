@@ -536,3 +536,17 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - Mana and battle/reward authority remain unchanged and complete on main. Auth migration `0007_player_sessions.sql` remains PR-only.
 - Release gate remains approved production Discord/Telegram credentials, controlled live identity/session verification, and a Miles-approved policy for legacy identity collisions.
 - Best next task: obtain exact-head green CI for the stale-response/body-parsing guard, then preserve the auth release gate before housing/Shield integration.
+
+
+## 2026-10-23 — Session-bound API and detached-victory recovery (PR #21 / CI pending)
+
+- Authoritative main SHA: `9997002df0ea48ab54ae82a2efcf084734f00fdb`. Continued the existing `automation/degen/identity-binding-immutability-v02` branch; no duplicate branch and no direct-main write.
+- Files changed: `src/app/api.ts`, `src/app/AppController.ts`, `tests/api-session-account-isolation.test.ts`, new `tests/detached-victory-recovery.test.ts`, and compatibility fixtures in `tests/battle-start-client.test.ts` and `tests/client-reward-recovery.test.ts`.
+- Account ownership is now checked before player-bound world/battle/housing requests, after fetch resolution, and after response-body parsing. Stale responses from a different account are not applied. A Worker-confirmed battle-action victory that arrives detached carries only the authoritative battle result into the controller's recovery path; the controller stores only the permit ID under the issuing player's local key. It never applies Player A's battle state to Player B or computes rewards locally. Completion still goes back through the Worker, and a mismatched session cannot call the completion route.
+- Tests added for successful stale responses, the body-parsing race, mismatched session ownership, detached Worker-victory metadata, and controller persistence under the issuing account. Existing auth/reward fixture assumptions were updated to model the authenticated player explicitly.
+- QA: the earlier guard-only exact-head CI run `40059163877` passed all deterministic tests, Worker/D1 concurrency/recovery/rollover/defeat integration, Vite build, Chromium auth smoke, and Worker validation. The first CI after adding the full owner/recovery slice (`40060110158`) exposed three test-fixture mismatches; those were corrected in `3c9c7815504629a3ac0c436c32e6232da38066cd` and `7a3a90bdf266387877996915636221fbe063f6ce`. Exact-head CI `40060208391` is running on the corrected code; do not mark the slice green until it finishes.
+- Mana remains COMPLETE/MERGED on main. No Mana rules, monster resources, D1 schema, migration, Worker config, or economic rewards changed in this slice.
+- Battle authority/reward idempotency remain server-owned: CAS action application, victory-only completion, persisted receipts/retry, atomic defeat history, and full/reduced clear math unchanged.
+- D1/deploy assumptions unchanged: `wrangler.toml` and `db/migrations` are authoritative; tracked migrations precede Worker deployment. Auth migration `0007_player_sessions.sql` remains PR #21-only. No production D1 mutation or Worker deploy.
+- Miles blocker: production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved legacy identity-collision recovery policy. Do not merge/deploy auth on CI alone.
+- Best next task: finish exact-head CI for PR #21, then keep the production-auth release gate explicit before merging housing/Shield work.
