@@ -1,9 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
-import { BattleEngine } from '../src/game/combat/engine.ts';
+
+const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import.meta.url), 'utf8')
+  .replace(/^import .*;\\r?\\n/gm, '')
+  .replace(/\\bexport class /g, 'class ');
+const { BattleEngine } = runInNewContext(
+  stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\\n({ BattleEngine });',
+  { canUseAbility, resolveCombatTurn },
+) as {
+  BattleEngine: new (
+    degen: typeof TEST_DEGEN,
+    enemy: typeof TUNNEL_MAW,
+    onComplete: () => void,
+  ) => {
+    useAbility(abilityId: string): void;
+    snapshot: { playerMana: number; status: string; playerName: string };
+  };
+};
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
   advanceLevel,
