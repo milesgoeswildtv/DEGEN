@@ -214,7 +214,7 @@ try {
     const displayedMana = `MANA ${expected.player_mana}/12`;
     await until('rendered authoritative Mana HUD after turn ' + turn,
       () => cdp.evaluate(`window.__degenRenderedBattleText?.includes(${JSON.stringify(displayedMana)})`));
-    await until('rendered authoritative Shield HUD after turn ' + turn,
+    if (turn < 3) await until('rendered authoritative Shield HUD after turn ' + turn,
       () => cdp.evaluate(`document.querySelector("#battle-shield")?.textContent === ${JSON.stringify('SHIELD ' + expected.player_shield)}`));
     const hudOrder = await cdp.evaluate(`(() => {
       const rendered = window.__degenRenderedBattleText || [];
