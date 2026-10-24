@@ -66,9 +66,10 @@ test('real Worker OPTIONS gives no CORS grant to unapproved origins', async () =
 });
 
 test('originless Worker requests receive no cross-origin grant', async () => {
-  const response = await worker.fetch(new Request('https://degen-api.afterdarklabs.workers.dev/api/health'), {
-    method: 'GET',
-  }, { ALLOWED_ORIGINS: allowlist!.join(',') });
+  const response = await worker.fetch(
+    new Request('https://degen-api.afterdarklabs.workers.dev/api/health', { method: 'GET' }),
+    { ALLOWED_ORIGINS: allowlist!.join(',') },
+  );
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
