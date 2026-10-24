@@ -3,10 +3,18 @@
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } from '../src/game/progression';
+import { verifyTelegramInitData } from './auth/telegramInitData';
+import { issuePlayerSession, resolvePlayerSession, revokePlayerSession } from './auth/sessionStore';
+import { issueDiscordChallenge, consumeDiscordChallenge } from './auth/discordChallenge';
+import { exchangeDiscordAuthorizationCode } from './auth/discordOAuth';
 
 interface Env {
   DB: D1Database;
   ALLOWED_ORIGINS?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  DISCORD_CLIENT_ID?: string;
+  DISCORD_CLIENT_SECRET?: string;
+  DISCORD_REDIRECT_URI?: string;
 }
 
 const STARTER_FURNITURE = ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'];
@@ -20,10 +28,11 @@ const corsHeaders = (request: Request, env: Env): HeadersInit => {
     .filter(Boolean);
   const headers: Record<string, string> = {
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type,authorization',
     'vary': 'Origin',
   };
-  // A missing or unlisted Origin must never receive an Access-Control-Allow-Origin grant.
+  // Never emit an Access-Control-Allow-Origin value for an absent or unlisted
+  // Origin. The browser must not receive a misleading allowlisted origin.
   if (origin && allowed.includes(origin)) headers['access-control-allow-origin'] = origin;
   return headers;
 };
@@ -31,7 +40,7 @@ const corsHeaders = (request: Request, env: Env): HeadersInit => {
 const json = (request: Request, env: Env, data: unknown, status = 200): Response =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...corsHeaders(request, env) },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...corsHeaders(request, env) },
   });
 
 const fail = (request: Request, env: Env, message: string, status = 400): Response =>
@@ -47,6 +56,8 @@ const randomInt = (min: number, max: number): number => {
 
 type CycleRow = { id: string; event_key: string; opens_at: string; closes_at: string };
 type CharacterRow = { level: number; xp: number; currency: number; degen_key: string };
+type PlatformIdentity = { platform: 'discord' | 'telegram'; platformUserId: string };
+
 type BattlePermitStateRow = {
   cycle_id: string;
   encounter_key: string;
@@ -57,20 +68,68 @@ type BattlePermitStateRow = {
   turn_count: number;
 };
 
-async function ensurePlayer(db: D1Database, playerId: string, displayName: string): Promise<void> {
-  await db.batch([
-    db.prepare(`INSERT INTO players (id, display_name) VALUES (?, ?)
-      ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP`).bind(playerId, displayName.slice(0, 32)),
-    db.prepare(`INSERT OR IGNORE INTO characters (player_id, level, xp, currency, degen_key) VALUES (?, 1, 0, 0, 'test-degen')`).bind(playerId),
-    ...STARTER_LOCATIONS.map((location) => db.prepare(`INSERT OR IGNORE INTO unlocked_locations (player_id, location_key) VALUES (?, ?)`).bind(playerId, location)),
-    ...STARTER_FURNITURE.map((item) => db.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES (?, ?, ?, 'furniture', 1)`).bind(`${playerId}:furniture:${item}`, playerId, item)),
-  ]);
+async function ensurePlayer(
+  db: D1Database,
+  playerId: string,
+  displayName: string,
+  identity?: PlatformIdentity,
+): Promise<boolean> {
+  const normalizedName = displayName.slice(0, 32);
+  // Seed the starter bed only when this is a new character. An empty room is a
+  // valid saved layout and must stay empty on later platform sign-ins.
+  const existingCharacter = await db.prepare(`SELECT player_id FROM characters WHERE player_id = ?`)
+    .bind(playerId).first<{ player_id: string }>();
+  // Every bootstrap side effect shares the same identity-ownership predicate.
+  // D1 batch is atomic: a competing first-bind transaction that loses the
+  // identity race sees the winner here and performs no player bootstrap writes.
+  const guard = identity
+    ? `NOT EXISTS (SELECT 1 FROM platform_identities
+        WHERE platform = ? AND platform_user_id = ? AND player_id <> ?)`
+    : '1 = 1';
+  const guardValues = identity ? [identity.platform, identity.platformUserId, playerId] : [];
+  const statements: D1PreparedStatement[] = [
+    db.prepare(`INSERT INTO players (id, display_name) SELECT ?, ? WHERE ${guard}
+      ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP`)
+      .bind(playerId, normalizedName, ...guardValues),
+    db.prepare(`INSERT OR IGNORE INTO characters (player_id, level, xp, currency, degen_key)
+      SELECT ?, 1, 0, 0, 'test-degen' WHERE ${guard}`).bind(playerId, ...guardValues),
+    ...STARTER_LOCATIONS.map((location) => db.prepare(`INSERT OR IGNORE INTO unlocked_locations (player_id, location_key)
+      SELECT ?, ? WHERE ${guard}`).bind(playerId, location, ...guardValues)),
+    ...STARTER_FURNITURE.map((item) => db.prepare(`INSERT OR IGNORE INTO player_inventory
+      (id, player_id, item_key, item_type, quantity)
+      SELECT ?, ?, ?, 'furniture', 1 WHERE ${guard}`)
+      .bind(`${playerId}:furniture:${item}`, playerId, item, ...guardValues)),
+  ];
 
-  const housing = await db.prepare(`SELECT COUNT(*) AS count FROM housing_placements WHERE player_id = ?`).bind(playerId).first<{ count: number }>();
-  if ((housing?.count ?? 0) === 0) {
-    await db.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, 'starter-bed', 1, 1, 0)`)
-      .bind(`${playerId}:starter-bed-placed`, playerId).run();
+  if (identity) {
+    statements.push(db.prepare(`INSERT INTO platform_identities
+      (platform, platform_user_id, player_id, display_name, verified_at)
+      SELECT ?, ?, ?, ?, CURRENT_TIMESTAMP WHERE ${guard}
+      ON CONFLICT(platform, platform_user_id) DO UPDATE SET display_name = excluded.display_name
+      WHERE platform_identities.player_id = excluded.player_id
+      RETURNING player_id`)
+      .bind(identity.platform, identity.platformUserId, playerId, normalizedName, ...guardValues));
   }
+
+  // Keep first-login housing creation in the same atomic batch as character
+  // creation. Concurrent first logins use the same deterministic placement ID.
+  if (!existingCharacter) {
+    statements.push(db.prepare(`INSERT OR IGNORE INTO housing_placements
+      (id, player_id, furniture_key, grid_x, grid_y, rotation)
+      SELECT ?, ?, 'starter-bed', 1, 1, 0 WHERE ${guard}`)
+      .bind(`${playerId}:starter-bed-placed`, playerId, ...guardValues));
+  }
+
+  await db.batch(statements);
+
+  if (identity) {
+    const linked = await db.prepare(`SELECT player_id FROM platform_identities
+      WHERE platform = ? AND platform_user_id = ? AND player_id = ? AND verified_at IS NOT NULL`)
+      .bind(identity.platform, identity.platformUserId, playerId).first<{ player_id: string }>();
+    if (!linked) return false;
+  }
+
+  return true;
 }
 
 async function loadPlayer(db: D1Database, playerId: string) {
@@ -170,19 +229,100 @@ async function worldSnapshot(db: D1Database, playerId: string, cycle?: CycleRow)
   };
 }
 
-async function handleBootstrap(request: Request, env: Env): Promise<Response> {
-  const input = await body<{ playerId?: string; displayName?: string; platform?: string; platformUserId?: string }>(request);
-  if (!input.playerId) return fail(request, env, 'playerId is required');
-  await ensurePlayer(env.DB, input.playerId, input.displayName || 'Player');
+async function handleDiscordChallenge(request: Request, env: Env): Promise<Response> {
+  if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET) {
+    return fail(request, env, 'Discord authentication is not configured.', 503);
+  }
+  const challenge = await issueDiscordChallenge(env.DB);
+  return json(request, env, challenge);
+}
 
-  if ((input.platform === 'discord' || input.platform === 'telegram') && input.platformUserId) {
-    await env.DB.prepare(`INSERT INTO platform_identities (platform, platform_user_id, player_id, display_name) VALUES (?, ?, ?, ?)
-      ON CONFLICT(platform, platform_user_id) DO UPDATE SET player_id = excluded.player_id, display_name = excluded.display_name`)
-      .bind(input.platform, input.platformUserId, input.playerId, (input.displayName || 'Player').slice(0, 32)).run();
+async function handleBootstrap(request: Request, env: Env): Promise<Response> {
+  const input = await body<{
+    platform?: string;
+    telegramInitData?: string;
+    discordAuthorizationCode?: string;
+    discordState?: string;
+  }>(request);
+
+  let identity: PlatformIdentity;
+  if (input.platform === 'telegram') {
+    if (!env.TELEGRAM_BOT_TOKEN) return fail(request, env, 'Telegram authentication is not configured.', 503);
+    const verified = await verifyTelegramInitData(input.telegramInitData ?? '', env.TELEGRAM_BOT_TOKEN);
+    if (!verified) return fail(request, env, 'Telegram identity proof is invalid or expired.', 401);
+    identity = { platform: 'telegram', platformUserId: verified.platformUserId };
+    // Only the verified provider name is used below; the caller's display name is ignored.
+    const accepted = await bootstrapVerifiedIdentity(env, request, identity, verified.displayName);
+    return accepted;
   }
 
-  const player = await loadPlayer(env.DB, input.playerId);
-  return json(request, env, player);
+  if (input.platform === 'discord') {
+    if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET) {
+      return fail(request, env, 'Discord authentication is not configured.', 503);
+    }
+    if (!await consumeDiscordChallenge(env.DB, input.discordState)) {
+      return fail(request, env, 'Discord authorization state is invalid, expired, or already used.', 401);
+    }
+    const verified = await exchangeDiscordAuthorizationCode(input.discordAuthorizationCode ?? '', env);
+    if (!verified) return fail(request, env, 'Discord authorization could not be verified.', 401);
+    identity = { platform: 'discord', platformUserId: verified.platformUserId };
+    return bootstrapVerifiedIdentity(env, request, identity, verified.displayName);
+  }
+
+  return fail(request, env, 'A verified Telegram or Discord identity is required.', 401);
+}
+
+async function bootstrapVerifiedIdentity(
+  env: Env, request: Request, identity: PlatformIdentity, displayName: string,
+): Promise<Response> {
+  const existing = await env.DB.prepare(`SELECT player_id, verified_at FROM platform_identities
+    WHERE platform = ? AND platform_user_id = ?`).bind(identity.platform, identity.platformUserId)
+    .first<{ player_id: string; verified_at: string | null }>();
+  // Older builds accepted caller-supplied provider IDs. Preserve those rows for
+  // account recovery, but never let an unverified legacy mapping choose an owner.
+  if (existing && !existing.verified_at) {
+    return fail(request, env, 'This legacy platform identity needs account recovery before sign-in.', 409);
+  }
+  let playerId = existing?.player_id ?? crypto.randomUUID();
+
+  let accepted = await ensurePlayer(env.DB, playerId, displayName, identity);
+  if (!accepted) {
+    // Concurrent first bootstrap for the same verified identity converges on the
+    // single D1 winner; a caller can never choose which player owns the identity.
+    const winner = await env.DB.prepare(`SELECT player_id, verified_at FROM platform_identities
+      WHERE platform = ? AND platform_user_id = ? AND verified_at IS NOT NULL`).bind(identity.platform, identity.platformUserId)
+      .first<{ player_id: string; verified_at: string }>();
+    if (!winner) return fail(request, env, 'Platform identity could not be bound safely.', 409);
+    playerId = winner.player_id;
+    accepted = await ensurePlayer(env.DB, playerId, displayName, identity);
+    if (!accepted) return fail(request, env, 'Platform identity could not be bound safely.', 409);
+  }
+
+  const player = await loadPlayer(env.DB, playerId);
+  if (!player) return fail(request, env, 'Player bootstrap failed.', 500);
+  const session = await issuePlayerSession(env.DB, playerId);
+  return json(request, env, {
+    player,
+    session: { token: session.token, expiresAtMs: session.expiresAtMs },
+  });
+}
+
+async function authenticatedPlayer(request: Request, env: Env) {
+  const header = request.headers.get('authorization') ?? '';
+  const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(header);
+  return resolvePlayerSession(env.DB, match?.[1] ?? null);
+}
+
+async function injectAuthenticatedPlayer(request: Request, playerId: string): Promise<Request> {
+  const payload = await request.clone().json() as Record<string, unknown>;
+  const headers = new Headers(request.headers);
+  headers.set('content-type', 'application/json');
+  headers.delete('content-length');
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body: JSON.stringify({ ...payload, playerId }),
+  });
 }
 
 async function handleHousing(request: Request, env: Env): Promise<Response> {
@@ -520,18 +660,38 @@ export default {
     const url = new URL(request.url);
 
     try {
-      if (request.method === 'GET' && url.pathname === '/api/health') return json(request, env, { ok: true, service: 'degen-api' });
-      if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return handleBootstrap(request, env);
-      if (request.method === 'PUT' && url.pathname === '/api/player/housing') return handleHousing(request, env);
-      if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
-        const playerId = url.searchParams.get('playerId');
-        if (!playerId) return fail(request, env, 'playerId is required');
-        const snapshot = await worldSnapshot(env.DB, playerId);
-        return json(request, env, snapshot);
+      if (request.method === 'GET' && url.pathname === '/api/health') {
+        return json(request, env, { ok: true, service: 'degen-api' });
       }
-      if (request.method === 'POST' && url.pathname === '/api/battle/start') return handleStartBattle(request, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/action') return handleBattleAction(request, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/complete') return handleCompleteBattle(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return handleBootstrap(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/auth/discord/challenge') return handleDiscordChallenge(request, env);
+
+      const playerRoute = (request.method === 'PUT' && url.pathname === '/api/player/housing')
+        || (request.method === 'GET' && url.pathname === '/api/world/underpass')
+        || (request.method === 'POST' && [
+          '/api/auth/logout', '/api/battle/start', '/api/battle/action', '/api/battle/complete',
+        ].includes(url.pathname));
+      if (!playerRoute) return fail(request, env, 'Not found', 404);
+
+      const session = await authenticatedPlayer(request, env);
+      if (!session) return fail(request, env, 'A valid player session is required.', 401);
+
+      if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
+        const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get('authorization') ?? '')?.[1];
+        if (!await revokePlayerSession(env.DB, token)) return fail(request, env, 'Player session is no longer valid.', 401);
+        return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+      }
+      if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
+        return json(request, env, await worldSnapshot(env.DB, session.playerId));
+      }
+
+      // Strip authority from caller-controlled body fields by replacing playerId
+      // with the owner resolved from the hashed, unexpired bearer session.
+      const ownedRequest = await injectAuthenticatedPlayer(request, session.playerId);
+      if (request.method === 'PUT' && url.pathname === '/api/player/housing') return handleHousing(ownedRequest, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/start') return handleStartBattle(ownedRequest, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/action') return handleBattleAction(ownedRequest, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/complete') return handleCompleteBattle(ownedRequest, env);
       return fail(request, env, 'Not found', 404);
     } catch (error) {
       console.error(error);

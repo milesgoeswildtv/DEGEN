@@ -60,3 +60,16 @@ npm run db:migrate
 ```
 
 The Worker persists authoritative player HP, enemy HP, battle status, and turn count on each permit. `/api/battle/complete` grants rewards only when that persisted battle state is already a server-resolved victory.
+
+## Server-backed platform authentication
+
+When `VITE_API_BASE` is configured, DEGEN runs in server-authoritative mode and does not fall back to a browser-chosen player identity.
+
+- **Telegram Mini App:** set the Worker secret `TELEGRAM_BOT_TOKEN`. The client sends raw `Telegram.WebApp.initData`; the Worker verifies its HMAC, age, and fields before it selects or creates the account. Client-supplied `playerId`, provider ID, and display name are not account authority.
+- **Discord Activity:** set Worker `DISCORD_CLIENT_ID` and secret `DISCORD_CLIENT_SECRET`; set the matching public build variable `VITE_DISCORD_CLIENT_ID`. The Worker issues a short-lived one-use OAuth state, exchanges the authorization code server-side, and checks the Discord application ID and `identify` scope before binding the provider user. `DISCORD_REDIRECT_URI` is optional and must match the Discord OAuth configuration if your setup requires it.
+- Configure Worker secrets with `wrangler secret put TELEGRAM_BOT_TOKEN`, `wrangler secret put DISCORD_CLIENT_SECRET`, and `wrangler secret put DISCORD_CLIENT_ID` (or use the appropriate non-secret Worker variable for the client ID). Configure `VITE_API_BASE` and `VITE_DISCORD_CLIENT_ID` in the frontend build environment. Never put the bot token or Discord client secret in Vite variables.
+- Verified bootstrap returns a short-lived bearer session. Only the SHA-256 session-token digest is stored in D1; housing, world, battle-action, and reward-completion routes resolve the player from the bearer session and ignore caller-selected player IDs. Logout revokes the session.
+- Apply the tracked `db/migrations/0007_player_sessions.sql` migration through the existing schema → migrations → Worker deployment workflow. No production migration or deployment is performed by this repository change.
+- Migration 0007 adds a nullable `verified_at` marker to existing provider bindings. Rows created by pre-auth builds remain unverified because those builds accepted caller-supplied provider IDs. A signed identity that collides with one of those legacy rows receives HTTP 409; DEGEN preserves the row and existing progress instead of automatically trusting, reassigning, deleting, or merging it. Account recovery/linking for those legacy collisions requires a separately approved policy.
+
+Browser preview remains available only when `VITE_API_BASE` is unset. A configured Worker with no valid Telegram/Discord identity fails closed.
