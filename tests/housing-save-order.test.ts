@@ -92,6 +92,39 @@ test('a failed latest save remains queued and retries on the next edit', async (
   assert.equal(calls.length, 2);
 });
 
+test('a newer edit can retry after a failed save while another account save is in flight', async () => {
+  const calls: Array<{ playerId: string; housing: any; resolve: () => void; reject: (error: Error) => void }> = [];
+  const store = makeStore((playerId, housing) => new Promise<void>((resolve, reject) => {
+    calls.push({ playerId, housing: structuredClone(housing), resolve, reject });
+  }));
+  const firstPlayerId = store.snapshot.id;
+
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.playerId, firstPlayerId);
+
+  store.replaceFromServer({ ...store.snapshot, id: 'second-account',
+    housing: { inventory: ['starter-chair'], placements: [] } });
+  store.placeFurniture('starter-chair', 3, 3);
+  calls[0]!.reject(new Error('temporary network failure'));
+  await flush();
+  assert.equal(calls.length, 2, 'the second account must continue after the first failure');
+  assert.equal(calls[1]!.playerId, 'second-account');
+
+  store.replaceFromServer({ ...store.snapshot, id: firstPlayerId,
+    housing: { inventory: ['starter-chair'], placements: [] } });
+  store.placeFurniture('starter-chair', 4, 4);
+  calls[1]!.resolve();
+  await flush();
+  assert.equal(calls.length, 3, 'a newer snapshot must not be skipped with the failed older snapshot');
+  assert.equal(calls[2]!.playerId, firstPlayerId);
+  assert.ok(calls[2]!.housing.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 4 && placement.y === 4));
+  calls[2]!.resolve();
+  await flush();
+});
+
 test('100 rapid moves coalesce to first and final saves', async () => {
   const calls: Array<{ housing: any; resolve: () => void }> = [];
   const store = makeStore((_id, housing) => new Promise<void>((resolve) => {
