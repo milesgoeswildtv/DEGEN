@@ -2,6 +2,19 @@
 
 Updated: 2026-10-24
 
+## Latest run — 2026-10-24 (fractional persisted combat-state coverage expanded)
+
+- **Authoritative main SHA observed:** `aabf575a472553cc495d3938d7bbc7284a327562`.
+- **PUSHED / PR #37 OPEN:** continued `automation/degen/active-permit-mana-invariant-v01`. Test commit `c26194f6520b379481ca34388928b955d4ad7e26` adds fractional persisted player HP, player Mana, enemy HP, and turn-count fixtures. Each must fail closed with HTTP 409, omit malformed state from the response, and preserve the stored permit. No Worker runtime or game-rule code changed in this follow-up.
+- **QA distinction:** prior code/test commit `8959fbf520ce0669e8d0c2b2c47559e5e0ee7a61` passed full CI [40096202255](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40096202255): 70/70 deterministic tests, Worker/D1 concurrency and recovery, Underpass cycle reservation/rollover, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker dry-run. The additional `c26194f` fixture batch was pushed after that run; no CI run for it is visible yet, so its integration pass is **not claimed**. A small local SQLite check confirmed fractional values remain REAL in INTEGER-affinity columns, but that is not a substitute for Wrangler/D1 integration.
+- **Mana:** complete/merged on main; Degen-only `maxMana` and bespoke `manaCost`, persisted `player_mana`, authoritative start/action state, reject-without-mutation, exact deduction, zero-cost at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no zero-Mana reversion remain the verified baseline.
+- **Battle authority / rewards:** PR #37 hardens persisted numeric bounds and terminal-state consistency before an unawarded action or victory can mutate state; already-awarded receipts remain replayable. Existing CAS, expiry/owner guards, idempotent receipts/recovery, reward tiers, shared level-up math, atomic defeat history, and Underpass cycle reservation/rollover remain unchanged.
+- **D1 / deployment:** `wrangler.toml` still defines `DB` → `DEGEN` and `db/migrations`; deployment workflow applies schema, then tracked migrations, then Worker. This test-only follow-up adds no migration, remote D1 operation, secret/config change, or deployment.
+- **Mana branch authority:** legacy `sidekick/degen-mana-foundation-v01` and `automation/degen/mana-active-permit-backfill-v01` remain diverged/stale; main plus PR #37 are authoritative. Do not cherry-pick the legacy branches.
+- **Miles blocker:** verified-platform auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not auto-link or bypass this gate; keep Shield/housing gated until approval and branch reconciliation.
+- **Best next task:** obtain full CI on test commit `c26194f`, update PR #37 with the result, and only then review it for merge; do not begin Shield/housing integration while the verified-platform-auth gate remains unresolved.
+
+
 ## Latest run — 2026-10-24 (fractional persisted Mana rejection coverage)
 
 - **Authoritative main SHA observed:** `aabf575a472553cc495d3938d7bbc7284a327562` (current main ref at audit time).
