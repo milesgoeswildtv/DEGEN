@@ -106,8 +106,19 @@ export class GameApi {
     return result.player;
   }
 
-  async saveHousing(_playerId: string, housing: HousingState): Promise<void> {
+  async saveHousing(playerId: string, housing: HousingState): Promise<void> {
     if (!this.enabled) return;
+    // The Worker authorizes writes from the bearer session, never from a body ID.
+    // Refuse a stale queued layout locally instead of saving it to whichever account
+    // happens to be active after a platform/account switch.
+    if ((this.sessionToken && !this.sessionPlayerId)
+      || (this.sessionPlayerId && playerId !== this.sessionPlayerId)) {
+      throw new GameApiError(
+        409,
+        { error: 'Housing save owner does not match the authenticated player.' },
+        'DEGEN housing save rejected: authenticated player mismatch.',
+      );
+    }
     await this.request('/api/player/housing', {
       method: 'PUT',
       body: JSON.stringify({ housing }),
