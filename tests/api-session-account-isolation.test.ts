@@ -230,3 +230,64 @@ test('an expired account session never replays an in-flight action under a diffe
     globalThis.fetch = oldFetch;
   }
 });
+
+test('a successful in-flight response from an old account is discarded after account switch', async () => {
+  const api = new GameApi();
+  const identityA = { platform: 'telegram' as const, displayName: 'Player A', telegramInitData: 'proof-A' };
+  const identityB = { platform: 'telegram' as const, displayName: 'Player B', telegramInitData: 'proof-B' };
+  const tokenA = 'C'.repeat(43);
+  const tokenB = 'D'.repeat(43);
+  const oldFetch = globalThis.fetch;
+  let bootstrapCount = 0;
+  let worldCalls = 0;
+  const worldTokens: string[] = [];
+  let releaseStaleWorld!: (response: Response) => void;
+  const staleWorldResponse = new Promise<Response>((resolve) => { releaseStaleWorld = resolve; });
+
+  globalThis.fetch = async (input, init) => {
+    const path = String(input).replace('https://degen-api.example', '');
+    if (path === '/api/player/bootstrap') {
+      bootstrapCount += 1;
+      const isFirst = bootstrapCount === 1;
+      return jsonResponse({
+        player: { id: isFirst ? 'player-A' : 'player-B', displayName: isFirst ? 'Player A' : 'Player B' },
+        session: { token: isFirst ? tokenA : tokenB, expiresAtMs: Date.now() + 60_000 },
+      });
+    }
+    if (path === '/api/world/underpass') {
+      worldCalls += 1;
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      worldTokens.push(headers.authorization ?? '');
+      if (worldCalls === 1) return staleWorldResponse;
+      return jsonResponse({
+        eventKey: 'underpass', cycleId: 'cycle-B', phase: 'open',
+        opensAt: new Date(Date.now() - 1_000).toISOString(),
+        closesAt: new Date(Date.now() + 60_000).toISOString(),
+        fullRewardClears: 0, fullRewardLimit: 3, source: 'server',
+      });
+    }
+    throw new Error('Unexpected API request: ' + path);
+  };
+
+  try {
+    await api.bootstrap(identityA);
+    const staleWorld = api.getUnderpass('player-A');
+    assert.deepEqual(worldTokens, ['Bearer ' + tokenA]);
+
+    await api.bootstrap(identityB);
+    releaseStaleWorld(jsonResponse({
+      eventKey: 'underpass', cycleId: 'cycle-A', phase: 'open',
+      opensAt: new Date(Date.now() - 1_000).toISOString(),
+      closesAt: new Date(Date.now() + 60_000).toISOString(),
+      fullRewardClears: 0, fullRewardLimit: 3, source: 'server',
+    }));
+
+    await assert.rejects(staleWorld, /authenticated player changed while request was in flight/i);
+    const currentWorld = await api.getUnderpass('player-B');
+    assert.equal((currentWorld as { cycleId: string }).cycleId, 'cycle-B');
+    assert.deepEqual(worldTokens, ['Bearer ' + tokenA, 'Bearer ' + tokenB]);
+    assert.equal(bootstrapCount, 2, 'discarding a stale response must not reauthenticate or replace Player B');
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
