@@ -137,7 +137,7 @@ try {
   });
   const missingTurnPrecondition = await missingTurnPreconditionResponse.json();
   assert.equal(missingTurnPreconditionResponse.status, 400);
-  assert.equal(missingTurnPreconditionResponse.headers?.['cache-control'], undefined);
+  assert.equal(missingTurnPreconditionResponse.headers.get('cache-control'), 'no-store');
   assert.equal(missingTurnPrecondition.error,
     'expectedTurnCount is required and must be a non-negative safe integer.');
   assertPersistedPermitState('permit-mana-zero', {
