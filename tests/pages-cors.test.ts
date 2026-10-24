@@ -33,7 +33,7 @@ const workerSource = readFileSync(new URL('../worker/index.ts', import.meta.url)
   .replace(/^export default\s*\{/m, 'const worker = {');
 const worker = runInNewContext(stripTypeScriptTypes(workerSource, { mode: 'transform' }) + '\nworker;', {
   Request, Response, URL, crypto, console, Uint32Array,
-}) as { fetch(request: Request, env: { ALLOWED_ORIGINS: string }): Promise<Response> };
+}) as { fetch(request: Request, env: { ALLOWED_ORIGINS: string; DB?: unknown }): Promise<Response> };
 
 async function preflight(origin: string): Promise<Response> {
   const request = new Request('https://degen-api.afterdarklabs.workers.dev/api/player/bootstrap', {
@@ -73,4 +73,36 @@ test('originless Worker requests receive no cross-origin grant', async () => {
   );
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('access-control-allow-origin'), null);
+});
+
+
+test('real Worker JSON success and error responses are not cacheable', async () => {
+  for (const path of ['/api/health', '/api/not-found']) {
+    const response = await worker.fetch(
+      new Request('https://degen-api.afterdarklabs.workers.dev' + path, { method: 'GET' }),
+      { ALLOWED_ORIGINS: allowlist!.join(',') },
+    );
+    assert.equal(response.headers.get('cache-control'), 'no-store', path);
+  }
+});
+
+test('real Worker housing save response is not cacheable', async () => {
+  const db = {
+    prepare: (_sql: string) => ({
+      bind: (..._values: unknown[]) => ({
+        all: async () => ({ results: [] }),
+      }),
+    }),
+    batch: async (_statements: unknown[]) => [],
+  };
+  const response = await worker.fetch(
+    new Request('https://degen-api.afterdarklabs.workers.dev/api/player/housing', {
+      method: 'PUT',
+      headers: { origin: 'https://degen-8ze.pages.dev', 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: 'cache-test-player', housing: { inventory: [], placements: [] } }),
+    }),
+    { ALLOWED_ORIGINS: allowlist!.join(','), DB: db },
+  );
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
 });
