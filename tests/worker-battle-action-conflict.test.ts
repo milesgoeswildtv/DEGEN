@@ -90,3 +90,65 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
   }, 'a rejected request must not resynchronize the client to a pre-race snapshot');
   assert.equal(reads.length, 2, 'the conflict path must re-read persisted state');
 });
+
+test('replayed action after reward settlement returns the persisted victory snapshot', async () => {
+  const completedSnapshot = {
+    cycle_id: 'cycle-1',
+    encounter_key: TUNNEL_MAW.id,
+    player_hp: 70,
+    player_mana: 0,
+    enemy_hp: 0,
+    battle_status: 'victory',
+    turn_count: 3,
+  };
+  const reads: string[] = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...params: unknown[]) {
+          return {
+            first: async () => {
+              reads.push(sql);
+              assert.deepEqual(params.slice(0, 2), ['permit-1', 'player-1']);
+              if (sql.includes('completed_at IS NULL')) return null;
+              if (sql.includes('completed_at IS NOT NULL')) return completedSnapshot;
+              throw new Error('Unexpected query in completed-action recovery test: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+  const request = new Request('https://degen-api.example/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'player-1',
+      permitId: 'permit-1',
+      abilityId: 'slash',
+      expectedTurnCount: 3,
+    }),
+  });
+
+  const response = await handleBattleAction(request, { DB: db });
+  const result = await response.json() as {
+    error: string;
+    battleState?: {
+      permitId: string; status: string; playerHp: number; playerMana: number;
+      enemyHp: number; turnCount: number;
+    };
+  };
+
+  assert.equal(response.status, 409);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(result.error, 'Battle permit is already completed.');
+  assert.deepEqual(result.battleState, {
+    permitId: 'permit-1',
+    status: 'victory',
+    playerHp: 70,
+    playerMana: 0,
+    enemyHp: 0,
+    turnCount: 3,
+  });
+  assert.equal(reads.length, 2, 'the handler must recover from persisted completed state, not client state');
+});
