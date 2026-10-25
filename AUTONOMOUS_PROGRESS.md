@@ -1,5 +1,20 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (terminal snapshot recovery exact-head QA)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (re-read; unchanged). No direct-main write.
+- **PUSHED / PR #61 OPEN:** branch `automation/degen/awarded-receipt-audit-v01`; tested code + continuity head `1933fb5a52092a2bb580f0b080eb1dc9f65943d9` passed exact-head CI [40193455127](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40193455127). This progress-only commit creates a new branch head and will need its own exact-head CI.
+- **QA — EXACT-HEAD PASS:** `npm test` **89/89**; isolated local Worker/D1 reward concurrency; transient reward-failure recovery; Underpass cycle race and rollover; atomic defeat history; `npm run build`; real Chromium mobile Map → Home → Underpass → Degen battle → Worker reward → Home trophy; and `npm run check:worker` dry-run all passed. Cloudflare Pages preview check passed. No production D1 operation, migration application, production Worker deployment, or live platform-auth verification was performed.
+- **Task / files:** `worker/index.ts` no longer filters the initial owner-scoped receipt query by combat status. Already-awarded receipts are replayable only after the independent persisted audit validates supported event/cycle/encounter, canonical reward tier/amounts, safe reached unique clear number, and matching victory history. Unawarded permits still require persisted Worker-resolved victory before claim. `tests/worker-d1-concurrency.mjs` covers wrong-owner no-disclosure/no-mutation and replay after later `battle_status` corruption without duplicate progression, inventory, or history. `tests/mana-expiry-precision.test.ts` now locks both recovery and unawarded-victory boundaries.
+- **CI correction trail:** earlier runs failed only because the source invariant still expected the old victory-only SQL locator. That locator was updated; the full exact-head run above is green on the corrected source/test head. The new progress-only head remains unverified until its own CI finishes.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / reward idempotency:** no reward values, combat math, or client economy authority changed. Replay returns only a previously awarded canonical receipt after audit; it does not re-award progression.
+- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → migrations → Worker. This change requires no migration.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved policy for unverified legacy identity collisions. No automatic linking; Shield/housing work stays gated.
+- **Best next task:** verify the new continuity-only head's exact CI, then continue normal PR #61 review without changing rewards or bypassing the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-25 (receipt replay invariant correction)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (re-read before this update; unchanged). No direct-main write.
