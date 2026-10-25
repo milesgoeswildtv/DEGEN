@@ -1,3 +1,17 @@
+# DEGEN — AUTONOMOUS PROGRESS
+
+## Latest run — 2026-10-25 (session-store branch reconciled to current main)
+
+- **Authoritative main SHA:** `07c1d6fac5bb20d1db05969006e1fe9a806aa29a`. Existing branch `automation/degen/verified-session-store-v01` is being updated with a normal forward-only merge commit; no force-push, history rewrite, or protected-main write.
+- **PUSHED / PR #14 DRAFT, UNMERGED:** scoped artifacts are `db/migrations/0007_player_sessions.sql`, `worker/auth/sessionStore.ts`, `worker/auth/telegramInitData.ts`, and `tests/player-session-store.test.ts`. This remains a session-helper/migration slice, not route-level authentication or proof of live Discord/Telegram verification.
+- **Prior exact-head QA:** original branch head `169905cf2e621e5213a67124cc87867969f3f344` passed CI [39891237800](https://github.com/milesgoeswildtv/DEGEN/actions/runs/39891237800). That run predates main reconciliation; the resulting branch head requires its own exact-head CI.
+- **Tree/diff safety:** review caught an incomplete tree assembly in the first merge attempt before any PR merge/deployment. This recovery commit restores the complete current-main tree and overlays only the four session-store artifacts plus this progress entry; the final compare is being checked after the forward-only update.
+- **D1 / release:** migration 0007 remains feature-branch-only and has not been applied remotely. PR #14 remains draft/unmerged; PR #20's deployment guard must continue to block Shield migration 0008 until 0007 is integrated.
+- **Miles blocker:** approved production Discord/Telegram credential/config setup, controlled identity/session verification, and the explicit legacy-identity collision policy remain unresolved. No authentication gate is bypassed and no Worker route is wired by this reconciliation.
+- **One best next task:** verify the final tree diff and exact-head CI, then keep PR #14 draft pending session-store review and the separate platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-25 (legacy terminal reward recovery merged)
 
 - **Authoritative main SHA at start:** `dca99a7d929c2fd0f4bf253d460536251a420263`. PR #64's runtime recovery fix and PR #65's regression coverage are merged through the normal PR path; no direct-main write.
