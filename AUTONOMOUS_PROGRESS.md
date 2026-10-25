@@ -1,5 +1,21 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (Shield replay and concurrent-consumption QA PASS)
+
+- **Authoritative main SHA:** `07c1d6fac5bb20d1db05969006e1fe9a806aa29a`. Main CI `40221825273` and Deploy Preview `40221825268` passed on that SHA. No production D1 operation or Worker deployment was performed in this run.
+- **PUSHED / PR #20 DRAFT, UNMERGED:** existing branch `automation/degen/shield-foundation-v03`. Code/test head `a9527a3795803fca6321e8e4a10e9d1d5fca7bd7` passed exact-head CI [40224300016](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40224300016).
+- **Files changed in the code/test commits:** `tests/battle-start-state.test.ts`, `tests/worker-d1-concurrency.mjs`. No runtime, economy, schema, migration, identity, or combat-balance code changed in this follow-up.
+- **New deterministic regression:** a test-only bespoke ability gains 3 Shield while 4 existing Shield absorbs 7 of 10 retaliation damage. Applying the same authoritative action result twice leaves HP, Shield, enemy HP, turn count, and Shield log events applied exactly once.
+- **New Worker/D1 concurrency regression:** two concurrent actions with the same observed turn race against a permit seeded with 12 player Shield. Exactly one action commits and the other receives 409; persisted state is player HP 80, Shield 2, absorption 10, retaliation 10, enemy HP 63, turn count 1.
+- **Exact-head QA PASS:** CI reports **115/115 deterministic tests**; Worker/D1 reward concurrency, transient-failure recovery, 60-request Underpass cycle and rollover races, atomic defeat rollback/retry, Shield start/action/reward integration, Vite build, Chromium mobile vertical slice (`Map > Home > Underpass > Degen battle > Worker reward > Home trophy`), and `npm run check:worker` / Wrangler dry-run all passed. No local shell test is claimed; this runtime could not resolve GitHub to clone the repository.
+- **Mana:** COMPLETE / MERGED on main. The old `automation/degen/mana-active-permit-backfill-v01` branch remains divergent (44 ahead / 42 behind); migration 0006 and the authoritative Mana runtime are already on main, and no unique unfinished Mana runtime slice was identified. No competing Mana branch was created.
+- **Battle authority / rewards:** Worker-owned combat state, turn-count compare-and-swap, terminal-state validation, and idempotent/recoverable reward receipts remain in place. Client-supplied combat/reward fields do not grant rewards.
+- **D1 assumptions:** main has `0006_backfill_active_battle_mana.sql`. Shield migration `0008_degen_shield.sql` is PR-only. `0007_player_sessions.sql` is present on draft PR #14's session-store branch, not main; the deployment guard correctly blocks deploying 0008 until 0007 is integrated. No remote migration was run.
+- **Miles blocker / release gate:** keep PR #20 draft and unmerged. Do not deploy Shield until the session migration and approved Discord/Telegram identity/session gate are resolved, including production credential/config approval, controlled live identity verification, and the approved policy for unverified legacy identity collisions. No credentials or identity policy were invented.
+- **One best next task:** reconcile the existing PR #14 session-store branch with current main through a normal reviewable merge (no history rewrite), run exact-head CI, and preserve its draft/release gates before reassessing PR #21.
+
+---
+
 ## Latest run — 2026-10-25 (Shield reconciliation and legacy snapshot compatibility PASS)
 
 - **Authoritative main SHA:** `07c1d6fac5bb20d1db05969006e1fe9a806aa29a`. Existing feature branch `automation/degen/shield-foundation-v03` includes normal merge commit `dda858790b9da7ab0b99196cbc7be72232a947cd`; no protected-main write.
