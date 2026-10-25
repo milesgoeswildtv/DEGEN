@@ -1,3 +1,17 @@
+## Latest run — 2026-10-24 (mobile battle resource HUD moved to authoritative DOM)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`; protected `main` was not modified.
+- **PUSHED / PR #20 OPEN — DRAFT:** continued `automation/degen/shield-foundation-v03`. Mana is now rendered beside Shield in a compact, wrapping DOM resource row; the Phaser battle canvas retains HP and the persistent `MANIFESTED` state. This removes the split presentation where Mana was only inside the canvas but Shield was in the accessible DOM.
+- **Files changed:** `src/game/scenes/BattleScene.ts`, `src/ui/views.ts`, `src/styles.css`, `tests/battle-mana-ui.test.ts`, `tests/battle-mana-cost-ui.test.ts`, `tests/browser-battle-vertical-slice.mjs`, plus this continuity record. No combat math, Degen/monster content, economy, identity behavior, or D1 migration changed.
+- **QA status:** current code/test head `5cf155c43b14a0fa2dfa691252e102c6182f5e8e` triggered CI run 40153517382; it was still `in_progress` at the last check. The updated Chromium test now reads Mana from the live DOM resource pill, checks Shield after each nonterminal turn, checks the Phaser manifestation marker remains present at zero Mana, and retains 390px/320px viewport overflow checks plus the Worker/D1 reward-to-Home trophy vertical slice. Do not claim this head green until its exact-head CI finishes. No local-shell run, production D1 mutation, or deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` and bespoke `manaCost`, authoritative persisted player Mana, atomic insufficient-Mana rejection, exact deduction, free action at zero, killing-blow/defeat handling, client/Worker parity, cost-aware controls, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no zero-Mana reversion remain verified on main.
+- **Battle authority / rewards:** main retains required expected-turn preconditions, stale-action rejection, server-owned HP/Mana/enemy HP/status/turn state, victory-only completion, idempotent reward receipts and transient-D1 recovery, full/reduced reward tiers, shared level-up math, concurrent action/completion tests, atomic defeat history, and valid-permit survival across Underpass closure until expiry.
+- **D1 assumptions:** no migration change in this run. `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains base schema → tracked migrations → Worker. Shield migration `0008_degen_shield.sql` remains PR-only and must follow auth migration `0007_player_sessions.sql`.
+- **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved recovery/link policy for unverified legacy identity collisions. Keep PR #20 draft/unmerged; do not deploy migration 0008 or bypass the auth gate.
+- **Best next task:** verify the final exact-head CI for this DOM resource HUD. After that, keep Shield draft pending the auth gate; do not replace `TUNNEL_MAW` from the older v0.8 monster log because the instructed canonical `02 DEGEN Monster Log v0.11` was not found in the accessible Library during this run.
+
+---
+
 ## Latest run — 2026-10-24 (Shield Worker/D1 terminal-state integration — exact-head CI green)
 
 - **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`. Main remains unchanged.
