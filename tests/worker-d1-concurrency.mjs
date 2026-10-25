@@ -724,11 +724,6 @@ try {
   // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET player_mana = 13 WHERE id = 'permit-a'"]);
-  const sequenceAudit = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    "--command=SELECT permit.id, permit.event_key, permit.cycle_id, permit.reward_clear_number, (SELECT COUNT(*) FROM battle_permits AS other WHERE other.player_id = permit.player_id AND other.event_key = permit.event_key AND other.cycle_id = permit.cycle_id AND other.id <> permit.id AND other.reward_clear_number = permit.reward_clear_number) AS duplicate_clear_count, typeof((SELECT COUNT(*) FROM battle_permits AS other WHERE other.player_id = permit.player_id AND other.event_key = permit.event_key AND other.cycle_id = permit.cycle_id AND other.id <> permit.id AND other.reward_clear_number = permit.reward_clear_number)) AS duplicate_clear_type FROM battle_permits AS permit WHERE permit.reward_clear_number IS NOT NULL ORDER BY permit.id",
-    '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
-  assert.equal(sequenceAudit.status, 0, 'clear sequence diagnostic query failed: ' + sequenceAudit.stderr);
-  console.log('DEBUG clear sequence assignments: ' + sequenceAudit.stdout);
   const replayResponse = await complete('permit-a', 'integration-player', {
     victory: false,
     status: 'defeat',
