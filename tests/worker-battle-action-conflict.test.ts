@@ -398,3 +398,65 @@ test('malformed pre-Mana terminal snapshots fail closed without display fallback
     assert.equal(reads.length, 3, 'invalid terminal recovery is read-only');
   }
 });
+
+test('replayed action after reward settlement projects display Mana for a legacy victory', async () => {
+  const completedSnapshot = {
+    cycle_id: 'cycle-legacy',
+    encounter_key: TUNNEL_MAW.id,
+    player_hp: 70,
+    player_mana: null,
+    enemy_hp: 0,
+    battle_status: 'victory',
+    turn_count: 3,
+  };
+  const reads: string[] = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...params: unknown[]) {
+          return {
+            first: async () => {
+              reads.push(sql);
+              assert.deepEqual(params.slice(0, 2), ['permit-legacy-victory', 'player-1']);
+              if (sql.includes('completed_at IS NULL')) return null;
+              if (sql.includes('completed_at IS NOT NULL')) return completedSnapshot;
+              throw new Error('Unexpected query in legacy completed-victory replay test: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+  const request = new Request('https://degen-api.example/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'player-1',
+      permitId: 'permit-legacy-victory',
+      abilityId: 'slash',
+      expectedTurnCount: 3,
+    }),
+  });
+
+  const response = await handleBattleAction(request, { DB: db });
+  const result = await response.json() as {
+    error: string;
+    battleState?: {
+      permitId: string; status: string; playerHp: number; playerMana: number;
+      enemyHp: number; turnCount: number;
+    };
+  };
+
+  assert.equal(response.status, 409);
+  assert.equal(result.error, 'Battle permit is already completed.');
+  assert.deepEqual(result.battleState, {
+    permitId: 'permit-legacy-victory',
+    status: 'victory',
+    playerHp: 70,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: 0,
+    turnCount: 3,
+  }, 'a completed pre-Mana victory needs a valid terminal display snapshot but remains non-actionable');
+  assert.equal(reads.length, 2, 'completed legacy replay must use reads only and must not reopen the permit');
+});
+
