@@ -209,15 +209,13 @@ try {
   const legacyPermitAfterAward = sql(`SELECT player_mana, reward_state, reward_clear_number,
       reward_xp, reward_currency, reward_tier, completed_at
     FROM battle_permits WHERE id = 'permit-legacy-recovery'`);
-  assert.deepEqual(legacyPermitAfterAward, [{
-    player_mana: null,
-    reward_state: 'awarded',
-    reward_clear_number: 4,
-    reward_xp: legacyReward.xp,
-    reward_currency: legacyReward.currency,
-    reward_tier: 'reduced',
-    completed_at: legacyPermitAfterAward[0]?.completed_at,
-  }]);
+  assert.equal(legacyPermitAfterAward[0]?.player_mana, null,
+    'legacy recovery must not persist a fabricated Mana value');
+  assert.equal(legacyPermitAfterAward[0]?.reward_state, 'awarded');
+  assert.equal(legacyPermitAfterAward[0]?.reward_clear_number, 4);
+  assert.equal(legacyPermitAfterAward[0]?.reward_xp, legacyReward.xp);
+  assert.equal(legacyPermitAfterAward[0]?.reward_currency, legacyReward.currency);
+  assert.equal(legacyPermitAfterAward[0]?.reward_tier, 'reduced');
   assert.ok(legacyPermitAfterAward[0]?.completed_at);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
     WHERE id = 'permit-legacy-recovery:victory'`)[0]?.n, 1);
