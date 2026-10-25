@@ -108,8 +108,10 @@ try {
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-e','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,1,0),
-      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,0,0,3),
-      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0);
+      ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
+      ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
+      ('permit-expired-victory','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,1,0),
+      ('permit-expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -855,7 +857,108 @@ try {
     AND player_mana = 0 AND enemy_hp = 0 AND turn_count = 3`), 1,
     'the closed-cycle encounter must retain one authoritative awarded receipt');
 
-  console.log('PASS isolated Worker/D1: action/completion race, duplicate receipt, expiry, reward tiers, level-up, permit survives event closure');
+  // A Worker-resolved victory that committed before expiry remains recoverable if the
+  // response was lost and the player retries only after the permit has expired.
+  const expiredVictoryActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-expired-victory',
+      abilityId: 'slash', expectedTurnCount: 0,
+    }),
+  });
+  const expiredVictoryAction = await expiredVictoryActionResponse.json();
+  assert.equal(expiredVictoryActionResponse.status, 200, JSON.stringify(expiredVictoryAction));
+  assert.equal(expiredVictoryAction.status, 'victory');
+  assert.deepEqual(
+    [expiredVictoryAction.playerHp, expiredVictoryAction.playerMana, expiredVictoryAction.enemyHp, expiredVictoryAction.turnCount],
+    [80, 0, 0, 1],
+  );
+  assertPersistedPermitState('permit-expired-victory', {
+    status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
+  });
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = 'permit-expired-victory'"]);
+
+  const expiredVictoryActionReplayResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-expired-victory',
+      abilityId: 'slash', expectedTurnCount: 1,
+    }),
+  });
+  const expiredVictoryActionReplay = await expiredVictoryActionReplayResponse.json();
+  assert.equal(expiredVictoryActionReplayResponse.status, 409);
+  assert.equal(expiredVictoryActionReplay.error, 'Battle victory is awaiting reward completion.');
+  assert.deepEqual(expiredVictoryActionReplay.battleState, {
+    permitId: 'permit-expired-victory', status: 'victory',
+    playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
+  }, 'the retry may recover a terminal snapshot but cannot apply another action');
+  assertPersistedPermitState('permit-expired-victory', {
+    status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
+  });
+
+  const expiredVictoryCompletion = await complete('permit-expired-victory');
+  assert.equal(expiredVictoryCompletion.status, 200, JSON.stringify(expiredVictoryCompletion.data));
+  const expiredVictoryReplay = await complete('permit-expired-victory');
+  assert.equal(expiredVictoryReplay.status, 200);
+  assert.deepEqual(expiredVictoryReplay.data.reward, expiredVictoryCompletion.data.reward);
+  assert.equal(expiredVictoryReplay.data.player.xp, expiredVictoryCompletion.data.player.xp);
+  assert.equal(expiredVictoryReplay.data.player.currency, expiredVictoryCompletion.data.player.currency);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-expired-victory:victory'"), 1,
+    'late settlement of an already-resolved victory must still award exactly once');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = 'permit-expired-victory'
+    AND julianday(expires_at) < julianday('now') AND battle_status = 'victory'
+    AND reward_state = 'awarded' AND completed_at IS NOT NULL AND turn_count = 1`), 1);
+
+  // Defeat also recovers as terminal presentation only; it never opens a reward path.
+  const expiredDefeatActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-expired-defeat',
+      abilityId: 'slash', expectedTurnCount: 0,
+    }),
+  });
+  const expiredDefeatAction = await expiredDefeatActionResponse.json();
+  assert.equal(expiredDefeatActionResponse.status, 200, JSON.stringify(expiredDefeatAction));
+  assert.equal(expiredDefeatAction.status, 'defeat');
+  assert.deepEqual(
+    [expiredDefeatAction.playerHp, expiredDefeatAction.playerMana, expiredDefeatAction.enemyHp, expiredDefeatAction.turnCount],
+    [0, 0, 63, 1],
+  );
+  assertPersistedPermitState('permit-expired-defeat', {
+    status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = 'permit-expired-defeat'"]);
+
+  const expiredDefeatReplayResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-expired-defeat',
+      abilityId: 'slash', expectedTurnCount: 1,
+    }),
+  });
+  const expiredDefeatReplay = await expiredDefeatReplayResponse.json();
+  assert.equal(expiredDefeatReplayResponse.status, 409);
+  assert.equal(expiredDefeatReplay.error, 'Battle is already defeated.');
+  assert.deepEqual(expiredDefeatReplay.battleState, {
+    permitId: 'permit-expired-defeat', status: 'defeat',
+    playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
+  assertPersistedPermitState('permit-expired-defeat', {
+    status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
+  });
+  assert.equal((await complete('permit-expired-defeat')).status, 409,
+    'a recovered defeat must never be eligible for victory rewards');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-expired-defeat:defeat' AND result = 'defeat'"), 1);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-expired-defeat:victory'"), 0);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id = 'permit-expired-defeat' AND reward_state = 'pending' AND completed_at IS NULL"), 1);
+
+  console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');

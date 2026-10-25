@@ -125,3 +125,29 @@ test('a recovered authoritative victory snapshot completes the client battle exa
   engine.synchronizeAuthoritativeState(completedVictory);
   assert.deepEqual(completions, ['victory'], 'replaying the recovered terminal snapshot must not complete twice');
 });
+
+
+test('a recovered authoritative defeat snapshot ends the client battle exactly once', () => {
+  const completions: Array<'victory' | 'defeat'> = [];
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, status => completions.push(status), startState());
+
+  const completedDefeat: BattleActionResult = {
+    permitId: 'permit-1',
+    status: 'defeat',
+    playerHp: 0,
+    playerMana: 0,
+    enemyHp: 63,
+    turnCount: 1,
+  };
+  engine.synchronizeAuthoritativeState(completedDefeat);
+
+  assert.equal(engine.snapshot.status, 'defeat');
+  assert.equal(engine.snapshot.playerHp, 0);
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.enemyHp, 63);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.deepEqual(completions, ['defeat']);
+
+  engine.synchronizeAuthoritativeState(completedDefeat);
+  assert.deepEqual(completions, ['defeat'], 'replaying the recovered defeat snapshot must not finish twice');
+});
