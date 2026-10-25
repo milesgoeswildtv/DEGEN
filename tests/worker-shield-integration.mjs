@@ -86,18 +86,32 @@ try {
     return response.ok && (await response.json()).ok;
   });
 
+  // Treat every submitted combat field as hostile: battle start owns the initial state.
   const start = await post('/api/battle/start', {
     playerId: 'shield-player', eventKey: 'underpass', cycleId: 'shield-cycle', encounterKey: 'tunnel-maw',
+    playerHp: 0, playerMana: 0, playerShield: Number.MAX_SAFE_INTEGER,
+    enemyHp: 0, turnCount: Number.MAX_SAFE_INTEGER, status: 'victory',
+    shieldAbsorbed: Number.MAX_SAFE_INTEGER, retaliationDamage: Number.MAX_SAFE_INTEGER,
   });
   assert.equal(start.status, 200);
+  assert.equal(start.data.initialState.status, 'active', 'client cannot assert a terminal battle state');
+  assert.equal(start.data.initialState.playerHp, 120, 'client HP is ignored at battle start');
+  assert.equal(start.data.initialState.playerMana, 12, 'client Mana is ignored at battle start');
+  assert.equal(start.data.initialState.enemyHp, 92, 'client enemy HP is ignored at battle start');
+  assert.equal(start.data.initialState.turnCount, 0, 'client turn count is ignored at battle start');
   assert.equal(start.data.initialState.retaliationDamage, 0, 'battle start has no retaliation event');
   assert.equal(start.data.initialState.playerShield, 0, 'battle start initializes Degen Shield to zero');
   assert.equal(start.data.initialState.shieldAbsorbed, 0, 'battle start has no Shield absorption event');
-  assert.deepEqual(sql(`SELECT player_shield FROM battle_permits WHERE id='${start.data.permitId}'`), [{ player_shield: 0 }],
-    'server battle start initializes player Shield to zero');
+  assert.deepEqual(sql(`SELECT player_hp,player_mana,player_shield,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='${start.data.permitId}'`), [{
+    player_hp: 120, player_mana: 12, player_shield: 0, enemy_hp: 92, turn_count: 0, battle_status: 'active',
+  }], 'server battle start persists its own initial combat state');
 
+  // A client cannot rewrite Shield, HP, Mana, enemy HP, status, or turn count during an action.
   const action = await post('/api/battle/action', {
     playerId: 'shield-player', permitId: 'shielded', abilityId: 'slash', expectedTurnCount: 0,
+    playerHp: 0, playerMana: 12, playerShield: Number.MAX_SAFE_INTEGER,
+    enemyHp: 0, turnCount: Number.MAX_SAFE_INTEGER, status: 'victory',
+    shieldAbsorbed: Number.MAX_SAFE_INTEGER, retaliationDamage: Number.MAX_SAFE_INTEGER,
   });
   assert.equal(action.status, 200);
   assert.deepEqual([
@@ -137,7 +151,7 @@ try {
     [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'remaining Shield must persist after absorbing retaliation');
 
-  console.log('PASS isolated Worker/D1: authoritative Shield initialization, absorption, and persistence');
+  console.log('PASS isolated Worker/D1: server-owned combat start, hostile client-state rejection, Shield absorption, and persistence');
 } catch (error) {
   console.error('Worker/D1 Shield integration FAILED:', error);
   console.error(logs);
