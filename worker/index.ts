@@ -495,18 +495,69 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     reward_tier: 'full' | 'reduced' | null;
   };
   type ValidatedReceiptRow = BattlePermitStateRow & ReceiptRow & {
+    permit_id: string;
     event_key: string;
     cycle_event_key: string | null;
+    reward_level: number | null;
+    reward_remaining_xp: number | null;
+    completed_at: string | null;
+    reward_claim_token: string | null;
+    reward_claimed_at: string | null;
+    history_id: string | null;
+    history_result: string | null;
+    history_encounter_key: string | null;
+    history_player_level: number | null;
+    history_xp_awarded: number | null;
+    history_currency_awarded: number | null;
   };
-  const receipt = await env.DB.prepare(`SELECT permit.event_key, permit.cycle_id, permit.encounter_key,
+  const receipt = await env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
       permit.reward_state, permit.reward_clear_number, permit.reward_xp, permit.reward_currency, permit.reward_tier,
-      cycle.event_key AS cycle_event_key
+      permit.reward_level, permit.reward_remaining_xp, permit.completed_at,
+      permit.reward_claim_token, permit.reward_claimed_at,
+      cycle.event_key AS cycle_event_key,
+      history.id AS history_id, history.result AS history_result,
+      history.encounter_key AS history_encounter_key,
+      history.player_level AS history_player_level,
+      history.xp_awarded AS history_xp_awarded,
+      history.currency_awarded AS history_currency_awarded
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+    LEFT JOIN battle_history AS history
+      ON history.id = (permit.id || ':victory') AND history.player_id = permit.player_id
     WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'`)
     .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
+  // An awarded receipt is replayable even if its old combat snapshot later becomes
+  // corrupt, but its independent reward audit must still be internally consistent.
+  const isValidAwardedReceipt = (row: ValidatedReceiptRow): boolean => {
+    const clearNumber = row.reward_clear_number;
+    const rewardXp = row.reward_xp;
+    const rewardCurrency = row.reward_currency;
+    const rewardLevel = row.reward_level;
+    const remainingXp = row.reward_remaining_xp;
+    if (row.reward_state !== 'awarded'
+      || !isSafeIntegerBetween(clearNumber, 1, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(rewardXp, 0, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(rewardCurrency, 0, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(rewardLevel, 1, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(remainingXp, 0, Number.MAX_SAFE_INTEGER)
+      || (row.reward_tier !== 'full' && row.reward_tier !== 'reduced')
+      || typeof row.completed_at !== 'string' || row.completed_at.trim().length === 0
+      || typeof row.reward_claim_token !== 'string' || row.reward_claim_token.trim().length === 0
+      || typeof row.reward_claimed_at !== 'string' || row.reward_claimed_at.trim().length === 0
+      || row.history_id !== `${row.permit_id}:victory`
+      || row.history_result !== 'victory'
+      || row.history_encounter_key !== row.encounter_key
+      || row.history_player_level !== rewardLevel
+      || row.history_xp_awarded !== rewardXp
+      || row.history_currency_awarded !== rewardCurrency) return false;
+
+    const canonicalReward = underpassRewardForClear(clearNumber);
+    return rewardXp === canonicalReward.xp
+      && rewardCurrency === canonicalReward.currency
+      && row.reward_tier === canonicalReward.tier;
+  };
   // The permit and its referenced cycle must both belong to the supported event.
   // D1 stores event_key and cycle_id separately, so reject inconsistent rows rather than
   // allowing a Tunnel Maw victory attached to another event's cycle to inherit rewards.
@@ -527,7 +578,10 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       tier: row.reward_tier ?? 'reduced',
     }, worldEvent: event });
   };
-  if (receipt.reward_state === 'awarded') return respond(receipt);
+  if (receipt.reward_state === 'awarded') {
+    if (!isValidAwardedReceipt(receipt)) return fail(request, env, 'Battle reward receipt is invalid.', 409);
+    return respond(receipt);
+  }
   if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
 
   const token = crypto.randomUUID();
