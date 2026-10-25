@@ -60,6 +60,13 @@ type BattlePermitStateRow = {
 const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
 
+const isValidProgressionState = (level: unknown, xp: unknown): boolean => {
+  if (!isSafeIntegerBetween(level, 1, Number.MAX_SAFE_INTEGER)
+    || !isSafeIntegerBetween(xp, 0, Number.MAX_SAFE_INTEGER)) return false;
+  const threshold = xpNeededForLevel(level);
+  return isSafeIntegerBetween(threshold, 1, Number.MAX_SAFE_INTEGER) && xp < threshold;
+};
+
 // A persisted permit must satisfy the same bounds and terminal-state invariants
 // enforced by the client snapshot parser before it can advance another turn.
 const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
@@ -750,7 +757,20 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       await releaseClaim();
       return fail(request, env, 'Player character not found.', 404);
     }
+    // Reject corrupt progression before the shared math can persist an impossible level/XP
+    // pair or create an awarded receipt that cannot pass its own replay audit. Keep the
+    // already-reserved clear slot on the permit so a repaired character can retry it.
+    if (!isValidProgressionState(character.level, character.xp)
+      || !isSafeIntegerBetween(character.currency, 0, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(character.currency + reward.currency, 0, Number.MAX_SAFE_INTEGER)) {
+      await releaseClaim();
+      return fail(request, env, 'Player progression state is invalid.', 409);
+    }
     const progression = advanceLevel(character.level, character.xp, reward.xp);
+    if (!isValidProgressionState(progression.level, progression.xp)) {
+      await releaseClaim();
+      return fail(request, env, 'Player progression state is invalid.', 409);
+    }
     const writes: D1PreparedStatement[] = [
       env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?,
           last_reward_claim_token = ?, updated_at = CURRENT_TIMESTAMP
