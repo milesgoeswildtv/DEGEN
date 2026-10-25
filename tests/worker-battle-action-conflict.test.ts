@@ -208,14 +208,14 @@ test('expired terminal retries recover only valid pending victory or defeat snap
     {
       state: {
         cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
-        player_hp: 0, player_mana: 0, enemy_hp: 72,
+        player_hp: 0, player_mana: 0, enemy_hp: 63,
         battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
       },
       expectedError: 'Battle is already defeated.',
       expectedState: {
         permitId: 'permit-1', status: 'defeat',
-        playerHp: 0, playerMana: 0, enemyHp: 72, turnCount: 1,
+        playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
       },
     },
   ];
