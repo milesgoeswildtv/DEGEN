@@ -498,6 +498,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     permit_id: string;
     event_key: string;
     cycle_event_key: string | null;
+    cycle_clear_count: number | null;
     reward_level: number | null;
     reward_remaining_xp: number | null;
     completed_at: string | null;
@@ -516,6 +517,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       permit.reward_level, permit.reward_remaining_xp, permit.completed_at,
       permit.reward_claim_token, permit.reward_claimed_at,
       cycle.event_key AS cycle_event_key,
+      clears.full_reward_clears AS cycle_clear_count,
       history.id AS history_id, history.result AS history_result,
       history.encounter_key AS history_encounter_key,
       history.player_level AS history_player_level,
@@ -523,6 +525,10 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       history.currency_awarded AS history_currency_awarded
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+    LEFT JOIN world_event_clears AS clears
+      ON clears.player_id = permit.player_id
+      AND clears.event_key = permit.event_key
+      AND clears.cycle_id = permit.cycle_id
     LEFT JOIN battle_history AS history
       ON history.id = (permit.id || ':victory') AND history.player_id = permit.player_id
     WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'`)
@@ -536,8 +542,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     const rewardCurrency = row.reward_currency;
     const rewardLevel = row.reward_level;
     const remainingXp = row.reward_remaining_xp;
+    // A receipt's sequence number must have actually been reached by this player's
+    // persisted clear counter for the same event cycle; canonical reward values alone
+    // cannot legitimize a forged, far-future clear number.
+    if (!isSafeIntegerBetween(clearNumber, 1, Number.MAX_SAFE_INTEGER)) return false;
+    if (!isSafeIntegerBetween(row.cycle_clear_count, clearNumber, Number.MAX_SAFE_INTEGER)) return false;
     if (row.reward_state !== 'awarded'
-      || !isSafeIntegerBetween(clearNumber, 1, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(rewardXp, 0, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(rewardCurrency, 0, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(rewardLevel, 1, Number.MAX_SAFE_INTEGER)

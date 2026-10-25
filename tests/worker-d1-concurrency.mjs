@@ -88,6 +88,7 @@ try {
       ('permit-cycle-mismatch','integration-player','underpass','unsupported-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-corrupt-awarded-reward','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
@@ -1021,16 +1022,24 @@ try {
       reward_remaining_xp=50, reward_claim_token='missing-history-token',
       reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
     WHERE id='permit-awarded-without-history';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=999999,
+      reward_xp=10, reward_currency=3, reward_tier='reduced', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='ahead-clear-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-clear-ahead';
     INSERT INTO battle_history
       (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
     VALUES ('permit-corrupt-awarded-reward:victory', 'integration-player',
-      'tunnel-maw', 'victory', 2, 999999, 30);
+      'tunnel-maw', 'victory', 2, 999999, 30),
+      ('permit-awarded-clear-ahead:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 10, 3);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + corruptReceiptSeed]);
 
   for (const [permitId, expectedHistoryCount] of [
     ['permit-corrupt-awarded-reward', 1],
     ['permit-awarded-without-history', 0],
+    ['permit-awarded-clear-ahead', 1],
   ]) {
     const rejectedReceipt = await complete(permitId, 'integration-player', {
       victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
