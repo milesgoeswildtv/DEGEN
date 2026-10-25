@@ -753,6 +753,14 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-a' AND reward_xp=75 AND reward_currency=30 AND reward_tier='full'"), 1,
     'client reward fields must not alter the stored reward receipt');
   assert.equal(b.reward.xp, 75);
+  const concurrentClearSequence = queryRows(`SELECT reward_clear_number
+    FROM battle_permits
+    WHERE id IN ('permit-a', 'permit-b')
+    ORDER BY reward_clear_number`);
+  assert.deepEqual(concurrentClearSequence, [
+    { reward_clear_number: 1 },
+    { reward_clear_number: 2 },
+  ], 'simultaneous completions for separate permits must reserve distinct clear slots');
 
   // A second tab can retry an action after another tab has already settled the
   // victory receipt. The Worker should return the persisted terminal snapshot so
