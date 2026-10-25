@@ -24,10 +24,10 @@ test('D1 migration sequence is unique and Shield follows the merged Mana backfil
   assert.equal(new Set(prefixes).size, prefixes.length, 'migration sequence numbers must be unique');
 });
 
-test('Shield migration adds only the player-owned Shield column', () => {
+test('Shield migration adds only player-owned Shield and last-action audit columns', () => {
   const addedColumns = [...shieldMigration.matchAll(/\bADD\s+COLUMN\s+([a-z_][a-z0-9_]*)/gi)]
     .map((match) => match[1]?.toLowerCase());
-  assert.deepEqual(addedColumns, ['player_shield']);
+  assert.deepEqual(addedColumns, ['player_shield', 'last_shield_absorbed', 'last_retaliation_damage']);
   assert.match(shieldMigration, /ADD COLUMN player_shield INTEGER NOT NULL DEFAULT 0/i,
     'legacy permits must receive zero Shield when the column is introduced');
   assert.equal((shieldMigration.match(/\bALTER\s+TABLE\b/gi) ?? []).length, 1);
@@ -54,10 +54,10 @@ test('Shield migration preserves legacy active permits with zero Shield', () => 
     `);
     db.exec(shieldMigration);
 
-    const shields = db.prepare('SELECT id, player_shield FROM battle_permits ORDER BY id').all();
+    const shields = db.prepare('SELECT id, player_shield, last_shield_absorbed, last_retaliation_damage FROM battle_permits ORDER BY id').all();
     assert.deepEqual(shields.map((row) => ({ ...row })), [
-      { id: 'active-legacy', player_shield: 0 },
-      { id: 'victory-legacy', player_shield: 0 },
+      { id: 'active-legacy', player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0 },
+      { id: 'victory-legacy', player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0 },
     ]);
     const active = db.prepare(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
       FROM battle_permits WHERE id = 'active-legacy'`).get();
