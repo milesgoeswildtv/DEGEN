@@ -1,3 +1,16 @@
+## Latest run — 2026-10-24 (Shield killing-blow Worker/D1 regression)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`. Main remains unchanged.
+- **PUSHED / PR #20 OPEN — DRAFT:** continued the existing `automation/degen/shield-foundation-v03` branch. New commits `8f03f3e` and `b534f12` extend only `tests/worker-shield-integration.mjs`: a server-backed killing blow now asserts exact Mana deduction, zero retaliation, preservation of unused player Shield, persisted terminal victory, and the subsequent Worker-owned reward receipt settlement. No combat rules, balance values, identity behavior, or migration changed.
+- **QA state:** pushed to the existing PR branch; exact-head CI is pending and is not claimed green yet. No local shell/test execution or production D1 operation is claimed. The isolated Worker/D1 test uses Wrangler's local D1 fixture only.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana`/bespoke `manaCost`, authoritative persisted player Mana, atomic unaffordable rejection, exact deduction, zero-cost use at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no zero-Mana reversion. Prototype values remain scaffolding, not final balance canon.
+- **Battle authority / reward idempotency:** main retains server-resolved victory-only rewards, persisted-state bounds/terminal invariants, required expected-turn precondition, stale-action rejection, owner/expiry checks, idempotent receipts and transient-D1 recovery, full/reduced reward tiers, shared level-up math, action/completion concurrency coverage, atomic defeat history, and issued-permit validity across Underpass closure until permit expiry.
+- **D1 assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Migration `0008_degen_shield.sql` is still PR-only and must follow auth migration `0007_player_sessions.sql`. No remote D1 mutation or deployment occurred.
+- **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved recovery/link policy for unverified legacy identity collisions. Keep Shield PR #20 draft/unmerged; do not deploy migration 0008 ahead of 0007 or bypass the auth release gate.
+- **Best next task:** verify exact-head CI for this Worker/D1 killing-blow regression; if green, retain PR #20 as draft pending the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-24 (Shield authority regression coverage green)
 
 - **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640`. Main CI [40137472612](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40137472612) and main Worker deployment [40137472547](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40137472547) both passed on this SHA. These are main-only results; no Shield migration or Shield Worker code was deployed.
