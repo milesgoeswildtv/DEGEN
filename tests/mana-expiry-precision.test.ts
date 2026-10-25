@@ -57,6 +57,12 @@ test('awarded receipt audit rejects duplicate clear sequence numbers', () => {
     /SELECT COUNT\(\*\) FROM battle_permits AS other[\s\S]*other\.player_id = permit\.player_id[\s\S]*other\.event_key = permit\.event_key[\s\S]*other\.cycle_id = permit\.cycle_id[\s\S]*other\.reward_clear_number = permit\.reward_clear_number[\s\S]*AS duplicate_clear_count/,
     'receipt validation must count any other permit claiming the same per-cycle sequence number',
   );
+  assert.ok(receiptQuery.includes("other.event_key = 'underpass'"),
+    'unsupported event receipts must not poison a valid receipt audit');
+  assert.ok(receiptQuery.includes("other.encounter_key = '${TUNNEL_MAW.id}'"),
+    'unsupported encounter receipts must not poison a valid receipt audit');
+  assert.ok(receiptQuery.includes("other_cycle.event_key = 'underpass'"),
+    'a permit attached to an unsupported event cycle must not poison a valid receipt audit');
 
   const auditStart = worker.indexOf('const isValidAwardedReceipt');
   const auditEnd = worker.indexOf('const canonicalReward =', auditStart);
