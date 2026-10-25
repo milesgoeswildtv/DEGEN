@@ -10,10 +10,10 @@ import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } from '../src/game/progression.ts';
 
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
-  .replace(/^export default\\s*\\{/m, 'const worker = {');
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/^export default\s*\{/m, 'const worker = {');
 const handleBattleAction = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\nhandleBattleAction;',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
     TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
     UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
