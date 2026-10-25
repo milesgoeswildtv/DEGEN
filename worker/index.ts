@@ -96,7 +96,9 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
       return turnCount > 0 && playerHp > 0 && enemyHp === 0 && lastShieldAbsorbed === 0 && lastRetaliationDamage === 0;
     case 'defeat':
       // A defeated Degen took HP damage after Shield was exhausted.
-      return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0 && lastRetaliationDamage > lastShieldAbsorbed;
+      return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0
+        && (lastRetaliationDamage > lastShieldAbsorbed
+          || (playerMana === null && lastShieldAbsorbed === 0 && lastRetaliationDamage === 0));
     default:
       return false;
   }
