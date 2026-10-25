@@ -77,6 +77,12 @@ try {
     ), (
       'shield-defeat','shield-player','underpass','shield-cycle','tunnel-maw',
       datetime('now','+20 minutes'),'active',1,0,2,92,0
+    ), (
+      'shield-expired-active','shield-player','underpass','shield-cycle','tunnel-maw',
+      datetime('now','-1 minute'),'active',120,12,0,92,0
+    ), (
+      'shield-expired-victory','shield-player','underpass','shield-cycle','tunnel-maw',
+      datetime('now','-1 minute'),'victory',120,8,5,0,1
     );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -217,6 +223,54 @@ try {
   assert.deepEqual(sql("SELECT reward_state,completed_at FROM battle_permits WHERE id='shield-defeat'"),
     [{ reward_state: 'pending', completed_at: null }],
     'a defeated permit remains unawarded');
+
+  // A valid persisted victory may settle after expiry even before a clear number was reserved.
+  const expiredVictoryAction = await post('/api/battle/action', {
+    playerId: 'shield-player', permitId: 'shield-expired-victory', abilityId: 'slash', expectedTurnCount: 1,
+  });
+  assert.equal(expiredVictoryAction.status, 409);
+  assert.equal(expiredVictoryAction.data.error, 'Battle victory is awaiting reward completion.');
+  assert.deepEqual(expiredVictoryAction.data.battleState, {
+    permitId: 'shield-expired-victory', status: 'victory', playerHp: 120, playerMana: 8,
+    playerShield: 5, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 0, turnCount: 1,
+  }, 'expiry recovery returns the terminal snapshot but never authorizes another turn');
+  assert.deepEqual(sql("SELECT reward_state,completed_at,reward_clear_number FROM battle_permits WHERE id='shield-expired-victory'"),
+    [{ reward_state: 'pending', completed_at: null, reward_clear_number: null }],
+    'terminal recovery must not claim or reserve a reward');
+
+  const lateVictory = await post('/api/battle/complete', {
+    playerId: 'shield-player', permitId: 'shield-expired-victory',
+  });
+  assert.equal(lateVictory.status, 200, 'a valid Worker-resolved victory can settle after permit expiry');
+  assert.equal(lateVictory.data.reward.tier, 'full', 'the existing full/reduced clear policy remains authoritative');
+  assert.equal(lateVictory.data.player.currency, 60, 'the late victory applies its reward exactly once');
+  const lateReceipt = sql("SELECT reward_state,completed_at,reward_clear_number FROM battle_permits WHERE id='shield-expired-victory'")[0];
+  assert.equal(lateReceipt.reward_state, 'awarded');
+  assert.equal(typeof lateReceipt.completed_at, 'string');
+  assert.equal(lateReceipt.reward_clear_number, 2);
+  const replayedLateVictory = await post('/api/battle/complete', {
+    playerId: 'shield-player', permitId: 'shield-expired-victory',
+  });
+  assert.equal(replayedLateVictory.status, 200);
+  assert.deepEqual(replayedLateVictory.data.reward, lateVictory.data.reward);
+  assert.equal(replayedLateVictory.data.player.currency, lateVictory.data.player.currency,
+    'a duplicate late completion must not apply progression twice');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM battle_history WHERE id='shield-expired-victory:victory'")[0].n, 1);
+
+  // The expiry exception is only for a valid terminal victory, never an active encounter.
+  const expiredActiveAction = await post('/api/battle/action', {
+    playerId: 'shield-player', permitId: 'shield-expired-active', abilityId: 'slash', expectedTurnCount: 0,
+  });
+  assert.equal(expiredActiveAction.status, 409);
+  assert.equal(expiredActiveAction.data.error, 'Battle permit is invalid, expired, or already completed.');
+  const expiredActiveCompletion = await post('/api/battle/complete', {
+    playerId: 'shield-player', permitId: 'shield-expired-active',
+  });
+  assert.equal(expiredActiveCompletion.status, 409);
+  assert.equal(expiredActiveCompletion.data.error, 'Battle is not an authoritative victory.');
+  assert.deepEqual(sql("SELECT battle_status,player_hp,player_mana,player_shield,enemy_hp,turn_count,reward_state,completed_at FROM battle_permits WHERE id='shield-expired-active'"),
+    [{ battle_status: 'active', player_hp: 120, player_mana: 12, player_shield: 0, enemy_hp: 92, turn_count: 0, reward_state: 'pending', completed_at: null }],
+    'an expired active permit cannot act or claim rewards');
 
   console.log('PASS isolated Worker/D1: server-owned combat start, hostile client-state rejection, Shield absorption, killing blow, defeat, and reward settlement');
 } catch (error) {
