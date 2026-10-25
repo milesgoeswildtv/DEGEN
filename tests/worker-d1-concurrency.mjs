@@ -75,7 +75,8 @@ try {
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
-        ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+        ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('uncounted-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -89,6 +90,7 @@ try {
       ('permit-corrupt-awarded-reward','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-no-counter','integration-player','underpass','uncounted-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
@@ -1027,12 +1029,19 @@ try {
       reward_remaining_xp=50, reward_claim_token='ahead-clear-token',
       reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
     WHERE id='permit-awarded-clear-ahead';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='missing-counter-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-no-counter';
     INSERT INTO battle_history
       (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
     VALUES ('permit-corrupt-awarded-reward:victory', 'integration-player',
       'tunnel-maw', 'victory', 2, 999999, 30),
       ('permit-awarded-clear-ahead:victory', 'integration-player',
-      'tunnel-maw', 'victory', 2, 10, 3);
+      'tunnel-maw', 'victory', 2, 10, 3),
+      ('permit-awarded-no-counter:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 75, 30);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + corruptReceiptSeed]);
 
@@ -1040,6 +1049,7 @@ try {
     ['permit-corrupt-awarded-reward', 1, 1],
     ['permit-awarded-without-history', 0, 1],
     ['permit-awarded-clear-ahead', 1, 999999],
+    ['permit-awarded-no-counter', 1, 1],
   ]) {
     const rejectedReceipt = await complete(permitId, 'integration-player', {
       victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
