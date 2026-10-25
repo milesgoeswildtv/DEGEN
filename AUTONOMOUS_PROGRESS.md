@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (reward receipt audit merged; concurrent clear-sequence invariant)
+
+- **Authoritative main SHA at run start:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. PR #61, [audit reward receipts and clear sequence before award](https://github.com/milesgoeswildtv/DEGEN/pull/61), was squash-merged through the normal PR path as `0fbdcc48200d7551b9980f674d5171ad54dfb7ab`. No direct-main write.
+- **PUSHED / PR #62 OPEN:** branch `automation/degen/concurrent-clear-sequence-invariant-v01`; implementation/test commit `30702cb4dc8e0f21b546e5e7b5fba6ed2161ab84`. This progress update creates a newer head; exact-head CI for the resulting PR head is required before the continuity entry is called green.
+- **Task / files:** `tests/worker-d1-concurrency.mjs` now explicitly queries the persisted clear numbers after concurrent completion of two distinct valid permits and asserts that the two receipts own slots 1 and 2. This makes the sequence-uniqueness invariant directly observable instead of inferring it only from successful responses and the final cycle counter. No Worker runtime, reward values, combat math, schema, migration, or deploy configuration changed.
+- **QA evidence:** PR #61 exact-head CI [40193777991](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40193777991) passed all 13 workflow steps, including `npm test` **89/89**, isolated local Worker/D1 reward concurrency, transient-D1 recovery, Underpass cycle and rollover races, atomic defeat history, production build, Chromium mobile vertical slice, and Worker dry-run. Post-merge main CI [40198150938](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40198150938) was still running at this update. Standard Worker deployment [40198150949](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40198150949) and Deploy Preview [40198150940](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40198150940) completed successfully; the deploy job's schema, tracked-migration, and Worker steps all passed. No live HTTP smoke is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative and persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding, not final balance canon.
+- **Battle authority / reward idempotency:** main now includes the independent receipt audit from PR #61: awarded replay requires supported event/cycle/encounter, canonical reward values, a reached safe clear number with no duplicate slot, and matching victory history; unawarded claims still require Worker-resolved victory. Wrong-owner completion has no disclosure or mutation. Action CAS, stale-turn rejection, terminal recovery, transient-D1 retry, and full/reduced reward math remain unchanged.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. PR #62 is test-only and requires no migration or remote D1 operation.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved policy for unverified legacy identity collisions. Do not auto-link accounts or merge/deploy Shield/housing around that gate.
+- **Best next task:** verify exact-head CI for PR #62; then continue platform-auth branch reconciliation and resolve the explicit credential/legacy-identity gate before enabling Shield/housing release.
+
+---
+
 ## Latest run — 2026-10-25 (terminal snapshot recovery exact-head QA)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (re-read; unchanged). No direct-main write.
