@@ -1049,7 +1049,7 @@ try {
   }
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM world_event_clears
     WHERE player_id='integration-player' AND event_key='underpass'
-      AND cycle_id='integration-cycle' AND full_reward_clears=4`), 1,
+      AND cycle_id='integration-cycle' AND full_reward_clears=5`), 1,
     'invalid receipt replay must not reserve another event clear');
   console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, receipt audit, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
