@@ -738,7 +738,8 @@ try {
   assert.equal(completedAction.error, 'Battle permit is already completed.');
   assert.deepEqual(completedAction.battleState, {
     permitId: 'permit-b', status: 'victory', playerHp: 70,
-    playerMana: 0, enemyHp: 0, turnCount: 3,
+    playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    enemyHp: 0, turnCount: 3,
   });
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-b' AND completed_at IS NOT NULL AND reward_state='awarded' AND battle_status='victory' AND turn_count=3"), 1,
     'retrying an action after settlement must not change the completed permit or receipt');
@@ -968,7 +969,8 @@ try {
   assert.equal(expiredVictoryActionReplay.error, 'Battle victory is awaiting reward completion.');
   assert.deepEqual(expiredVictoryActionReplay.battleState, {
     permitId: 'permit-expired-victory', status: 'victory',
-    playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
+    playerHp: 80, playerMana: 0, playerShield: 0,
+    shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 0, turnCount: 1,
   }, 'the retry may recover a terminal snapshot but cannot apply another action');
   assertPersistedPermitState('permit-expired-victory', {
     status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
@@ -1022,7 +1024,8 @@ try {
   assert.equal(expiredDefeatReplay.error, 'Battle is already defeated.');
   assert.deepEqual(expiredDefeatReplay.battleState, {
     permitId: 'permit-expired-defeat', status: 'defeat',
-    playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
+    playerHp: 0, playerMana: 0, playerShield: 0,
+    shieldAbsorbed: 0, retaliationDamage: 13, enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-expired-defeat', {
     status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
