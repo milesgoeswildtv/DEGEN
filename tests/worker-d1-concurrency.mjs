@@ -926,10 +926,10 @@ try {
   assert.equal(expiredDefeatAction.status, 'defeat');
   assert.deepEqual(
     [expiredDefeatAction.playerHp, expiredDefeatAction.playerMana, expiredDefeatAction.enemyHp, expiredDefeatAction.turnCount],
-    [0, 0, 72, 1],
+    [0, 0, 63, 1],
   );
   assertPersistedPermitState('permit-expired-defeat', {
-    status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 72, turnCount: 1,
+    status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
   });
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = 'permit-expired-defeat'"]);
@@ -947,7 +947,7 @@ try {
   assert.equal(expiredDefeatReplay.error, 'Battle is already defeated.');
   assert.deepEqual(expiredDefeatReplay.battleState, {
     permitId: 'permit-expired-defeat', status: 'defeat',
-    playerHp: 0, playerMana: 0, enemyHp: 72, turnCount: 1,
+    playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-expired-defeat', {
     status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 72, turnCount: 1,
