@@ -46,10 +46,12 @@ async function apiReturning(value: unknown) {
 }
 
 const controllerSource = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8');
-const controllerMethod = controllerSource.match(/private async useBattleAbility\\(abilityId: string\\): Promise<void> \\{([\\s\\S]*?)\\n  \\}\\n\\n  private setAbilityButtonsDisabled/);
+const controllerMethod = controllerSource.match(/private async useBattleAbility\(abilityId: string\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private setAbilityButtonsDisabled/);
 assert.ok(controllerMethod, 'AppController action handler must remain available for the recovery regression');
+const extractedControllerMethod = 'async function useBattleAbility(abilityId: string): Promise<void> {\n'
+  + controllerMethod[1] + '\n}\nuseBattleAbility;';
 const useBattleAbility = runInNewContext(
-  stripTypeScriptTypes(`async function useBattleAbility(abilityId: string): Promise<void> {\\n${controllerMethod[1]}\\n}\\nuseBattleAbility;`, { mode: 'transform' }),
+  stripTypeScriptTypes(extractedControllerMethod, { mode: 'transform' }),
   { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
 ) as (this: any, abilityId: string) => Promise<void>;
 
