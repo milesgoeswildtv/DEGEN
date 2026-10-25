@@ -307,7 +307,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         AND reward_state = 'awarded' AND battle_status = 'victory'`)
       .bind(input.permitId, input.playerId)
       .first<BattlePermitStateRow>();
-    if (completed && isValidBattlePermitState(completed)) {
+    if (completed && completed.encounter_key === TUNNEL_MAW.id && isValidBattlePermitState(completed)) {
       return json(request, env, {
         error: 'Battle permit is already completed.',
         battleState: {
