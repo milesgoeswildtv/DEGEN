@@ -71,9 +71,13 @@ try {
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, `
-    INSERT INTO players(id,display_name) VALUES('integration-player','Integration');
+    INSERT INTO players(id,display_name) VALUES
+      ('integration-player','Integration'),
+      ('xp-boundary-player','XP Boundary');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
-      VALUES('integration-player',1,0,0,'test-degen');
+      VALUES
+        ('integration-player',1,0,0,'test-degen'),
+        ('xp-boundary-player',2,174,30,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
@@ -84,7 +88,11 @@ try {
         ('counter-boundary-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('counter-fractional-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('counter-negative-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
-        ('legacy-terminal-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+        ('legacy-terminal-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('invalid-xp-residual-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('xp-residual-boundary-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('negative-xp-residual-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('fractional-xp-residual-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -99,6 +107,10 @@ try {
       ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-no-counter','integration-player','underpass','uncounted-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-invalid-xp-residual','integration-player','underpass','invalid-xp-residual-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-xp-residual-boundary','xp-boundary-player','underpass','xp-residual-boundary-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-negative-xp-residual','integration-player','underpass','negative-xp-residual-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-fractional-xp-residual','integration-player','underpass','fractional-xp-residual-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-duplicate-clear','integration-player','underpass','duplicate-receipt-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-duplicate-peer','integration-player','underpass','duplicate-receipt-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
@@ -1149,6 +1161,31 @@ try {
       reward_remaining_xp=50, reward_claim_token='missing-counter-token',
       reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
     WHERE id='permit-awarded-no-counter';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=175, reward_claim_token='invalid-xp-residual-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-invalid-xp-residual';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=174, reward_claim_token='xp-residual-boundary-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-xp-residual-boundary';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=-1, reward_claim_token='negative-xp-residual-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-negative-xp-residual';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=1.5, reward_claim_token='fractional-xp-residual-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-fractional-xp-residual';
+    INSERT INTO world_event_clears (player_id, event_key, cycle_id, full_reward_clears)
+      VALUES ('integration-player', 'underpass', 'invalid-xp-residual-cycle', 1),
+        ('xp-boundary-player', 'underpass', 'xp-residual-boundary-cycle', 1),
+        ('integration-player', 'underpass', 'negative-xp-residual-cycle', 1),
+        ('integration-player', 'underpass', 'fractional-xp-residual-cycle', 1);
     INSERT INTO battle_history
       (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
     VALUES ('permit-corrupt-awarded-reward:victory', 'integration-player',
@@ -1156,6 +1193,14 @@ try {
       ('permit-awarded-clear-ahead:victory', 'integration-player',
       'tunnel-maw', 'victory', 2, 10, 3),
       ('permit-awarded-no-counter:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 75, 30),
+      ('permit-awarded-invalid-xp-residual:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 75, 30),
+      ('permit-awarded-xp-residual-boundary:victory', 'xp-boundary-player',
+      'tunnel-maw', 'victory', 2, 75, 30),
+      ('permit-awarded-negative-xp-residual:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 75, 30),
+      ('permit-awarded-fractional-xp-residual:victory', 'integration-player',
       'tunnel-maw', 'victory', 2, 75, 30);
     INSERT INTO world_event_clears (player_id, event_key, cycle_id, full_reward_clears)
     SELECT 'integration-player', 'underpass', 'duplicate-receipt-cycle', reward_clear_number
@@ -1198,6 +1243,9 @@ try {
     ['permit-awarded-without-history', 0, 1],
     ['permit-awarded-clear-ahead', 1, 999999],
     ['permit-awarded-no-counter', 1, 1],
+    ['permit-awarded-invalid-xp-residual', 1, 1],
+    ['permit-awarded-negative-xp-residual', 1, 1],
+    ['permit-awarded-fractional-xp-residual', 1, 1],
   ]) {
     const rejectedReceipt = await complete(permitId, 'integration-player', {
       victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
@@ -1214,6 +1262,43 @@ try {
     assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`),
       expectedHistoryCount, 'receipt validation must not create or duplicate history');
   }
+  assert.deepEqual(queryRows(`SELECT reward_remaining_xp FROM battle_permits
+    WHERE id='permit-awarded-invalid-xp-residual'`), [{ reward_remaining_xp: 175 }],
+    'receipt audit must reject a remainder exactly at the next-level threshold without rewriting the historical receipt');
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='invalid-xp-residual-cycle'`), [{ full_reward_clears: 1 }],
+    'invalid XP remainder must not mutate the already-reserved clear counter');
+  assert.deepEqual(queryRows(`SELECT reward_remaining_xp FROM battle_permits
+    WHERE id='permit-awarded-negative-xp-residual'`), [{ reward_remaining_xp: -1 }]);
+  assert.deepEqual(queryRows(`SELECT reward_remaining_xp FROM battle_permits
+    WHERE id='permit-awarded-fractional-xp-residual'`), [{ reward_remaining_xp: 1.5 }]);
+  for (const cycleId of ['negative-xp-residual-cycle', 'fractional-xp-residual-cycle']) {
+    assert.equal(countRows(`SELECT full_reward_clears AS n FROM world_event_clears
+      WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='${cycleId}'`), 1,
+      'malformed XP remainder must not mutate the reserved clear counter');
+  }
+
+  const boundaryReplay = await complete('permit-awarded-xp-residual-boundary', 'xp-boundary-player');
+  assert.equal(boundaryReplay.status, 200, JSON.stringify(boundaryReplay.data));
+  assert.deepEqual(boundaryReplay.data.reward, {
+    xp: 75, currency: 30, items: ['underpass-scrap'],
+    furniture: ['tunnel-trophy'], tier: 'full',
+  }, 'the maximum valid post-level XP remainder must remain replayable');
+  assert.equal(boundaryReplay.data.player.level, 2);
+  assert.equal(boundaryReplay.data.player.xp, 174);
+  assert.equal(boundaryReplay.data.player.currency, 30);
+  assert.deepEqual(queryRows(`SELECT reward_remaining_xp FROM battle_permits
+    WHERE id='permit-awarded-xp-residual-boundary' AND reward_state='awarded'`), [{ reward_remaining_xp: 174 }],
+    'replaying the boundary receipt must not rewrite the original remainder');
+  assert.equal(countRows(`SELECT full_reward_clears AS n FROM world_event_clears
+    WHERE player_id='xp-boundary-player' AND event_key='underpass'
+      AND cycle_id='xp-residual-boundary-cycle'`), 1,
+    'replaying a valid boundary receipt must not increment the clear counter');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id='permit-awarded-xp-residual-boundary:victory'`), 1,
+    'replaying a valid boundary receipt must not duplicate victory history');
+
   // Two internally consistent awarded receipts cannot claim the same sequence slot.
   // Seed a duplicate only after permit-a has completed normally, so both rows carry
   // canonical reward fields and matching history; replay must still fail closed.
