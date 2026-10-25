@@ -223,3 +223,42 @@ test('completed permits for unsupported encounters are not returned as this batt
   assert.equal(reads, 3, 'unsupported completed state fails closed after owner-scoped recovery reads');
 });
 
+test('expired terminal recovery rejects inconsistent persisted Shield event audit', async () => {
+  const corrupt = {
+    cycle_id: 'cycle-1',
+    encounter_key: TUNNEL_MAW.id,
+    player_hp: 0,
+    player_mana: 0,
+    player_shield: 0,
+    last_shield_absorbed: 11,
+    last_retaliation_damage: 10,
+    enemy_hp: TUNNEL_MAW.maxHp - 29,
+    battle_status: 'defeat',
+    turn_count: 1,
+    completed_at: null,
+    reward_state: 'pending',
+  };
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind() {
+          return {
+            first: async () => {
+              if (sql.includes("battle_status IN ('victory', 'defeat')")) return corrupt;
+              if (sql.includes('completed_at IS NOT NULL')) return null;
+              if (sql.includes('completed_at IS NULL')) return null;
+              throw new Error('Unexpected query in invalid Shield event recovery: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const response = await handleBattleAction(actionRequest('corrupt-shield-event'), { DB: db });
+  const result = await response.json() as { error: string; battleState?: unknown };
+  assert.equal(response.status, 409);
+  assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in result, false, 'inconsistent Shield absorption must never be projected as authoritative');
+});
+
