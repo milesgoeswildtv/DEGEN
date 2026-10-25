@@ -321,7 +321,32 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     enemyHp: permit.enemy_hp,
     turnCount: permit.turn_count,
   };
-  const conflict = (message: string) => json(request, env, { error: message, battleState }, 409);
+  const conflict = async (message: string): Promise<Response> => {
+    // Re-read after a rejected turn so a racing action cannot leave the client
+    // synchronized to the stale snapshot from the initial permit SELECT.
+    const latest = await env.DB.prepare(`SELECT
+        cycle_id, encounter_key, player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count
+      FROM battle_permits WHERE id = ? AND player_id = ?`)
+      .bind(input.permitId, input.playerId)
+      .first<BattlePermitStateRow>();
+    if (!latest || latest.encounter_key !== TUNNEL_MAW.id || !isValidBattlePermitState(latest)) {
+      return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+    }
+    return json(request, env, {
+      error: message,
+      battleState: {
+        permitId: input.permitId,
+        status: latest.battle_status,
+        playerHp: latest.player_hp,
+        playerMana: latest.player_mana,
+        playerShield: latest.player_shield,
+        shieldAbsorbed: 0,
+        retaliationDamage: 0,
+        enemyHp: latest.enemy_hp,
+        turnCount: latest.turn_count,
+      },
+    }, 409);
+  };
   if (input.expectedTurnCount !== permit.turn_count) {
     return conflict('Stale battle turn.');
   }
