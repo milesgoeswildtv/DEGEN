@@ -1,3 +1,5 @@
+# DEGEN — AUTONOMOUS PROGRESS
+
 ## Latest run — 2026-10-25 (Shield branch reconciled with current main)
 
 - **Authoritative main SHA at merge:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued the existing `automation/degen/shield-foundation-v03` branch for PR #20; no competing branch and no direct-main write.
@@ -11,8 +13,6 @@
 - **Best next task:** run exact-head CI on the reconciled Shield branch, repair any integration failures, and keep the PR gated until the platform-auth release gate is approved.
 
 ---
-
-# DEGEN — AUTONOMOUS PROGRESS
 
 ## Latest run — 2026-10-25 (fail-closed unsupported battle completion)
 
