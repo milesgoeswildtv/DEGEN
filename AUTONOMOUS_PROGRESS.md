@@ -10,7 +10,7 @@
 - **Battle authority / reward idempotency:** PR #61 continues the full persisted-receipt audit, canonical reward-tier validation, unique clear-sequence checks, and retry-safe claim/recovery. Existing action compare-and-swap, terminal-state validation, owner/expiry checks, server-resolved victory-only rewards, concurrent action/completion coverage, atomic defeat history, cycle reservation/rollover, and event-closure permit validity remain unchanged.
 - **D1 / deployment:** `wrangler.toml` remains the source of truth for binding `DB` → `DEGEN` and `db/migrations`; deployment order is base schema → tracked migrations → Worker. No schema or migration change is required.
 - **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge/deploy Shield/housing work ahead of it.
-- **Best next task:** verify exact-head CI for PR #61; if green, finish the reward-receipt review and keep the platform-auth release gate intact.
+- **Best next task:** review PR #61 through the normal PR path now that code/test and continuity heads have exact-head CI PASS; keep Shield/housing gated until PR #21's production identity/session verification and legacy-collision policy are explicitly resolved.
 
 ---
 
