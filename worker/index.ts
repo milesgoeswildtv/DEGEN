@@ -311,7 +311,31 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     enemyHp: permit.enemy_hp,
     turnCount: permit.turn_count,
   };
-  const conflict = (message: string) => json(request, env, { error: message, battleState }, 409);
+  // A rejection may race with another accepted action after the initial SELECT.
+  // Re-read persisted state for every conflict so the client never synchronizes to
+  // the pre-race snapshot. This remains presentation/recovery only; the CAS below
+  // is still the authority that decides whether an action commits.
+  const conflict = async (message: string): Promise<Response> => {
+    const latest = await env.DB.prepare(`SELECT
+        cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
+      FROM battle_permits WHERE id = ? AND player_id = ?`)
+      .bind(input.permitId, input.playerId)
+      .first<BattlePermitStateRow>();
+    if (!latest || !isValidBattlePermitState(latest)) {
+      return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+    }
+    return json(request, env, {
+      error: message,
+      battleState: {
+        permitId: input.permitId,
+        status: latest.battle_status,
+        playerHp: latest.player_hp,
+        playerMana: latest.player_mana,
+        enemyHp: latest.enemy_hp,
+        turnCount: latest.turn_count,
+      },
+    }, 409);
+  };
   if (input.expectedTurnCount !== permit.turn_count) {
     return conflict('Stale battle turn.');
   }
