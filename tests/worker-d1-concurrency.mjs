@@ -86,6 +86,8 @@ try {
       ('permit-unsupported-encounter','integration-player','underpass','integration-cycle','unapproved-monster',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-unsupported-event','integration-player','unapproved-event','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-cycle-mismatch','integration-player','underpass','unsupported-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-corrupt-awarded-reward','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
@@ -1004,7 +1006,52 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-expired-defeat:victory'"), 0);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id = 'permit-expired-defeat' AND reward_state = 'pending' AND completed_at IS NULL"), 1);
 
-  console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  // Awarded receipts may replay only when their stored reward and history audit agree.
+  // Preserve the legitimate awarded-receipt replay above, where only the old combat
+  // snapshot was corrupted; these fixtures corrupt the independent reward receipt.
+  const corruptReceiptSeed = join(scratch, 'corrupt-awarded-receipts.sql');
+  writeFileSync(corruptReceiptSeed, `
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=999999, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='corrupt-reward-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-corrupt-awarded-reward';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='missing-history-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-without-history';
+    INSERT INTO battle_history
+      (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+    VALUES ('permit-corrupt-awarded-reward:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 999999, 30);
+  `);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + corruptReceiptSeed]);
+
+  for (const [permitId, expectedHistoryCount] of [
+    ['permit-corrupt-awarded-reward', 1],
+    ['permit-awarded-without-history', 0],
+  ]) {
+    const rejectedReceipt = await complete(permitId, 'integration-player', {
+      victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
+    });
+    assert.equal(rejectedReceipt.status, 409, JSON.stringify(rejectedReceipt.data));
+    assert.equal(rejectedReceipt.data.error, 'Battle reward receipt is invalid.');
+    assert.equal('reward' in rejectedReceipt.data, false,
+      'invalid awarded receipts must not return an unaudited reward payload');
+    assert.equal('player' in rejectedReceipt.data, false,
+      'invalid awarded receipts must not return a misleading progression snapshot');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='${permitId}'
+      AND reward_state='awarded' AND completed_at IS NOT NULL AND reward_clear_number=1`), 1,
+      'receipt validation must not rewrite or release an already-awarded permit');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`),
+      expectedHistoryCount, 'receipt validation must not create or duplicate history');
+  }
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='integration-cycle' AND full_reward_clears=4`), 1,
+    'invalid receipt replay must not reserve another event clear');
+  console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, receipt audit, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
