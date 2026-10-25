@@ -14,6 +14,15 @@ test('Worker action expiry guards preserve millisecond precision while terminal 
   );
   assert.doesNotMatch(worker, /datetime\(expires_at\)\s*>\s*CURRENT_TIMESTAMP/);
 
+  const supportedReceiptGuard = worker.indexOf(
+    "if (receipt.event_key !== 'underpass' || receipt.encounter_key !== TUNNEL_MAW.id)",
+  );
+  const awardedReceiptReplay = worker.indexOf("if (receipt.reward_state === 'awarded')");
+  assert.ok(
+    supportedReceiptGuard >= 0 && supportedReceiptGuard < awardedReceiptReplay,
+    'unsupported event/encounter receipts must fail closed before even an awarded receipt can replay',
+  );
+
   const claimStart = worker.indexOf('const claim = await env.DB.prepare');
   const claimEnd = worker.indexOf('RETURNING cycle_id, encounter_key, reward_clear_number', claimStart);
   assert.ok(claimStart >= 0 && claimEnd > claimStart, 'the authoritative reward claim statement must exist');
