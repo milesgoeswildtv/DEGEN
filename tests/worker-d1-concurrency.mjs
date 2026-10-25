@@ -643,6 +643,28 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-a' AND reward_xp=75 AND reward_currency=30 AND reward_tier='full'"), 1,
     'client reward fields must not alter the stored reward receipt');
   assert.equal(b.reward.xp, 75);
+
+  // A second tab can retry an action after another tab has already settled the
+  // victory receipt. The Worker should return the persisted terminal snapshot so
+  // the client can re-enter the existing idempotent completion recovery path.
+  const completedActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-b',
+      abilityId: 'slash', expectedTurnCount: 3,
+    }),
+  });
+  assert.equal(completedActionResponse.status, 409);
+  assert.equal(completedActionResponse.headers.get('cache-control'), 'no-store');
+  const completedAction = await completedActionResponse.json();
+  assert.equal(completedAction.error, 'Battle permit is already completed.');
+  assert.deepEqual(completedAction.battleState, {
+    permitId: 'permit-b', status: 'victory', playerHp: 70,
+    playerMana: 0, enemyHp: 0, turnCount: 3,
+  });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-b' AND completed_at IS NOT NULL AND reward_state='awarded' AND battle_status='victory' AND turn_count=3"), 1,
+    'retrying an action after settlement must not change the completed permit or receipt');
   // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET player_mana = 13 WHERE id = 'permit-a'"]);
