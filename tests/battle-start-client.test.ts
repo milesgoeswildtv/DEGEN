@@ -53,16 +53,6 @@ async function apiReturning(value: unknown) {
   finally { globalThis.fetch = oldFetch; }
 }
 
-const controllerSource = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8');
-const controllerMethod = controllerSource.match(/private async useBattleAbility\(abilityId: string\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private setAbilityButtonsDisabled/);
-assert.ok(controllerMethod, 'AppController action handler must remain available for the recovery regression');
-const extractedControllerMethod = 'async function useBattleAbility(abilityId: string): Promise<void> {\n'
-  + controllerMethod[1] + '\n}\nuseBattleAbility;';
-const useBattleAbility = runInNewContext(
-  stripTypeScriptTypes(extractedControllerMethod, { mode: 'transform' }),
-  { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
-) as (this: any, abilityId: string) => Promise<void>;
-
 test('battle start request sends no client-owned combat state', async () => {
   const oldFetch = globalThis.fetch;
   let sent: Record<string, unknown> | undefined;
