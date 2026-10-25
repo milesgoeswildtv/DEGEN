@@ -692,7 +692,35 @@ try {
   assertPersistedPermitState('permit-turn-race', acceptedRace);
 
   assert.equal((await complete('expired')).status, 409);
-  assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
+  const wrongOwnerCompletion = await complete('permit-a', 'wrong-player', {
+    victory: true,
+    status: 'victory',
+    playerHp: 0,
+    playerMana: 999,
+    enemyHp: 0,
+    turnCount: 999,
+    xp: 999999,
+    currency: 999999,
+    items: ['admin-item'],
+    reward: { xp: 999999, currency: 999999, items: ['admin-item'], tier: 'full' },
+  });
+  assert.equal(wrongOwnerCompletion.status, 409);
+  assert.equal(wrongOwnerCompletion.data.error, 'Battle is not an authoritative victory.');
+  assert.equal('reward' in wrongOwnerCompletion.data, false,
+    'a wrong owner must not receive another player\'s reward receipt');
+  assert.equal('player' in wrongOwnerCompletion.data, false,
+    'a wrong owner must not receive another player\'s progression snapshot');
+  assertPersistedPermitState('permit-a', {
+    status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
+  });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-a' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
+    'wrong-owner completion must not claim or reserve the valid permit');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-a:victory'"), 0,
+    'wrong-owner completion must not write victory history');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM characters WHERE player_id='integration-player' AND level=1 AND xp=0 AND currency=0 AND last_reward_claim_token IS NULL"), 1,
+    'wrong-owner completion must not mutate the real owner\'s progression');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_clears WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='integration-cycle'"), 0,
+    'wrong-owner completion must not reserve a reward sequence');
   const forgedVictoryRewardPayload = {
     victory: false,
     status: 'defeat',
