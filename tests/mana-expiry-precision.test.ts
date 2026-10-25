@@ -148,3 +148,23 @@ test('newly settled rewards and idempotent replays share the full persisted rece
   assert.equal((worker.match(/return respond\(/g) ?? []).length, 2,
     'the only reward response paths are the audited replay and audited settlement branches');
 });
+
+test('new clear allocation fails closed when the persisted counter trails a reserved sequence', () => {
+  const assignmentStart = worker.indexOf('UPDATE battle_permits SET reward_clear_number = (');
+  const assignmentEnd = worker.indexOf('UPDATE world_event_clears SET full_reward_clears =', assignmentStart);
+  assert.ok(assignmentStart >= 0 && assignmentEnd > assignmentStart,
+    'the permit clear-number reservation and cycle-counter update must exist');
+  const assignment = worker.slice(assignmentStart, assignmentEnd);
+  assert.match(assignment,
+    /full_reward_clears[\s\S]*>= COALESCE\([\s\S]*SELECT MAX\(other\.reward_clear_number\)[\s\S]*other\.reward_clear_number IS NOT NULL[\s\S]*other_cycle\.event_key = 'underpass'/,
+    'a new sequence number must not be allocated while the cycle counter trails any existing supported receipt');
+
+  const ownedStart = worker.indexOf('const owned = await env.DB.prepare');
+  const ownedEnd = worker.indexOf('const reward = underpassRewardForClear', ownedStart);
+  const owned = worker.slice(ownedStart, ownedEnd);
+  assert.match(owned, /cycle_clear_count/);
+  assert.match(owned, /duplicate_clear_count/);
+  assert.match(owned, /isSafeIntegerBetween\(owned\.cycle_clear_count, owned\.reward_clear_number, Number\.MAX_SAFE_INTEGER\)/);
+  assert.match(owned, /isSafeIntegerBetween\(owned\.duplicate_clear_count, 0, 0\)/,
+    'both newly assigned and previously reserved sequence numbers must be audited before progression writes');
+});

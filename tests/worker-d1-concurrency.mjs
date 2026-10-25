@@ -37,13 +37,15 @@ async function eventuallyComplete(id, extraFields = {}) {
   }
   throw new Error('Reward retry exhausted for ' + id);
 }
-function countRows(query) {
+function queryRows(query) {
   const r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   assert.equal(r.status, 0, 'local D1 query failed: ' + r.stderr);
   const result = JSON.parse(r.stdout);
-  const row = Array.isArray(result) ? result[0]?.results?.[0] : result.results?.[0];
-  return row?.n;
+  return Array.isArray(result) ? (result[0]?.results ?? []) : (result.results ?? []);
+}
+function countRows(query) {
+  return queryRows(query)[0]?.n;
 }
 function assertPersistedPermitState(permitId, state) {
   const query = `SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
@@ -77,7 +79,8 @@ try {
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('uncounted-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
-        ('duplicate-receipt-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+        ('duplicate-receipt-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('counter-lag-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -124,7 +127,19 @@ try {
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
       ('permit-expired-victory','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,1,0),
-      ('permit-expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0);
+      ('permit-expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
+      ('permit-counter-lag-peer','integration-player','underpass','counter-lag-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-lag-pending','integration-player','underpass','counter-lag-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
+    INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
+      VALUES('integration-player','underpass','counter-lag-cycle',0);
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='counter-lag-peer-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+      WHERE id='permit-counter-lag-peer';
+    INSERT INTO battle_history
+      (id,player_id,encounter_key,result,player_level,xp_awarded,currency_awarded)
+      VALUES('permit-counter-lag-peer:victory','integration-player','tunnel-maw','victory',2,75,30);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -1131,6 +1146,28 @@ try {
     WHERE player_id='integration-player' AND event_key='underpass'
       AND cycle_id='integration-cycle' AND full_reward_clears=6`), 1,
     'invalid receipt replay must not reserve another event clear');
+  // A corrupt cycle counter must not let a new victory reuse an already-reserved sequence slot.
+  const progressBeforeCounterLag = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`);
+  const counterLagCompletion = await complete('permit-counter-lag-pending');
+  assert.equal(counterLagCompletion.status, 409, JSON.stringify(counterLagCompletion.data));
+  assert.equal(counterLagCompletion.data.error, 'Unable to assign authoritative reward clear.');
+  assert.equal('reward' in counterLagCompletion.data, false);
+  assert.equal('player' in counterLagCompletion.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`), progressBeforeCounterLag,
+    'an inconsistent clear sequence must be rejected before progression or economy writes');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-counter-lag-pending'
+    AND battle_status='victory' AND reward_state='pending' AND reward_clear_number IS NULL
+    AND completed_at IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL`), 1,
+    'the rejected permit must remain retryable without a forged clear reservation');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-counter-lag-pending:victory'`), 0,
+    'no victory history is written when the sequence audit fails');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='counter-lag-cycle' AND full_reward_clears=0`), 1,
+    'the corrupt cycle counter is not advanced by a rejected claim');
+
   console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, receipt audit, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {

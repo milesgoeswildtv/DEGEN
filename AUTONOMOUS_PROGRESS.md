@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (guard clear-sequence allocation before reward writes)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued `automation/degen/awarded-receipt-audit-v01` / PR #61; no duplicate branch and no direct-main write.
+- **Previous head verified:** `de53a2141189e2905276776faba4734b25f9ac90` passed exact-head CI [40189502399](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40189502399): deterministic tests **88/88**, isolated Worker/D1 reward concurrency, transient-failure recovery, Underpass cycle/rollover races, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker dry-run all passed.
+- **Current task / files:** `worker/index.ts` now prevents a new clear-number reservation when the persisted cycle counter trails the maximum already-reserved supported receipt. It also validates the reserved number against the cycle counter and duplicate-slot audit before any character, history, inventory, or reward writes; a newly assigned invalid slot is released without keeping that slot. `tests/worker-d1-concurrency.mjs` seeds a counter-behind receipt and proves the pending victory remains retryable with no progression/history/counter mutation. `tests/mana-expiry-precision.test.ts` protects the SQL invariant.
+- **QA status:** this code/test head's exact-head CI is pending; do not call it green until all workflow steps complete. The prior immediate-response audit guard is green on the previous head.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost at zero, killing-blow/defeat behavior, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion.
+- **Battle authority / reward idempotency:** action CAS, terminal recovery, victory-only settlement, token-scoped transient-D1 recovery, canonical full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, and permit validity through event closure until expiry remain intact. This adds a pre-economy guard against duplicate or out-of-sequence reward slots.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`. Main's production Deploy Worker run [40170764387](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40170764387) on `009daaeb955bae42f12a35ad689dd49e3e74d55d` passed `Apply D1 schema`, `Apply D1 migrations`, and `Deploy Worker` in that order. This feature-branch change itself performs no production D1 operation or deployment and requires no migration.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge/deploy Shield/housing ahead of auth reconciliation.
+- **Best next task:** verify exact-head CI for the sequence-allocation guard; then continue normal PR #61 review and keep Shield/housing behind the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-25 (receipt-query test reconciliation)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued `automation/degen/awarded-receipt-audit-v01` / PR #61; no direct-main write.
