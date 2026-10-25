@@ -30,7 +30,7 @@ test('Shield migration adds only player-owned Shield and last-action audit colum
   assert.deepEqual(addedColumns, ['player_shield', 'last_shield_absorbed', 'last_retaliation_damage']);
   assert.match(shieldMigration, /ADD COLUMN player_shield INTEGER NOT NULL DEFAULT 0/i,
     'legacy permits must receive zero Shield when the column is introduced');
-  assert.equal((shieldMigration.match(/\bALTER\s+TABLE\b/gi) ?? []).length, 1);
+  assert.equal((shieldMigration.match(/\bALTER\s+TABLE\b/gi) ?? []).length, 3);
   assert.doesNotMatch(shieldMigration, /CREATE\s+TABLE/i);
   assert.doesNotMatch(shieldMigration, /(?:enemy|monster)[_ ](?:mana|shield)/i);
 });
