@@ -285,3 +285,48 @@ test('AppController synchronizes terminal snapshots returned with expired action
     assert.deepEqual(disabledStates, [true], 'terminal recovery must not re-enable terminal action buttons');
   }
 });
+
+test('AppController ignores malformed terminal snapshots from battle conflicts', async () => {
+  const invalidStates = [
+    { permitId: 'another-permit', status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1 },
+    { permitId: 'permit-1', status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 1, turnCount: 1 },
+  ];
+
+  for (const battleState of invalidStates) {
+    const synchronized: unknown[] = [];
+    const applied: unknown[] = [];
+    const disabledStates: boolean[] = [];
+    const engine = {
+      snapshot: {
+        permitId: 'permit-1', status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
+      },
+      synchronizeAuthoritativeState(state: unknown) {
+        synchronized.push(state);
+        this.snapshot = state as typeof this.snapshot;
+      },
+      applyAuthoritativeAction(...args: unknown[]) { applied.push(args); },
+    };
+    const controller = {
+      battleEngine: engine,
+      battlePermit: { permitId: 'permit-1' },
+      battleActionPending: false,
+      api: {
+        enabled: true,
+        async actUnderpass() {
+          throw new GameApiError(409, { error: 'Malformed terminal snapshot.', battleState }, 'Malformed terminal snapshot.');
+        },
+      },
+      store: { snapshot: { id: 'player-1' } },
+      setAbilityButtonsDisabled(disabled: boolean) { disabledStates.push(disabled); },
+    };
+
+    await useBattleAbility.call(controller, 'slash');
+
+    assert.deepEqual(synchronized, [], 'malformed or cross-permit snapshots must never become client state');
+    assert.deepEqual(applied, [], 'a rejected action must never fall back to local combat math');
+    assert.equal(engine.snapshot.status, 'active');
+    assert.equal(controller.battleActionPending, false);
+    assert.deepEqual(disabledStates, [true, false], 'active controls recover after an invalid conflict response');
+  }
+});
+
