@@ -1754,19 +1754,19 @@ try {
 
   // Two simultaneous full-clear completions share a player with one remaining
   // inventory slot. The character CAS must allow at most one reward to consume it.
-  const raceResults = await Promise.all([
+  const inventoryCapacityRaceResults = await Promise.all([
     complete('permit-inventory-race-a', 'inventory-race-player'),
     complete('permit-inventory-race-b', 'inventory-race-player'),
   ]);
-  const raceWinners = raceResults.filter((result) => result.status === 200);
-  const raceRejected = raceResults.filter((result) => result.status === 409);
-  assert.equal(raceWinners.length, 1, JSON.stringify(raceResults));
-  assert.equal(raceRejected.length, 1, JSON.stringify(raceResults));
-  assert.equal(raceRejected[0].data.error, 'Player inventory is at its supported snapshot limit.');
-  assert.equal('reward' in raceRejected[0].data, false);
-  assert.equal('player' in raceRejected[0].data, false);
-  assert.equal(raceWinners[0].data.reward.tier, 'full');
-  assert.equal(raceWinners[0].data.player.inventory.length, 10000);
+  const inventoryCapacityRaceWinners = inventoryCapacityRaceResults.filter((result) => result.status === 200);
+  const inventoryCapacityRaceRejected = inventoryCapacityRaceResults.filter((result) => result.status === 409);
+  assert.equal(inventoryCapacityRaceWinners.length, 1, JSON.stringify(inventoryCapacityRaceResults));
+  assert.equal(inventoryCapacityRaceRejected.length, 1, JSON.stringify(inventoryCapacityRaceResults));
+  assert.equal(inventoryCapacityRaceRejected[0].data.error, 'Player inventory is at its supported snapshot limit.');
+  assert.equal('reward' in inventoryCapacityRaceRejected[0].data, false);
+  assert.equal('player' in inventoryCapacityRaceRejected[0].data, false);
+  assert.equal(inventoryCapacityRaceWinners[0].data.reward.tier, 'full');
+  assert.equal(inventoryCapacityRaceWinners[0].data.player.inventory.length, 10000);
   assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
     WHERE id = 'inventory-race-player:item:underpass-scrap'`), [{ quantity: 10000 }]);
   assert.deepEqual(queryRows(`SELECT level, xp, currency FROM characters
