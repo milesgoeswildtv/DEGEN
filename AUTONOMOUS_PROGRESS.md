@@ -1,5 +1,17 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (controller recovery regression CI reconciliation)
+
+- **Authoritative main SHA:** `65edafd914ddc463294f32450c94a2f2c73f5258`; PR #55 is merged. No direct-main write.
+- **PUSHED / PR #56 OPEN:** `automation/degen/terminal-recovery-controller-test-v01`. The implementation/test commit `53a4e755132a47f011f86f72e32f63aa0ca6957b` has exact-head CI run [40163839569](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40163839569) completed successfully. It exercises the actual `AppController.useBattleAbility` recovery branch with Worker-style HTTP 409 terminal victory/defeat snapshots and verifies snapshot-only synchronization, no duplicate local combat action, cleared pending latch, and terminal buttons remaining disabled.
+- **Current task / files:** `tests/battle-start-client.test.ts` adds the controller regression; this continuity update records the verified code/test-head CI. No runtime, combat/economy, schema, migration, identity/auth, or deployment configuration changes.
+- **QA distinction:** the code/test head is green; this new progress-only commit still requires its own exact-head CI before PR #56 can be called fully green. No local shell test run, production D1 operation, Worker deployment, or live HTTP smoke is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative and persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, killing-blow/defeat behavior, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / rewards:** main includes terminal snapshot recovery after permit expiry, required turn preconditions and CAS, persisted-state invariants, owner/expiry checks, server-resolved victory-only rewards, idempotent receipts and transient-D1 recovery, reward tiers and shared level-up math, concurrent action/completion tests, atomic defeat history, Underpass cycle reservation/rollover, and permits valid across event closure until their own expiry.
+- **D1 assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. This test-only task requires no migration and performs no remote D1 operation.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge Shield/housing work ahead of it.
+- **Best next task:** verify exact-head CI for this PR #56 continuity head; if fully green, merge through the normal PR path, then continue with a narrow reward-recovery/integration test gap without changing reward values or bypassing the platform-auth gate.
+
 ## Latest run — 2026-10-25 (controller recovery path regression)
 
 - **Authoritative main SHA:** `65edafd914ddc463294f32450c94a2f2c73f5258` (PR #55 was squash-merged through the normal PR path; no direct-main write).
