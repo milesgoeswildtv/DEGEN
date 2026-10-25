@@ -92,7 +92,7 @@ test('EnemyDefinition does not gain a Mana or Shield resource namespace', () => 
 test('Worker deployment refuses Shield migration before player-session migration', () => {
   const guardStart = deployWorkflow.indexOf('      - name: Verify migration release order');
   const schemaStart = deployWorkflow.indexOf('      - name: Apply D1 schema');
-  const nextStep = deployWorkflow.indexOf('\\n      - name:', guardStart + 1);
+  const nextStep = deployWorkflow.indexOf('\n      - name:', guardStart + 1);
   assert.ok(guardStart >= 0 && guardStart < schemaStart,
     'the release guard must run before any remote D1 schema or migration operation');
   const guard = deployWorkflow.slice(guardStart, nextStep === -1 ? undefined : nextStep);
