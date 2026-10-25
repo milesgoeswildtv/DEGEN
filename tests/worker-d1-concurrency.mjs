@@ -724,6 +724,11 @@ try {
   // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET player_mana = 13 WHERE id = 'permit-a'"]);
+  const sequenceAudit = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=SELECT id, reward_clear_number, reward_state FROM battle_permits WHERE id IN ('permit-a','permit-b','permit-c','permit-d') ORDER BY id",
+    '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  assert.equal(sequenceAudit.status, 0, 'clear sequence diagnostic query failed: ' + sequenceAudit.stderr);
+  console.log('DEBUG clear sequence assignments: ' + sequenceAudit.stdout);
   const replayResponse = await complete('permit-a', 'integration-player', {
     victory: false,
     status: 'defeat',
