@@ -137,7 +137,10 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
     <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
     <div class="battle-controls">
       <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
-      <div id="battle-shield" class="battle-shield" aria-live="polite">SHIELD 0</div>
+      <div class="battle-resources" role="status" aria-label="Degen combat resources" aria-live="polite">
+        <span id="battle-mana" class="battle-resource">MANA ${degen.maxMana}/${degen.maxMana}</span>
+        <span id="battle-shield" class="battle-resource">SHIELD 0</span>
+      </div>
       <div class="ability-grid">
         ${degen.abilities.map((ability) => `
           <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
@@ -158,6 +161,9 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   if (!log) return;
 
   log.innerHTML = snapshot.log.map((entry) => `<div>${escapeHtml(entry)}</div>`).join('');
+
+  const mana = document.querySelector<HTMLElement>('#battle-mana');
+  if (mana) mana.textContent = `MANA ${snapshot.playerMana}/${snapshot.playerMaxMana}`;
 
   const shield = document.querySelector<HTMLElement>('#battle-shield');
   if (shield) shield.textContent = `SHIELD ${snapshot.playerShield}`;
