@@ -142,7 +142,9 @@ try {
       -- A pre-Mana terminal victory may legitimately retain NULL player_mana.
       ('permit-legacy-terminal-victory','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,NULL,0,3),
       -- Legacy terminal defeat is recoverable for display, never reward-eligible.
-      ('permit-legacy-terminal-defeat','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'defeat',0,NULL,40,3);
+      ('permit-legacy-terminal-defeat','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'defeat',0,NULL,40,3),
+      -- NULL Mana is not permission to accept an internally inconsistent legacy victory.
+      ('permit-legacy-malformed-victory','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,NULL,40,3);
     INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
       VALUES
         ('integration-player','underpass','counter-lag-cycle',0),
@@ -1374,6 +1376,33 @@ try {
     WHERE player_id='integration-player' AND event_key='underpass'
       AND cycle_id='legacy-terminal-cycle'`), [{ full_reward_clears: 1 }],
     'a rejected legacy defeat must not consume another clear slot');
+
+  // NULL Mana does not relax the terminal outcome invariant for reward completion.
+  const progressBeforeMalformedLegacyVictory = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`);
+  const malformedLegacyVictory = await complete('permit-legacy-malformed-victory', 'integration-player', {
+    victory: true, status: 'victory', playerHp: 80, playerMana: 12, enemyHp: 0, turnCount: 99,
+    xp: 999999, currency: 999999, items: ['forged-item'],
+    reward: { xp: 999999, currency: 999999, items: ['forged-item'] },
+  });
+  assert.equal(malformedLegacyVictory.status, 409, JSON.stringify(malformedLegacyVictory.data));
+  assert.equal(malformedLegacyVictory.data.error, 'Battle state is invalid.');
+  assert.equal('reward' in malformedLegacyVictory.data, false);
+  assert.equal('player' in malformedLegacyVictory.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`), progressBeforeMalformedLegacyVictory);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-legacy-malformed-victory' AND player_mana IS NULL
+      AND battle_status='victory' AND player_hp=70 AND enemy_hp=40 AND turn_count=3
+      AND reward_state='pending' AND reward_clear_number IS NULL
+      AND reward_claim_token IS NULL AND reward_claimed_at IS NULL
+      AND completed_at IS NULL`), 1, 'malformed legacy victory remains unchanged and unawarded');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id='permit-legacy-malformed-victory:victory'`), 0);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='legacy-terminal-cycle'`), [{ full_reward_clears: 1 }],
+    'malformed legacy victory must not consume another clear slot');
 
   console.log('PASS isolated Worker/D1: legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
