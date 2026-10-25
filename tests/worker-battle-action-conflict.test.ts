@@ -13,10 +13,10 @@ import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } fr
 // the permit SELECT sees the old snapshot, while the conflict re-read sees
 // the action another request already committed.
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
-  .replace(/^export default\\s*\\{/m, 'const worker = {');
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/^export default\s*\{/m, 'const worker = {');
 const handleBattleAction = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\nhandleBattleAction;',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
     TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
     UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
