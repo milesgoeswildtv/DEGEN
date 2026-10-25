@@ -543,7 +543,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       AND clears.cycle_id = permit.cycle_id
     LEFT JOIN battle_history AS history
       ON history.id = (permit.id || ':victory') AND history.player_id = permit.player_id
-    WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'`)
+    WHERE permit.id = ? AND permit.player_id = ?`)
     .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
   const receipt = await loadReceipt();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
@@ -605,7 +605,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   };
   if (receipt.reward_state === 'awarded') {
     if (!isValidAwardedReceipt(receipt)) return fail(request, env, 'Battle reward receipt is invalid.', 409);
+    // The independently audited awarded receipt is the recovery authority for an
+    // already-settled reward, even if a later write corrupts its combat snapshot.
     return respond(receipt);
+  }
+  if (receipt.battle_status !== 'victory') {
+    return fail(request, env, 'Battle is not an authoritative victory.', 409);
   }
   if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
 
