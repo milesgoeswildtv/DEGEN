@@ -134,13 +134,14 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): 
 
 export const battleView = (player: PlayerState, degen: DegenDefinition): string => appShell(player, `
   <section class="battle-layout">
-    <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
-    <div class="battle-controls">
-      <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
+    <div class="battle-arena">
       <div class="battle-resources" role="status" aria-label="Degen combat resources" aria-live="polite">
         <span id="battle-mana" class="battle-resource">MANA ${degen.maxMana}/${degen.maxMana}</span>
         <span id="battle-shield" class="battle-resource">SHIELD 0</span>
       </div>
+      <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
+    </div>
+    <div class="battle-controls">
       <div class="ability-grid">
         ${degen.abilities.map((ability) => `
           <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
