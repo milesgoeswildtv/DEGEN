@@ -539,7 +539,6 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
     WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'`)
     .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
-    .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
   // The permit and its referenced cycle must both belong to the supported event.
   // D1 stores event_key and cycle_id separately, so reject inconsistent rows rather than
