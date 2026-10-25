@@ -85,6 +85,7 @@ try {
       ('currency-overflow-player','Currency Overflow'),
       ('inventory-cap-player','Inventory Cap'),
       ('inventory-atomic-player','Inventory Atomicity'),
+      ('inventory-race-player','Inventory Race'),
       ('inventory-oversized-player','Oversized Inventory');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES
@@ -95,11 +96,13 @@ try {
         ('currency-overflow-player',2,0,9007199254740971,'test-degen'),
         ('inventory-cap-player',1,0,0,'test-degen'),
         ('inventory-atomic-player',1,0,0,'test-degen'),
+        ('inventory-race-player',1,0,0,'test-degen'),
         ('inventory-oversized-player',1,0,0,'test-degen');
     INSERT INTO player_inventory(id,player_id,item_key,item_type,quantity)
       VALUES
         ('inventory-cap-player:item:underpass-scrap','inventory-cap-player','underpass-scrap','item',10000),
         ('inventory-atomic-player:item:underpass-scrap','inventory-atomic-player','underpass-scrap','item',1),
+        ('inventory-race-player:item:underpass-scrap','inventory-race-player','underpass-scrap','item',9999),
         ('inventory-oversized-player:item:bulk','inventory-oversized-player','bulk','item',10001);
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
@@ -189,7 +192,9 @@ try {
       -- NULL Mana is not permission to accept an internally inconsistent legacy victory.
       ('permit-legacy-malformed-victory','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,NULL,40,3),
       ('permit-inventory-cap','inventory-cap-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('permit-inventory-atomic','inventory-atomic-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
+      ('permit-inventory-atomic','inventory-atomic-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-inventory-race-a','inventory-race-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-inventory-race-b','inventory-race-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
     INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
       VALUES
         ('integration-player','underpass','counter-lag-cycle',0),
@@ -1747,7 +1752,47 @@ try {
     WHERE id = 'permit-inventory-atomic' AND reward_state = 'awarded'
       AND reward_clear_number = 1 AND completed_at IS NOT NULL`), 1);
 
-  console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  // Two simultaneous full-clear completions share a player with one remaining
+  // inventory slot. The character CAS must allow at most one reward to consume it.
+  const raceResults = await Promise.all([
+    complete('permit-inventory-race-a', 'inventory-race-player'),
+    complete('permit-inventory-race-b', 'inventory-race-player'),
+  ]);
+  const raceWinners = raceResults.filter((result) => result.status === 200);
+  const raceRejected = raceResults.filter((result) => result.status === 409);
+  assert.equal(raceWinners.length, 1, JSON.stringify(raceResults));
+  assert.equal(raceRejected.length, 1, JSON.stringify(raceResults));
+  assert.equal(raceRejected[0].data.error, 'Player inventory is at its supported snapshot limit.');
+  assert.equal('reward' in raceRejected[0].data, false);
+  assert.equal('player' in raceRejected[0].data, false);
+  assert.equal(raceWinners[0].data.reward.tier, 'full');
+  assert.equal(raceWinners[0].data.player.inventory.length, 10000);
+  assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
+    WHERE id = 'inventory-race-player:item:underpass-scrap'`), [{ quantity: 10000 }]);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency FROM characters
+    WHERE player_id = 'inventory-race-player'`), [{ level: 1, xp: 75, currency: 30 }],
+    'only one concurrent full clear may award progression at inventory capacity');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE player_id = 'inventory-race-player' AND result = 'victory'`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE player_id = 'inventory-race-player' AND item_key = 'tunnel-trophy' AND item_type = 'furniture'`), 1);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'inventory-race-player' AND event_key = 'underpass'
+      AND cycle_id = 'integration-cycle'`), [{ full_reward_clears: 2 }],
+    'both clear numbers stay reserved for idempotent retry even though only one reward fits');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id IN ('permit-inventory-race-a','permit-inventory-race-b')
+      AND reward_state = 'awarded' AND completed_at IS NOT NULL`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id IN ('permit-inventory-race-a','permit-inventory-race-b')
+      AND reward_state = 'pending' AND reward_clear_number IN (1,2)
+      AND reward_claim_token IS NULL AND reward_claimed_at IS NULL AND completed_at IS NULL`), 1);
+  assert.equal(countRows(`SELECT COUNT(DISTINCT reward_clear_number) AS n FROM battle_permits
+    WHERE id IN ('permit-inventory-race-a','permit-inventory-race-b')
+      AND reward_clear_number IN (1,2)`), 2,
+    'concurrent completions must retain distinct reserved clear numbers');
+
+  console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
