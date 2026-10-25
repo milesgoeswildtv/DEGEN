@@ -256,3 +256,64 @@ test('expired terminal retries recover only valid pending victory or defeat snap
     assert.equal(reads.length, 3, 'expired terminal recovery must read persisted state without mutating it');
   }
 });
+
+
+test('legacy terminal victory without persisted Mana recovers a display snapshot but never reopens combat', async () => {
+  const legacyTerminal = {
+    cycle_id: 'cycle-1',
+    encounter_key: TUNNEL_MAW.id,
+    player_hp: 70,
+    player_mana: null,
+    enemy_hp: 0,
+    battle_status: 'victory',
+    turn_count: 3,
+  };
+  const reads: string[] = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(..._params: unknown[]) {
+          return {
+            first: async () => {
+              reads.push(sql);
+              if (sql.includes('completed_at IS NULL')) return legacyTerminal;
+              if (sql.includes('FROM battle_permits WHERE id = ? AND player_id = ?')) return legacyTerminal;
+              throw new Error('Unexpected query in legacy terminal Mana recovery test: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+  const request = new Request('https://degen-api.example/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'player-1',
+      permitId: 'permit-legacy-victory',
+      abilityId: 'slash',
+      expectedTurnCount: 3,
+    }),
+  });
+
+  const response = await handleBattleAction(request, { DB: db });
+  const result = await response.json() as {
+    error: string;
+    battleState?: {
+      permitId: string; status: string; playerHp: number; playerMana: number;
+      enemyHp: number; turnCount: number;
+    };
+  };
+
+  assert.equal(response.status, 409);
+  assert.equal(result.error, 'Battle is already victory.');
+  assert.deepEqual(result.battleState, {
+    permitId: 'permit-legacy-victory',
+    status: 'victory',
+    playerHp: 70,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: 0,
+    turnCount: 3,
+  }, 'legacy Mana is projected only to render a terminal snapshot; no action is accepted');
+  assert.equal(reads.length, 2, 'the handler must re-read persisted terminal state');
+});
