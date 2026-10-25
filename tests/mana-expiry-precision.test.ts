@@ -18,7 +18,11 @@ test('Worker action expiry guards preserve millisecond precision while terminal 
   const claimEnd = worker.indexOf('RETURNING cycle_id, encounter_key, reward_clear_number', claimStart);
   assert.ok(claimStart >= 0 && claimEnd > claimStart, 'the authoritative reward claim statement must exist');
   const claim = worker.slice(claimStart, claimEnd);
-  assert.match(claim, /WHERE id = \? AND player_id = \? AND battle_status = 'victory'/);
+  assert.match(
+    claim,
+    /WHERE id = \? AND player_id = \? AND event_key = 'underpass'\s+AND encounter_key = \? AND battle_status = 'victory'/,
+    'the claim lease must be scoped to the supported event and encounter',
+  );
   assert.match(
     claim,
     /reward_state = 'pending' AND completed_at IS NULL/,
