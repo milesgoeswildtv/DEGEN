@@ -523,6 +523,10 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
         WHERE other.player_id = permit.player_id
           AND other.event_key = permit.event_key
           AND other.cycle_id = permit.cycle_id
+          AND other.event_key = 'underpass'
+          AND other.encounter_key = '${TUNNEL_MAW.id}'
+          AND EXISTS (SELECT 1 FROM world_event_cycles AS other_cycle
+            WHERE other_cycle.id = other.cycle_id AND other_cycle.event_key = 'underpass')
           AND other.id <> permit.id
           AND other.reward_clear_number = permit.reward_clear_number
       ) AS duplicate_clear_count,
