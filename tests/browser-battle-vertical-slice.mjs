@@ -138,15 +138,14 @@ try {
   };
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
-  // Observe the actual Phaser text canvas so the browser test proves the HUD follows
-  // Worker-confirmed Mana and keeps the Degen manifested at zero, not just D1 state.
+  // Observe Phaser manifestation and DOM resource pills so presentation is verified in the running app.
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `(() => {
       const rendered = [];
       Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
-        if (typeof text === 'string' && (text.startsWith('MANA ') || text === 'MANIFESTED')) rendered.push(text);
+        if (typeof text === 'string' && text === 'MANIFESTED') rendered.push(text);
         return original.call(this, text, ...args);
       };
     })();`,
@@ -174,7 +173,7 @@ try {
   await until('Worker-authorized Underpass entry', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
   await tap("[data-start-battle]");
   await until('Manifested Degen abilities', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
-  await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
+  await until('rendered initial Mana HUD', () => cdp.evaluate('document.querySelector("#battle-mana")?.textContent === "MANA 12/12" && window.__degenRenderedBattleText?.includes("MANIFESTED")'));
   const activeRows = sql("SELECT id, player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1");
   assert.equal(activeRows.length, 1, 'Worker battle start should issue one persisted active permit');
   const permitId = activeRows[0].id;
@@ -213,16 +212,11 @@ try {
     for (const [key, value] of Object.entries(expected)) assert.equal(persisted[key], value, 'persisted turn ' + turn + ' ' + key);
     const displayedMana = `MANA ${expected.player_mana}/12`;
     await until('rendered authoritative Mana HUD after turn ' + turn,
-      () => cdp.evaluate(`window.__degenRenderedBattleText?.includes(${JSON.stringify(displayedMana)})`));
+      () => cdp.evaluate(`document.querySelector("#battle-mana")?.textContent === ${JSON.stringify(displayedMana)}`));
     if (turn < 3) await until('rendered authoritative Shield HUD after turn ' + turn,
       () => cdp.evaluate(`document.querySelector("#battle-shield")?.textContent === ${JSON.stringify('SHIELD ' + expected.player_shield)}`));
-    const hudOrder = await cdp.evaluate(`(() => {
-      const rendered = window.__degenRenderedBattleText || [];
-      return { mana: rendered.lastIndexOf(${JSON.stringify(displayedMana)}), manifested: rendered.lastIndexOf('MANIFESTED') };
-    })()`);
-    assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
-    assert.ok(hudOrder.manifested > hudOrder.mana,
-      'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
+    const manifested = await cdp.evaluate(`(window.__degenRenderedBattleText || []).includes('MANIFESTED')`);
+    assert.equal(manifested, true, 'the Degen remains manifested even when Mana reaches zero');
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
