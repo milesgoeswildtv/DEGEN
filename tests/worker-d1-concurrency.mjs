@@ -73,7 +73,9 @@ try {
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES('integration-player',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
-      VALUES('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+      VALUES
+        ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -83,6 +85,7 @@ try {
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-unsupported-encounter','integration-player','underpass','integration-cycle','unapproved-monster',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-unsupported-event','integration-player','unapproved-event','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-cycle-mismatch','integration-player','underpass','unsupported-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
@@ -172,9 +175,9 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-mana-zero' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
     'forged completion must not reserve or claim rewards');
 
-  // Victory state is not enough by itself: completion may only settle the
-  // Worker-supported Underpass event and Tunnel Maw encounter.
-  for (const permitId of ['permit-unsupported-encounter', 'permit-unsupported-event']) {
+  // Victory state is not enough by itself: the permit, its referenced cycle,
+  // and the encounter must all match the Worker-supported Underpass slice.
+  for (const permitId of ['permit-unsupported-encounter', 'permit-unsupported-event', 'permit-cycle-mismatch']) {
     const unsupported = await complete(permitId, 'integration-player', {
       victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
     });
@@ -189,10 +192,11 @@ try {
     assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`), 0,
       'unsupported victory must not create a reward receipt');
   }
-  // Even a pre-existing awarded receipt must not replay through an unsupported event/encounter.
+  // Even a pre-existing awarded receipt must not replay through an unsupported event/cycle/encounter.
   // This models a stale/corrupt receipt row and proves the guard runs before the idempotent replay path.
-  for (const permitId of ['permit-unsupported-encounter', 'permit-unsupported-event']) {
-    const clearNumber = permitId === 'permit-unsupported-encounter' ? 1 : 2;
+  for (const permitId of ['permit-unsupported-encounter', 'permit-unsupported-event', 'permit-cycle-mismatch']) {
+    const clearNumber = permitId === 'permit-unsupported-encounter' ? 1
+      : permitId === 'permit-unsupported-event' ? 2 : 3;
     cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
       "--command=UPDATE battle_permits SET reward_state='awarded', reward_clear_number=" + clearNumber + ", reward_xp=25, reward_currency=10, reward_tier='full', completed_at=CURRENT_TIMESTAMP, reward_claim_token=NULL, reward_claimed_at=NULL WHERE id='" + permitId + "'"]);
     const replay = await complete(permitId, 'integration-player', {
