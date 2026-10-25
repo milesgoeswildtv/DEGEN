@@ -64,25 +64,28 @@ try {
       VALUES('shield-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(
       id,player_id,event_key,cycle_id,encounter_key,expires_at,
-      battle_status,player_hp,player_mana,player_shield,enemy_hp,turn_count
+      battle_status,player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count
     ) VALUES(
       'shielded','shield-player','underpass','shield-cycle','tunnel-maw',
-      datetime('now','+20 minutes'),'active',120,0,5,92,0
+      datetime('now','+20 minutes'),'active',120,0,5,0,0,92,0
     ), (
       'shield-carryover','shield-player','underpass','shield-cycle','tunnel-maw',
-      datetime('now','+20 minutes'),'active',120,0,12,92,0
+      datetime('now','+20 minutes'),'active',120,0,12,0,0,92,0
     ), (
       'shield-killing-blow','shield-player','underpass','shield-cycle','tunnel-maw',
-      datetime('now','+20 minutes'),'active',120,12,5,1,0
+      datetime('now','+20 minutes'),'active',120,12,5,0,0,1,0
     ), (
       'shield-defeat','shield-player','underpass','shield-cycle','tunnel-maw',
-      datetime('now','+20 minutes'),'active',1,0,2,92,0
+      datetime('now','+20 minutes'),'active',1,0,2,0,0,92,0
     ), (
       'shield-expired-active','shield-player','underpass','shield-cycle','tunnel-maw',
-      datetime('now','-1 minute'),'active',120,12,0,92,0
+      datetime('now','-1 minute'),'active',120,12,0,0,0,92,0
     ), (
       'shield-expired-victory','shield-player','underpass','shield-cycle','tunnel-maw',
-      datetime('now','-1 minute'),'victory',120,8,5,0,1
+      datetime('now','-1 minute'),'victory',120,8,5,0,0,0,1
+    ), (
+      'shield-expired-defeat','shield-player','underpass','shield-cycle','tunnel-maw',
+      datetime('now','-1 minute'),'defeat',0,0,0,2,10,63,1
     );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -132,8 +135,8 @@ try {
   ], [115, 0, 5, 10, 0, 63, 1, 'active']);
   assert.equal('enemyShield' in action.data, false);
   assert.equal('enemyMana' in action.data, false);
-  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shielded'"),
-    [{ player_hp: 115, player_shield: 0, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shielded'"),
+    [{ player_hp: 115, player_shield: 0, player_mana: 0, last_shield_absorbed: 10, last_retaliation_damage: 10, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'D1 state must persist one Shield absorption and the corresponding HP result');
 
 
@@ -146,8 +149,8 @@ try {
     permitId: 'shield-carryover', status: 'active', playerHp: 120, playerMana: 0,
     playerShield: 12, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 92, turnCount: 0,
   });
-  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
-    [{ player_hp: 120, player_shield: 12, player_mana: 0, enemy_hp: 92, turn_count: 0, battle_status: 'active' }],
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
+    [{ player_hp: 120, player_shield: 12, player_mana: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, enemy_hp: 92, turn_count: 0, battle_status: 'active' }],
     'rejected paid action must not mutate HP, Mana, Shield, enemy HP, or turn');
 
   // A free ability remains available at zero Mana and only the absorbed portion is consumed.
@@ -159,8 +162,8 @@ try {
     carryover.data.playerHp, carryover.data.playerMana, carryover.data.playerShield,
     carryover.data.shieldAbsorbed, carryover.data.retaliationDamage, carryover.data.enemyHp, carryover.data.turnCount,
   ], [120, 0, 2, 10, 10, 63, 1]);
-  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
-    [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
+    [{ player_hp: 120, player_shield: 2, player_mana: 0, last_shield_absorbed: 10, last_retaliation_damage: 10, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'remaining Shield must persist after absorbing retaliation');
 
   // Replaying the previous turn must return the persisted Shield snapshot without consuming it again.
@@ -173,7 +176,7 @@ try {
     permitId: 'shield-carryover', status: 'active', playerHp: 120, playerMana: 0,
     playerShield: 2, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 63, turnCount: 1,
   }, 'stale-turn recovery must preserve the latest authoritative Shield state');
-  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
     [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'a stale action must not apply damage or spend Shield a second time');
 
@@ -187,8 +190,8 @@ try {
     killingBlow.data.shieldAbsorbed, killingBlow.data.retaliationDamage, killingBlow.data.enemyHp, killingBlow.data.turnCount,
   ], ['victory', 120, 8, 5, 0, 0, 0, 1],
   'a killing blow spends Mana once, skips retaliation, and leaves unused Shield intact');
-  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-killing-blow'"),
-    [{ player_hp: 120, player_shield: 5, player_mana: 8, enemy_hp: 0, turn_count: 1, battle_status: 'victory' }],
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-killing-blow'"),
+    [{ player_hp: 120, player_shield: 5, player_mana: 8, last_shield_absorbed: 0, last_retaliation_damage: 0, enemy_hp: 0, turn_count: 1, battle_status: 'victory' }],
     'the terminal Worker/D1 snapshot must preserve Shield when retaliation is skipped');
 
   const completion = await post('/api/battle/complete', {
@@ -210,8 +213,8 @@ try {
     defeat.data.shieldAbsorbed, defeat.data.retaliationDamage, defeat.data.enemyHp, defeat.data.turnCount,
   ], ['defeat', 0, 0, 0, 2, 10, 63, 1],
   'Shield absorbs first, only remaining retaliation damages HP, and defeat leaves no Shield');
-  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-defeat'"),
-    [{ player_hp: 0, player_shield: 0, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'defeat' }],
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-defeat'"),
+    [{ player_hp: 0, player_shield: 0, player_mana: 0, last_shield_absorbed: 2, last_retaliation_damage: 10, enemy_hp: 63, turn_count: 1, battle_status: 'defeat' }],
     'persisted defeat state must exhaust Shield atomically with the terminal turn');
   assert.deepEqual(sql("SELECT result,xp_awarded,currency_awarded FROM battle_history WHERE id='shield-defeat:defeat'"),
     [{ result: 'defeat', xp_awarded: 0, currency_awarded: 0 }],
@@ -268,9 +271,28 @@ try {
   });
   assert.equal(expiredActiveCompletion.status, 409);
   assert.equal(expiredActiveCompletion.data.error, 'Battle is not an authoritative victory.');
-  assert.deepEqual(sql("SELECT battle_status,player_hp,player_mana,player_shield,enemy_hp,turn_count,reward_state,completed_at FROM battle_permits WHERE id='shield-expired-active'"),
-    [{ battle_status: 'active', player_hp: 120, player_mana: 12, player_shield: 0, enemy_hp: 92, turn_count: 0, reward_state: 'pending', completed_at: null }],
+  assert.deepEqual(sql("SELECT battle_status,player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,reward_state,completed_at FROM battle_permits WHERE id='shield-expired-active'"),
+    [{ battle_status: 'active', player_hp: 120, player_mana: 12, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, enemy_hp: 92, turn_count: 0, reward_state: 'pending', completed_at: null }],
     'an expired active permit cannot act or claim rewards');
+
+  // A persisted expired defeat must recover its last Shield/retaliation event and never open rewards.
+  const expiredDefeatAction = await post('/api/battle/action', {
+    playerId: 'shield-player', permitId: 'shield-expired-defeat', abilityId: 'slash', expectedTurnCount: 1,
+  });
+  assert.equal(expiredDefeatAction.status, 409);
+  assert.equal(expiredDefeatAction.data.error, 'Battle is already defeated.');
+  assert.deepEqual(expiredDefeatAction.data.battleState, {
+    permitId: 'shield-expired-defeat', status: 'defeat', playerHp: 0, playerMana: 0,
+    playerShield: 0, shieldAbsorbed: 2, retaliationDamage: 10, enemyHp: 63, turnCount: 1,
+  }, 'recovered defeat must preserve the persisted last retaliation event');
+  const expiredDefeatCompletion = await post('/api/battle/complete', {
+    playerId: 'shield-player', permitId: 'shield-expired-defeat',
+  });
+  assert.equal(expiredDefeatCompletion.status, 409);
+  assert.equal(expiredDefeatCompletion.data.error, 'Battle is not an authoritative victory.');
+  assert.deepEqual(sql("SELECT battle_status,player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,reward_state,completed_at FROM battle_permits WHERE id='shield-expired-defeat'"),
+    [{ battle_status: 'defeat', player_hp: 0, player_mana: 0, player_shield: 0, last_shield_absorbed: 2, last_retaliation_damage: 10, enemy_hp: 63, turn_count: 1, reward_state: 'pending', completed_at: null }],
+    'expired defeat remains terminal and unawarded');
 
   console.log('PASS isolated Worker/D1: server-owned combat start, hostile client-state rejection, Shield absorption, killing blow, defeat, and reward settlement');
 } catch (error) {
