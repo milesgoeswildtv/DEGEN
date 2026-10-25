@@ -71,6 +71,9 @@ try {
     ), (
       'shield-carryover','shield-player','underpass','shield-cycle','tunnel-maw',
       datetime('now','+20 minutes'),'active',120,0,12,92,0
+    ), (
+      'shield-killing-blow','shield-player','underpass','shield-cycle','tunnel-maw',
+      datetime('now','+20 minutes'),'active',120,12,5,1,0
     );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -151,7 +154,30 @@ try {
     [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'remaining Shield must persist after absorbing retaliation');
 
-  console.log('PASS isolated Worker/D1: server-owned combat start, hostile client-state rejection, Shield absorption, and persistence');
+  // A killing blow must skip retaliation and preserve unused player Shield through victory settlement.
+  const killingBlow = await post('/api/battle/action', {
+    playerId: 'shield-player', permitId: 'shield-killing-blow', abilityId: 'crack', expectedTurnCount: 0,
+  });
+  assert.equal(killingBlow.status, 200);
+  assert.deepEqual([
+    killingBlow.data.status, killingBlow.data.playerHp, killingBlow.data.playerMana, killingBlow.data.playerShield,
+    killingBlow.data.shieldAbsorbed, killingBlow.data.retaliationDamage, killingBlow.data.enemyHp, killingBlow.data.turnCount,
+  ], ['victory', 120, 8, 5, 0, 0, 0, 1],
+  'a killing blow spends Mana once, skips retaliation, and leaves unused Shield intact');
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-killing-blow'"),
+    [{ player_hp: 120, player_shield: 5, player_mana: 8, enemy_hp: 0, turn_count: 1, battle_status: 'victory' }],
+    'the terminal Worker/D1 snapshot must preserve Shield when retaliation is skipped');
+
+  const completion = await post('/api/battle/complete', {
+    playerId: 'shield-player', permitId: 'shield-killing-blow',
+  });
+  assert.equal(completion.status, 200, 'a valid server-resolved killing blow can settle its reward');
+  assert.ok(['full', 'reduced'].includes(completion.data.reward?.tier), 'reward tier comes from Worker settlement');
+  assert.deepEqual(sql("SELECT reward_state,completed_at FROM battle_permits WHERE id='shield-killing-blow'"),
+    [{ reward_state: 'awarded', completed_at: sql("SELECT completed_at FROM battle_permits WHERE id='shield-killing-blow'")[0].completed_at }],
+    'the server-owned victory is marked awarded after settlement');
+
+  console.log('PASS isolated Worker/D1: server-owned combat start, hostile client-state rejection, Shield absorption, killing blow, and reward settlement');
 } catch (error) {
   console.error('Worker/D1 Shield integration FAILED:', error);
   console.error(logs);
