@@ -169,6 +169,8 @@ try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET player_shield = 1 WHERE id = 'permit-invalid-defeat-shield'"]);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_shield = 12 WHERE id = 'permit-turn-race'"]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET player_shield = 1.5 WHERE id IN ('permit-invalid-fractional-shield','permit-invalid-victory-fractional-shield')"]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
     cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
@@ -746,7 +748,17 @@ try {
   assert.equal(rejectedRace.battleState.turnCount, 1);
   assert.equal(rejectedRace.battleState.playerHp, acceptedRace.playerHp);
   assert.equal(rejectedRace.battleState.playerMana, acceptedRace.playerMana);
+  assert.equal(rejectedRace.battleState.playerShield, acceptedRace.playerShield);
   assert.equal(rejectedRace.battleState.enemyHp, acceptedRace.enemyHp);
+  assert.equal(acceptedRace.playerHp, 80, 'the single accepted retaliation is fully absorbed');
+  assert.equal(acceptedRace.playerShield, 2, 'only one concurrent action may consume the 12-point Shield');
+  assert.equal(acceptedRace.shieldAbsorbed, 10);
+  assert.equal(acceptedRace.retaliationDamage, 10);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = 'permit-turn-race' AND player_hp = 80 AND player_mana = 0
+      AND player_shield = 2 AND last_shield_absorbed = 10 AND last_retaliation_damage = 10
+      AND enemy_hp = 63 AND turn_count = 1 AND battle_status = 'active'`), 1,
+    'the persisted concurrent turn must deduct Shield and resolve retaliation exactly once');
   assertPersistedPermitState('permit-turn-race', acceptedRace);
 
   assert.equal((await complete('expired')).status, 409);
