@@ -23,6 +23,14 @@ const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewCont
   isAuthoritativeBattleActionState: (value: unknown, permitId: string) => boolean;
 };
 
+const controllerSource = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8');
+const controllerMethod = controllerSource.match(/private async useBattleAbility\(abilityId: string\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private setAbilityButtonsDisabled/);
+assert.ok(controllerMethod, 'AppController action handler must remain available for the recovery regression');
+const useBattleAbility = runInNewContext(
+  stripTypeScriptTypes(`async function useBattleAbility(abilityId: string): Promise<void> {${controllerMethod[1]}\n}\nuseBattleAbility;`, { mode: 'transform' }),
+  { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
+) as (this: any, abilityId: string) => Promise<void>;
+
 const validPermit = () => {
   const permitId = 'permit-1';
   return {

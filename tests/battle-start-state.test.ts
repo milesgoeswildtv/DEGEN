@@ -192,3 +192,54 @@ test('a recovered authoritative defeat snapshot ends the client battle exactly o
   assert.deepEqual(completions, ['defeat'], 'replaying the recovered defeat snapshot must not finish twice');
 });
 
+
+test('a recovered authoritative victory snapshot completes the client battle exactly once', () => {
+  const completions: Array<'victory' | 'defeat'> = [];
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, status => completions.push(status), startState());
+
+  const completedVictory: BattleActionResult = {
+    permitId: 'permit-1',
+    status: 'victory',
+    playerHp: 70,
+    playerMana: 0,
+    enemyHp: 0,
+    turnCount: 3,
+  };
+  engine.synchronizeAuthoritativeState(completedVictory);
+
+  assert.equal(engine.snapshot.status, 'victory');
+  assert.equal(engine.snapshot.playerHp, 70);
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.enemyHp, 0);
+  assert.equal(engine.snapshot.turnCount, 3);
+  assert.deepEqual(completions, ['victory']);
+
+  engine.synchronizeAuthoritativeState(completedVictory);
+  assert.deepEqual(completions, ['victory'], 'replaying the recovered terminal snapshot must not complete twice');
+});
+
+
+test('a recovered authoritative defeat snapshot ends the client battle exactly once', () => {
+  const completions: Array<'victory' | 'defeat'> = [];
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, status => completions.push(status), startState());
+
+  const completedDefeat: BattleActionResult = {
+    permitId: 'permit-1',
+    status: 'defeat',
+    playerHp: 0,
+    playerMana: 0,
+    enemyHp: 63,
+    turnCount: 1,
+  };
+  engine.synchronizeAuthoritativeState(completedDefeat);
+
+  assert.equal(engine.snapshot.status, 'defeat');
+  assert.equal(engine.snapshot.playerHp, 0);
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.enemyHp, 63);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.deepEqual(completions, ['defeat']);
+
+  engine.synchronizeAuthoritativeState(completedDefeat);
+  assert.deepEqual(completions, ['defeat'], 'replaying the recovered defeat snapshot must not finish twice');
+});

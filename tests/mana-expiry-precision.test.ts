@@ -14,11 +14,24 @@ test('Worker action expiry guards preserve millisecond precision while terminal 
   );
   assert.doesNotMatch(worker, /datetime\(expires_at\)\s*>\s*CURRENT_TIMESTAMP/);
 
+  const supportedReceiptGuard = worker.indexOf(
+    "if (receipt.event_key !== 'underpass' || receipt.cycle_event_key !== 'underpass'\n    || receipt.encounter_key !== TUNNEL_MAW.id)",
+  );
+  const awardedReceiptReplay = worker.indexOf("if (receipt.reward_state === 'awarded')");
+  assert.ok(
+    supportedReceiptGuard >= 0 && supportedReceiptGuard < awardedReceiptReplay,
+    'unsupported event/cycle/encounter receipts must fail closed before even an awarded receipt can replay',
+  );
+
   const claimStart = worker.indexOf('const claim = await env.DB.prepare');
   const claimEnd = worker.indexOf('RETURNING cycle_id, encounter_key, reward_clear_number', claimStart);
   assert.ok(claimStart >= 0 && claimEnd > claimStart, 'the authoritative reward claim statement must exist');
   const claim = worker.slice(claimStart, claimEnd);
-  assert.match(claim, /WHERE id = \? AND player_id = \? AND battle_status = 'victory'/);
+  assert.match(
+    claim,
+    /WHERE id = \? AND player_id = \? AND event_key = 'underpass'\s+AND encounter_key = \?\s+AND EXISTS \(SELECT 1 FROM world_event_cycles\s+WHERE id = battle_permits\.cycle_id AND event_key = 'underpass'\)\s+AND battle_status = 'victory'/,
+    'the claim lease must be scoped to the supported event, encounter, and matching cycle',
+  );
   assert.match(
     claim,
     /reward_state = 'pending' AND completed_at IS NULL/,
