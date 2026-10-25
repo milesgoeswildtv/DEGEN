@@ -91,6 +91,7 @@ try {
       ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-no-counter','integration-player','underpass','uncounted-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-duplicate-clear','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
@@ -1042,6 +1043,21 @@ try {
       'tunnel-maw', 'victory', 2, 10, 3),
       ('permit-awarded-no-counter:victory', 'integration-player',
       'tunnel-maw', 'victory', 2, 75, 30);
+    UPDATE battle_permits SET reward_state='awarded',
+      reward_clear_number=(SELECT reward_clear_number FROM battle_permits WHERE id='permit-a'),
+      reward_xp=(SELECT reward_xp FROM battle_permits WHERE id='permit-a'),
+      reward_currency=(SELECT reward_currency FROM battle_permits WHERE id='permit-a'),
+      reward_tier=(SELECT reward_tier FROM battle_permits WHERE id='permit-a'),
+      reward_level=(SELECT reward_level FROM battle_permits WHERE id='permit-a'),
+      reward_remaining_xp=(SELECT reward_remaining_xp FROM battle_permits WHERE id='permit-a'),
+      reward_claim_token='duplicate-clear-token', reward_claimed_at=CURRENT_TIMESTAMP,
+      completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-duplicate-clear';
+    INSERT INTO battle_history
+      (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+    SELECT 'permit-awarded-duplicate-clear:victory', player_id, encounter_key,
+      'victory', reward_level, reward_xp, reward_currency
+    FROM battle_permits WHERE id='permit-awarded-duplicate-clear';
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + corruptReceiptSeed]);
 
@@ -1066,6 +1082,26 @@ try {
     assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`),
       expectedHistoryCount, 'receipt validation must not create or duplicate history');
   }
+  // Two internally consistent awarded receipts cannot claim the same sequence slot.
+  // Seed a duplicate only after permit-a has completed normally, so both rows carry
+  // canonical reward fields and matching history; replay must still fail closed.
+  for (const permitId of ['permit-a', 'permit-awarded-duplicate-clear']) {
+    const duplicateReplay = await complete(permitId, 'integration-player', {
+      victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
+    });
+    assert.equal(duplicateReplay.status, 409, JSON.stringify(duplicateReplay.data));
+    assert.equal(duplicateReplay.data.error, 'Battle reward receipt is invalid.');
+    assert.equal('reward' in duplicateReplay.data, false);
+    assert.equal('player' in duplicateReplay.data, false);
+  }
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='integration-cycle'
+      AND reward_clear_number=(SELECT reward_clear_number FROM battle_permits WHERE id='permit-a')`), 2,
+    'the fixture must prove two receipts share the same clear number');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('permit-a:victory','permit-awarded-duplicate-clear:victory')`), 2,
+    'both matching history rows remain unchanged when duplicate receipt replay is rejected');
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM world_event_clears
     WHERE player_id='integration-player' AND event_key='underpass'
       AND cycle_id='integration-cycle' AND full_reward_clears=6`), 1,
