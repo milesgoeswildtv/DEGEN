@@ -512,7 +512,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     history_xp_awarded: number | null;
     history_currency_awarded: number | null;
   };
-  const receipt = await env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
+  const loadReceipt = async () => env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
       permit.reward_state, permit.reward_clear_number, permit.reward_xp, permit.reward_currency, permit.reward_tier,
       permit.reward_level, permit.reward_remaining_xp, permit.completed_at,
@@ -545,6 +545,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       ON history.id = (permit.id || ':victory') AND history.player_id = permit.player_id
     WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'`)
     .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
+  const receipt = await loadReceipt();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
   // An awarded receipt is replayable even if its old combat snapshot later becomes
   // corrupt, but its independent reward audit must still be internally consistent.
@@ -727,13 +728,16 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     // All award statements are one atomic D1 batch. A stale character
     // snapshot changes zero rows and the token gate blocks every later write.
     await env.DB.batch(writes);
-    const awarded = await env.DB.prepare(`SELECT cycle_id, encounter_key, reward_state,
-        reward_clear_number, reward_xp, reward_currency, reward_tier, reward_claim_token
-      FROM battle_permits WHERE id = ? AND player_id = ?`)
-      .bind(input.permitId, input.playerId)
-      .first<ReceiptRow & { reward_claim_token: string | null }>();
-    if (awarded?.reward_state === 'awarded') return respond(awarded);
-    if (awarded?.reward_state !== 'claiming' || awarded.reward_claim_token !== token) {
+    // Validate the complete persisted receipt before returning a reward on this
+    // request too; the idempotent retry path is not the only response path.
+    const settledReceipt = await loadReceipt();
+    if (settledReceipt?.reward_state === 'awarded') {
+      if (!isValidAwardedReceipt(settledReceipt)) {
+        return fail(request, env, 'Battle reward receipt is invalid.', 409);
+      }
+      return respond(settledReceipt);
+    }
+    if (settledReceipt?.reward_state !== 'claiming' || settledReceipt.reward_claim_token !== token) {
       await releaseClaim();
       return fail(request, env, 'Reward claim changed; retry.', 409);
     }

@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (audit the first reward response as well as replay)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued existing branch `automation/degen/awarded-receipt-audit-v01` and PR #61; no duplicate branch and no direct-main write.
+- **Task / files:** `worker/index.ts` now uses one owner-scoped full receipt query for both the initial completion and the post-award read. Before returning a reward from the first successful settlement response, the Worker revalidates the persisted reward tier/amounts, event-cycle clear counter, unique clear sequence, claim markers, and matching victory-history audit. Previously, the idempotent retry path had this guard but the immediate post-settlement path read a reduced row and returned it without re-running the same audit.
+- **Regression test:** `tests/mana-expiry-precision.test.ts` asserts both successful-settlement and replay response paths use the same full audit. No combat values, client trust, D1 schema/migrations, or deployment config changed.
+- **PUSHED / PR #61:** code/test commit and exact-head CI are pending in this continuity snapshot; previous head `d079773d50203822e36654c3ad3665609fa7d95d` passed CI run [40186765273](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40186765273), including 86/86 deterministic tests, local Worker/D1 reward concurrency/recovery, Underpass cycle/rollover races, atomic defeat history, build, Chromium mobile vertical slice, and Worker dry-run.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative and persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / reward idempotency:** main retains action compare-and-swap, terminal snapshot recovery, victory-only settlement, token-scoped transient-D1 recovery, full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, and permit validity through event closure until permit expiry. This change makes the first success response enforce the same receipt audit as replay.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order is base schema → tracked migrations → Worker. No migration is required; no production D1 operation or Worker deployment occurred.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge/deploy Shield or housing work ahead of auth reconciliation.
+- **Best next task:** verify exact-head CI for this receipt-response guard; then continue the normal review path for PR #61 and keep Shield/housing behind the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-25 (duplicate awarded clear-number audit)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (confirmed from repository compare; no direct-main writes).

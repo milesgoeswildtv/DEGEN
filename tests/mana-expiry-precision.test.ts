@@ -122,3 +122,29 @@ test('invalid and offset-normalized expiries fail closed at the exact boundary',
     db.close();
   }
 });
+
+test('newly settled rewards and idempotent replays share the full persisted receipt audit', () => {
+  const loaderStart = worker.indexOf('const loadReceipt = async () => env.DB.prepare');
+  const initialRead = worker.indexOf('const receipt = await loadReceipt();', loaderStart);
+  const replayStart = worker.indexOf("if (receipt.reward_state === 'awarded')", initialRead);
+  const settlementRead = worker.indexOf('const settledReceipt = await loadReceipt();', replayStart);
+  assert.ok(loaderStart >= 0 && initialRead > loaderStart && replayStart > initialRead,
+    'completion must load one complete owner-scoped receipt before deciding whether to claim or replay');
+  assert.ok(settlementRead > replayStart,
+    'successful settlement must re-read the complete persisted receipt before returning reward data');
+
+  const replayBlock = worker.slice(replayStart, worker.indexOf('const token =', replayStart));
+  assert.match(replayBlock,
+    /if \(!isValidAwardedReceipt\(receipt\)\)[\s\S]*return fail\(request, env, 'Battle reward receipt is invalid\.', 409\)[\s\S]*return respond\(receipt\)/,
+    'the replay path must validate reward, clear-counter, uniqueness, claim, and history audit first');
+
+  const settlementBlock = worker.slice(
+    settlementRead,
+    worker.indexOf("if (settledReceipt?.reward_state !== 'claiming'", settlementRead),
+  );
+  assert.match(settlementBlock,
+    /if \(settledReceipt\?\.reward_state === 'awarded'\)[\s\S]*if \(!isValidAwardedReceipt\(settledReceipt\)\)[\s\S]*return fail\(request, env, 'Battle reward receipt is invalid\.', 409\)[\s\S]*return respond\(settledReceipt\)/,
+    'the first settlement response must apply the same full persisted receipt audit before returning rewards');
+  assert.equal((worker.match(/return respond\(/g) ?? []).length, 2,
+    'the only reward response paths are the audited replay and audited settlement branches');
+});
