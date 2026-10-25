@@ -136,7 +136,7 @@ test('a recovered authoritative defeat snapshot ends the client battle exactly o
     status: 'defeat',
     playerHp: 0,
     playerMana: 0,
-    enemyHp: 72,
+    enemyHp: 63,
     turnCount: 1,
   };
   engine.synchronizeAuthoritativeState(completedDefeat);
