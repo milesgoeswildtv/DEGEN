@@ -580,6 +580,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       || !isSafeIntegerBetween(rewardXp, 0, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(rewardCurrency, 0, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(rewardLevel, 1, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(xpNeededForLevel(rewardLevel), 1, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(remainingXp, 0, Number.MAX_SAFE_INTEGER)
       || remainingXp >= xpNeededForLevel(rewardLevel)
       || (row.reward_tier !== 'full' && row.reward_tier !== 'reduced')
