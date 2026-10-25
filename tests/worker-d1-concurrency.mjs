@@ -20,10 +20,16 @@ function cli(args) {
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
 }
 async function complete(permitId, playerId = 'integration-player', extraFields = {}) {
-  const r = await fetch(base + '/api/battle/complete', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...extraFields, playerId, permitId }),
-  });
+  let r;
+  try {
+    r = await fetch(base + '/api/battle/complete', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...extraFields, playerId, permitId }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    throw new Error(`Battle completion request ${permitId} failed or timed out: ${String(error)}`);
+  }
   assert.equal(r.headers.get('cache-control'), 'no-store',
     '/api/battle/complete success and error responses must not be cached');
   return { status: r.status, data: await r.json() };
