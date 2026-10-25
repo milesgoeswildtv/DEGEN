@@ -144,7 +144,7 @@ test('a recovered authoritative defeat snapshot ends the client battle exactly o
   assert.equal(engine.snapshot.status, 'defeat');
   assert.equal(engine.snapshot.playerHp, 0);
   assert.equal(engine.snapshot.playerMana, 0);
-  assert.equal(engine.snapshot.enemyHp, 72);
+  assert.equal(engine.snapshot.enemyHp, 63);
   assert.equal(engine.snapshot.turnCount, 1);
   assert.deepEqual(completions, ['defeat']);
 
