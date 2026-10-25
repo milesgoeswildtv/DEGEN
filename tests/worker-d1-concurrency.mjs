@@ -1036,10 +1036,10 @@ try {
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + corruptReceiptSeed]);
 
-  for (const [permitId, expectedHistoryCount] of [
-    ['permit-corrupt-awarded-reward', 1],
-    ['permit-awarded-without-history', 0],
-    ['permit-awarded-clear-ahead', 1],
+  for (const [permitId, expectedHistoryCount, expectedClearNumber] of [
+    ['permit-corrupt-awarded-reward', 1, 1],
+    ['permit-awarded-without-history', 0, 1],
+    ['permit-awarded-clear-ahead', 1, 999999],
   ]) {
     const rejectedReceipt = await complete(permitId, 'integration-player', {
       victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
@@ -1051,7 +1051,7 @@ try {
     assert.equal('player' in rejectedReceipt.data, false,
       'invalid awarded receipts must not return a misleading progression snapshot');
     assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='${permitId}'
-      AND reward_state='awarded' AND completed_at IS NOT NULL AND reward_clear_number=1`), 1,
+      AND reward_state='awarded' AND completed_at IS NOT NULL AND reward_clear_number=${expectedClearNumber}`), 1,
       'receipt validation must not rewrite or release an already-awarded permit');
     assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`),
       expectedHistoryCount, 'receipt validation must not create or duplicate history');
