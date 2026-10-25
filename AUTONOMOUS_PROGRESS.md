@@ -1,5 +1,20 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (recover terminal battle outcomes after permit expiry)
+
+- **Authoritative main SHA:** `31130b2a3db37275e409e9b772cd7da2e071731a` (PR #54 was merged by squash through the normal PR path; this run does not write directly to `main`).
+- **PUSHED / PR #55 OPEN:** `automation/degen/expired-victory-recovery-v01`, code/test head `e8b984138bc7d04328e14b71c00e8108a04f5bcf`. PR: https://github.com/milesgoeswildtv/DEGEN/pull/55. This progress update creates a newer documentation-only head; its exact-head CI must be checked separately.
+- **Task / files:** `worker/index.ts` now recovers owner-scoped, valid pending/claiming victories and pending defeats after permit expiry when the original terminal action was already persisted. A valid victory can finish reward settlement after expiry because the action mutation itself was expiry-guarded; expired active permits remain unable to take turns. `tests/worker-battle-action-conflict.test.ts` covers deterministic terminal snapshot recovery; `tests/battle-start-state.test.ts` verifies recovered defeat is finalized once; `tests/worker-d1-concurrency.mjs` exercises real local Worker/D1 flows for victory and defeat, expiry, no second action, late victory settlement, exactly-once receipt, and no defeat rewards.
+- **QA status:** exact-head CI is pending at this entry's write time. Do not mark `npm test`, local Worker/D1 integration, `npm run build`, Chromium mobile vertical slice, or `npm run check:worker` green until the current branch head's workflow run completes. No local shell run, production D1 operation, Worker deployment, or live HTTP smoke is claimed.
+- **Mana:** COMPLETE / MERGED on main, unchanged: Degen-only `maxMana` / bespoke `manaCost`, authoritative and persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost at zero, killing-blow/defeat behavior, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / reward idempotency:** main includes action CAS and required turn preconditions, persisted-state invariants, owner/expiry checks, server-resolved victory-only rewards, idempotent receipts, transient-D1 recovery, reward tiers and shared level-up math, concurrent action/completion tests, atomic defeat history, cycle reservation/rollover, and issued permits valid across event closure until their own expiry. PR #55 only restores a persisted terminal snapshot and allows settlement of a valid server-resolved victory; it does not reopen a permit or grant defeat rewards.
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. PR #55 requires no migration and performs no remote D1 operation.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge Shield/housing work ahead of it.
+- **Best next task:** verify exact-head CI for PR #55, including the real Worker/D1 and Chromium vertical-slice jobs; then continue battle recovery coverage without changing reward values or bypassing platform-auth release requirements.
+
+---
+
+
 ## Latest run — 2026-10-24 (recover completed victory after action replay)
 
 - **Authoritative main SHA:** `ec31cf61d918d846ed0c9f183377337f7459edb9` (PR #52's conflict-snapshot refresh is merged on main; this run does not write to main).
