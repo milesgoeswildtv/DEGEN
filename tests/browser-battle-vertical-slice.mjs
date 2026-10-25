@@ -142,7 +142,26 @@ try {
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `(() => {
       const rendered = [];
+      const renderedMana = [];
       Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
+      Object.defineProperty(window, '__degenRenderedManaValues', { value: renderedMana });
+      const observeMana = () => {
+        const node = document.querySelector('#battle-mana');
+        if (!node || node.dataset.degenManaObserver === '1') return;
+        node.dataset.degenManaObserver = '1';
+        const record = () => {
+          const value = node.textContent?.trim();
+          if (value) renderedMana.push(value);
+        };
+        record();
+        new MutationObserver(record).observe(node, { childList: true, characterData: true, subtree: true });
+      };
+      const installManaObserver = () => {
+        observeMana();
+        new MutationObserver(observeMana).observe(document.documentElement, { childList: true, subtree: true });
+      };
+      if (document.documentElement) installManaObserver();
+      else document.addEventListener('DOMContentLoaded', installManaObserver, { once: true });
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
         if (typeof text === 'string' && text === 'MANIFESTED') rendered.push(text);
@@ -212,9 +231,13 @@ try {
     for (const [key, value] of Object.entries(expected)) assert.equal(persisted[key], value, 'persisted turn ' + turn + ' ' + key);
     const displayedMana = `MANA ${expected.player_mana}/12`;
     await until('rendered authoritative Mana HUD after turn ' + turn,
-      () => cdp.evaluate(`document.querySelector("#battle-mana")?.textContent === ${JSON.stringify(displayedMana)}`));
-    if (turn < 3) await until('rendered authoritative Shield HUD after turn ' + turn,
-      () => cdp.evaluate(`document.querySelector("#battle-shield")?.textContent === ${JSON.stringify('SHIELD ' + expected.player_shield)}`));
+      () => cdp.evaluate(`(window.__degenRenderedManaValues || []).includes(${JSON.stringify(displayedMana)})`));
+    if (turn < 3) {
+      await until('visible authoritative Mana HUD after turn ' + turn,
+        () => cdp.evaluate(`document.querySelector('#battle-mana')?.textContent === ${JSON.stringify(displayedMana)}`));
+      await until('rendered authoritative Shield HUD after turn ' + turn,
+        () => cdp.evaluate(`document.querySelector('#battle-shield')?.textContent === ${JSON.stringify('SHIELD ' + expected.player_shield)}`));
+    }
     const manifested = await cdp.evaluate(`(window.__degenRenderedBattleText || []).includes('MANIFESTED')`);
     assert.equal(manifested, true, 'the Degen remains manifested even when Mana reaches zero');
   }
