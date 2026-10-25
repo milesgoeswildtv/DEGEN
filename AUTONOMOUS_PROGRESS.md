@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (bound persisted retaliation audit)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued existing branch `automation/degen/shield-foundation-v03` for [PR #20](https://github.com/milesgoeswildtv/DEGEN/pull/20), which remains **DRAFT / UNMERGED**. No direct-main write.
+- **Task / files:** `worker/index.ts` now rejects persisted `last_retaliation_damage` values above `TUNNEL_MAW.damage`, matching the deterministic resolver and client snapshot parser. `tests/worker-shield-recovery.test.ts` adds a regression proving an expired terminal defeat with impossible retaliation audit returns HTTP 409 without echoing corrupt state. No reward values, Degen kit, monster resources, schema, migration, or deployment configuration changed.
+- **QA:** the previous branch head `605c6515cc5b0b34797edc715f6dcc74e8245543` passed exact-head CI run [40176258361](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40176258361), including 106/106 deterministic tests, Worker/D1 reward/recovery/cycle/rollover/defeat/Shield integration, production build, Chromium mobile vertical slice, and Worker dry-run. The new code/test head created by this entry still requires its own exact-head CI; do not call it green until that run completes. No local shell run, production D1 operation, Worker deployment, or live HTTP smoke is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative start/action state, persisted `player_mana`, no-mutation rejection, exact deduction, zero-cost use at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / reward idempotency:** main retains action CAS and turn preconditions, persisted combat invariants, owner/expiry/terminal guards, supported event/cycle/encounter receipt validation, token-scoped transient-D1 recovery, idempotent receipts, full/reduced reward tiers, shared level-up math, concurrent action/completion tests, atomic defeat history, Underpass cycle reservation/rollover, and issued-permit validity through event closure until expiry. This change only tightens corrupt Shield audit rejection.
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; base schema → tracked migrations → Worker order is unchanged. Shield migration `0008_degen_shield.sql` remains PR-only and must not merge/deploy before auth migration `0007_player_sessions.sql` and the approved platform-auth release gate.
+- **Miles blocker:** PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge/deploy Shield ahead of it.
+- **Best next task:** reconcile PR #21 with current main and verify the auth release prerequisites; keep PR #20 draft until that gate is explicitly cleared.
+
+---
+
 ## Latest run — 2026-10-25 (Shield snapshot QA and release-gate review)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued the existing `automation/degen/shield-foundation-v03` branch for PR [#20](https://github.com/milesgoeswildtv/DEGEN/pull/20). PR remains **DRAFT / UNMERGED**; no direct-main write.

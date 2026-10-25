@@ -78,7 +78,7 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
     || !isSafeIntegerBetween(playerMana, 0, TEST_DEGEN.maxMana)
     || !isSafeIntegerBetween(playerShield, 0, Number.MAX_SAFE_INTEGER)
     || !isSafeIntegerBetween(lastShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
-    || !isSafeIntegerBetween(lastRetaliationDamage, 0, Number.MAX_SAFE_INTEGER)
+    || !isSafeIntegerBetween(lastRetaliationDamage, 0, TUNNEL_MAW.damage)
     || lastShieldAbsorbed > lastRetaliationDamage
     || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
