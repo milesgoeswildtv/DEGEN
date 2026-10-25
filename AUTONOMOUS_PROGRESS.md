@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (fail-closed unsupported battle completion)
+
+- **Authoritative main SHA at run start:** `1b2338d456f2f858077cf122442aabe3fad62e56`. No direct-main write.
+- **PUSHED / PR #57 OPEN (DRAFT):** [fix(worker): reject unsupported battle reward receipts](https://github.com/milesgoeswildtv/DEGEN/pull/57). Branch `automation/degen/unsupported-encounter-completion-guard-v01`; code/test head before this continuity update: `d26e6940810d973fdf4bab646c544f5b02301ab8`.
+- **Task / files:** `worker/index.ts` now validates the persisted permit's `event_key` and `encounter_key` before returning even an already-awarded receipt or acquiring a reward claim. The atomic claim UPDATE independently requires the supported Underpass event and Tunnel Maw encounter. This prevents any unsupported or future encounter from inheriting today's Underpass reward table solely because a stored row says `victory`.
+- **Regression coverage:** `tests/worker-d1-concurrency.mjs` seeds a valid-looking victory for an unsupported encounter and a valid encounter under an unsupported event. Both must return HTTP 409 while preserving terminal state, leaving `reward_state='pending'`, keeping `reward_clear_number` and `completed_at` null, creating no battle-history receipt, and leaving progression unchanged.
+- **Exact-head QA:** CI for PR #57 is pending; this run did not execute local `npm test`, `npm run build`, or `npm run check:worker`. Do not call the branch green until its current PR head completes all workflow steps. No remote D1 operation, production Worker deployment, migration, or live HTTP smoke occurred.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative start/action state, persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, killing-blow/defeat behavior, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / reward idempotency:** existing main behavior remains unchanged: action CAS/turn preconditions, persisted-state invariants, owner/expiry checks, victory-only completion, token-scoped transient-D1 recovery, idempotent receipts, full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, Underpass cycle reservation/rollover, and issued-permit validity across event closure until permit expiry. PR #57 adds a fail-closed supported-event/encounter boundary only; reward values and claim semantics are unchanged for supported permits.
+- **D1 / deployment assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. PR #57 needs no migration and does not alter DB configuration.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge Shield/housing work ahead of it.
+- **Best next task:** verify exact-head CI for PR #57 and reconcile the current progress header against the actual main SHA; then continue a narrow Worker/D1 authority regression without changing reward values or bypassing the platform-auth release gate.
+
 ## Latest run — 2026-10-25 (fail-closed malformed terminal recovery)
 
 - **Authoritative main SHA:** `65edafd914ddc463294f32450c94a2f2c73f5258`; PR #55 is merged and the working branch remains based directly on main.
