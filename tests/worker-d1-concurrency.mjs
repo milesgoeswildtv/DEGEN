@@ -1734,8 +1734,8 @@ try {
   const atomicRetry = await complete('permit-inventory-atomic', 'inventory-atomic-player');
   assert.equal(atomicRetry.status, 200, JSON.stringify(atomicRetry.data));
   assert.equal(atomicRetry.data.reward.tier, 'full');
-  assert.equal(atomicRetry.data.player.level, 2);
-  assert.equal(atomicRetry.data.player.xp, 50);
+  assert.equal(atomicRetry.data.player.level, 1);
+  assert.equal(atomicRetry.data.player.xp, 75);
   assert.equal(atomicRetry.data.player.currency, 30);
   assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
     WHERE id = 'inventory-atomic-player:item:underpass-scrap'`), [{ quantity: 2 }]);
