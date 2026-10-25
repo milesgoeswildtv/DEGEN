@@ -81,6 +81,8 @@ try {
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-unsupported-encounter','integration-player','underpass','integration-cycle','unapproved-monster',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-unsupported-event','integration-player','unapproved-event','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
@@ -169,6 +171,26 @@ try {
     'forged completion must not write victory or defeat history');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-mana-zero' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
     'forged completion must not reserve or claim rewards');
+
+  // Victory state is not enough by itself: completion may only settle the
+  // Worker-supported Underpass event and Tunnel Maw encounter.
+  for (const permitId of ['permit-unsupported-encounter', 'permit-unsupported-event']) {
+    const unsupported = await complete(permitId, 'integration-player', {
+      victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
+    });
+    assert.equal(unsupported.status, 409, JSON.stringify(unsupported.data));
+    assert.equal(unsupported.data.error, 'Unsupported battle permit.');
+    assertPersistedPermitState(permitId, {
+      status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
+    });
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='${permitId}'
+      AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL`), 1,
+      'unsupported victory must remain unclaimed and reserve no clear');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`), 0,
+      'unsupported victory must not create a reward receipt');
+  }
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM characters WHERE player_id='integration-player' AND level=1 AND xp=0 AND currency=0 AND last_reward_claim_token IS NULL"), 1,
+    'unsupported encounter/event claims must not mutate progression');
 
   const invalidManaResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
