@@ -1288,10 +1288,10 @@ try {
   assert.equal(boundaryReplay.data.player.level, 2);
   assert.equal(boundaryReplay.data.player.xp, 174);
   assert.equal(boundaryReplay.data.player.currency, 30);
-  assert.equal(countRows(`SELECT reward_remaining_xp FROM battle_permits
-    WHERE id='permit-awarded-xp-residual-boundary' AND reward_state='awarded'`), 174,
+  assert.deepEqual(queryRows(`SELECT reward_remaining_xp FROM battle_permits
+    WHERE id='permit-awarded-xp-residual-boundary' AND reward_state='awarded'`), [{ reward_remaining_xp: 174 }],
     'replaying the boundary receipt must not rewrite the original remainder');
-  assert.equal(countRows(`SELECT full_reward_clears FROM world_event_clears
+  assert.equal(countRows(`SELECT full_reward_clears AS n FROM world_event_clears
     WHERE player_id='xp-boundary-player' AND event_key='underpass'
       AND cycle_id='xp-residual-boundary-cycle'`), 1,
     'replaying a valid boundary receipt must not increment the clear counter');
