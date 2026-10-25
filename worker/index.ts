@@ -527,7 +527,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   };
   type ValidatedReceiptRow = BattlePermitStateRow & ReceiptRow;
   const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana, player_shield,
-      enemy_hp, battle_status, turn_count, reward_state, reward_clear_number,
+      last_shield_absorbed, last_retaliation_damage, enemy_hp, battle_status, turn_count, reward_state, reward_clear_number,
       reward_xp, reward_currency, reward_tier
     FROM battle_permits WHERE id = ? AND player_id = ? AND battle_status = 'victory'`)
     .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
