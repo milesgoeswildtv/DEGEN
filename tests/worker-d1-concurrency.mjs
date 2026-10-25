@@ -1534,8 +1534,8 @@ try {
     WHERE player_id='invalid-progression-player' AND event_key='underpass'
       AND cycle_id='invalid-progression-cycle'`), [{ full_reward_clears: 1 }]);
 
-  await envDbExec(`UPDATE characters SET level=2, xp=174, currency=0
-    WHERE player_id='invalid-progression-player'`);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE characters SET level=2, xp=174, currency=0 WHERE player_id='invalid-progression-player'"]);
   const repairedRetry = await complete('permit-invalid-progression', 'invalid-progression-player');
   assert.equal(repairedRetry.status, 200, JSON.stringify(repairedRetry.data));
   assert.equal(repairedRetry.data.player.level, 3);
