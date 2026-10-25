@@ -34,15 +34,15 @@ const actionRequest = (permitId: string, expectedTurnCount = 0): Request => new 
 
 const battleState = (row: {
   permitId: string; battle_status: string; player_hp: number; player_mana: number;
-  player_shield: number; enemy_hp: number; turn_count: number;
+  player_shield: number; last_shield_absorbed: number; last_retaliation_damage: number; enemy_hp: number; turn_count: number;
 }) => ({
   permitId: row.permitId,
   status: row.battle_status,
   playerHp: row.player_hp,
   playerMana: row.player_mana,
   playerShield: row.player_shield,
-  shieldAbsorbed: 0,
-  retaliationDamage: 0,
+  shieldAbsorbed: row.last_shield_absorbed,
+  retaliationDamage: row.last_retaliation_damage,
   enemyHp: row.enemy_hp,
   turnCount: row.turn_count,
 });
@@ -54,6 +54,8 @@ test('replayed action after reward settlement returns the persisted Shield victo
     player_hp: 120,
     player_mana: 8,
     player_shield: 5,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
@@ -93,6 +95,7 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
       row: {
         cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
         player_hp: 120, player_mana: 8, player_shield: 5,
+        last_shield_absorbed: 0, last_retaliation_damage: 0,
         enemy_hp: 0, battle_status: 'victory', turn_count: 1,
         completed_at: null, reward_state: 'pending',
       },
@@ -103,6 +106,7 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
       row: {
         cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
         player_hp: 0, player_mana: 0, player_shield: 0,
+        last_shield_absorbed: 2, last_retaliation_damage: 10,
         enemy_hp: TUNNEL_MAW.maxHp - 29, battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
       },
@@ -148,6 +152,8 @@ test('expired terminal recovery rejects corrupt persisted Shield instead of echo
     player_hp: 120,
     player_mana: 8,
     player_shield: 1.5,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 1,
@@ -185,6 +191,8 @@ test('completed permits for unsupported encounters are not returned as this batt
     player_hp: 120,
     player_mana: 8,
     player_shield: 5,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
