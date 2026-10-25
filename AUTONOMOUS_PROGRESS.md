@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (wrong-owner reward completion has no side effects)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (re-read at run start). No direct-main write.
+- **PUSHED / PR #61 OPEN:** `automation/degen/awarded-receipt-audit-v01`; implementation/test commit `d04595691157a8e7e7485322241f20c8b27cf975`. Exact-head CI for this new test commit is pending; prior branch head `9e0c653237bae772a0ed6381d6aa7789acc804d7` passed full CI run [40192675251](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40192675251).
+- **Task / file changed:** `tests/worker-d1-concurrency.mjs` now exercises `/api/battle/complete` with a valid server-resolved victory permit but the wrong player ID, while submitting forged victory, Mana/HP/turn, XP, currency, and item fields. It asserts HTTP 409, no reward/progression payload disclosure, unchanged authoritative victory state, no claim/clear-number reservation, no victory-history write, no character progression mutation, and no Underpass clear-counter row. The legitimate owner still completes the same permit afterward in the existing concurrent reward test.
+- **QA status:** code/test commit is pushed to PR #61; the exact-head CI for that commit is pending. Do not infer green from the preceding run. No local shell execution, production D1 operation, migration, Worker deployment, or live HTTP test is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / reward idempotency:** PR #61 retains full persisted-receipt validation, canonical reward-tier validation, safe and unique clear-sequence checks, owner-scoped receipt lookup, and retry-safe claim/recovery. This adds negative-path integration coverage only; reward values, combat math, and D1 schema are unchanged.
+- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. No migration is required for this test-only change.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit Miles-approved recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass this gate; keep Shield/housing work gated.
+- **Best next task:** verify exact-head CI for this owner-scope regression; then continue review of PR #61's receipt audit without changing reward values or bypassing the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-25 (reward-clear counter safe-integer guard)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (verified at run start; no direct-main write).
