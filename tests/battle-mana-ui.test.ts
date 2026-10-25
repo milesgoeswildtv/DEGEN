@@ -44,6 +44,7 @@ const snapshot = (playerMana: number): BattleSnapshot => ({
   playerMaxHp: TEST_DEGEN.maxHp,
   playerMana,
   playerMaxMana: TEST_DEGEN.maxMana,
+  playerShield: 0,
   turnCount: 0,
   enemyName: TUNNEL_MAW.name,
   enemyLevel: TUNNEL_MAW.level,
@@ -52,31 +53,40 @@ const snapshot = (playerMana: number): BattleSnapshot => ({
   log: [],
 });
 
-test('ability controls visibly disclose zero and paid Mana costs', () => {
-  const markup = battleView(player, TEST_DEGEN);
+test('ability controls visibly disclose Mana costs and bespoke Shield gain', () => {
+  const shieldDegen = { ...TEST_DEGEN, abilities: TEST_DEGEN.abilities.map((ability) =>
+    ability.id === 'slash' ? { ...ability, shieldGain: 3 } : ability) };
+  const markup = battleView(player, shieldDegen);
   assert.match(markup, /data-mana-cost="0"/);
   assert.match(markup, /NO MANA/);
   assert.match(markup, /data-mana-cost="4"/);
   assert.match(markup, /4 MANA/);
+  assert.match(markup, /SHIELD \+3/);
+  assert.match(markup, /id="battle-mana" class="battle-resource">MANA 12\/12/);
 });
 
 test('ability controls disable only unaffordable abilities and preserve free actions at zero Mana', () => {
   const log = { innerHTML: '', append: () => undefined };
+  const mana = { textContent: '' };
+  const shield = { textContent: '' };
   const buttons = [
     { dataset: { manaCost: '0' }, disabled: false },
     { dataset: { manaCost: '4' }, disabled: false },
   ];
   viewContext.document = {
-    querySelector: () => log,
+    querySelector: (selector: string) => selector === '#battle-mana' ? mana : selector === '#battle-shield' ? shield : log,
     querySelectorAll: () => buttons,
   };
 
   try {
     updateBattleDom(snapshot(0));
+    assert.equal(mana.textContent, 'MANA 0/12', 'the DOM HUD shows authoritative zero Mana');
+    assert.equal(shield.textContent, 'SHIELD 0');
     assert.equal(buttons[0].disabled, false, 'zero-cost action remains usable at zero Mana');
     assert.equal(buttons[1].disabled, true, 'paid action is unavailable when unaffordable');
 
     updateBattleDom(snapshot(4));
+    assert.equal(mana.textContent, 'MANA 4/12', 'the DOM HUD follows the latest snapshot');
     assert.equal(buttons[0].disabled, false);
     assert.equal(buttons[1].disabled, false, 'paid action becomes available once affordable');
   } finally {

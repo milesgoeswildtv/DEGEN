@@ -30,6 +30,9 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
     encounter_key: TUNNEL_MAW.id,
     player_hp: 80,
     player_mana: 0,
+    player_shield: 0,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
     enemy_hp: 50,
     battle_status: 'active',
     turn_count: 0,
@@ -37,6 +40,8 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
   const latestSnapshot = {
     ...staleSnapshot,
     player_hp: 70,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 10,
     enemy_hp: 63,
     turn_count: 1,
   };
@@ -74,6 +79,7 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
     error: string;
     battleState?: {
       permitId: string; status: string; playerHp: number; playerMana: number;
+      playerShield: number; shieldAbsorbed: number; retaliationDamage: number;
       enemyHp: number; turnCount: number;
     };
   };
@@ -85,6 +91,9 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
     status: 'active',
     playerHp: 70,
     playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: 63,
     turnCount: 1,
   }, 'a rejected request must not resynchronize the client to a pre-race snapshot');
@@ -97,6 +106,9 @@ test('replayed action after reward settlement returns the persisted victory snap
     encounter_key: TUNNEL_MAW.id,
     player_hp: 70,
     player_mana: 0,
+    player_shield: 0,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
@@ -135,6 +147,7 @@ test('replayed action after reward settlement returns the persisted victory snap
     error: string;
     battleState?: {
       permitId: string; status: string; playerHp: number; playerMana: number;
+      playerShield: number; shieldAbsorbed: number; retaliationDamage: number;
       enemyHp: number; turnCount: number;
     };
   };
@@ -147,6 +160,9 @@ test('replayed action after reward settlement returns the persisted victory snap
     status: 'victory',
     playerHp: 70,
     playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: 0,
     turnCount: 3,
   });
@@ -195,27 +211,31 @@ test('expired terminal retries recover only valid pending victory or defeat snap
     {
       state: {
         cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
-        player_hp: 70, player_mana: 0, enemy_hp: 0,
+        player_hp: 70, player_mana: 0, player_shield: 5,
+        last_shield_absorbed: 0, last_retaliation_damage: 0, enemy_hp: 0,
         battle_status: 'victory', turn_count: 3,
         completed_at: null, reward_state: 'pending',
       },
       expectedError: 'Battle victory is awaiting reward completion.',
       expectedState: {
         permitId: 'permit-1', status: 'victory',
-        playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
+        playerHp: 70, playerMana: 0, playerShield: 5, shieldAbsorbed: 0,
+        retaliationDamage: 0, enemyHp: 0, turnCount: 3,
       },
     },
     {
       state: {
         cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
-        player_hp: 0, player_mana: 0, enemy_hp: 63,
+        player_hp: 0, player_mana: 0, player_shield: 0,
+        last_shield_absorbed: 2, last_retaliation_damage: 10, enemy_hp: 63,
         battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
       },
       expectedError: 'Battle is already defeated.',
       expectedState: {
         permitId: 'permit-1', status: 'defeat',
-        playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
+        playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 2,
+        retaliationDamage: 10, enemyHp: 63, turnCount: 1,
       },
     },
   ];
@@ -280,6 +300,9 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
       encounter_key: TUNNEL_MAW.id,
       player_hp: scenario.playerHp,
       player_mana: null,
+      player_shield: 0,
+      last_shield_absorbed: 0,
+      last_retaliation_damage: 0,
       enemy_hp: scenario.enemyHp,
       battle_status: scenario.status,
       turn_count: 3,
@@ -321,6 +344,7 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
       error: string;
       battleState?: {
         permitId: string; status: string; playerHp: number; playerMana: number;
+        playerShield: number; shieldAbsorbed: number; retaliationDamage: number;
         enemyHp: number; turnCount: number;
       };
     };
@@ -332,6 +356,9 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
       status: scenario.status,
       playerHp: scenario.playerHp,
       playerMana: TEST_DEGEN.maxMana,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 0,
       enemyHp: scenario.enemyHp,
       turnCount: 3,
     }, 'legacy Mana is projected only to render a terminal snapshot; no action is accepted');
@@ -355,6 +382,9 @@ test('malformed pre-Mana terminal snapshots fail closed without display fallback
       encounter_key: TUNNEL_MAW.id,
       player_hp: scenario.playerHp,
       player_mana: null,
+      player_shield: 0,
+      last_shield_absorbed: 0,
+      last_retaliation_damage: 0,
       enemy_hp: scenario.enemyHp,
       battle_status: scenario.status,
       turn_count: scenario.turnCount,
@@ -405,6 +435,9 @@ test('replayed action after reward settlement projects display Mana for a legacy
     encounter_key: TUNNEL_MAW.id,
     player_hp: 70,
     player_mana: null,
+    player_shield: 0,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
@@ -454,6 +487,9 @@ test('replayed action after reward settlement projects display Mana for a legacy
     status: 'victory',
     playerHp: 70,
     playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: 0,
     turnCount: 3,
   }, 'a completed pre-Mana victory needs a valid terminal display snapshot but remains non-actionable');

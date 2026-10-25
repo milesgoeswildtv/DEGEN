@@ -17,6 +17,8 @@ const ui = runInNewContext(
   updateBattleDom: (snapshot: {
     status: 'active' | 'victory' | 'defeat';
     playerMana: number;
+    playerMaxMana: number;
+    playerShield: number;
     log: string[];
   }) => void;
 };
@@ -28,16 +30,19 @@ test('battle controls expose each bespoke ability Mana cost', () => {
   assert.match(html, /NO MANA/);
   assert.match(html, /data-ability="crack" data-mana-cost="4"/);
   assert.match(html, /4 MANA/);
+  assert.match(html, /id="battle-mana" class="battle-resource">MANA 12\/12/);
 });
 
 test('battle controls keep zero-cost abilities enabled and gate paid abilities by current Mana', () => {
   const log = { innerHTML: '', append: (_node: unknown) => undefined };
+  const mana = { textContent: '' };
+  const shield = { textContent: '' };
   const buttons = [
     { dataset: { manaCost: '0' }, disabled: true },
     { dataset: { manaCost: '4' }, disabled: false },
   ];
   const fakeDocument = {
-    querySelector: (_selector: string) => log,
+    querySelector: (selector: string) => selector === '#battle-mana' ? mana : selector === '#battle-shield' ? shield : log,
     querySelectorAll: (_selector: string) => buttons,
   };
 
@@ -48,15 +53,21 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
       playerMana: number;
+      playerMaxMana: number;
+      playerShield: number;
       log: string[];
     }) => void;
   };
 
-  boundUi.updateBattleDom({ status: 'active', playerMana: 0, log: [] });
+  boundUi.updateBattleDom({ status: 'active', playerMana: 0, playerMaxMana: 12, playerShield: 0, log: [] });
+  assert.equal(mana.textContent, 'MANA 0/12');
+  assert.equal(shield.textContent, 'SHIELD 0');
   assert.equal(buttons[0]?.disabled, false);
   assert.equal(buttons[1]?.disabled, true);
 
-  boundUi.updateBattleDom({ status: 'active', playerMana: 4, log: [] });
+  boundUi.updateBattleDom({ status: 'active', playerMana: 4, playerMaxMana: 12, playerShield: 3, log: [] });
+  assert.equal(mana.textContent, 'MANA 4/12');
+  assert.equal(shield.textContent, 'SHIELD 3');
   assert.equal(buttons[0]?.disabled, false);
   assert.equal(buttons[1]?.disabled, false);
 });

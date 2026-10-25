@@ -16,7 +16,8 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 .topbar { border-bottom: 1px solid #27272f; position: sticky; top: 0; z-index: 10; }
 .bottom-nav { border-top: 1px solid #27272f; position: sticky; bottom: 0; z-index: 10; justify-content: center; }
 .brand, .bottom-nav button, .panel-heading button { color: #f4f4f5; background: transparent; border: 0; cursor: pointer; font-weight: 900; letter-spacing: .12em; }
-.player-chip { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; color: #a1a1aa; font-size: 13px; }
+.player-chip { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; min-width: 0; max-width: calc(100vw - 120px); color: #a1a1aa; font-size: 13px; }
+.player-chip span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .player-chip strong { color: #f4f4f5; }
 .screen { width: min(1100px, 100%); margin: 0 auto; padding: 22px 16px 36px; flex: 1; }
 .hero-block { padding: 28px 0 18px; }
@@ -47,8 +48,11 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 .primary-action { margin-top: 12px; border: 1px solid #f4f4f5; background: #f4f4f5; color: #08080b; }
 .secondary-action { border: 1px solid #3f3f49; background: transparent; color: #d4d4d8; }
 .battle-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr); gap: 16px; align-items: start; }
+.battle-arena { display: grid; gap: 12px; min-width: 0; }
 .battle-canvas { min-height: 320px; border: 1px solid #2c2c35; border-radius: 14px; overflow: hidden; background: #0a0a0e; }
 .battle-controls { display: grid; gap: 12px; }
+.battle-resources { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.battle-resource { border: 1px solid #34343e; border-radius: 999px; padding: 5px 10px; color: #d4d4d8; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
 .ability-grid { display: grid; gap: 8px; }
 .ability-grid button { min-height: 72px; text-align: left; border: 1px solid #34343e; border-radius: 10px; background: #15151c; color: #f4f4f5; padding: 12px; cursor: pointer; display: grid; gap: 4px; }
 .ability-grid button span { color: #a1a1aa; font-size: 13px; }

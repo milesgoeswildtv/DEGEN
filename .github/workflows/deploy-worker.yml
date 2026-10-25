@@ -26,6 +26,12 @@ jobs:
           node-version: 22
       - name: Install
         run: npm install
+      - name: Verify migration release order
+        run: |
+          if [ -f db/migrations/0008_degen_shield.sql ] && [ ! -f db/migrations/0007_player_sessions.sql ]; then
+            echo "Refusing Worker deployment: Shield migration 0008 requires player-session migration 0007 first."
+            exit 1
+          fi
       - name: Apply D1 schema
         run: npm run db:apply
         env:

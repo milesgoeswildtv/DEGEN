@@ -138,15 +138,33 @@ try {
   };
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
-  // Observe the actual Phaser text canvas so the browser test proves the HUD follows
-  // Worker-confirmed Mana and keeps the Degen manifested at zero, not just D1 state.
+  // Observe Phaser manifestation and DOM resource pills so presentation is verified in the running app.
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `(() => {
       const rendered = [];
+      const renderedMana = [];
       Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
+      Object.defineProperty(window, '__degenRenderedManaValues', { value: renderedMana });
+      const observeMana = () => {
+        const node = document.querySelector('#battle-mana');
+        if (!node || node.dataset.degenManaObserver === '1') return;
+        node.dataset.degenManaObserver = '1';
+        const record = () => {
+          const value = node.textContent?.trim();
+          if (value) renderedMana.push(value);
+        };
+        record();
+        new MutationObserver(record).observe(node, { childList: true, characterData: true, subtree: true });
+      };
+      const installManaObserver = () => {
+        observeMana();
+        new MutationObserver(observeMana).observe(document.documentElement, { childList: true, subtree: true });
+      };
+      if (document.documentElement) installManaObserver();
+      else document.addEventListener('DOMContentLoaded', installManaObserver, { once: true });
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
-        if (typeof text === 'string' && (text.startsWith('MANA ') || text === 'MANIFESTED')) rendered.push(text);
+        if (typeof text === 'string' && text === 'MANIFESTED') rendered.push(text);
         return original.call(this, text, ...args);
       };
     })();`,
@@ -174,12 +192,13 @@ try {
   await until('Worker-authorized Underpass entry', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
   await tap("[data-start-battle]");
   await until('Manifested Degen abilities', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
-  await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
-  const activeRows = sql("SELECT id, player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1");
+  await until('rendered initial Mana HUD', () => cdp.evaluate('document.querySelector("#battle-mana")?.textContent === "MANA 12/12" && window.__degenRenderedBattleText?.includes("MANIFESTED")'));
+  const activeRows = sql("SELECT id, player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1");
   assert.equal(activeRows.length, 1, 'Worker battle start should issue one persisted active permit');
   const permitId = activeRows[0].id;
   assert.equal(activeRows[0].player_hp, 120);
   assert.equal(activeRows[0].player_mana, 12);
+  assert.equal(activeRows[0].player_shield, 0);
   assert.equal(activeRows[0].enemy_hp, 92);
   assert.equal(activeRows[0].battle_status, 'active');
   assert.equal(activeRows[0].turn_count, 0);
@@ -188,40 +207,48 @@ try {
   assert.equal(await cdp.evaluate('document.querySelector("[data-ability=slash] small")?.textContent'), 'NO MANA');
   await assertFitsMobile('Battle');
   await assertFitsCompact('Battle');
+  await until('rendered initial Shield HUD', () => cdp.evaluate('document.querySelector("#battle-shield")?.textContent === "SHIELD 0"'));
+  // Seed player-owned temporary protection in this isolated D1 fixture so the real browser
+  // path exercises a positive Shield value without inventing a production Degen ability.
+  command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_shield = 12 WHERE id = '" + permitId + "'"]);
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
     await tap("[data-ability=crack]");
-    if (turn < 3) await until('Authoritative action ' + turn, () => cdp.evaluate('(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + turn));
+    // The D1 turn-count CAS below is the authoritative completion signal; combat logs also include Shield events.
     const expected = {
-      player_hp: turn === 3 ? 100 : 120 - turn * 10,
+      player_hp: turn === 1 ? 120 : 112,
       player_mana: 12 - turn * 4,
+      player_shield: turn === 1 ? 2 : 0,
       enemy_hp: Math.max(0, 92 - turn * 35),
       battle_status: turn === 3 ? 'victory' : 'active',
       turn_count: turn,
     };
     const persisted = await until('D1 state for authoritative turn ' + turn, () => {
-      const row = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
+      const row = sql("SELECT player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
       return row?.turn_count === turn ? row : null;
     });
     for (const [key, value] of Object.entries(expected)) assert.equal(persisted[key], value, 'persisted turn ' + turn + ' ' + key);
     const displayedMana = `MANA ${expected.player_mana}/12`;
     await until('rendered authoritative Mana HUD after turn ' + turn,
-      () => cdp.evaluate(`window.__degenRenderedBattleText?.includes(${JSON.stringify(displayedMana)})`));
-    const hudOrder = await cdp.evaluate(`(() => {
-      const rendered = window.__degenRenderedBattleText || [];
-      return { mana: rendered.lastIndexOf(${JSON.stringify(displayedMana)}), manifested: rendered.lastIndexOf('MANIFESTED') };
-    })()`);
-    assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
-    assert.ok(hudOrder.manifested > hudOrder.mana,
-      'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
+      () => cdp.evaluate(`(window.__degenRenderedManaValues || []).includes(${JSON.stringify(displayedMana)})`));
+    if (turn < 3) {
+      await until('visible authoritative Mana HUD after turn ' + turn,
+        () => cdp.evaluate(`document.querySelector('#battle-mana')?.textContent === ${JSON.stringify(displayedMana)}`));
+      await until('rendered authoritative Shield HUD after turn ' + turn,
+        () => cdp.evaluate(`document.querySelector('#battle-shield')?.textContent === ${JSON.stringify('SHIELD ' + expected.player_shield)}`));
+    }
+    const manifested = await cdp.evaluate(`(window.__degenRenderedBattleText || []).includes('MANIFESTED')`);
+    assert.equal(manifested, true, 'the Degen remains manifested even when Mana reaches zero');
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
-  const finalPermit = sql("SELECT battle_status, reward_state, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
+  const finalPermit = sql("SELECT battle_status, reward_state, player_mana, player_shield, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
   assert.equal(finalPermit?.battle_status, 'victory');
   assert.equal(finalPermit?.reward_state, 'awarded');
   assert.equal(finalPermit?.player_mana, 0);
+  assert.equal(finalPermit?.player_shield, 0);
   assert.equal(finalPermit?.turn_count, 3);
   assert.ok(finalPermit?.completed_at, 'Worker should persist completion after awarding the victory receipt');
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy');

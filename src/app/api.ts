@@ -12,6 +12,10 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     && state.turnCount === 0
     && isBoundedSafeInteger(state.playerHp, 1, TEST_DEGEN.maxHp)
     && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
+    && isBoundedSafeInteger(state.playerShield, 0, Number.MAX_SAFE_INTEGER)
+    && state.playerShield === 0
+    && state.shieldAbsorbed === 0
+    && state.retaliationDamage === 0
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
 };
 
@@ -20,18 +24,25 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   const state = value as Record<string, unknown>;
   const playerHp = state.playerHp;
   const playerMana = state.playerMana;
+  const playerShield = state.playerShield;
+  const shieldAbsorbed = state.shieldAbsorbed;
+  const retaliationDamage = state.retaliationDamage;
   const enemyHp = state.enemyHp;
   const turnCount = state.turnCount;
   if (state.permitId !== permitId
     || (state.status !== 'active' && state.status !== 'victory' && state.status !== 'defeat')
     || !isBoundedSafeInteger(playerHp, 0, TEST_DEGEN.maxHp)
     || !isBoundedSafeInteger(playerMana, 0, TEST_DEGEN.maxMana)
+    || !isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(retaliationDamage, 0, TUNNEL_MAW.damage)
+    || shieldAbsorbed > retaliationDamage
     || !isBoundedSafeInteger(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   if (state.status === 'active') return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
-  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0;
-  return turnCount > 0 && playerHp === 0 && enemyHp > 0;
+  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0 && retaliationDamage === 0;
+  return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0;
 };
 
 export class GameApiError extends Error {
@@ -96,6 +107,9 @@ export class GameApi {
     if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
       throw new Error('Malformed authoritative battle action response.');
     }
+    const impossibleRetaliation = (result.status === 'active' && result.retaliationDamage < 1)
+      || (result.status === 'defeat' && (result.playerShield !== 0 || result.retaliationDamage <= result.shieldAbsorbed));
+    if (impossibleRetaliation) throw new Error('Malformed authoritative battle action response.');
     return result;
   }
 

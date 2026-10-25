@@ -51,6 +51,7 @@ function assertPersistedPermitState(permitId, state) {
   const query = `SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
     AND completed_at IS NULL AND battle_status = '${state.status}'
     AND player_hp = ${state.playerHp} AND player_mana = ${state.playerMana}
+    AND player_shield = ${state.playerShield ?? 0}
     AND enemy_hp = ${state.enemyHp} AND turn_count = ${state.turnCount}`;
   assert.equal(countRows(query), 1, `persisted Worker state must match the authoritative snapshot for ${permitId}`);
 }
@@ -125,6 +126,9 @@ try {
       ('permit-invalid-victory-enemy','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,1,1),
       ('permit-invalid-victory-turn','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,0),
       ('permit-invalid-defeat-player','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'defeat',1,0,92,1),
+      ('permit-invalid-defeat-shield','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'defeat',0,0,92,1),
+      ('permit-invalid-fractional-shield','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
+      ('permit-invalid-victory-fractional-shield','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
@@ -162,6 +166,12 @@ try {
       VALUES('permit-counter-lag-peer:victory','integration-player','tunnel-maw','victory',2,75,30);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_shield = 1 WHERE id = 'permit-invalid-defeat-shield'"]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_shield = 12 WHERE id = 'permit-turn-race'"]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET player_shield = 1.5 WHERE id IN ('permit-invalid-fractional-shield','permit-invalid-victory-fractional-shield')"]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
     cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -316,6 +326,9 @@ try {
     status: 'active',
     playerHp: 80,
     playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: 92,
     turnCount: 0,
   }, 'rejection must return the unchanged server-authoritative snapshot');
@@ -366,7 +379,8 @@ try {
   assert.equal(duplicateAction.error, 'Stale battle turn.');
   assert.deepEqual(duplicateAction.battleState, {
     permitId: 'permit-insufficient-mana', status: 'active',
-    playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+    playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-insufficient-mana', {
     status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
@@ -449,6 +463,20 @@ try {
       `${permitId} must retain its untouched pending claim`);
   }
   await assertInvalidActionState('permit-invalid-defeat-player', { status: 'defeat', playerHp: 1, playerMana: 0, enemyHp: 92, turnCount: 1 });
+  await assertInvalidActionState('permit-invalid-defeat-shield', { status: 'defeat', playerHp: 0, playerMana: 0, playerShield: 1, enemyHp: 92, turnCount: 1 });
+  await assertInvalidActionState('permit-invalid-fractional-shield', {
+    status: 'active', playerHp: 80, playerMana: 12, playerShield: 1.5, enemyHp: 92, turnCount: 0,
+  });
+  const invalidShieldVictory = await complete('permit-invalid-victory-fractional-shield');
+  assert.equal(invalidShieldVictory.status, 409, 'fractional persisted Shield must not award a victory');
+  assert.equal(invalidShieldVictory.data.error, 'Battle state is invalid.');
+  assertPersistedPermitState('permit-invalid-victory-fractional-shield', {
+    status: 'victory', playerHp: 70, playerMana: 0, playerShield: 1.5, enemyHp: 0, turnCount: 3,
+  });
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = 'permit-invalid-victory-fractional-shield' AND reward_state = 'pending'
+      AND reward_clear_number IS NULL AND completed_at IS NULL`), 1,
+    'invalid Shield victory must retain its untouched pending reward state');
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM characters
     WHERE player_id = 'integration-player' AND xp = 0 AND currency = 0`), 1,
     'invalid victories must not grant XP or currency');
@@ -582,6 +610,9 @@ try {
     status: firstAction.status,
     playerHp: firstAction.playerHp,
     playerMana: firstAction.playerMana,
+    playerShield: firstAction.playerShield,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: firstAction.enemyHp,
     turnCount: firstAction.turnCount,
   });
@@ -623,7 +654,7 @@ try {
     'unaffordable-action state and error responses must not be cached');
   assert.deepEqual(unaffordable.battleState, {
     permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
-    enemyHp: 50, turnCount: 0,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 50, turnCount: 0,
   });
   assertPersistedPermitState('permit-mana-zero', unaffordable.battleState);
 
@@ -717,7 +748,17 @@ try {
   assert.equal(rejectedRace.battleState.turnCount, 1);
   assert.equal(rejectedRace.battleState.playerHp, acceptedRace.playerHp);
   assert.equal(rejectedRace.battleState.playerMana, acceptedRace.playerMana);
+  assert.equal(rejectedRace.battleState.playerShield, acceptedRace.playerShield);
   assert.equal(rejectedRace.battleState.enemyHp, acceptedRace.enemyHp);
+  assert.equal(acceptedRace.playerHp, 80, 'the single accepted retaliation is fully absorbed');
+  assert.equal(acceptedRace.playerShield, 2, 'only one concurrent action may consume the 12-point Shield');
+  assert.equal(acceptedRace.shieldAbsorbed, 10);
+  assert.equal(acceptedRace.retaliationDamage, 10);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = 'permit-turn-race' AND player_hp = 80 AND player_mana = 0
+      AND player_shield = 2 AND last_shield_absorbed = 10 AND last_retaliation_damage = 10
+      AND enemy_hp = 63 AND turn_count = 1 AND battle_status = 'active'`), 1,
+    'the persisted concurrent turn must deduct Shield and resolve retaliation exactly once');
   assertPersistedPermitState('permit-turn-race', acceptedRace);
 
   assert.equal((await complete('expired')).status, 409);
@@ -808,7 +849,8 @@ try {
   assert.equal(completedAction.error, 'Battle permit is already completed.');
   assert.deepEqual(completedAction.battleState, {
     permitId: 'permit-b', status: 'victory', playerHp: 70,
-    playerMana: 0, enemyHp: 0, turnCount: 3,
+    playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    enemyHp: 0, turnCount: 3,
   });
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-b' AND completed_at IS NOT NULL AND reward_state='awarded' AND battle_status='victory' AND turn_count=3"), 1,
     'retrying an action after settlement must not change the completed permit or receipt');
@@ -1059,7 +1101,8 @@ try {
   assert.equal(expiredVictoryActionReplay.error, 'Battle victory is awaiting reward completion.');
   assert.deepEqual(expiredVictoryActionReplay.battleState, {
     permitId: 'permit-expired-victory', status: 'victory',
-    playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
+    playerHp: 80, playerMana: 0, playerShield: 0,
+    shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 0, turnCount: 1,
   }, 'the retry may recover a terminal snapshot but cannot apply another action');
   assertPersistedPermitState('permit-expired-victory', {
     status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
@@ -1113,7 +1156,8 @@ try {
   assert.equal(expiredDefeatReplay.error, 'Battle is already defeated.');
   assert.deepEqual(expiredDefeatReplay.battleState, {
     permitId: 'permit-expired-defeat', status: 'defeat',
-    playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
+    playerHp: 0, playerMana: 0, playerShield: 0,
+    shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-expired-defeat', {
     status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,

@@ -134,15 +134,20 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): 
 
 export const battleView = (player: PlayerState, degen: DegenDefinition): string => appShell(player, `
   <section class="battle-layout">
-    <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
+    <div class="battle-arena">
+      <div class="battle-resources" role="status" aria-label="Degen combat resources" aria-live="polite">
+        <span id="battle-mana" class="battle-resource">MANA ${degen.maxMana}/${degen.maxMana}</span>
+        <span id="battle-shield" class="battle-resource">SHIELD 0</span>
+      </div>
+      <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
+    </div>
     <div class="battle-controls">
-      <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
       <div class="ability-grid">
         ${degen.abilities.map((ability) => `
           <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
-            <small>${ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}</small>
+            <small>${ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}${ability.shieldGain ? ` · SHIELD +${ability.shieldGain}` : ''}</small>
           </button>
         `).join('')}
       </div>
@@ -157,6 +162,12 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   if (!log) return;
 
   log.innerHTML = snapshot.log.map((entry) => `<div>${escapeHtml(entry)}</div>`).join('');
+
+  const mana = document.querySelector<HTMLElement>('#battle-mana');
+  if (mana) mana.textContent = `MANA ${snapshot.playerMana}/${snapshot.playerMaxMana}`;
+
+  const shield = document.querySelector<HTMLElement>('#battle-shield');
+  if (shield) shield.textContent = `SHIELD ${snapshot.playerShield}`;
 
   document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
     const manaCost = Number(button.dataset.manaCost ?? 0);
