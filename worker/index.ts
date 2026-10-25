@@ -903,17 +903,17 @@ export default {
 
     try {
       if (request.method === 'GET' && url.pathname === '/api/health') return json(request, env, { ok: true, service: 'degen-api' });
-      if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return handleBootstrap(request, env);
-      if (request.method === 'PUT' && url.pathname === '/api/player/housing') return handleHousing(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return await handleBootstrap(request, env);
+      if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(request, env);
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
         const playerId = url.searchParams.get('playerId');
         if (!playerId) return fail(request, env, 'playerId is required');
         const snapshot = await worldSnapshot(env.DB, playerId);
         return json(request, env, snapshot);
       }
-      if (request.method === 'POST' && url.pathname === '/api/battle/start') return handleStartBattle(request, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/action') return handleBattleAction(request, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/complete') return handleCompleteBattle(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/start') return await handleStartBattle(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/action') return await handleBattleAction(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/complete') return await handleCompleteBattle(request, env);
       return fail(request, env, 'Not found', 404);
     } catch (error) {
       if (error instanceof InventoryIntegrityError) return fail(request, env, error.message, 409);
