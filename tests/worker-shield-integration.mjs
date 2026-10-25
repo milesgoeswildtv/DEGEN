@@ -74,6 +74,9 @@ try {
     ), (
       'shield-killing-blow','shield-player','underpass','shield-cycle','tunnel-maw',
       datetime('now','+20 minutes'),'active',120,12,5,1,0
+    ), (
+      'shield-defeat','shield-player','underpass','shield-cycle','tunnel-maw',
+      datetime('now','+20 minutes'),'active',1,0,2,92,0
     );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
@@ -177,7 +180,31 @@ try {
   assert.equal(settled.reward_state, 'awarded', 'the server-owned victory is marked awarded after settlement');
   assert.equal(typeof settled.completed_at, 'string', 'settlement records completion time');
 
-  console.log('PASS isolated Worker/D1: server-owned combat start, hostile client-state rejection, Shield absorption, killing blow, and reward settlement');
+  // Defeat after partial Shield absorption must exhaust Shield, record zero rewards, and remain unclaimable.
+  const defeat = await post('/api/battle/action', {
+    playerId: 'shield-player', permitId: 'shield-defeat', abilityId: 'slash', expectedTurnCount: 0,
+  });
+  assert.equal(defeat.status, 200);
+  assert.deepEqual([
+    defeat.data.status, defeat.data.playerHp, defeat.data.playerMana, defeat.data.playerShield,
+    defeat.data.shieldAbsorbed, defeat.data.retaliationDamage, defeat.data.enemyHp, defeat.data.turnCount,
+  ], ['defeat', 0, 0, 0, 2, 10, 63, 1],
+  'Shield absorbs first, only remaining retaliation damages HP, and defeat leaves no Shield');
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-defeat'"),
+    [{ player_hp: 0, player_shield: 0, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'defeat' }],
+    'persisted defeat state must exhaust Shield atomically with the terminal turn');
+  assert.deepEqual(sql("SELECT result,xp_awarded,currency_awarded FROM battle_history WHERE id='shield-defeat:defeat'"),
+    [{ result: 'defeat', xp_awarded: 0, currency_awarded: 0 }],
+    'defeat history records no victory rewards');
+  const defeatedCompletion = await post('/api/battle/complete', {
+    playerId: 'shield-player', permitId: 'shield-defeat',
+  });
+  assert.equal(defeatedCompletion.status, 409, 'a defeated permit cannot claim victory rewards');
+  assert.deepEqual(sql("SELECT reward_state,completed_at FROM battle_permits WHERE id='shield-defeat'"),
+    [{ reward_state: 'pending', completed_at: null }],
+    'a defeated permit remains unawarded');
+
+  console.log('PASS isolated Worker/D1: server-owned combat start, hostile client-state rejection, Shield absorption, killing blow, defeat, and reward settlement');
 } catch (error) {
   console.error('Worker/D1 Shield integration FAILED:', error);
   console.error(logs);
