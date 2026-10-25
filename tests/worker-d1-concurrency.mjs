@@ -950,7 +950,7 @@ try {
     playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-expired-defeat', {
-    status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 72, turnCount: 1,
+    status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
   });
   assert.equal((await complete('permit-expired-defeat')).status, 409,
     'a recovered defeat must never be eligible for victory rewards');
