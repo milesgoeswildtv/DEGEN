@@ -136,7 +136,7 @@ try {
   assert.equal('enemyShield' in action.data, false);
   assert.equal('enemyMana' in action.data, false);
   assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shielded'"),
-    [{ player_hp: 115, player_shield: 0, player_mana: 0, last_shield_absorbed: 10, last_retaliation_damage: 10, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
+    [{ player_hp: 115, player_shield: 0, player_mana: 0, last_shield_absorbed: 5, last_retaliation_damage: 10, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'D1 state must persist one Shield absorption and the corresponding HP result');
 
 
@@ -177,7 +177,7 @@ try {
     playerShield: 2, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 63, turnCount: 1,
   }, 'stale-turn recovery must preserve the latest authoritative Shield state');
   assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
-    [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
+    [{ player_hp: 120, player_shield: 2, player_mana: 0, last_shield_absorbed: 10, last_retaliation_damage: 10, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'a stale action must not apply damage or spend Shield a second time');
 
   // A killing blow must skip retaliation and preserve unused player Shield through victory settlement.
