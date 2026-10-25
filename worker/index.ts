@@ -68,8 +68,13 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
   const enemyHp = state.enemy_hp;
   const turnCount = state.turn_count;
 
+  // Pre-Mana terminal permits can legitimately retain NULL: Mana did not exist
+  // when their outcome was resolved. Active permits must always carry persisted Mana.
+  const hasValidMana = isSafeIntegerBetween(playerMana, 0, TEST_DEGEN.maxMana)
+    || (playerMana === null && state.battle_status !== 'active');
+
   if (!isSafeIntegerBetween(playerHp, 0, TEST_DEGEN.maxHp)
-    || !isSafeIntegerBetween(playerMana, 0, TEST_DEGEN.maxMana)
+    || !hasValidMana
     || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
@@ -85,6 +90,11 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
       return false;
   }
 };
+
+// A missing Mana value is projected only for validated terminal legacy snapshots.
+// It is never persisted and can never authorize another action.
+const playerManaForSnapshot = (state: BattlePermitStateRow): number =>
+  state.player_mana ?? TEST_DEGEN.maxMana;
 
 async function ensurePlayer(db: D1Database, playerId: string, displayName: string): Promise<void> {
   await db.batch([
@@ -311,7 +321,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           permitId: input.permitId,
           status: completed.battle_status,
           playerHp: completed.player_hp,
-          playerMana: completed.player_mana,
+          playerMana: playerManaForSnapshot(completed),
           enemyHp: completed.enemy_hp,
           turnCount: completed.turn_count,
         },
@@ -348,7 +358,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           permitId: input.permitId,
           status: terminal.battle_status,
           playerHp: terminal.player_hp,
-          playerMana: terminal.player_mana,
+          playerMana: playerManaForSnapshot(terminal),
           enemyHp: terminal.enemy_hp,
           turnCount: terminal.turn_count,
         },
@@ -357,7 +367,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
   }
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
-  if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
+  if (permit.player_hp === null || permit.enemy_hp === null
+    || (permit.player_mana === null && permit.battle_status === 'active')) {
     return fail(request, env, 'Battle state is unavailable.', 409);
   }
   if (!isValidBattlePermitState(permit)) {
@@ -390,7 +401,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         permitId: input.permitId,
         status: latest.battle_status,
         playerHp: latest.player_hp,
-        playerMana: latest.player_mana,
+        playerMana: playerManaForSnapshot(latest),
         enemyHp: latest.enemy_hp,
         turnCount: latest.turn_count,
       },
@@ -465,7 +476,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           permitId: input.permitId,
           status: latest.battle_status,
           playerHp: latest.player_hp,
-          playerMana: latest.player_mana,
+          playerMana: playerManaForSnapshot(latest),
           enemyHp: latest.enemy_hp,
           turnCount: latest.turn_count,
         },
