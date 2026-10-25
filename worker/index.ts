@@ -495,12 +495,18 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     reward_tier: 'full' | 'reduced' | null;
   };
   type ValidatedReceiptRow = BattlePermitStateRow & ReceiptRow;
-  const receipt = await env.DB.prepare(`SELECT cycle_id, encounter_key, player_hp, player_mana,
+  const receipt = await env.DB.prepare(`SELECT event_key, cycle_id, encounter_key, player_hp, player_mana,
       enemy_hp, battle_status, turn_count, reward_state, reward_clear_number,
       reward_xp, reward_currency, reward_tier
     FROM battle_permits WHERE id = ? AND player_id = ? AND battle_status = 'victory'`)
-    .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
+    .bind(input.permitId, input.playerId).first<ValidatedReceiptRow & { event_key: string }>();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
+  // Completion is intentionally limited to the encounter/event the Worker can
+  // resolve today. A forged or future unsupported permit must never inherit
+  // the Underpass reward table just because its stored status says "victory".
+  if (receipt.event_key !== 'underpass' || receipt.encounter_key !== TUNNEL_MAW.id) {
+    return fail(request, env, 'Unsupported battle permit.', 409);
+  }
 
   const respond = async (row: ReceiptRow) => {
     const player = await loadPlayer(env.DB, input.playerId!);
@@ -537,11 +543,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     // corrupt permits cannot reach this claim path.
     const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
+    WHERE id = ? AND player_id = ? AND event_key = 'underpass'
+      AND encounter_key = ? AND battle_status = 'victory' AND (
       (reward_state = 'pending' AND completed_at IS NULL)
       OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
-    .bind(token, input.permitId, input.playerId)
+    .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
     if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 
