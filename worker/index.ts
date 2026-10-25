@@ -2,7 +2,7 @@
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
-import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } from '../src/game/progression';
+import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear, xpNeededForLevel } from '../src/game/progression';
 
 interface Env {
   DB: D1Database;
@@ -581,6 +581,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       || !isSafeIntegerBetween(rewardCurrency, 0, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(rewardLevel, 1, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(remainingXp, 0, Number.MAX_SAFE_INTEGER)
+      || remainingXp >= xpNeededForLevel(rewardLevel)
       || (row.reward_tier !== 'full' && row.reward_tier !== 'reduced')
       || typeof row.completed_at !== 'string' || row.completed_at.trim().length === 0
       || typeof row.reward_claim_token !== 'string' || row.reward_claim_token.trim().length === 0
