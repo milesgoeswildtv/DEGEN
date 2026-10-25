@@ -44,6 +44,30 @@ test('Worker action expiry guards preserve millisecond precision while terminal 
   );
 });
 
+test('awarded receipt audit rejects duplicate clear sequence numbers', () => {
+  const receiptStart = worker.indexOf('const receipt = await env.DB.prepare');
+  const receiptEnd = worker.indexOf(
+    "WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'",
+    receiptStart,
+  );
+  assert.ok(receiptStart >= 0 && receiptEnd > receiptStart, 'the authoritative receipt query must exist');
+  const receiptQuery = worker.slice(receiptStart, receiptEnd);
+  assert.match(
+    receiptQuery,
+    /SELECT COUNT\\(\\*\\) FROM battle_permits AS other[\\s\\S]*other\\.player_id = permit\\.player_id[\\s\\S]*other\\.event_key = permit\\.event_key[\\s\\S]*other\\.cycle_id = permit\\.cycle_id[\\s\\S]*other\\.reward_clear_number = permit\\.reward_clear_number[\\s\\S]*AS duplicate_clear_count/,
+    'receipt validation must count any other permit claiming the same per-cycle sequence number',
+  );
+
+  const auditStart = worker.indexOf('const isValidAwardedReceipt');
+  const auditEnd = worker.indexOf('const canonicalReward =', auditStart);
+  assert.ok(auditStart >= 0 && auditEnd > auditStart, 'awarded receipt audit must exist');
+  assert.match(
+    worker.slice(auditStart, auditEnd),
+    /isSafeIntegerBetween\\(row\\.duplicate_clear_count, 0, 0\\)/,
+    'any duplicate clear-number claim must fail closed before reward replay',
+  );
+});
+
 test('permit validity is strict at every millisecond expiry boundary', () => {
   const db = new DatabaseSync(':memory:');
   try {
