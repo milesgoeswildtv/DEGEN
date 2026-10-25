@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (duplicate awarded clear-number audit)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (confirmed from repository compare; no direct-main writes).
+- **PUSHED / PR #61 OPEN:** `automation/degen/awarded-receipt-audit-v01`. Code/test head before this continuity update: `9b550f1404757de52450e20aeb64cb43844d59a6`. Exact-head CI for the new guard is pending; the prior head `c8bf55c438f2af801a2fcc6b7c9f794cded12608` passed run `40184888593`, but that does not prove the new guard.
+- **Task / files:** `worker/index.ts` adds a fail-closed audit check that an awarded receipt's per-player/event/cycle `reward_clear_number` is not claimed by any other permit. `tests/worker-d1-concurrency.mjs` creates two otherwise internally consistent awarded receipts with matching history but a duplicate clear number and requires both replays to return 409 with no reward/player payload and no mutation. `tests/mana-expiry-precision.test.ts` locks the SQL and audit predicate.
+- **Expected invariant:** clear numbers are unique sequence slots within one player's event cycle. Canonical reward values, matching victory-history rows, and a sufficiently high cycle counter are not enough if another permit claims the same slot. No schema or migration change.
+- **QA status:** code/test commits are pushed to PR #61; exact-head CI for this new change is pending. Do not claim the new regression green until the current branch head's full CI completes. No local shell execution, production D1 access, Worker deployment, or live HTTP verification is claimed.
+- **Mana:** COMPLETE / MERGED on main and unchanged: Degen-only `maxMana` / bespoke `manaCost`, authoritative start/action state, persisted `player_mana`, unaffordable rejection without mutation, exact deduction, zero-cost use at zero, terminal behavior, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no Mana-triggered reversion.
+- **Battle authority / rewards:** action CAS and turn preconditions, persisted-state validation, supported event/cycle/encounter guards, terminal recovery, token-scoped idempotent claims, transient-failure recovery, exactly-once progression/history, canonical full/reduced rewards, and shared level-up math remain in place. This task changes only awarded-receipt audit validation.
+- **D1 / deploy assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order is schema → tracked migrations → Worker. No migration or remote D1 operation is part of this task.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions. Do not bypass that gate or merge/deploy Shield/housing ahead of it.
+- **Best next task:** verify exact-head CI for the duplicate-clear regression; if green, refresh PR #61's QA summary and leave it review-ready, then inspect the next uncovered reward-recovery invariant without bypassing the auth gate.
+
 ## Latest run — 2026-10-25 (fail-closed unsupported battle completion)
 
 - **Authoritative main SHA at run start:** `1b2338d456f2f858077cf122442aabe3fad62e56`. No direct-main write. The top entry supersedes stale pre-merge SHA/PR status in the historical notes below; main already contains the client terminal-recovery regression now documented in the older #56 section.
