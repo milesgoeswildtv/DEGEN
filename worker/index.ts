@@ -295,7 +295,33 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     .bind(input.permitId, input.playerId)
     .first<BattlePermitStateRow>();
 
-  if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+  if (!permit) {
+    // A second tab may retry an action after the first tab already settled the
+    // victory receipt. Return that persisted terminal snapshot so the client
+    // can recover and replay the idempotent completion response instead of
+    // remaining stuck on an active local battle.
+    const completed = await env.DB.prepare(`SELECT
+        cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
+      FROM battle_permits
+      WHERE id = ? AND player_id = ? AND completed_at IS NOT NULL
+        AND reward_state = 'awarded' AND battle_status = 'victory'`)
+      .bind(input.permitId, input.playerId)
+      .first<BattlePermitStateRow>();
+    if (completed && completed.encounter_key === TUNNEL_MAW.id && isValidBattlePermitState(completed)) {
+      return json(request, env, {
+        error: 'Battle permit is already completed.',
+        battleState: {
+          permitId: input.permitId,
+          status: completed.battle_status,
+          playerHp: completed.player_hp,
+          playerMana: completed.player_mana,
+          enemyHp: completed.enemy_hp,
+          turnCount: completed.turn_count,
+        },
+      }, 409);
+    }
+    return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+  }
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
   if (permit.player_hp === null || permit.player_mana === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
