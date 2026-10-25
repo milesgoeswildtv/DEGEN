@@ -47,11 +47,17 @@ test('Worker action expiry guards preserve millisecond precision while terminal 
 test('awarded receipt audit rejects duplicate clear sequence numbers', () => {
   const receiptStart = worker.indexOf('const loadReceipt = async () => env.DB.prepare');
   const receiptEnd = worker.indexOf(
-    "WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'",
+    "WHERE permit.id = ? AND permit.player_id = ?`)",
     receiptStart,
   );
   assert.ok(receiptStart >= 0 && receiptEnd > receiptStart, 'the authoritative receipt query must exist');
   const receiptQuery = worker.slice(receiptStart, receiptEnd);
+  assert.doesNotMatch(receiptQuery, /WHERE permit\.id = \? AND permit\.player_id = \? AND permit\.battle_status = 'victory'/,
+    'the owner-scoped receipt lookup must not discard an already-awarded receipt when combat status is later corrupt');
+  const unawardedVictoryGuard = worker.indexOf("if (receipt.battle_status !== 'victory')", receiptEnd);
+  const awardedReplayGuard = worker.indexOf("if (receipt.reward_state === 'awarded')", receiptEnd);
+  assert.ok(awardedReplayGuard > receiptEnd && unawardedVictoryGuard > awardedReplayGuard,
+    'unawarded permits must still require a server-resolved victory after the audited awarded-replay path');
   assert.match(
     receiptQuery,
     /SELECT COUNT\(\*\) FROM battle_permits AS other[\s\S]*other\.player_id = permit\.player_id[\s\S]*other\.event_key = permit\.event_key[\s\S]*other\.cycle_id = permit\.cycle_id[\s\S]*other\.reward_clear_number = permit\.reward_clear_number[\s\S]*AS duplicate_clear_count/,
