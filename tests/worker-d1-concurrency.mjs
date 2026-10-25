@@ -74,12 +74,16 @@ try {
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
       ('xp-boundary-player','XP Boundary'),
-      ('invalid-progression-player','Invalid Progression');
+      ('invalid-progression-player','Invalid Progression'),
+      ('post-award-overflow-player','Post-award Overflow'),
+      ('currency-overflow-player','Currency Overflow');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES
         ('integration-player',1,0,0,'test-degen'),
         ('xp-boundary-player',2,174,30,'test-degen'),
-        ('invalid-progression-player',120095990063214,0,0,'test-degen');
+        ('invalid-progression-player',120095990063214,0,0,'test-degen'),
+        ('post-award-overflow-player',120095990063212,9007199254740924,0,'test-degen'),
+        ('currency-overflow-player',2,0,9007199254740971,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
@@ -96,7 +100,9 @@ try {
         ('negative-xp-residual-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('fractional-xp-residual-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('unsafe-xp-threshold-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
-        ('invalid-progression-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+        ('invalid-progression-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('post-award-overflow-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('currency-overflow-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -117,6 +123,8 @@ try {
       ('permit-awarded-fractional-xp-residual','integration-player','underpass','fractional-xp-residual-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-unsafe-xp-threshold','integration-player','underpass','unsafe-xp-threshold-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-invalid-progression','invalid-progression-player','underpass','invalid-progression-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-post-award-overflow','post-award-overflow-player','underpass','post-award-overflow-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-currency-overflow','currency-overflow-player','underpass','currency-overflow-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-duplicate-clear','integration-player','underpass','duplicate-receipt-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-duplicate-peer','integration-player','underpass','duplicate-receipt-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
@@ -1565,7 +1573,52 @@ try {
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
     WHERE id='permit-invalid-progression' AND reward_state='awarded' AND reward_clear_number=1`), 1);
 
-  console.log('PASS isolated Worker/D1: corrupt progression rejection and retry, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  // A valid pre-award level/XP pair can still cross into a level whose XP threshold is unsafe.
+  // The post-award validator must reject before the character or victory receipt is written.
+  const postAwardOverflowBefore = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='post-award-overflow-player'`);
+  const postAwardOverflow = await complete('permit-post-award-overflow', 'post-award-overflow-player');
+  assert.equal(postAwardOverflow.status, 409, JSON.stringify(postAwardOverflow.data));
+  assert.equal(postAwardOverflow.data.error, 'Player progression state is invalid.');
+  assert.equal('reward' in postAwardOverflow.data, false);
+  assert.equal('player' in postAwardOverflow.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='post-award-overflow-player'`), postAwardOverflowBefore,
+    'post-award unsafe level threshold must not mutate progression or claim token');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-post-award-overflow' AND battle_status='victory' AND reward_state='pending'
+      AND reward_clear_number=1 AND reward_claim_token IS NULL AND reward_claimed_at IS NULL
+      AND completed_at IS NULL`), 1,
+    'post-award rejection must retain the reserved clear slot and release the claim');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id='permit-post-award-overflow:victory'`), 0);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='post-award-overflow-player' AND event_key='underpass'
+      AND cycle_id='post-award-overflow-cycle'`), [{ full_reward_clears: 1 }]);
+
+  // Currency addition must stay within JavaScript's safe-integer range before settlement.
+  const currencyOverflowBefore = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='currency-overflow-player'`);
+  const currencyOverflow = await complete('permit-currency-overflow', 'currency-overflow-player');
+  assert.equal(currencyOverflow.status, 409, JSON.stringify(currencyOverflow.data));
+  assert.equal(currencyOverflow.data.error, 'Player progression state is invalid.');
+  assert.equal('reward' in currencyOverflow.data, false);
+  assert.equal('player' in currencyOverflow.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='currency-overflow-player'`), currencyOverflowBefore,
+    'unsafe post-award currency must not be persisted');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-currency-overflow' AND battle_status='victory' AND reward_state='pending'
+      AND reward_clear_number=1 AND reward_claim_token IS NULL AND reward_claimed_at IS NULL
+      AND completed_at IS NULL`), 1,
+    'currency overflow rejection must retain the reserved clear slot and release the claim');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id='permit-currency-overflow:victory'`), 0);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='currency-overflow-player' AND event_key='underpass'
+      AND cycle_id='currency-overflow-cycle'`), [{ full_reward_clears: 1 }]);
+
+  console.log('PASS isolated Worker/D1: corrupt and post-award progression rejection, currency overflow rejection, repair/retry, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
