@@ -54,7 +54,7 @@ test('awarded receipt audit rejects duplicate clear sequence numbers', () => {
   const receiptQuery = worker.slice(receiptStart, receiptEnd);
   assert.match(
     receiptQuery,
-    /SELECT COUNT\\(\\*\\) FROM battle_permits AS other[\\s\\S]*other\\.player_id = permit\\.player_id[\\s\\S]*other\\.event_key = permit\\.event_key[\\s\\S]*other\\.cycle_id = permit\\.cycle_id[\\s\\S]*other\\.reward_clear_number = permit\\.reward_clear_number[\\s\\S]*AS duplicate_clear_count/,
+    /SELECT COUNT\(\*\) FROM battle_permits AS other[\s\S]*other\.player_id = permit\.player_id[\s\S]*other\.event_key = permit\.event_key[\s\S]*other\.cycle_id = permit\.cycle_id[\s\S]*other\.reward_clear_number = permit\.reward_clear_number[\s\S]*AS duplicate_clear_count/,
     'receipt validation must count any other permit claiming the same per-cycle sequence number',
   );
 
@@ -63,7 +63,7 @@ test('awarded receipt audit rejects duplicate clear sequence numbers', () => {
   assert.ok(auditStart >= 0 && auditEnd > auditStart, 'awarded receipt audit must exist');
   assert.match(
     worker.slice(auditStart, auditEnd),
-    /isSafeIntegerBetween\\(row\\.duplicate_clear_count, 0, 0\\)/,
+    /isSafeIntegerBetween\(row\.duplicate_clear_count, 0, 0\)/,
     'any duplicate clear-number claim must fail closed before reward replay',
   );
 });
