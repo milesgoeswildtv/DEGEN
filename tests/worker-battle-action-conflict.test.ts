@@ -188,3 +188,71 @@ test('completed permits for unsupported encounters are not returned as this batt
   assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
   assert.equal('battleState' in result, false, 'an unsupported encounter must not be projected as the active prototype enemy');
 });
+
+
+test('expired terminal retries recover only valid pending victory or defeat snapshots', async () => {
+  const cases = [
+    {
+      state: {
+        cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
+        player_hp: 70, player_mana: 0, enemy_hp: 0,
+        battle_status: 'victory', turn_count: 3,
+        completed_at: null, reward_state: 'pending',
+      },
+      expectedError: 'Battle victory is awaiting reward completion.',
+      expectedState: {
+        permitId: 'permit-1', status: 'victory',
+        playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
+      },
+    },
+    {
+      state: {
+        cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
+        player_hp: 0, player_mana: 0, enemy_hp: 72,
+        battle_status: 'defeat', turn_count: 1,
+        completed_at: null, reward_state: 'pending',
+      },
+      expectedError: 'Battle is already defeated.',
+      expectedState: {
+        permitId: 'permit-1', status: 'defeat',
+        playerHp: 0, playerMana: 0, enemyHp: 72, turnCount: 1,
+      },
+    },
+  ];
+
+  for (const scenario of cases) {
+    const reads: string[] = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              first: async () => {
+                reads.push(sql);
+                assert.deepEqual(params.slice(0, 2), ['permit-1', 'player-1']);
+                if (sql.includes("julianday(expires_at) > julianday('now')")) return null;
+                if (sql.includes('completed_at IS NOT NULL')) return null;
+                if (sql.includes("battle_status IN ('victory', 'defeat')")) return scenario.state;
+                throw new Error('Unexpected query in expired terminal recovery test: ' + sql);
+              },
+            };
+          },
+        };
+      },
+    };
+    const request = new Request('https://degen-api.example/api/battle/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'player-1', permitId: 'permit-1', abilityId: 'slash', expectedTurnCount: 1,
+      }),
+    });
+
+    const response = await handleBattleAction(request, { DB: db });
+    const result = await response.json() as { error: string; battleState?: unknown };
+    assert.equal(response.status, 409);
+    assert.equal(result.error, scenario.expectedError);
+    assert.deepEqual(result.battleState, scenario.expectedState);
+    assert.equal(reads.length, 3, 'expired terminal recovery must read persisted state without mutating it');
+  }
+});
