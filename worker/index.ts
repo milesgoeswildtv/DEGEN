@@ -499,6 +499,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     event_key: string;
     cycle_event_key: string | null;
     cycle_clear_count: number | null;
+    duplicate_clear_count: number;
     reward_level: number | null;
     reward_remaining_xp: number | null;
     completed_at: string | null;
@@ -518,6 +519,13 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       permit.reward_claim_token, permit.reward_claimed_at,
       cycle.event_key AS cycle_event_key,
       clears.full_reward_clears AS cycle_clear_count,
+      (SELECT COUNT(*) FROM battle_permits AS other
+        WHERE other.player_id = permit.player_id
+          AND other.event_key = permit.event_key
+          AND other.cycle_id = permit.cycle_id
+          AND other.id <> permit.id
+          AND other.reward_clear_number = permit.reward_clear_number
+      ) AS duplicate_clear_count,
       history.id AS history_id, history.result AS history_result,
       history.encounter_key AS history_encounter_key,
       history.player_level AS history_player_level,
@@ -547,6 +555,8 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     // cannot legitimize a forged, far-future clear number.
     if (!isSafeIntegerBetween(clearNumber, 1, Number.MAX_SAFE_INTEGER)) return false;
     if (!isSafeIntegerBetween(row.cycle_clear_count, clearNumber, Number.MAX_SAFE_INTEGER)) return false;
+    // A clear number is a per-player, per-event-cycle sequence slot; two permits may never share it.
+    if (!isSafeIntegerBetween(row.duplicate_clear_count, 0, 0)) return false;
     if (row.reward_state !== 'awarded'
       || !isSafeIntegerBetween(rewardXp, 0, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(rewardCurrency, 0, Number.MAX_SAFE_INTEGER)
