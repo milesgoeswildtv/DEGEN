@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (recover audited rewards after terminal snapshot corruption)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (re-read before this update; main unchanged). No direct-main write.
+- **PUSHED / PR #61 OPEN:** `automation/degen/awarded-receipt-audit-v01`. Worker fix commit `ef0dc8fe7d2b04c232d4aa8c38b1c2147fce7725`; regression-test head `6e3c9ef9880da211852f1a075f454403a5e56162`. The newest exact-head CI is queued; the immediately preceding receipt-audit head `9e0c653237bae772a0ed6381d6aa7789acc804d7` passed [run 40192675251](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40192675251), but that does not prove this new fix green.
+- **Task / files:** `worker/index.ts` now loads an owner-scoped receipt without filtering away its persisted combat status first. Already-awarded receipts are returned only after the existing independent audit confirms supported event/cycle/encounter, canonical reward tier/amounts, safe reached clear number, uniqueness, and matching victory history. Non-awarded permits still require a persisted `victory` before battle-state validation and claiming. `tests/worker-d1-concurrency.mjs` now proves (1) wrong-owner completion cannot disclose or mutate a valid permit and (2) an already-awarded receipt remains recoverable after `battle_status` itself is corrupted, without duplicating progression, inventory, or history.
+- **QA status:** code and integration tests are pushed to PR #61; exact-head CI is pending. The CI matrix includes deterministic tests, isolated local Worker/D1 reward concurrency/recovery, Underpass cycle race/rollover, atomic defeat history, production build, Chromium mobile vertical slice, and Worker dry-run. No local shell execution, production D1 operation, migration, Worker deployment, or live HTTP test is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / reward idempotency:** the receipt remains an audit gate, not a new reward grant. No reward amounts, combat math, client economic authority, or duplicate-reward rules changed. The recovery path only returns an already-awarded canonical receipt after audit.
+- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. No schema or migration change is required.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit Miles-approved recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass this gate; keep Shield/housing work gated.
+- **Best next task:** verify exact-head CI for the terminal-status recovery fix; then continue review of PR #61's reward receipt audit without changing reward values or bypassing the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-25 (wrong-owner reward completion has no side effects)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (re-read at run start). No direct-main write.
