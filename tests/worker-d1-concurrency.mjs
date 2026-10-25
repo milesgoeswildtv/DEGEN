@@ -73,11 +73,13 @@ try {
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
-      ('xp-boundary-player','XP Boundary');
+      ('xp-boundary-player','XP Boundary'),
+      ('invalid-progression-player','Invalid Progression');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES
         ('integration-player',1,0,0,'test-degen'),
-        ('xp-boundary-player',2,174,30,'test-degen');
+        ('xp-boundary-player',2,174,30,'test-degen'),
+        ('invalid-progression-player',120095990063214,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
@@ -93,7 +95,8 @@ try {
         ('xp-residual-boundary-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('negative-xp-residual-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('fractional-xp-residual-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
-        ('unsafe-xp-threshold-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+        ('unsafe-xp-threshold-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('invalid-progression-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -113,6 +116,7 @@ try {
       ('permit-awarded-negative-xp-residual','integration-player','underpass','negative-xp-residual-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-fractional-xp-residual','integration-player','underpass','fractional-xp-residual-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-unsafe-xp-threshold','integration-player','underpass','unsafe-xp-threshold-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-invalid-progression','invalid-progression-player','underpass','invalid-progression-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-duplicate-clear','integration-player','underpass','duplicate-receipt-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-duplicate-peer','integration-player','underpass','duplicate-receipt-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
@@ -1507,7 +1511,61 @@ try {
       AND cycle_id='legacy-terminal-cycle'`), [{ full_reward_clears: 1 }],
     'malformed legacy victory must not consume another clear slot');
 
-  console.log('PASS isolated Worker/D1: legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  // Corrupt persisted character progression must not create an award receipt that fails its own replay audit.
+  // The failed attempt keeps its already-reserved clear slot so repair + retry can settle exactly once.
+  const invalidProgressBefore = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='invalid-progression-player'`);
+  const invalidProgressCompletion = await complete('permit-invalid-progression', 'invalid-progression-player');
+  assert.equal(invalidProgressCompletion.status, 409, JSON.stringify(invalidProgressCompletion.data));
+  assert.equal(invalidProgressCompletion.data.error, 'Player progression state is invalid.');
+  assert.equal('reward' in invalidProgressCompletion.data, false);
+  assert.equal('player' in invalidProgressCompletion.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='invalid-progression-player'`), invalidProgressBefore,
+    'invalid progression must not mutate character XP, level, currency, or the idempotency token');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-invalid-progression' AND battle_status='victory' AND reward_state='pending'
+      AND reward_clear_number=1 AND reward_claim_token IS NULL AND reward_claimed_at IS NULL
+      AND completed_at IS NULL`), 1,
+    'a rejected progression state must release its claim but retain the same reserved clear slot for retry');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id='permit-invalid-progression:victory'`), 0);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='invalid-progression-player' AND event_key='underpass'
+      AND cycle_id='invalid-progression-cycle'`), [{ full_reward_clears: 1 }]);
+
+  await envDbExec(`UPDATE characters SET level=2, xp=174, currency=0
+    WHERE player_id='invalid-progression-player'`);
+  const repairedRetry = await complete('permit-invalid-progression', 'invalid-progression-player');
+  assert.equal(repairedRetry.status, 200, JSON.stringify(repairedRetry.data));
+  assert.equal(repairedRetry.data.player.level, 3);
+  assert.equal(repairedRetry.data.player.xp, 74);
+  assert.equal(repairedRetry.data.player.currency, 30);
+  assert.deepEqual(repairedRetry.data.reward, {
+    xp: 75, currency: 30, items: ['underpass-scrap'],
+    furniture: ['tunnel-trophy'], tier: 'full',
+  });
+  assert.deepEqual(queryRows(`SELECT reward_state, reward_clear_number, reward_level, reward_remaining_xp
+    FROM battle_permits WHERE id='permit-invalid-progression'`), [{
+      reward_state: 'awarded', reward_clear_number: 1, reward_level: 3, reward_remaining_xp: 74,
+    }]);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='invalid-progression-player' AND event_key='underpass'
+      AND cycle_id='invalid-progression-cycle'`), [{ full_reward_clears: 1 }],
+    'retry must reuse the reserved clear slot rather than incrementing the counter');
+  const repairedProgressAfterAward = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='invalid-progression-player'`);
+  const repairedReplay = await complete('permit-invalid-progression', 'invalid-progression-player');
+  assert.equal(repairedReplay.status, 200, JSON.stringify(repairedReplay.data));
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='invalid-progression-player'`), repairedProgressAfterAward,
+    'the recovered receipt replay must not apply progression twice');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id='permit-invalid-progression:victory'`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-invalid-progression' AND reward_state='awarded' AND reward_clear_number=1`), 1);
+
+  console.log('PASS isolated Worker/D1: corrupt progression rejection and retry, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
