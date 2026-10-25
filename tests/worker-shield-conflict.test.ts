@@ -30,6 +30,8 @@ test('stale-turn conflict returns the latest persisted Shield state after a conc
     player_hp: 120,
     player_mana: 0,
     player_shield: 12,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
     enemy_hp: TUNNEL_MAW.maxHp,
     battle_status: 'active',
     turn_count: 0,
@@ -37,6 +39,8 @@ test('stale-turn conflict returns the latest persisted Shield state after a conc
   const latestSnapshot = {
     ...staleSnapshot,
     player_shield: 2,
+    last_shield_absorbed: 10,
+    last_retaliation_damage: 10,
     enemy_hp: TUNNEL_MAW.maxHp - 29,
     turn_count: 1,
   };
