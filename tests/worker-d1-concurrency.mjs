@@ -802,6 +802,27 @@ try {
   assert.equal(replay.player.currency, 60);
   assert.equal(replay.worldEvent.fullRewardClears, 2);
   assert.equal(replay.player.inventory.filter(x => x === 'underpass-scrap').length, 2);
+
+  // An awarded receipt can still recover the original result if even the persisted
+  // terminal status is later corrupted; the audited receipt must not award twice.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET battle_status = 'active' WHERE id = 'permit-a'"]);
+  const corruptedTerminalReplay = await complete('permit-a', 'integration-player', {
+    status: 'victory', playerMana: 999, xp: 999999, currency: 999999,
+    items: ['admin-item'], reward: { xp: 999999, currency: 999999, items: ['admin-item'], tier: 'full' },
+  });
+  assert.equal(corruptedTerminalReplay.status, 200,
+    'a valid, already-awarded receipt must recover despite a later corrupted battle_status');
+  assert.deepEqual(corruptedTerminalReplay.data.reward, a.reward,
+    'terminal snapshot corruption must not replace the audited canonical reward');
+  assert.equal(corruptedTerminalReplay.data.player.level, 2);
+  assert.equal(corruptedTerminalReplay.data.player.xp, 50);
+  assert.equal(corruptedTerminalReplay.data.player.currency, 60);
+  assert.equal(corruptedTerminalReplay.data.player.inventory.filter(x => x === 'underpass-scrap').length, 2);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-a:victory'"), 1,
+    'recovery after terminal-status corruption must not duplicate battle history');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-a' AND battle_status='active' AND reward_state='awarded' AND completed_at IS NOT NULL"), 1,
+    'replay must recover the audited receipt without rewriting the corrupted combat snapshot');
   assert.equal((await eventuallyComplete('permit-c')).reward.tier, 'full');
   assert.equal((await eventuallyComplete('permit-d')).reward.tier, 'reduced');
   const final = await eventuallyComplete('permit-d');
