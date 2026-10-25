@@ -173,9 +173,9 @@ try {
   });
   assert.equal(completion.status, 200, 'a valid server-resolved killing blow can settle its reward');
   assert.ok(['full', 'reduced'].includes(completion.data.reward?.tier), 'reward tier comes from Worker settlement');
-  assert.deepEqual(sql("SELECT reward_state,completed_at FROM battle_permits WHERE id='shield-killing-blow'"),
-    [{ reward_state: 'awarded', completed_at: sql("SELECT completed_at FROM battle_permits WHERE id='shield-killing-blow'")[0].completed_at }],
-    'the server-owned victory is marked awarded after settlement');
+  const settled = sql("SELECT reward_state,completed_at FROM battle_permits WHERE id='shield-killing-blow'")[0];
+  assert.equal(settled.reward_state, 'awarded', 'the server-owned victory is marked awarded after settlement');
+  assert.equal(typeof settled.completed_at, 'string', 'settlement records completion time');
 
   console.log('PASS isolated Worker/D1: server-owned combat start, hostile client-state rejection, Shield absorption, killing blow, and reward settlement');
 } catch (error) {
