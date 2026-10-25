@@ -299,6 +299,9 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
       encounter_key: TUNNEL_MAW.id,
       player_hp: scenario.playerHp,
       player_mana: null,
+      player_shield: 0,
+      last_shield_absorbed: 0,
+      last_retaliation_damage: 0,
       enemy_hp: scenario.enemyHp,
       battle_status: scenario.status,
       turn_count: 3,
@@ -340,6 +343,7 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
       error: string;
       battleState?: {
         permitId: string; status: string; playerHp: number; playerMana: number;
+        playerShield: number; shieldAbsorbed: number; retaliationDamage: number;
         enemyHp: number; turnCount: number;
       };
     };
@@ -351,6 +355,9 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
       status: scenario.status,
       playerHp: scenario.playerHp,
       playerMana: TEST_DEGEN.maxMana,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 0,
       enemyHp: scenario.enemyHp,
       turnCount: 3,
     }, 'legacy Mana is projected only to render a terminal snapshot; no action is accepted');
@@ -374,6 +381,9 @@ test('malformed pre-Mana terminal snapshots fail closed without display fallback
       encounter_key: TUNNEL_MAW.id,
       player_hp: scenario.playerHp,
       player_mana: null,
+      player_shield: 0,
+      last_shield_absorbed: 0,
+      last_retaliation_damage: 0,
       enemy_hp: scenario.enemyHp,
       battle_status: scenario.status,
       turn_count: scenario.turnCount,
@@ -424,6 +434,9 @@ test('replayed action after reward settlement projects display Mana for a legacy
     encounter_key: TUNNEL_MAW.id,
     player_hp: 70,
     player_mana: null,
+    player_shield: 0,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
@@ -473,6 +486,9 @@ test('replayed action after reward settlement projects display Mana for a legacy
     status: 'victory',
     playerHp: 70,
     playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: 0,
     turnCount: 3,
   }, 'a completed pre-Mana victory needs a valid terminal display snapshot but remains non-actionable');
