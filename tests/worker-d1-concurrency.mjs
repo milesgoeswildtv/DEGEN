@@ -140,7 +140,9 @@ try {
       ('permit-counter-fractional','integration-player','underpass','counter-fractional-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-counter-negative','integration-player','underpass','counter-negative-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       -- A pre-Mana terminal victory may legitimately retain NULL player_mana.
-      ('permit-legacy-terminal-victory','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,NULL,0,3);
+      ('permit-legacy-terminal-victory','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,NULL,0,3),
+      -- Legacy terminal defeat is recoverable for display, never reward-eligible.
+      ('permit-legacy-terminal-defeat','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'defeat',0,NULL,40,3);
     INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
       VALUES
         ('integration-player','underpass','counter-lag-cycle',0),
@@ -1345,7 +1347,35 @@ try {
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
     WHERE id='permit-legacy-terminal-victory:victory'`), 1);
 
-  console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  // Legacy NULL-Mana defeat must not be converted into a reward by client-supplied victory/economy fields.
+  const progressBeforeLegacyDefeat = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`);
+  const legacyDefeat = await complete('permit-legacy-terminal-defeat', 'integration-player', {
+    victory: true, status: 'victory', playerHp: 80, playerMana: 12, turnCount: 99,
+    xp: 999999, currency: 999999, items: ['forged-item'],
+    reward: { xp: 999999, currency: 999999, items: ['forged-item'] },
+  });
+  assert.equal(legacyDefeat.status, 409, JSON.stringify(legacyDefeat.data));
+  assert.equal(legacyDefeat.data.error, 'Battle is not an authoritative victory.');
+  assert.equal('reward' in legacyDefeat.data, false);
+  assert.equal('player' in legacyDefeat.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`), progressBeforeLegacyDefeat);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-legacy-terminal-defeat' AND player_mana IS NULL
+      AND battle_status='defeat' AND player_hp=0 AND enemy_hp=40 AND turn_count=3
+      AND reward_state='pending' AND reward_clear_number IS NULL
+      AND reward_claim_token IS NULL AND reward_claimed_at IS NULL
+      AND completed_at IS NULL`), 1, 'legacy defeat remains unchanged and unawarded');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('permit-legacy-terminal-defeat:victory','permit-legacy-terminal-defeat:defeat')`), 0,
+    'completion attempts must not invent terminal history for a seeded legacy defeat');
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='legacy-terminal-cycle'`), [{ full_reward_clears: 1 }],
+    'a rejected legacy defeat must not consume another clear slot');
+
+  console.log('PASS isolated Worker/D1: legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
