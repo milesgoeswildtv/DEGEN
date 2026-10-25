@@ -50,7 +50,8 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 .battle-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr); gap: 16px; align-items: start; }
 .battle-canvas { min-height: 320px; border: 1px solid #2c2c35; border-radius: 14px; overflow: hidden; background: #0a0a0e; }
 .battle-controls { display: grid; gap: 12px; }
-.battle-shield { justify-self: start; border: 1px solid #34343e; border-radius: 999px; padding: 5px 10px; color: #d4d4d8; font-size: 12px; letter-spacing: .08em; }
+.battle-resources { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.battle-resource { border: 1px solid #34343e; border-radius: 999px; padding: 5px 10px; color: #d4d4d8; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
 .ability-grid { display: grid; gap: 8px; }
 .ability-grid button { min-height: 72px; text-align: left; border: 1px solid #34343e; border-radius: 10px; background: #15151c; color: #f4f4f5; padding: 12px; cursor: pointer; display: grid; gap: 4px; }
 .ability-grid button span { color: #a1a1aa; font-size: 13px; }
