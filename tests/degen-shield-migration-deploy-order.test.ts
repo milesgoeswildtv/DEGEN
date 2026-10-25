@@ -96,8 +96,8 @@ test('Worker deployment refuses Shield migration before player-session migration
   assert.ok(guardStart >= 0 && guardStart < schemaStart,
     'the release guard must run before any remote D1 schema or migration operation');
   const guard = deployWorkflow.slice(guardStart, nextStep === -1 ? undefined : nextStep);
-  assert.match(guard, /0008_degen_shield\\.sql/);
-  assert.match(guard, /0007_player_sessions\\.sql/);
+  assert.match(guard, /0008_degen_shield\.sql/);
+  assert.match(guard, /0007_player_sessions\.sql/);
   assert.match(guard, /Refusing Worker deployment/);
   assert.match(guard, /exit 1/);
 });
