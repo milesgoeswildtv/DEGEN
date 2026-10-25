@@ -495,18 +495,94 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     reward_tier: 'full' | 'reduced' | null;
   };
   type ValidatedReceiptRow = BattlePermitStateRow & ReceiptRow & {
+    permit_id: string;
     event_key: string;
     cycle_event_key: string | null;
+    cycle_clear_count: number | null;
+    duplicate_clear_count: number;
+    reward_level: number | null;
+    reward_remaining_xp: number | null;
+    completed_at: string | null;
+    reward_claim_token: string | null;
+    reward_claimed_at: string | null;
+    history_id: string | null;
+    history_result: string | null;
+    history_encounter_key: string | null;
+    history_player_level: number | null;
+    history_xp_awarded: number | null;
+    history_currency_awarded: number | null;
   };
-  const receipt = await env.DB.prepare(`SELECT permit.event_key, permit.cycle_id, permit.encounter_key,
+  const loadReceipt = async () => env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
       permit.reward_state, permit.reward_clear_number, permit.reward_xp, permit.reward_currency, permit.reward_tier,
-      cycle.event_key AS cycle_event_key
+      permit.reward_level, permit.reward_remaining_xp, permit.completed_at,
+      permit.reward_claim_token, permit.reward_claimed_at,
+      cycle.event_key AS cycle_event_key,
+      clears.full_reward_clears AS cycle_clear_count,
+      (SELECT COUNT(*) FROM battle_permits AS other
+        WHERE other.player_id = permit.player_id
+          AND other.event_key = permit.event_key
+          AND other.cycle_id = permit.cycle_id
+          AND other.event_key = 'underpass'
+          AND other.encounter_key = '${TUNNEL_MAW.id}'
+          AND EXISTS (SELECT 1 FROM world_event_cycles AS other_cycle
+            WHERE other_cycle.id = other.cycle_id AND other_cycle.event_key = 'underpass')
+          AND other.id <> permit.id
+          AND other.reward_clear_number = permit.reward_clear_number
+      ) AS duplicate_clear_count,
+      history.id AS history_id, history.result AS history_result,
+      history.encounter_key AS history_encounter_key,
+      history.player_level AS history_player_level,
+      history.xp_awarded AS history_xp_awarded,
+      history.currency_awarded AS history_currency_awarded
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
-    WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'`)
+    LEFT JOIN world_event_clears AS clears
+      ON clears.player_id = permit.player_id
+      AND clears.event_key = permit.event_key
+      AND clears.cycle_id = permit.cycle_id
+    LEFT JOIN battle_history AS history
+      ON history.id = (permit.id || ':victory') AND history.player_id = permit.player_id
+    WHERE permit.id = ? AND permit.player_id = ?`)
     .bind(input.permitId, input.playerId).first<ValidatedReceiptRow>();
+  const receipt = await loadReceipt();
   if (!receipt) return fail(request, env, 'Battle is not an authoritative victory.', 409);
+  // An awarded receipt is replayable even if its old combat snapshot later becomes
+  // corrupt, but its independent reward audit must still be internally consistent.
+  const isValidAwardedReceipt = (row: ValidatedReceiptRow): boolean => {
+    const clearNumber = row.reward_clear_number;
+    const rewardXp = row.reward_xp;
+    const rewardCurrency = row.reward_currency;
+    const rewardLevel = row.reward_level;
+    const remainingXp = row.reward_remaining_xp;
+    // A receipt's sequence number must have actually been reached by this player's
+    // persisted clear counter for the same event cycle; canonical reward values alone
+    // cannot legitimize a forged, far-future clear number.
+    if (!isSafeIntegerBetween(clearNumber, 1, Number.MAX_SAFE_INTEGER)) return false;
+    if (!isSafeIntegerBetween(row.cycle_clear_count, clearNumber, Number.MAX_SAFE_INTEGER)) return false;
+    // A clear number is a per-player, per-event-cycle sequence slot; two permits may never share it.
+    if (!isSafeIntegerBetween(row.duplicate_clear_count, 0, 0)) return false;
+    if (row.reward_state !== 'awarded'
+      || !isSafeIntegerBetween(rewardXp, 0, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(rewardCurrency, 0, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(rewardLevel, 1, Number.MAX_SAFE_INTEGER)
+      || !isSafeIntegerBetween(remainingXp, 0, Number.MAX_SAFE_INTEGER)
+      || (row.reward_tier !== 'full' && row.reward_tier !== 'reduced')
+      || typeof row.completed_at !== 'string' || row.completed_at.trim().length === 0
+      || typeof row.reward_claim_token !== 'string' || row.reward_claim_token.trim().length === 0
+      || typeof row.reward_claimed_at !== 'string' || row.reward_claimed_at.trim().length === 0
+      || row.history_id !== `${row.permit_id}:victory`
+      || row.history_result !== 'victory'
+      || row.history_encounter_key !== row.encounter_key
+      || row.history_player_level !== rewardLevel
+      || row.history_xp_awarded !== rewardXp
+      || row.history_currency_awarded !== rewardCurrency) return false;
+
+    const canonicalReward = underpassRewardForClear(clearNumber);
+    return rewardXp === canonicalReward.xp
+      && rewardCurrency === canonicalReward.currency
+      && row.reward_tier === canonicalReward.tier;
+  };
   // The permit and its referenced cycle must both belong to the supported event.
   // D1 stores event_key and cycle_id separately, so reject inconsistent rows rather than
   // allowing a Tunnel Maw victory attached to another event's cycle to inherit rewards.
@@ -527,17 +603,26 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       tier: row.reward_tier ?? 'reduced',
     }, worldEvent: event });
   };
-  if (receipt.reward_state === 'awarded') return respond(receipt);
+  if (receipt.reward_state === 'awarded') {
+    if (!isValidAwardedReceipt(receipt)) return fail(request, env, 'Battle reward receipt is invalid.', 409);
+    // The independently audited awarded receipt is the recovery authority for an
+    // already-settled reward, even if a later write corrupts its combat snapshot.
+    return respond(receipt);
+  }
+  if (receipt.battle_status !== 'victory') {
+    return fail(request, env, 'Battle is not an authoritative victory.', 409);
+  }
   if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
 
   const token = crypto.randomUUID();
   // The token-scoped cleanup also covers an ambiguous failure while acquiring
   // the lease: if the UPDATE committed but its response failed, release only
   // this token. If it did not commit, the cleanup is a harmless no-op.
-  const releaseClaim = async () => {
+  const releaseClaim = async (resetUnawardedClear = false) => {
+    const resetClear = resetUnawardedClear ? ', reward_clear_number = NULL' : '';
     try {
       await env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
-          reward_claim_token = NULL, reward_claimed_at = NULL
+          reward_claim_token = NULL, reward_claimed_at = NULL${resetClear}
         WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
         .bind(input.permitId, input.playerId, token).run();
     } catch {
@@ -562,17 +647,38 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
     if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 
+  const hadReservedClearNumber = claim.reward_clear_number !== null;
   if (claim.reward_clear_number === null) {
     await env.DB.batch([
       env.DB.prepare(`INSERT OR IGNORE INTO world_event_clears
         (player_id, event_key, cycle_id, full_reward_clears) VALUES (?, 'underpass', ?, 0)`)
         .bind(input.playerId, claim.cycle_id),
+      // Never allocate a sequence slot if the persisted counter already trails
+      // a previously reserved receipt for this player and cycle.
       env.DB.prepare(`UPDATE battle_permits SET reward_clear_number = (
           SELECT full_reward_clears + 1 FROM world_event_clears
           WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
         ) WHERE id = ? AND player_id = ? AND reward_state = 'claiming'
-          AND reward_claim_token = ? AND reward_clear_number IS NULL`)
-        .bind(input.playerId, claim.cycle_id, input.permitId, input.playerId, token),
+          AND reward_claim_token = ? AND reward_clear_number IS NULL
+          AND typeof((SELECT full_reward_clears FROM world_event_clears
+            WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?)) = 'integer'
+          AND (SELECT full_reward_clears FROM world_event_clears
+            WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?)
+            BETWEEN 0 AND ${Number.MAX_SAFE_INTEGER - 1}
+          AND (SELECT full_reward_clears FROM world_event_clears
+            WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?) >= COALESCE((
+              SELECT MAX(other.reward_clear_number) FROM battle_permits AS other
+              WHERE other.player_id = ? AND other.event_key = 'underpass'
+                AND other.cycle_id = ? AND other.encounter_key = ?
+                AND other.id <> ? AND other.reward_clear_number IS NOT NULL
+                AND EXISTS (SELECT 1 FROM world_event_cycles AS other_cycle
+                  WHERE other_cycle.id = other.cycle_id AND other_cycle.event_key = 'underpass')
+            ), 0)`)
+        .bind(input.playerId, claim.cycle_id, input.permitId, input.playerId, token,
+          input.playerId, claim.cycle_id,
+          input.playerId, claim.cycle_id,
+          input.playerId, claim.cycle_id,
+          input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId),
       env.DB.prepare(`UPDATE world_event_clears SET full_reward_clears = (
           SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?
         ) WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
@@ -581,12 +687,34 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     ]);
   }
 
-  const owned = await env.DB.prepare(`SELECT cycle_id, encounter_key, reward_clear_number FROM battle_permits
-    WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
-    .bind(input.permitId, input.playerId, token)
-    .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
-  if (!owned?.reward_clear_number) {
-    await releaseClaim();
+  const owned = await env.DB.prepare(`SELECT permit.cycle_id, permit.encounter_key, permit.reward_clear_number,
+      clears.full_reward_clears AS cycle_clear_count,
+      (SELECT COUNT(*) FROM battle_permits AS other
+        WHERE other.player_id = permit.player_id
+          AND other.event_key = permit.event_key
+          AND other.cycle_id = permit.cycle_id
+          AND other.event_key = 'underpass'
+          AND other.encounter_key = ?
+          AND EXISTS (SELECT 1 FROM world_event_cycles AS other_cycle
+            WHERE other_cycle.id = other.cycle_id AND other_cycle.event_key = 'underpass')
+          AND other.id <> permit.id
+          AND other.reward_clear_number = permit.reward_clear_number
+      ) AS duplicate_clear_count
+    FROM battle_permits AS permit
+    LEFT JOIN world_event_clears AS clears
+      ON clears.player_id = permit.player_id
+      AND clears.event_key = permit.event_key
+      AND clears.cycle_id = permit.cycle_id
+    WHERE permit.id = ? AND permit.player_id = ? AND permit.reward_state = 'claiming'
+      AND permit.reward_claim_token = ?`)
+    .bind(TUNNEL_MAW.id, input.permitId, input.playerId, token)
+    .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null;
+      cycle_clear_count: number | null; duplicate_clear_count: number }>();
+  if (!owned?.reward_clear_number
+    || !isSafeIntegerBetween(owned.reward_clear_number, 1, Number.MAX_SAFE_INTEGER)
+    || !isSafeIntegerBetween(owned.cycle_clear_count, owned.reward_clear_number, Number.MAX_SAFE_INTEGER)
+    || !isSafeIntegerBetween(owned.duplicate_clear_count, 0, 0)) {
+    await releaseClaim(!hadReservedClearNumber && typeof owned?.reward_clear_number === 'number');
     return fail(request, env, 'Unable to assign authoritative reward clear.', 409);
   }
 
@@ -649,13 +777,16 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     // All award statements are one atomic D1 batch. A stale character
     // snapshot changes zero rows and the token gate blocks every later write.
     await env.DB.batch(writes);
-    const awarded = await env.DB.prepare(`SELECT cycle_id, encounter_key, reward_state,
-        reward_clear_number, reward_xp, reward_currency, reward_tier, reward_claim_token
-      FROM battle_permits WHERE id = ? AND player_id = ?`)
-      .bind(input.permitId, input.playerId)
-      .first<ReceiptRow & { reward_claim_token: string | null }>();
-    if (awarded?.reward_state === 'awarded') return respond(awarded);
-    if (awarded?.reward_state !== 'claiming' || awarded.reward_claim_token !== token) {
+    // Validate the complete persisted receipt before returning a reward on this
+    // request too; the idempotent retry path is not the only response path.
+    const settledReceipt = await loadReceipt();
+    if (settledReceipt?.reward_state === 'awarded') {
+      if (!isValidAwardedReceipt(settledReceipt)) {
+        return fail(request, env, 'Battle reward receipt is invalid.', 409);
+      }
+      return respond(settledReceipt);
+    }
+    if (settledReceipt?.reward_state !== 'claiming' || settledReceipt.reward_claim_token !== token) {
       await releaseClaim();
       return fail(request, env, 'Reward claim changed; retry.', 409);
     }

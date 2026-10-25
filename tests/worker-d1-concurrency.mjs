@@ -37,13 +37,15 @@ async function eventuallyComplete(id, extraFields = {}) {
   }
   throw new Error('Reward retry exhausted for ' + id);
 }
-function countRows(query) {
+function queryRows(query) {
   const r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   assert.equal(r.status, 0, 'local D1 query failed: ' + r.stderr);
   const result = JSON.parse(r.stdout);
-  const row = Array.isArray(result) ? result[0]?.results?.[0] : result.results?.[0];
-  return row?.n;
+  return Array.isArray(result) ? (result[0]?.results ?? []) : (result.results ?? []);
+}
+function countRows(query) {
+  return queryRows(query)[0]?.n;
 }
 function assertPersistedPermitState(permitId, state) {
   const query = `SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
@@ -75,7 +77,13 @@ try {
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
-        ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+        ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('uncounted-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('duplicate-receipt-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('counter-lag-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('counter-boundary-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('counter-fractional-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('counter-negative-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -86,6 +94,12 @@ try {
       ('permit-unsupported-encounter','integration-player','underpass','integration-cycle','unapproved-monster',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-unsupported-event','integration-player','unapproved-event','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-cycle-mismatch','integration-player','underpass','unsupported-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-corrupt-awarded-reward','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-no-counter','integration-player','underpass','uncounted-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-duplicate-clear','integration-player','underpass','duplicate-receipt-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-awarded-duplicate-peer','integration-player','underpass','duplicate-receipt-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
@@ -116,7 +130,27 @@ try {
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
       ('permit-expired-victory','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,1,0),
-      ('permit-expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0);
+      ('permit-expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
+      ('permit-counter-lag-peer','integration-player','underpass','counter-lag-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-lag-pending','integration-player','underpass','counter-lag-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-last-safe','integration-player','underpass','counter-boundary-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-overflow','integration-player','underpass','counter-boundary-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-fractional','integration-player','underpass','counter-fractional-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-negative','integration-player','underpass','counter-negative-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
+    INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
+      VALUES
+        ('integration-player','underpass','counter-lag-cycle',0),
+        ('integration-player','underpass','counter-boundary-cycle',9007199254740990),
+        ('integration-player','underpass','counter-fractional-cycle',1.5),
+        ('integration-player','underpass','counter-negative-cycle',-1);
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='counter-lag-peer-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+      WHERE id='permit-counter-lag-peer';
+    INSERT INTO battle_history
+      (id,player_id,encounter_key,result,player_level,xp_awarded,currency_awarded)
+      VALUES('permit-counter-lag-peer:victory','integration-player','tunnel-maw','victory',2,75,30);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -658,7 +692,35 @@ try {
   assertPersistedPermitState('permit-turn-race', acceptedRace);
 
   assert.equal((await complete('expired')).status, 409);
-  assert.equal((await complete('permit-a', 'wrong-player')).status, 409);
+  const wrongOwnerCompletion = await complete('permit-a', 'wrong-player', {
+    victory: true,
+    status: 'victory',
+    playerHp: 0,
+    playerMana: 999,
+    enemyHp: 0,
+    turnCount: 999,
+    xp: 999999,
+    currency: 999999,
+    items: ['admin-item'],
+    reward: { xp: 999999, currency: 999999, items: ['admin-item'], tier: 'full' },
+  });
+  assert.equal(wrongOwnerCompletion.status, 409);
+  assert.equal(wrongOwnerCompletion.data.error, 'Battle is not an authoritative victory.');
+  assert.equal('reward' in wrongOwnerCompletion.data, false,
+    'a wrong owner must not receive another player\'s reward receipt');
+  assert.equal('player' in wrongOwnerCompletion.data, false,
+    'a wrong owner must not receive another player\'s progression snapshot');
+  assertPersistedPermitState('permit-a', {
+    status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
+  });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-a' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
+    'wrong-owner completion must not claim or reserve the valid permit');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-a:victory'"), 0,
+    'wrong-owner completion must not write victory history');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM characters WHERE player_id='integration-player' AND level=1 AND xp=0 AND currency=0 AND last_reward_claim_token IS NULL"), 1,
+    'wrong-owner completion must not mutate the real owner\'s progression');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_clears WHERE player_id='integration-player' AND event_key='underpass' AND cycle_id='integration-cycle'"), 0,
+    'wrong-owner completion must not reserve a reward sequence');
   const forgedVictoryRewardPayload = {
     victory: false,
     status: 'defeat',
@@ -740,6 +802,27 @@ try {
   assert.equal(replay.player.currency, 60);
   assert.equal(replay.worldEvent.fullRewardClears, 2);
   assert.equal(replay.player.inventory.filter(x => x === 'underpass-scrap').length, 2);
+
+  // An awarded receipt can still recover the original result if even the persisted
+  // terminal status is later corrupted; the audited receipt must not award twice.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET battle_status = 'active' WHERE id = 'permit-a'"]);
+  const corruptedTerminalReplay = await complete('permit-a', 'integration-player', {
+    status: 'victory', playerMana: 999, xp: 999999, currency: 999999,
+    items: ['admin-item'], reward: { xp: 999999, currency: 999999, items: ['admin-item'], tier: 'full' },
+  });
+  assert.equal(corruptedTerminalReplay.status, 200,
+    'a valid, already-awarded receipt must recover despite a later corrupted battle_status');
+  assert.deepEqual(corruptedTerminalReplay.data.reward, a.reward,
+    'terminal snapshot corruption must not replace the audited canonical reward');
+  assert.equal(corruptedTerminalReplay.data.player.level, 2);
+  assert.equal(corruptedTerminalReplay.data.player.xp, 50);
+  assert.equal(corruptedTerminalReplay.data.player.currency, 60);
+  assert.equal(corruptedTerminalReplay.data.player.inventory.filter(x => x === 'underpass-scrap').length, 2);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-a:victory'"), 1,
+    'recovery after terminal-status corruption must not duplicate battle history');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-a' AND battle_status='active' AND reward_state='awarded' AND completed_at IS NOT NULL"), 1,
+    'replay must recover the audited receipt without rewriting the corrupted combat snapshot');
   assert.equal((await eventuallyComplete('permit-c')).reward.tier, 'full');
   assert.equal((await eventuallyComplete('permit-d')).reward.tier, 'reduced');
   const final = await eventuallyComplete('permit-d');
@@ -1004,7 +1087,200 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-expired-defeat:victory'"), 0);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id = 'permit-expired-defeat' AND reward_state = 'pending' AND completed_at IS NULL"), 1);
 
-  console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  // Awarded receipts may replay only when their stored reward and history audit agree.
+  // Preserve the legitimate awarded-receipt replay above, where only the old combat
+  // snapshot was corrupted; these fixtures corrupt the independent reward receipt.
+  const corruptReceiptSeed = join(scratch, 'corrupt-awarded-receipts.sql');
+  writeFileSync(corruptReceiptSeed, `
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=999999, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='corrupt-reward-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-corrupt-awarded-reward';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='missing-history-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-without-history';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=999999,
+      reward_xp=10, reward_currency=3, reward_tier='reduced', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='ahead-clear-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-clear-ahead';
+    UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
+      reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
+      reward_remaining_xp=50, reward_claim_token='missing-counter-token',
+      reward_claimed_at=CURRENT_TIMESTAMP, completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-no-counter';
+    INSERT INTO battle_history
+      (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+    VALUES ('permit-corrupt-awarded-reward:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 999999, 30),
+      ('permit-awarded-clear-ahead:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 10, 3),
+      ('permit-awarded-no-counter:victory', 'integration-player',
+      'tunnel-maw', 'victory', 2, 75, 30);
+    INSERT INTO world_event_clears (player_id, event_key, cycle_id, full_reward_clears)
+    SELECT 'integration-player', 'underpass', 'duplicate-receipt-cycle', reward_clear_number
+      FROM battle_permits WHERE id='permit-a';
+    UPDATE battle_permits SET reward_state='awarded',
+      reward_clear_number=(SELECT reward_clear_number FROM battle_permits WHERE id='permit-a'),
+      reward_xp=(SELECT reward_xp FROM battle_permits WHERE id='permit-a'),
+      reward_currency=(SELECT reward_currency FROM battle_permits WHERE id='permit-a'),
+      reward_tier=(SELECT reward_tier FROM battle_permits WHERE id='permit-a'),
+      reward_level=(SELECT reward_level FROM battle_permits WHERE id='permit-a'),
+      reward_remaining_xp=(SELECT reward_remaining_xp FROM battle_permits WHERE id='permit-a'),
+      reward_claim_token='duplicate-clear-token-a', reward_claimed_at=CURRENT_TIMESTAMP,
+      completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-duplicate-clear';
+    UPDATE battle_permits SET reward_state='awarded',
+      reward_clear_number=(SELECT reward_clear_number FROM battle_permits WHERE id='permit-a'),
+      reward_xp=(SELECT reward_xp FROM battle_permits WHERE id='permit-a'),
+      reward_currency=(SELECT reward_currency FROM battle_permits WHERE id='permit-a'),
+      reward_tier=(SELECT reward_tier FROM battle_permits WHERE id='permit-a'),
+      reward_level=(SELECT reward_level FROM battle_permits WHERE id='permit-a'),
+      reward_remaining_xp=(SELECT reward_remaining_xp FROM battle_permits WHERE id='permit-a'),
+      reward_claim_token='duplicate-clear-token-b', reward_claimed_at=CURRENT_TIMESTAMP,
+      completed_at=CURRENT_TIMESTAMP
+    WHERE id='permit-awarded-duplicate-peer';
+    INSERT INTO battle_history
+      (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+    SELECT 'permit-awarded-duplicate-clear:victory', player_id, encounter_key,
+      'victory', reward_level, reward_xp, reward_currency
+    FROM battle_permits WHERE id='permit-awarded-duplicate-clear';
+    INSERT INTO battle_history
+      (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+    SELECT 'permit-awarded-duplicate-peer:victory', player_id, encounter_key,
+      'victory', reward_level, reward_xp, reward_currency
+    FROM battle_permits WHERE id='permit-awarded-duplicate-peer';
+  `);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + corruptReceiptSeed]);
+
+  for (const [permitId, expectedHistoryCount, expectedClearNumber] of [
+    ['permit-corrupt-awarded-reward', 1, 1],
+    ['permit-awarded-without-history', 0, 1],
+    ['permit-awarded-clear-ahead', 1, 999999],
+    ['permit-awarded-no-counter', 1, 1],
+  ]) {
+    const rejectedReceipt = await complete(permitId, 'integration-player', {
+      victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
+    });
+    assert.equal(rejectedReceipt.status, 409, JSON.stringify(rejectedReceipt.data));
+    assert.equal(rejectedReceipt.data.error, 'Battle reward receipt is invalid.');
+    assert.equal('reward' in rejectedReceipt.data, false,
+      'invalid awarded receipts must not return an unaudited reward payload');
+    assert.equal('player' in rejectedReceipt.data, false,
+      'invalid awarded receipts must not return a misleading progression snapshot');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='${permitId}'
+      AND reward_state='awarded' AND completed_at IS NOT NULL AND reward_clear_number=${expectedClearNumber}`), 1,
+      'receipt validation must not rewrite or release an already-awarded permit');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`),
+      expectedHistoryCount, 'receipt validation must not create or duplicate history');
+  }
+  // Two internally consistent awarded receipts cannot claim the same sequence slot.
+  // Seed a duplicate only after permit-a has completed normally, so both rows carry
+  // canonical reward fields and matching history; replay must still fail closed.
+  for (const permitId of ['permit-awarded-duplicate-clear', 'permit-awarded-duplicate-peer']) {
+    const duplicateReplay = await complete(permitId, 'integration-player', {
+      victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
+    });
+    assert.equal(duplicateReplay.status, 409, JSON.stringify(duplicateReplay.data));
+    assert.equal(duplicateReplay.data.error, 'Battle reward receipt is invalid.');
+    assert.equal('reward' in duplicateReplay.data, false);
+    assert.equal('player' in duplicateReplay.data, false);
+  }
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='duplicate-receipt-cycle'
+      AND reward_clear_number=(SELECT reward_clear_number FROM battle_permits WHERE id='permit-awarded-duplicate-clear')`), 2,
+    'the isolated fixture must prove exactly two receipts share the same cycle sequence slot');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('permit-awarded-duplicate-clear:victory','permit-awarded-duplicate-peer:victory')`), 2,
+    'both matching history rows remain unchanged when duplicate receipt replay is rejected');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='duplicate-receipt-cycle'
+      AND full_reward_clears=(SELECT reward_clear_number FROM battle_permits WHERE id='permit-awarded-duplicate-clear')`), 1,
+    'duplicate receipt replay must not alter the isolated cycle clear counter');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='integration-cycle' AND full_reward_clears=6`), 1,
+    'invalid receipt replay must not reserve another event clear');
+  // A corrupt cycle counter must not let a new victory reuse an already-reserved sequence slot.
+  const progressBeforeCounterLag = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`);
+  const counterLagCompletion = await complete('permit-counter-lag-pending');
+  assert.equal(counterLagCompletion.status, 409, JSON.stringify(counterLagCompletion.data));
+  assert.equal(counterLagCompletion.data.error, 'Unable to assign authoritative reward clear.');
+  assert.equal('reward' in counterLagCompletion.data, false);
+  assert.equal('player' in counterLagCompletion.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`), progressBeforeCounterLag,
+    'an inconsistent clear sequence must be rejected before progression or economy writes');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-counter-lag-pending'
+    AND battle_status='victory' AND reward_state='pending' AND reward_clear_number IS NULL
+    AND completed_at IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL`), 1,
+    'the rejected permit must remain retryable without a forged clear reservation');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-counter-lag-pending:victory'`), 0,
+    'no victory history is written when the sequence audit fails');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='counter-lag-cycle' AND full_reward_clears=0`), 1,
+    'the corrupt cycle counter is not advanced by a rejected claim');
+
+  // The last safe integer is a valid sequence slot; the following allocation must fail
+  // closed rather than round the counter through JavaScript's unsafe integer range.
+  const lastSafeCompletion = await complete('permit-counter-last-safe');
+  assert.equal(lastSafeCompletion.status, 200, JSON.stringify(lastSafeCompletion.data));
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-counter-last-safe' AND reward_state='awarded'
+      AND reward_clear_number=9007199254740991`), 1);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='counter-boundary-cycle'`), [{ full_reward_clears: 9007199254740991 }]);
+
+  const progressBeforeOverflow = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`);
+  const overflowCompletion = await complete('permit-counter-overflow');
+  assert.equal(overflowCompletion.status, 409, JSON.stringify(overflowCompletion.data));
+  assert.equal(overflowCompletion.data.error, 'Unable to assign authoritative reward clear.');
+  assert.equal('reward' in overflowCompletion.data, false);
+  assert.equal('player' in overflowCompletion.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`), progressBeforeOverflow);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-counter-overflow'
+    AND battle_status='victory' AND reward_state='pending' AND reward_clear_number IS NULL
+    AND completed_at IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL`), 1);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='counter-boundary-cycle'`), [{ full_reward_clears: 9007199254740991 }],
+    'overflow rejection must not round or advance the maximum safe counter');
+
+  for (const [permitId, cycleId, expectedCounter] of [
+    ['permit-counter-fractional', 'counter-fractional-cycle', 1.5],
+    ['permit-counter-negative', 'counter-negative-cycle', -1],
+  ]) {
+    const progressBeforeCorruptCounter = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+      FROM characters WHERE player_id='integration-player'`);
+    const rejected = await complete(permitId);
+    assert.equal(rejected.status, 409, JSON.stringify(rejected.data));
+    assert.equal(rejected.data.error, 'Unable to assign authoritative reward clear.');
+    assert.equal('reward' in rejected.data, false);
+    assert.equal('player' in rejected.data, false);
+    assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+      FROM characters WHERE player_id='integration-player'`), progressBeforeCorruptCounter);
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='${permitId}'
+      AND battle_status='victory' AND reward_state='pending' AND reward_clear_number IS NULL
+      AND completed_at IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL`), 1);
+    assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+      WHERE player_id='integration-player' AND event_key='underpass'
+        AND cycle_id='${cycleId}'`), [{ full_reward_clears: expectedCounter }],
+      'invalid counters must remain unchanged when reward allocation is rejected');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+      WHERE id='${permitId}:victory'`), 0);
+  }
+
+  console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
