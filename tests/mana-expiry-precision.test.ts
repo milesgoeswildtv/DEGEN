@@ -44,6 +44,42 @@ test('Worker action expiry guards preserve millisecond precision while terminal 
   );
 });
 
+test('awarded receipt audit rejects duplicate clear sequence numbers', () => {
+  const receiptStart = worker.indexOf('const loadReceipt = async () => env.DB.prepare');
+  const receiptEnd = worker.indexOf(
+    "WHERE permit.id = ? AND permit.player_id = ?`)",
+    receiptStart,
+  );
+  assert.ok(receiptStart >= 0 && receiptEnd > receiptStart, 'the authoritative receipt query must exist');
+  const receiptQuery = worker.slice(receiptStart, receiptEnd);
+  assert.doesNotMatch(receiptQuery, /WHERE permit\.id = \? AND permit\.player_id = \? AND permit\.battle_status = 'victory'/,
+    'the owner-scoped receipt lookup must not discard an already-awarded receipt when combat status is later corrupt');
+  const unawardedVictoryGuard = worker.indexOf("if (receipt.battle_status !== 'victory')", receiptEnd);
+  const awardedReplayGuard = worker.indexOf("if (receipt.reward_state === 'awarded')", receiptEnd);
+  assert.ok(awardedReplayGuard > receiptEnd && unawardedVictoryGuard > awardedReplayGuard,
+    'unawarded permits must still require a server-resolved victory after the audited awarded-replay path');
+  assert.match(
+    receiptQuery,
+    /SELECT COUNT\(\*\) FROM battle_permits AS other[\s\S]*other\.player_id = permit\.player_id[\s\S]*other\.event_key = permit\.event_key[\s\S]*other\.cycle_id = permit\.cycle_id[\s\S]*other\.reward_clear_number = permit\.reward_clear_number[\s\S]*AS duplicate_clear_count/,
+    'receipt validation must count any other permit claiming the same per-cycle sequence number',
+  );
+  assert.ok(receiptQuery.includes("other.event_key = 'underpass'"),
+    'unsupported event receipts must not poison a valid receipt audit');
+  assert.ok(receiptQuery.includes("other.encounter_key = '${TUNNEL_MAW.id}'"),
+    'unsupported encounter receipts must not poison a valid receipt audit');
+  assert.ok(receiptQuery.includes("other_cycle.event_key = 'underpass'"),
+    'a permit attached to an unsupported event cycle must not poison a valid receipt audit');
+
+  const auditStart = worker.indexOf('const isValidAwardedReceipt');
+  const auditEnd = worker.indexOf('const canonicalReward =', auditStart);
+  assert.ok(auditStart >= 0 && auditEnd > auditStart, 'awarded receipt audit must exist');
+  assert.match(
+    worker.slice(auditStart, auditEnd),
+    /isSafeIntegerBetween\(row\.duplicate_clear_count, 0, 0\)/,
+    'any duplicate clear-number claim must fail closed before reward replay',
+  );
+});
+
 test('permit validity is strict at every millisecond expiry boundary', () => {
   const db = new DatabaseSync(':memory:');
   try {
@@ -91,4 +127,55 @@ test('invalid and offset-normalized expiries fail closed at the exact boundary',
   } finally {
     db.close();
   }
+});
+
+test('newly settled rewards and idempotent replays share the full persisted receipt audit', () => {
+  const loaderStart = worker.indexOf('const loadReceipt = async () => env.DB.prepare');
+  const initialRead = worker.indexOf('const receipt = await loadReceipt();', loaderStart);
+  const replayStart = worker.indexOf("if (receipt.reward_state === 'awarded')", initialRead);
+  const settlementRead = worker.indexOf('const settledReceipt = await loadReceipt();', replayStart);
+  assert.ok(loaderStart >= 0 && initialRead > loaderStart && replayStart > initialRead,
+    'completion must load one complete owner-scoped receipt before deciding whether to claim or replay');
+  assert.ok(settlementRead > replayStart,
+    'successful settlement must re-read the complete persisted receipt before returning reward data');
+
+  const replayBlock = worker.slice(replayStart, worker.indexOf('const token =', replayStart));
+  assert.match(replayBlock,
+    /if \(!isValidAwardedReceipt\(receipt\)\)[\s\S]*return fail\(request, env, 'Battle reward receipt is invalid\.', 409\)[\s\S]*return respond\(receipt\)/,
+    'the replay path must validate reward, clear-counter, uniqueness, claim, and history audit first');
+
+  const settlementBlock = worker.slice(
+    settlementRead,
+    worker.indexOf("if (settledReceipt?.reward_state !== 'claiming'", settlementRead),
+  );
+  assert.match(settlementBlock,
+    /if \(settledReceipt\?\.reward_state === 'awarded'\)[\s\S]*if \(!isValidAwardedReceipt\(settledReceipt\)\)[\s\S]*return fail\(request, env, 'Battle reward receipt is invalid\.', 409\)[\s\S]*return respond\(settledReceipt\)/,
+    'the first settlement response must apply the same full persisted receipt audit before returning rewards');
+  assert.equal((worker.match(/return respond\(/g) ?? []).length, 2,
+    'the only reward response paths are the audited replay and audited settlement branches');
+});
+
+test('new clear allocation fails closed when the persisted counter trails a reserved sequence', () => {
+  const assignmentStart = worker.indexOf('UPDATE battle_permits SET reward_clear_number = (');
+  const assignmentEnd = worker.indexOf('UPDATE world_event_clears SET full_reward_clears =', assignmentStart);
+  assert.ok(assignmentStart >= 0 && assignmentEnd > assignmentStart,
+    'the permit clear-number reservation and cycle-counter update must exist');
+  const assignment = worker.slice(assignmentStart, assignmentEnd);
+  assert.match(assignment,
+    /full_reward_clears[\s\S]*>= COALESCE\([\s\S]*SELECT MAX\(other\.reward_clear_number\)[\s\S]*other\.reward_clear_number IS NOT NULL[\s\S]*other_cycle\.event_key = 'underpass'/,
+    'a new sequence number must not be allocated while the cycle counter trails any existing supported receipt');
+
+  assert.ok(assignment.includes("typeof((SELECT full_reward_clears FROM world_event_clears"),
+    'sequence allocation must reject non-integer D1 counters before writing');
+  assert.ok(assignment.includes('BETWEEN 0 AND ${Number.MAX_SAFE_INTEGER - 1}'),
+    'sequence allocation must stop before adding one would exceed the JavaScript safe-integer range');
+
+  const ownedStart = worker.indexOf('const owned = await env.DB.prepare');
+  const ownedEnd = worker.indexOf('const reward = underpassRewardForClear', ownedStart);
+  const owned = worker.slice(ownedStart, ownedEnd);
+  assert.match(owned, /cycle_clear_count/);
+  assert.match(owned, /duplicate_clear_count/);
+  assert.match(owned, /isSafeIntegerBetween\(owned\.cycle_clear_count, owned\.reward_clear_number, Number\.MAX_SAFE_INTEGER\)/);
+  assert.match(owned, /isSafeIntegerBetween\(owned\.duplicate_clear_count, 0, 0\)/,
+    'both newly assigned and previously reserved sequence numbers must be audited before progression writes');
 });
