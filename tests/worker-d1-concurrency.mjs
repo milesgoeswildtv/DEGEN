@@ -83,7 +83,8 @@ try {
         ('counter-lag-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('counter-boundary-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('counter-fractional-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
-        ('counter-negative-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+        ('counter-negative-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('legacy-terminal-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -136,13 +137,16 @@ try {
       ('permit-counter-last-safe','integration-player','underpass','counter-boundary-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-counter-overflow','integration-player','underpass','counter-boundary-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-counter-fractional','integration-player','underpass','counter-fractional-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('permit-counter-negative','integration-player','underpass','counter-negative-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
+      ('permit-counter-negative','integration-player','underpass','counter-negative-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      -- A pre-Mana terminal victory may legitimately retain NULL player_mana.
+      ('permit-legacy-terminal-victory','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,NULL,0,3);
     INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
       VALUES
         ('integration-player','underpass','counter-lag-cycle',0),
         ('integration-player','underpass','counter-boundary-cycle',9007199254740990),
         ('integration-player','underpass','counter-fractional-cycle',1.5),
-        ('integration-player','underpass','counter-negative-cycle',-1);
+        ('integration-player','underpass','counter-negative-cycle',-1),
+        ('integration-player','underpass','legacy-terminal-cycle',0);
     UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
       reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
       reward_remaining_xp=50, reward_claim_token='counter-lag-peer-token',
@@ -1287,6 +1291,38 @@ try {
     assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
       WHERE id='${permitId}:victory'`), 0);
   }
+
+
+  // A legacy terminal victory created before Mana existed must remain reward-recoverable
+  // after expiry. The Worker may project a display Mana value, but must not invent a
+  // persisted value or change the already-resolved combat outcome.
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-legacy-terminal-victory' AND player_mana IS NULL
+      AND battle_status='victory' AND reward_state='pending' AND completed_at IS NULL`), 1);
+  const legacyVictory = await complete('permit-legacy-terminal-victory');
+  assert.equal(legacyVictory.status, 200, JSON.stringify(legacyVictory.data));
+  assert.equal(legacyVictory.data.reward.xp, 75);
+  assert.equal(legacyVictory.data.reward.currency, 30);
+  assert.equal(legacyVictory.data.reward.tier, 'full');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-legacy-terminal-victory' AND player_mana IS NULL
+      AND battle_status='victory' AND reward_state='awarded' AND completed_at IS NOT NULL`), 1,
+    'legacy reward recovery must not fabricate or persist an unknown Mana value');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id='permit-legacy-terminal-victory:victory'`), 1);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='legacy-terminal-cycle'`), [{ full_reward_clears: 1 }]);
+  const legacyProgressAfterAward = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`);
+  const legacyReplay = await complete('permit-legacy-terminal-victory');
+  assert.equal(legacyReplay.status, 200, JSON.stringify(legacyReplay.data));
+  assert.deepEqual(legacyReplay.data.reward, legacyVictory.data.reward);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`), legacyProgressAfterAward,
+    'legacy terminal replay must not grant duplicate progression');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id='permit-legacy-terminal-victory:victory'`), 1);
 
   console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
