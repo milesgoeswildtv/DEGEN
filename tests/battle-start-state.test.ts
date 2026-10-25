@@ -76,6 +76,37 @@ test('authoritative battle log reports full retaliation when Shield absorbs part
   assert.equal(engine.snapshot.log.includes('Tunnel Maw hits back for 3.'), false);
 });
 
+test('authoritative Shield gain is applied once when the same action response is replayed', () => {
+  const shieldDegen = {
+    ...TEST_DEGEN,
+    abilities: TEST_DEGEN.abilities.map((ability) => ability.id === 'slash'
+      ? { ...ability, shieldGain: 3 }
+      : ability),
+  };
+  const engine = new BattleEngine(shieldDegen, TUNNEL_MAW, () => undefined, startState({
+    playerHp: 50, playerMana: 0, playerShield: 4, enemyHp: TUNNEL_MAW.maxHp,
+  }));
+  const authoritative: BattleActionResult = {
+    permitId: 'permit-1', status: 'active', playerHp: 47, playerMana: 0,
+    playerShield: 0, shieldAbsorbed: 7, retaliationDamage: 10, enemyHp: 63, turnCount: 1,
+  };
+
+  engine.applyAuthoritativeAction('slash', authoritative);
+  assert.equal(engine.snapshot.playerHp, 47);
+  assert.equal(engine.snapshot.playerShield, 0);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(engine.snapshot.log.filter((entry) => entry === 'Shield +3.').length, 1);
+  assert.equal(engine.snapshot.log.filter((entry) => entry === 'Shield absorbs 7.').length, 1);
+
+  engine.applyAuthoritativeAction('slash', authoritative);
+  assert.equal(engine.snapshot.playerHp, 47, 'a replay cannot apply retaliation twice');
+  assert.equal(engine.snapshot.playerShield, 0, 'a replay cannot grant or consume Shield twice');
+  assert.equal(engine.snapshot.enemyHp, 63);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(engine.snapshot.log.filter((entry) => entry === 'Shield +3.').length, 1);
+  assert.equal(engine.snapshot.log.filter((entry) => entry === 'Shield absorbs 7.').length, 1);
+});
+
 test('authoritative battle log keeps full retaliation on defeat even when Shield absorbs damage', () => {
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({
     playerHp: 1, playerMana: 0, playerShield: 2, enemyHp: TUNNEL_MAW.maxHp,
