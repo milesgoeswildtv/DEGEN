@@ -296,10 +296,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     .first<BattlePermitStateRow>();
 
   if (!permit) {
-    // A second tab may retry an action after the first tab already settled the
-    // victory receipt. Return that persisted terminal snapshot so the client
-    // can recover and replay the idempotent completion response instead of
-    // remaining stuck on an active local battle.
+    // Preserve the existing awarded-receipt replay path for a delayed second tab.
     const completed = await env.DB.prepare(`SELECT
         cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
       FROM battle_permits
@@ -317,6 +314,43 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           playerMana: completed.player_mana,
           enemyHp: completed.enemy_hp,
           turnCount: completed.turn_count,
+        },
+      }, 409);
+    }
+
+    // A terminal action can commit before expiry while its HTTP response is lost.
+    // Recover only the owner-scoped, persisted terminal snapshot; this never reopens
+    // the permit or authorizes another action. Active expired permits still fail closed.
+    const terminal = await env.DB.prepare(`SELECT
+        cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count,
+        completed_at, reward_state
+      FROM battle_permits
+      WHERE id = ? AND player_id = ? AND completed_at IS NULL
+        AND battle_status IN ('victory', 'defeat')`)
+      .bind(input.permitId, input.playerId)
+      .first<BattlePermitStateRow & {
+        completed_at: string | null;
+        reward_state: 'pending' | 'claiming' | 'awarded';
+      }>();
+    const pendingVictory = terminal?.battle_status === 'victory'
+      && (terminal.reward_state === 'pending' || terminal.reward_state === 'claiming');
+    const unresolvedDefeat = terminal?.battle_status === 'defeat'
+      && terminal.reward_state === 'pending';
+    if (terminal
+      && terminal.encounter_key === TUNNEL_MAW.id
+      && isValidBattlePermitState(terminal)
+      && (pendingVictory || unresolvedDefeat)) {
+      return json(request, env, {
+        error: pendingVictory
+          ? 'Battle victory is awaiting reward completion.'
+          : 'Battle is already defeated.',
+        battleState: {
+          permitId: input.permitId,
+          status: terminal.battle_status,
+          playerHp: terminal.player_hp,
+          playerMana: terminal.player_mana,
+          enemyHp: terminal.enemy_hp,
+          turnCount: terminal.turn_count,
         },
       }, 409);
     }
@@ -498,10 +532,13 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     }
   };
   try {
+    // Permit expiry blocks new actions, not settlement of a valid Worker-resolved
+    // victory. The read above requires a consistent terminal victory; active or
+    // corrupt permits cannot reach this claim path.
     const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND battle_status = 'victory' AND (
-      (reward_state = 'pending' AND completed_at IS NULL AND (julianday(expires_at) > julianday('now') OR reward_clear_number IS NOT NULL))
+      (reward_state = 'pending' AND completed_at IS NULL)
       OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId)
