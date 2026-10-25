@@ -147,6 +147,7 @@ test('replayed action after reward settlement returns the persisted victory snap
     error: string;
     battleState?: {
       permitId: string; status: string; playerHp: number; playerMana: number;
+      playerShield: number; shieldAbsorbed: number; retaliationDamage: number;
       enemyHp: number; turnCount: number;
     };
   };
