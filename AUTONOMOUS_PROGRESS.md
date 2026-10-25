@@ -1,5 +1,22 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (legacy terminal victory recovery)
+
+- **Authoritative main SHA at run start:** `9d8c3f394de2dba34497421fb880bb11f6fc4ed4`, after PR #63's documentation-only merge. The latest verified main change before this run remains PR #62's concurrent clear-number regression; no direct-main write.
+- **PUSHED feature branch / PR not opened yet:** `automation/degen/legacy-terminal-victory-recovery-v01`, based on exact main SHA above. Code/test commits currently make the branch 4 commits ahead and 0 behind. The latest progress-only commit and exact-head CI are still pending.
+- **Task / root cause:** migration `0006_backfill_active_battle_mana.sql` intentionally backfills eligible active permits only. A valid terminal victory created before Mana existed can therefore retain `player_mana IS NULL`. The Worker previously rejected that terminal state in `isValidBattlePermitState`, so a still-pending Worker-resolved victory could be unable to recover its terminal snapshot or settle its reward after expiry.
+- **Changes:** `worker/index.ts` now permits missing Mana only for otherwise-valid terminal legacy states; active permits still require a safe persisted Mana integer. Terminal recovery responses project the prototype max Mana for display only and never write it to D1. Terminal states remain non-actionable. The reward-completion path can settle a valid legacy terminal victory using its persisted status/HP/enemy HP/turn count, without trusting client victory/reward fields.
+- **Regression coverage:** `tests/worker-battle-action-conflict.test.ts` verifies a legacy NULL-Mana victory returns a terminal-only snapshot and still rejects another action. `tests/worker-d1-concurrency.mjs` seeds an expired pending legacy victory, verifies reward settlement and sequence/history writes exactly once, replays completion idempotently, and asserts the database's Mana value remains NULL.
+- **Files changed:** `worker/index.ts`; `tests/worker-battle-action-conflict.test.ts`; `tests/worker-d1-concurrency.mjs`; this continuity record. No new migration, schema, reward values, combat math, Degen kit, monster resource, secret, or deployment-config change.
+- **QA status:** implementation and tests are pushed to the feature branch; exact-head CI has not yet been observed. Do not claim `npm test`, Worker/D1 integration, build, browser, or `npm run check:worker` green until CI confirms them. No local shell execution or direct production HTTP smoke is claimed.
+- **Mana:** COMPLETE / MERGED on main. The tracked 0006 migration and active-permit backfill remain unchanged. This change handles pre-Mana terminal snapshots without inventing persisted resource history; new/active server-backed permits must still carry authoritative Mana. Monsters still have no Mana, and zero Mana never triggers reversion.
+- **Battle authority / reward idempotency:** Worker-resolved victory remains required. Existing owner checks, turn CAS, event/cycle/encounter checks, awarded receipt audit, unique clear numbers, token-scoped retry, full/reduced reward selector, and exactly-once progression/history remain unchanged.
+- **D1 / release assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. This branch requires no D1 migration or production DB action.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved policy for unverified legacy identity collisions. Shield PR #20 remains draft and gated; housing PR #49 is also not mergeable against current main. No auth/Shield gate was bypassed.
+- **Best next task:** verify exact-head CI and review this legacy-reward recovery PR; then reconcile auth PR #21 with current main without deploying credentials or auto-linking legacy identities.
+
+---
+
 ## Latest run — 2026-10-25 (concurrent reward clear invariant merged; next-slice audit)
 
 - **Authoritative main SHA at run start:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. PR #61, [reward receipt audit and clear sequence guard](https://github.com/milesgoeswildtv/DEGEN/pull/61), merged through the PR path as `0fbdcc48200d7551b9980f674d5171ad54dfb7ab`; PR #62, [explicit concurrent clear-sequence uniqueness regression](https://github.com/milesgoeswildtv/DEGEN/pull/62), merged through the PR path as `6934f6694aae52a4810483ecba610a13331931c3`. No direct-main write.
