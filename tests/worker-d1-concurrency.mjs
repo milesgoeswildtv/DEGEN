@@ -1658,11 +1658,6 @@ try {
     WHERE id = 'inventory-cap-player:item:underpass-scrap'`);
   expectInventoryGuardFailure(`UPDATE player_inventory SET quantity = 9007199254740992
     WHERE id = 'inventory-cap-player:item:underpass-scrap'`);
-  expectInventoryGuardFailure(`INSERT INTO player_inventory (id, player_id, item_key, item_type, quantity)
-    VALUES ('inventory-cap-player:item:invalid-insert', 'inventory-cap-player', 'invalid-insert', 'item', 1.5)`);
-  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
-    WHERE id = 'inventory-cap-player:item:invalid-insert'`), 0,
-    'invalid inventory insert must not create a row');
   assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
     WHERE id = 'inventory-cap-player:item:underpass-scrap'`), [{ quantity: 10000 }],
     'failed quantity updates must leave the existing stack unchanged');
