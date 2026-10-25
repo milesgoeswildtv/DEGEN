@@ -78,14 +78,23 @@ try {
     INSERT INTO characters(player_id, level, xp, currency, degen_key)
       VALUES ('qa-player', 1, 0, 0, 'test-degen');
     INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at)
-      VALUES ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+      VALUES
+        ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+    INSERT INTO world_event_clears(player_id, event_key, cycle_id, full_reward_clears)
+      VALUES ('qa-player', 'underpass', 'qa-legacy-cycle', 3);
     INSERT INTO battle_permits(
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count
-    ) VALUES (
-      'permit-recovery', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
-      datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1
-    );
+    ) VALUES
+      (
+        'permit-recovery', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1
+      ),
+      (
+        'permit-legacy-recovery', 'qa-player', 'underpass', 'qa-legacy-cycle', 'tunnel-maw',
+        datetime('now', '-20 minutes'), 70, NULL, 0, 'victory', 3
+      );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
 
@@ -161,7 +170,75 @@ try {
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 1);
   await stop();
-  console.log('PASS local Worker/D1 reward failure release, immediate retry, stable receipt, and exactly-once rewards');
+
+  // Repeat the transient-failure recovery against a valid pre-Mana victory.
+  // Its persisted Mana must remain NULL, the already-expired permit must remain
+  // reward-eligible, and its pre-existing clear counter makes this a reduced-tier
+  // award. This combines legacy-state compatibility with the failure-retry path.
+  sql(`CREATE TRIGGER qa_fail_legacy_victory_receipt BEFORE INSERT ON battle_history
+    WHEN NEW.id = 'permit-legacy-recovery:victory'
+    BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_LEGACY_REWARD_FAILURE'); END`);
+  await start();
+  const legacyFailed = await complete('permit-legacy-recovery');
+  assert.equal(legacyFailed.status, 500, 'legacy terminal reward failure must be surfaced');
+  await stop();
+
+  assert.deepEqual(sql(`SELECT player_mana, reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-legacy-recovery'`), [{
+    player_mana: null,
+    reward_state: 'pending',
+    reward_claim_token: null,
+    reward_claimed_at: null,
+    reward_clear_number: 4,
+    completed_at: null,
+  }], 'failed legacy settlement must release its claim without inventing Mana or losing the reserved slot');
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-legacy-cycle'`)[0]?.full_reward_clears, 4);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-legacy-recovery:victory'`)[0]?.n, 0);
+  const legacyCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+
+  sql('DROP TRIGGER qa_fail_legacy_victory_receipt');
+  await start();
+  const legacyRecovered = await complete('permit-legacy-recovery');
+  assert.equal(legacyRecovered.status, 200, JSON.stringify(legacyRecovered.body));
+  assert.equal(legacyRecovered.body?.reward?.tier, 'reduced');
+  const legacyReward = legacyRecovered.body.reward;
+  const legacyPermitAfterAward = sql(`SELECT player_mana, reward_state, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-legacy-recovery'`);
+  assert.deepEqual(legacyPermitAfterAward, [{
+    player_mana: null,
+    reward_state: 'awarded',
+    reward_clear_number: 4,
+    reward_xp: legacyReward.xp,
+    reward_currency: legacyReward.currency,
+    reward_tier: 'reduced',
+    completed_at: legacyPermitAfterAward[0]?.completed_at,
+  }]);
+  assert.ok(legacyPermitAfterAward[0]?.completed_at);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-legacy-recovery:victory'`)[0]?.n, 1);
+  const legacyCharacterAfterAward = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  assert.notDeepEqual(legacyCharacterAfterAward, legacyCharacterBefore,
+    'successful retry must grant the previously withheld reward');
+
+  const legacyDuplicate = await complete('permit-legacy-recovery');
+  assert.equal(legacyDuplicate.status, 200, JSON.stringify(legacyDuplicate.body));
+  assert.deepEqual(legacyDuplicate.body.reward, legacyReward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), legacyCharacterAfterAward,
+    'legacy duplicate completion must not grant progression twice');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-legacy-recovery:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-legacy-cycle'`)[0]?.full_reward_clears, 4);
+  await stop();
+
+  console.log('PASS local Worker/D1 normal and legacy reward failure recovery, expired victory settlement, reduced tier, stable receipts, and exactly-once rewards');
 } finally {
   await stop();
   rmSync(scratch, { recursive: true, force: true });
