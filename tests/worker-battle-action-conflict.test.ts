@@ -338,3 +338,63 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
     assert.equal(reads.length, 3, 'expired terminal recovery must query active, awarded, then terminal state without mutation');
   }
 });
+
+
+test('malformed pre-Mana terminal snapshots fail closed without display fallback', async () => {
+  const scenarios = [
+    { status: 'victory', playerHp: 0, enemyHp: 0, turnCount: 3 },
+    { status: 'victory', playerHp: 70, enemyHp: 10, turnCount: 3 },
+    { status: 'victory', playerHp: 70, enemyHp: 0, turnCount: 0 },
+    { status: 'defeat', playerHp: 1, enemyHp: 40, turnCount: 3 },
+    { status: 'defeat', playerHp: 0, enemyHp: 0, turnCount: 3 },
+  ] as const;
+
+  for (const scenario of scenarios) {
+    const malformedTerminal = {
+      cycle_id: 'cycle-legacy',
+      encounter_key: TUNNEL_MAW.id,
+      player_hp: scenario.playerHp,
+      player_mana: null,
+      enemy_hp: scenario.enemyHp,
+      battle_status: scenario.status,
+      turn_count: scenario.turnCount,
+      completed_at: null,
+      reward_state: 'pending' as const,
+    };
+    const reads: string[] = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(..._params: unknown[]) {
+            return {
+              first: async () => {
+                reads.push(sql);
+                if (sql.includes("julianday(expires_at)")) return null;
+                if (sql.includes("reward_state = 'awarded'")) return null;
+                if (sql.includes("battle_status IN ('victory', 'defeat')")) return malformedTerminal;
+                throw new Error('Unexpected query in malformed legacy terminal recovery test: ' + sql);
+              },
+            };
+          },
+        };
+      },
+    };
+    const request = new Request('https://degen-api.example/api/battle/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'player-1',
+        permitId: 'permit-malformed-legacy',
+        abilityId: 'slash',
+        expectedTurnCount: scenario.turnCount,
+      }),
+    });
+
+    const response = await handleBattleAction(request, { DB: db });
+    const result = await response.json() as { error: string; battleState?: unknown };
+    assert.equal(response.status, 409, JSON.stringify(scenario));
+    assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
+    assert.equal('battleState' in result, false, 'malformed terminal rows must not receive a fabricated display Mana value');
+    assert.equal(reads.length, 3, 'invalid terminal recovery is read-only');
+  }
+});
