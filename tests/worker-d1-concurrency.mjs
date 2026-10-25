@@ -189,6 +189,25 @@ try {
     assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`), 0,
       'unsupported victory must not create a reward receipt');
   }
+  // Even a pre-existing awarded receipt must not replay through an unsupported event/encounter.
+  // This models a stale/corrupt receipt row and proves the guard runs before the idempotent replay path.
+  for (const permitId of ['permit-unsupported-encounter', 'permit-unsupported-event']) {
+    cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+      "--command=UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1, reward_xp=25, reward_currency=10, reward_tier='full', completed_at=CURRENT_TIMESTAMP, reward_claim_token=NULL, reward_claimed_at=NULL WHERE id='" + permitId + "'"]);
+    const replay = await complete(permitId, 'integration-player', {
+      victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
+    });
+    assert.equal(replay.status, 409, JSON.stringify(replay.data));
+    assert.equal(replay.data.error, 'Unsupported battle permit.');
+    assert.equal('reward' in replay.data, false, 'unsupported awarded receipts must not replay reward payloads');
+    assert.equal('player' in replay.data, false, 'unsupported awarded receipts must not replay progression snapshots');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='${permitId}'
+      AND reward_state='awarded' AND reward_clear_number=1 AND reward_xp=25 AND reward_currency=10
+      AND reward_tier='full' AND completed_at IS NOT NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL`), 1,
+      'rejected replay must preserve the existing receipt without acquiring or rewriting a claim');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history WHERE id='${permitId}:victory'`), 0,
+      'unsupported awarded receipt must not create a second history receipt');
+  }
   assert.equal(countRows("SELECT COUNT(*) AS n FROM characters WHERE player_id='integration-player' AND level=1 AND xp=0 AND currency=0 AND last_reward_claim_token IS NULL"), 1,
     'unsupported encounter/event claims must not mutate progression');
 
