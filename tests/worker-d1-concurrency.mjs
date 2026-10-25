@@ -104,6 +104,7 @@ try {
       ('permit-mana-zero','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,50,0),
       ('permit-insufficient-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-invalid-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,13,92,0),
+      ('permit-missing-mana-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,NULL,92,0),
       ('permit-invalid-negative-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,-1,92,0),
       ('permit-invalid-fractional-mana','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,1.5,92,0),
       ('permit-invalid-fractional-player-hp','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80.5,12,92,0),
@@ -271,6 +272,26 @@ try {
   assertPersistedPermitState('permit-invalid-mana', {
     status: 'active', playerHp: 80, playerMana: 13, enemyHp: 92, turnCount: 0,
   });
+
+  // NULL Mana remains invalid for every active permit; only terminal legacy outcomes can use the display fallback.
+  const missingActiveManaResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player',
+      permitId: 'permit-missing-mana-active',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+  const missingActiveMana = await missingActiveManaResponse.json();
+  assert.equal(missingActiveManaResponse.status, 409);
+  assert.equal(missingActiveMana.error, 'Battle state is unavailable.');
+  assert.equal('battleState' in missingActiveMana, false);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-missing-mana-active' AND player_mana IS NULL
+      AND battle_status='active' AND player_hp=80 AND enemy_hp=92 AND turn_count=0`), 1,
+    'active permits must never use the terminal-only Mana fallback');
 
   // A valid zero-Mana permit must reject a paid move without applying any part of the turn.
   const insufficientManaResponse = await fetch(base + '/api/battle/action', {
