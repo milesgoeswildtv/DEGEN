@@ -6,17 +6,28 @@ import test from 'node:test';
 const worker = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8');
 const preciseExpiryGuard = "julianday(expires_at) > julianday('now')";
 
-test('Worker action and fresh reward-claim expiry guards preserve millisecond precision', () => {
+test('Worker action expiry guards preserve millisecond precision while terminal victory settlement survives expiry', () => {
   assert.equal(
     worker.split(preciseExpiryGuard).length - 1,
-    3,
-    'action lookup, action compare-and-swap, and fresh reward claim must use exact expiry precision',
+    2,
+    'active action lookup and action compare-and-swap must use exact expiry precision',
   );
   assert.doesNotMatch(worker, /datetime\(expires_at\)\s*>\s*CURRENT_TIMESTAMP/);
+
+  const claimStart = worker.indexOf('const claim = await env.DB.prepare');
+  const claimEnd = worker.indexOf('RETURNING cycle_id, encounter_key, reward_clear_number', claimStart);
+  assert.ok(claimStart >= 0 && claimEnd > claimStart, 'the authoritative reward claim statement must exist');
+  const claim = worker.slice(claimStart, claimEnd);
+  assert.match(claim, /WHERE id = \? AND player_id = \? AND battle_status = 'victory'/);
   assert.match(
-    worker,
-    /reward_state = 'pending' AND completed_at IS NULL AND \(julianday\(expires_at\) > julianday\('now'\) OR reward_clear_number IS NOT NULL\)/,
-    'a server-recorded victory with an assigned clear number remains recoverable after permit expiry',
+    claim,
+    /reward_state = 'pending' AND completed_at IS NULL/,
+    'a valid server-resolved victory remains eligible for first settlement after expiry',
+  );
+  assert.doesNotMatch(
+    claim,
+    /expires_at/,
+    'permit expiry blocks new actions; the already-persisted victory state gates late settlement',
   );
 });
 
