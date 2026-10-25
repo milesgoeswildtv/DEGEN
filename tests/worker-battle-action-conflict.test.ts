@@ -152,3 +152,39 @@ test('replayed action after reward settlement returns the persisted victory snap
   });
   assert.equal(reads.length, 2, 'the handler must recover from persisted completed state, not client state');
 });
+
+test('completed permits for unsupported encounters are not returned as this battle snapshot', async () => {
+  const unsupportedSnapshot = {
+    cycle_id: 'cycle-1',
+    encounter_key: 'different-monster',
+    player_hp: 70,
+    player_mana: 0,
+    enemy_hp: 0,
+    battle_status: 'victory',
+    turn_count: 3,
+  };
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(..._params: unknown[]) {
+          return {
+            first: async () => sql.includes('completed_at IS NOT NULL') ? unsupportedSnapshot : null,
+          };
+        },
+      };
+    },
+  };
+  const request = new Request('https://degen-api.example/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'player-1', permitId: 'permit-1', abilityId: 'slash', expectedTurnCount: 3,
+    }),
+  });
+
+  const response = await handleBattleAction(request, { DB: db });
+  const result = await response.json() as { error: string; battleState?: unknown };
+  assert.equal(response.status, 409);
+  assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in result, false, 'an unsupported encounter must not be projected as the active prototype enemy');
+});
