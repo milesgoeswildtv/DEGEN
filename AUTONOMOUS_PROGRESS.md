@@ -1,3 +1,19 @@
+# DEGEN — AUTONOMOUS PROGRESS
+
+## Latest run — 2026-10-24 (refresh rejected battle-action snapshots)
+
+- **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640` (merged PR #50 requires `expectedTurnCount` for every battle action).
+- **PUSHED / PR #52 OPEN:** `automation/degen/battle-conflict-latest-snapshot-v01`, head will be refreshed by this continuity commit. PR: https://github.com/milesgoeswildtv/DEGEN/pull/52.
+- **Exact task:** `worker/index.ts` now re-reads the persisted permit state for stale-turn, terminal-state, and unaffordable-Mana conflict responses. The previous response could echo the first SELECT snapshot even if a concurrent action committed before the rejection was returned, leaving the client briefly synchronized to old HP/Mana/enemy HP/turn count. The compare-and-swap remains the only action mutation authority. Added `tests/worker-battle-action-conflict.test.ts`, which deterministically simulates an old initial snapshot and a newer persisted snapshot.
+- **QA status:** Exact-head CI is pending/not yet exposed by the GitHub workflow-run reader. The full `npm test`, `npm run build`, `npm run check:worker`, and Worker/D1/Chromium workflow have **not** been claimed green for PR #52. A local checkout attempt was blocked because this execution environment cannot resolve `github.com`; no local test execution is claimed.
+- **Mana:** COMPLETE / MERGED on main, including Degen-only `maxMana`/bespoke `manaCost`, persisted `player_mana`, atomic unaffordable rejection, exact single deduction, zero-cost use at zero, killing-blow/defeat behavior, client/Worker math parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding, not approved balance.
+- **Battle authority / reward idempotency:** Main retains Worker-owned battle state, required turn preconditions, CAS/stale-turn guards, owner/expiry checks, server-resolved victory-only rewards, idempotent receipts and transient-D1 recovery, full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, Underpass cycle reservation/rollover, and valid issued permits through event closure until expiry. PR #52 changes only conflict snapshot freshness.
+- **D1 / migration assumptions:** `wrangler.toml` remains the authority for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. PR #52 changes no schema/migration, binding, secret, or deployment configuration. No production D1 operation or deployment occurred.
+- **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass this gate; keep Shield/housing integration from merging/deploying ahead of the gate.
+- **Best next task:** Verify exact-head CI for PR #52; if green, inspect remaining client/server recovery edge cases without changing reward/economy authority.
+
+---
+
 ## Latest run — 2026-10-24 (Worker no-store hardening merged)
 
 - **Authoritative main SHA:** `8cc62254d3852e6f47b5bdb1eb9d866e8a2db9b8`. PR #46 was squash-merged through the PR path at this SHA. Its exact-head CI run [40130567839](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40130567839) passed all 13 CI steps, including `npm test`, Worker/D1 reward concurrency and recovery, Underpass cycle reservation/rollover, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker dry-run.
