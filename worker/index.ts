@@ -302,7 +302,73 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     .bind(input.permitId, input.playerId)
     .first<BattlePermitStateRow>();
 
-  if (!permit) return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+  if (!permit) {
+    // A delayed second tab may replay an action after a valid victory was already awarded.
+    // Return only the persisted, owner-scoped terminal snapshot; never apply another turn.
+    const completed = await env.DB.prepare(`SELECT
+        cycle_id, encounter_key, player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count
+      FROM battle_permits
+      WHERE id = ? AND player_id = ? AND completed_at IS NOT NULL
+        AND reward_state = 'awarded' AND battle_status = 'victory'`)
+      .bind(input.permitId, input.playerId)
+      .first<BattlePermitStateRow>();
+    if (completed && completed.encounter_key === TUNNEL_MAW.id && isValidBattlePermitState(completed)) {
+      return json(request, env, {
+        error: 'Battle permit is already completed.',
+        battleState: {
+          permitId: input.permitId,
+          status: completed.battle_status,
+          playerHp: completed.player_hp,
+          playerMana: completed.player_mana,
+          playerShield: completed.player_shield,
+          shieldAbsorbed: 0,
+          retaliationDamage: 0,
+          enemyHp: completed.enemy_hp,
+          turnCount: completed.turn_count,
+        },
+      }, 409);
+    }
+
+    // A terminal action can commit before expiry while its HTTP response is lost.
+    // Recover only a persisted, valid terminal state. Active expired permits still fail closed.
+    const terminal = await env.DB.prepare(`SELECT
+        cycle_id, encounter_key, player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count,
+        completed_at, reward_state
+      FROM battle_permits
+      WHERE id = ? AND player_id = ? AND completed_at IS NULL
+        AND battle_status IN ('victory', 'defeat')`)
+      .bind(input.permitId, input.playerId)
+      .first<BattlePermitStateRow & {
+        completed_at: string | null;
+        reward_state: 'pending' | 'claiming' | 'awarded';
+      }>();
+    const pendingVictory = terminal?.battle_status === 'victory'
+      && (terminal.reward_state === 'pending' || terminal.reward_state === 'claiming');
+    const unresolvedDefeat = terminal?.battle_status === 'defeat'
+      && terminal.reward_state === 'pending';
+    if (terminal
+      && terminal.encounter_key === TUNNEL_MAW.id
+      && isValidBattlePermitState(terminal)
+      && (pendingVictory || unresolvedDefeat)) {
+      return json(request, env, {
+        error: pendingVictory
+          ? 'Battle victory is awaiting reward completion.'
+          : 'Battle is already defeated.',
+        battleState: {
+          permitId: input.permitId,
+          status: terminal.battle_status,
+          playerHp: terminal.player_hp,
+          playerMana: terminal.player_mana,
+          playerShield: terminal.player_shield,
+          shieldAbsorbed: 0,
+          retaliationDamage: 0,
+          enemyHp: terminal.enemy_hp,
+          turnCount: terminal.turn_count,
+        },
+      }, 409);
+    }
+    return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+  }
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
   if (permit.player_hp === null || permit.player_mana === null || permit.player_shield === null || permit.enemy_hp === null) {
     return fail(request, env, 'Battle state is unavailable.', 409);
