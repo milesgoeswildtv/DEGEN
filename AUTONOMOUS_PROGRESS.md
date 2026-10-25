@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (receipt-query test reconciliation)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued `automation/degen/awarded-receipt-audit-v01` / PR #61; no direct-main write.
+- **Task / files:** `tests/mana-expiry-precision.test.ts` now locates the shared `loadReceipt` query introduced by the prior commit, so the existing duplicate-clear audit assertion follows the refactored implementation instead of searching for the removed inline query. The new regression for both first-settlement and replay response paths passed on the prior head.
+- **QA reconciliation:** exact-head CI run [40189412115](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40189412115) failed only in deterministic test `awarded receipt audit rejects duplicate clear sequence numbers` because its source locator still named the old inline query; later Worker/D1, build, browser, and Worker-validation steps were skipped by workflow fail-fast. The test locator is corrected here; new exact-head CI is pending. No production defect or deployment is claimed from this test-only failure.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, killing-blow/defeat handling, client/Worker parity, cost-aware UI, tracked migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion.
+- **Battle authority / reward idempotency:** PR #61's Worker change applies the same persisted receipt audit to initial settlement and replay; the prior implementation/test head had the full Worker/D1, recovery, concurrency, build, Chromium, and Worker-dry-run suite green. This head remains unverified until CI completes.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → migrations → Worker. No migration, remote D1 operation, or Worker deployment.
+- **Miles blocker:** PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved policy for unverified legacy identity collisions. Keep Shield/housing behind that release gate.
+- **Best next task:** verify exact-head CI for this locator correction; then continue PR #61 review and preserve the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-25 (audit the first reward response as well as replay)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued existing branch `automation/degen/awarded-receipt-audit-v01` and PR #61; no duplicate branch and no direct-main write.

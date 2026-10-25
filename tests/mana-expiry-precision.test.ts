@@ -45,7 +45,7 @@ test('Worker action expiry guards preserve millisecond precision while terminal 
 });
 
 test('awarded receipt audit rejects duplicate clear sequence numbers', () => {
-  const receiptStart = worker.indexOf('const receipt = await env.DB.prepare');
+  const receiptStart = worker.indexOf('const loadReceipt = async () => env.DB.prepare');
   const receiptEnd = worker.indexOf(
     "WHERE permit.id = ? AND permit.player_id = ? AND permit.battle_status = 'victory'",
     receiptStart,
