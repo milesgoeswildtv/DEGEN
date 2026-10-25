@@ -157,6 +157,20 @@ try {
     [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
     'remaining Shield must persist after absorbing retaliation');
 
+  // Replaying the previous turn must return the persisted Shield snapshot without consuming it again.
+  const staleReplay = await post('/api/battle/action', {
+    playerId: 'shield-player', permitId: 'shield-carryover', abilityId: 'slash', expectedTurnCount: 0,
+  });
+  assert.equal(staleReplay.status, 409);
+  assert.equal(staleReplay.data.error, 'Stale battle turn.');
+  assert.deepEqual(staleReplay.data.battleState, {
+    permitId: 'shield-carryover', status: 'active', playerHp: 120, playerMana: 0,
+    playerShield: 2, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 63, turnCount: 1,
+  }, 'stale-turn recovery must preserve the latest authoritative Shield state');
+  assert.deepEqual(sql("SELECT player_hp,player_shield,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-carryover'"),
+    [{ player_hp: 120, player_shield: 2, player_mana: 0, enemy_hp: 63, turn_count: 1, battle_status: 'active' }],
+    'a stale action must not apply damage or spend Shield a second time');
+
   // A killing blow must skip retaliation and preserve unused player Shield through victory settlement.
   const killingBlow = await post('/api/battle/action', {
     playerId: 'shield-player', permitId: 'shield-killing-blow', abilityId: 'crack', expectedTurnCount: 0,
