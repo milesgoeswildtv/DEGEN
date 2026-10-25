@@ -378,7 +378,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     permitId: input.permitId,
     status: permit.battle_status,
     playerHp: permit.player_hp,
-    playerMana: permit.player_mana,
+    playerMana: playerManaForSnapshot(permit),
     enemyHp: permit.enemy_hp,
     turnCount: permit.turn_count,
   };
