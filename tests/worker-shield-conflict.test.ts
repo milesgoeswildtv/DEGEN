@@ -12,10 +12,10 @@ import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } fr
 // Execute the real Shield-enabled Worker handler with a deterministic D1 read race:
 // the first read sees turn 0, while the conflict re-read sees the concurrent turn 1.
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
-  .replace(/^export default\\s*\\{/m, 'const worker = {');
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/^export default\s*\{/m, 'const worker = {');
 const handleBattleAction = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\nhandleBattleAction;',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
     TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
     UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
