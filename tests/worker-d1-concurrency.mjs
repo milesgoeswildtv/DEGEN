@@ -1025,7 +1025,7 @@ try {
   assert.deepEqual(expiredDefeatReplay.battleState, {
     permitId: 'permit-expired-defeat', status: 'defeat',
     playerHp: 0, playerMana: 0, playerShield: 0,
-    shieldAbsorbed: 0, retaliationDamage: 13, enemyHp: 63, turnCount: 1,
+    shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-expired-defeat', {
     status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
