@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-25 (reward-clear counter safe-integer guard)
+
+- **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d` (verified at run start; no direct-main write).
+- **PUSHED / PR #61 OPEN:** continuing `automation/degen/awarded-receipt-audit-v01`; this run hardens clear-number allocation at the D1 integer boundary.
+- **Task / files:** `worker/index.ts` now allocates a new Underpass clear only when `full_reward_clears` is an SQLite integer in the safe range `0..Number.MAX_SAFE_INTEGER - 1`. This prevents fractional/negative counters and a maximum-safe counter from being incremented into an unsafe integer. `tests/worker-d1-concurrency.mjs` covers allocation of the final safe sequence, rejection of the next allocation, fractional/negative counters, unchanged progression and persisted receipt state. `tests/mana-expiry-precision.test.ts` locks the source invariant.
+- **QA:** exact-head CI is pending after this push. No local shell suite, production D1 operation, migration, Worker deployment, or live HTTP smoke is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost at zero, killing-blow/defeat behavior, client/Worker parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding.
+- **Battle authority / reward idempotency:** PR #61 continues the full persisted-receipt audit, canonical reward-tier validation, unique clear-sequence checks, and retry-safe claim/recovery. Existing action compare-and-swap, terminal-state validation, owner/expiry checks, server-resolved victory-only rewards, concurrent action/completion coverage, atomic defeat history, cycle reservation/rollover, and event-closure permit validity remain unchanged.
+- **D1 / deployment:** `wrangler.toml` remains the source of truth for binding `DB` → `DEGEN` and `db/migrations`; deployment order is base schema → tracked migrations → Worker. No schema or migration change is required.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge/deploy Shield/housing work ahead of it.
+- **Best next task:** verify exact-head CI for PR #61; if green, finish the reward-receipt review and keep the platform-auth release gate intact.
+
+---
+
 ## Latest run — 2026-10-25 (guard clear-sequence allocation before reward writes)
 
 - **Authoritative main SHA:** `009daaeb955bae42f12a35ad689dd49e3e74d55d`. Continued `automation/degen/awarded-receipt-audit-v01` / PR #61; no duplicate branch and no direct-main write.

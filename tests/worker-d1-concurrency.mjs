@@ -80,7 +80,10 @@ try {
         ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('uncounted-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('duplicate-receipt-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
-        ('counter-lag-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+        ('counter-lag-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('counter-boundary-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('counter-fractional-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('counter-negative-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
@@ -129,9 +132,17 @@ try {
       ('permit-expired-victory','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,1,0),
       ('permit-expired-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-counter-lag-peer','integration-player','underpass','counter-lag-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('permit-counter-lag-pending','integration-player','underpass','counter-lag-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
+      ('permit-counter-lag-pending','integration-player','underpass','counter-lag-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-last-safe','integration-player','underpass','counter-boundary-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-overflow','integration-player','underpass','counter-boundary-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-fractional','integration-player','underpass','counter-fractional-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-counter-negative','integration-player','underpass','counter-negative-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
     INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
-      VALUES('integration-player','underpass','counter-lag-cycle',0);
+      VALUES
+        ('integration-player','underpass','counter-lag-cycle',0),
+        ('integration-player','underpass','counter-boundary-cycle',9007199254740990),
+        ('integration-player','underpass','counter-fractional-cycle',1.5),
+        ('integration-player','underpass','counter-negative-cycle',-1);
     UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
       reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
       reward_remaining_xp=50, reward_claim_token='counter-lag-peer-token',
@@ -1168,7 +1179,59 @@ try {
       AND cycle_id='counter-lag-cycle' AND full_reward_clears=0`), 1,
     'the corrupt cycle counter is not advanced by a rejected claim');
 
-  console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, receipt audit, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  // The last safe integer is a valid sequence slot; the following allocation must fail
+  // closed rather than round the counter through JavaScript's unsafe integer range.
+  const lastSafeCompletion = await complete('permit-counter-last-safe');
+  assert.equal(lastSafeCompletion.status, 200, JSON.stringify(lastSafeCompletion.data));
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='permit-counter-last-safe' AND reward_state='awarded'
+      AND reward_clear_number=9007199254740991`), 1);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='counter-boundary-cycle'`), [{ full_reward_clears: 9007199254740991 }]);
+
+  const progressBeforeOverflow = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`);
+  const overflowCompletion = await complete('permit-counter-overflow');
+  assert.equal(overflowCompletion.status, 409, JSON.stringify(overflowCompletion.data));
+  assert.equal(overflowCompletion.data.error, 'Unable to assign authoritative reward clear.');
+  assert.equal('reward' in overflowCompletion.data, false);
+  assert.equal('player' in overflowCompletion.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id='integration-player'`), progressBeforeOverflow);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-counter-overflow'
+    AND battle_status='victory' AND reward_state='pending' AND reward_clear_number IS NULL
+    AND completed_at IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL`), 1);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id='integration-player' AND event_key='underpass'
+      AND cycle_id='counter-boundary-cycle'`), [{ full_reward_clears: 9007199254740991 }],
+    'overflow rejection must not round or advance the maximum safe counter');
+
+  for (const [permitId, cycleId, expectedCounter] of [
+    ['permit-counter-fractional', 'counter-fractional-cycle', 1.5],
+    ['permit-counter-negative', 'counter-negative-cycle', -1],
+  ]) {
+    const progressBeforeCorruptCounter = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+      FROM characters WHERE player_id='integration-player'`);
+    const rejected = await complete(permitId);
+    assert.equal(rejected.status, 409, JSON.stringify(rejected.data));
+    assert.equal(rejected.data.error, 'Unable to assign authoritative reward clear.');
+    assert.equal('reward' in rejected.data, false);
+    assert.equal('player' in rejected.data, false);
+    assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+      FROM characters WHERE player_id='integration-player'`), progressBeforeCorruptCounter);
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id='${permitId}'
+      AND battle_status='victory' AND reward_state='pending' AND reward_clear_number IS NULL
+      AND completed_at IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL`), 1);
+    assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+      WHERE player_id='integration-player' AND event_key='underpass'
+        AND cycle_id='${cycleId}'`), [{ full_reward_clears: expectedCounter }],
+      'invalid counters must remain unchanged when reward allocation is rejected');
+    assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+      WHERE id='${permitId}:victory'`), 0);
+  }
+
+  console.log('PASS isolated Worker/D1: terminal recovery after expiry, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');

@@ -159,6 +159,11 @@ test('new clear allocation fails closed when the persisted counter trails a rese
     /full_reward_clears[\s\S]*>= COALESCE\([\s\S]*SELECT MAX\(other\.reward_clear_number\)[\s\S]*other\.reward_clear_number IS NOT NULL[\s\S]*other_cycle\.event_key = 'underpass'/,
     'a new sequence number must not be allocated while the cycle counter trails any existing supported receipt');
 
+  assert.ok(assignment.includes("typeof((SELECT full_reward_clears FROM world_event_clears"),
+    'sequence allocation must reject non-integer D1 counters before writing');
+  assert.ok(assignment.includes('BETWEEN 0 AND ${Number.MAX_SAFE_INTEGER - 1}'),
+    'sequence allocation must stop before adding one would exceed the JavaScript safe-integer range');
+
   const ownedStart = worker.indexOf('const owned = await env.DB.prepare');
   const ownedEnd = worker.indexOf('const reward = underpassRewardForClear', ownedStart);
   const owned = worker.slice(ownedStart, ownedEnd);

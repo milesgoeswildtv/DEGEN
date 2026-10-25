@@ -655,6 +655,11 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
         ) WHERE id = ? AND player_id = ? AND reward_state = 'claiming'
           AND reward_claim_token = ? AND reward_clear_number IS NULL
+          AND typeof((SELECT full_reward_clears FROM world_event_clears
+            WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?)) = 'integer'
+          AND (SELECT full_reward_clears FROM world_event_clears
+            WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?)
+            BETWEEN 0 AND ${Number.MAX_SAFE_INTEGER - 1}
           AND (SELECT full_reward_clears FROM world_event_clears
             WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?) >= COALESCE((
               SELECT MAX(other.reward_clear_number) FROM battle_permits AS other
@@ -665,7 +670,10 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
                   WHERE other_cycle.id = other.cycle_id AND other_cycle.event_key = 'underpass')
             ), 0)`)
         .bind(input.playerId, claim.cycle_id, input.permitId, input.playerId, token,
-          input.playerId, claim.cycle_id, input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId),
+          input.playerId, claim.cycle_id,
+          input.playerId, claim.cycle_id,
+          input.playerId, claim.cycle_id,
+          input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId),
       env.DB.prepare(`UPDATE world_event_clears SET full_reward_clears = (
           SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?
         ) WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
