@@ -177,3 +177,41 @@ test('expired terminal recovery rejects corrupt persisted Shield instead of echo
   assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
   assert.equal('battleState' in result, false, 'invalid persisted Shield must not be echoed as authoritative');
 });
+
+test('completed permits for unsupported encounters are not returned as this battle snapshot', async () => {
+  const unsupported = {
+    cycle_id: 'cycle-1',
+    encounter_key: 'unapproved-encounter',
+    player_hp: 120,
+    player_mana: 8,
+    player_shield: 5,
+    enemy_hp: 0,
+    battle_status: 'victory',
+    turn_count: 3,
+  };
+  let reads = 0;
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind() {
+          return {
+            first: async () => {
+              reads += 1;
+              if (sql.includes('completed_at IS NULL')) return null;
+              if (sql.includes('completed_at IS NOT NULL')) return unsupported;
+              throw new Error('Unexpected query in unsupported Shield recovery: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const response = await handleBattleAction(actionRequest('unsupported-shield-permit', 3), { DB: db });
+  const result = await response.json() as { error: string; battleState?: unknown };
+  assert.equal(response.status, 409);
+  assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in result, false, 'unsupported encounter data must not be projected as Tunnel Maw');
+  assert.equal(reads, 3, 'unsupported completed state fails closed after owner-scoped recovery reads');
+});
+
