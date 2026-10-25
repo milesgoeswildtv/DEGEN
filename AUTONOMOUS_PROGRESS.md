@@ -1,6 +1,23 @@
 # DEGEN — AUTONOMOUS PROGRESS
+## Latest run — 2026-10-25 (battle conflict snapshot fix merged)
 
-## Latest run — 2026-10-24 (refresh rejected battle-action snapshots)
+- **Authoritative main SHA:** `ec31cf61d918d846ed0c9f183377337f7459edb9`. PR #52 was squash-merged through the PR path; no direct write to protected `main`.
+- **MERGED / main — conflict snapshot freshness:** `worker/index.ts` now re-reads the persisted permit for stale-turn, terminal-state, and insufficient-Mana conflict responses. This prevents a request that initially reads turn N from returning that stale snapshot after another action commits turn N+1. The existing compare-and-swap remains the only mutation authority; a rejected request still does not advance a turn or apply damage.
+- **Regression coverage:** `tests/worker-battle-action-conflict.test.ts` deterministically calls the real Worker action handler with an old initial snapshot and a newer persisted snapshot, then asserts the 409 response carries the newer Worker-owned state. No schema/migration or reward/economy logic changed.
+- **Exact-head CI PASS before merge:** run [40156178712](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40156178712) on `7b73b4685f43a07717941f6e775713e7e45759e6`; all 13 workflow steps passed, `npm test` **79/79** with 0 failures, Worker/D1 reward concurrency and recovery, Underpass cycle reservation/rollover, atomic defeat history, production build, Chromium mobile battle vertical slice, and `npm run check:worker`.
+- **Post-merge main CI / deployment:** not yet confirmed from an accessible post-merge run record in this check. Do not claim the merged Worker was deployed or that the post-merge main run passed until its run result is observed. No manual production D1 operation or deployment was performed.
+- **Current feature branch:** `automation/degen/progress-sync-battle-conflict-merge-v01` is a continuity-only branch from the exact merged main SHA; its PR is being opened after this update. This docs-only head needs its own exact-head CI before being called green.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana`/bespoke `manaCost`, persisted `player_mana`, atomic unaffordable rejection, exact single deduction, zero-cost use at zero, killing-blow/defeat behavior, client/Worker math parity, cost-aware UI, migration `0006_backfill_active_battle_mana.sql`, no monster Mana namespace, and no Mana-triggered reversion. Prototype values remain scaffolding, not approved balance.
+- **Mana branch authority audit:** `sidekick/degen-mana-foundation-v01` remains stale/divergent (11 ahead / 51 behind main); `automation/degen/mana-active-permit-backfill-v01` is also stale/divergent (44 ahead / 29 behind). Do not cherry-pick their superseded Worker/client code over main.
+- **Battle authority / reward idempotency:** main retains server-resolved victory-only rewards, persisted-state bounds and terminal invariants, required action turn preconditions, CAS/stale-turn guards, owner/expiry checks, idempotent receipts and transient-D1 recovery, full/reduced reward tiers, shared level-up math, concurrent action/completion coverage, atomic defeat history, Underpass cycle reservation/rollover, and permits valid through event closure until their own expiry.
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. PR #52 adds no migration and changes no binding/configuration.
+- **Miles blocker:** PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved recovery/link policy for unverified legacy identity collisions. Do not auto-link accounts or bypass this gate; keep Shield/housing integration from merging/deploying ahead of the gate.
+- **Best next task:** verify post-merge main CI/Worker deployment for `ec31cf6`; then continue the next safe battle-authority reliability gap without changing economic authority.
+
+---
+
+
+## Previous run — 2026-10-24 (battle conflict snapshot implementation; superseded by merge on 2026-10-25)
 
 - **Authoritative main SHA:** `f526eab11802871d677a86923e9b73992c0a0640` (merged PR #50 requires `expectedTurnCount` for every battle action; post-merge CI and Worker deployment passed per the previous continuity record).
 - **PUSHED / PR #52 OPEN:** `automation/degen/battle-conflict-latest-snapshot-v01`. Implementation commit `79a346c29376511253dd3d1816f5a1ae31036b5e`; deterministic regression test commit `f31a1cd615ea637daf03a91dda9ea67675b154cc`. PR: https://github.com/milesgoeswildtv/DEGEN/pull/52.
