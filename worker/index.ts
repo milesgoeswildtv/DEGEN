@@ -411,6 +411,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     return conflict('Stale battle turn.');
   }
   if (permit.battle_status !== 'active') return conflict(`Battle is already ${permit.battle_status}.`);
+  // The earlier null guard permits NULL only for terminal legacy rows, which
+  // have already returned above. Keep the active-action path explicitly narrowed.
+  if (permit.player_mana === null) return fail(request, env, 'Battle state is unavailable.', 409);
   if (!canUseAbility(permit.player_mana, ability)) {
     return conflict('Not enough Mana for that ability.');
   }
