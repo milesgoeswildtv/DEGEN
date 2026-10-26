@@ -104,6 +104,7 @@ try {
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
       ('event-closure-player','Event Closure QA'),
+      ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('xp-boundary-player','XP Boundary'),
       ('invalid-progression-player','Invalid Progression'),
       ('post-award-overflow-player','Post-award Overflow'),
@@ -116,6 +117,7 @@ try {
       VALUES
         ('integration-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
+        ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('xp-boundary-player',2,174,30,'test-degen'),
         ('invalid-progression-player',120095990063214,0,0,'test-degen'),
         ('post-award-overflow-player',120095990063212,9007199254740924,0,'test-degen'),
@@ -238,14 +240,14 @@ try {
       reward_clear_number,reward_xp,reward_currency,reward_tier,reward_level,
       reward_remaining_xp,reward_claim_token,reward_claimed_at,completed_at
     ) VALUES (
-      'permit-awarded-start-after-close','integration-player','underpass','start-after-close-cycle','tunnel-maw',
+      'permit-awarded-start-after-close','out-of-cycle-award-player','underpass','start-after-close-cycle','tunnel-maw',
       datetime('now','-5 minutes'),datetime('now','+20 minutes'),
       'victory',70,0,0,3,'awarded',1,75,30,'full',2,50,
       'out-of-cycle-award-token',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
     );
     INSERT INTO battle_history
       (id,player_id,encounter_key,result,player_level,xp_awarded,currency_awarded)
-      VALUES ('permit-awarded-start-after-close:victory','integration-player',
+      VALUES ('permit-awarded-start-after-close:victory','out-of-cycle-award-player',
         'tunnel-maw','victory',2,75,30);
     -- Model the permit as issued two minutes before the cycle closes.
     UPDATE battle_permits SET started_at=datetime('now','-2 minutes')
@@ -257,7 +259,7 @@ try {
         ('integration-player','underpass','counter-fractional-cycle',1.5),
         ('integration-player','underpass','counter-negative-cycle',-1),
         ('integration-player','underpass','legacy-terminal-cycle',0),
-        ('integration-player','underpass','start-after-close-cycle',1);
+        ('out-of-cycle-award-player','underpass','start-after-close-cycle',1);
     UPDATE battle_permits SET reward_state='awarded', reward_clear_number=1,
       reward_xp=75, reward_currency=30, reward_tier='full', reward_level=2,
       reward_remaining_xp=50, reward_claim_token='counter-lag-peer-token',
@@ -292,6 +294,16 @@ try {
   const invalidStartInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key");
   const invalidStartPermitsBefore = queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-start-before-open','permit-start-after-close') ORDER BY id");
   const invalidStartClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('start-before-open-cycle','start-after-close-cycle') ORDER BY cycle_id");
+  // Capture the isolated invalid awarded receipt before the Worker starts; later
+  // D1 CLI reads while Miniflare is serving requests can drop its HTTP socket.
+  const invalidStartAwardedPermitBefore = queryRows(`SELECT started_at, battle_status, player_hp, player_mana,
+    enemy_hp, turn_count, reward_state, reward_clear_number, reward_xp, reward_currency, reward_tier,
+    reward_level, reward_remaining_xp, reward_claim_token, reward_claimed_at, completed_at
+    FROM battle_permits WHERE id='permit-awarded-start-after-close'`);
+  const invalidStartAwardedCharacterBefore = queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='out-of-cycle-award-player'");
+  const invalidStartAwardedInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='out-of-cycle-award-player' ORDER BY item_type, item_key");
+  const invalidStartAwardedClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='out-of-cycle-award-player' AND cycle_id='start-after-close-cycle'");
+  const invalidStartAwardedHistoryBefore = queryRows("SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded FROM battle_history WHERE id='permit-awarded-start-after-close:victory'");
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
     cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -353,6 +365,17 @@ try {
   const closureReplay = await complete('permit-survives-event-closure', 'event-closure-player');
   assert.equal(closureReplay.status, 200);
   assert.deepEqual(closureReplay.data.reward, closureRewardResponse.data.reward);
+
+  // Keep this additional HTTP request adjacent to the closure action/completion/replay
+  // sequence. The receipt is otherwise fully audited, but its start is after cycle close.
+  const invalidStartAwardedReplay = await complete('permit-awarded-start-after-close', 'out-of-cycle-award-player', {
+    victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
+  });
+  assert.equal(invalidStartAwardedReplay.status, 409, JSON.stringify(invalidStartAwardedReplay.data));
+  assert.equal(invalidStartAwardedReplay.data.error, 'Battle permit was not issued during its event cycle.');
+  assert.equal('reward' in invalidStartAwardedReplay.data, false);
+  assert.equal('player' in invalidStartAwardedReplay.data, false);
+
   // Assert the committed terminal state only after both HTTP requests so a local
   // D1 CLI read cannot interfere with the action→completion→replay sequence.
   assert.deepEqual(queryRows("SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_tier FROM battle_permits WHERE id='permit-survives-event-closure'"), [{
@@ -374,34 +397,8 @@ try {
   assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('start-before-open-cycle','start-after-close-cycle') ORDER BY cycle_id"), invalidStartClearsBefore);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-start-before-open:victory','permit-start-before-open:defeat','permit-start-after-close:victory','permit-start-after-close:defeat')"), 0);
 
-  // An already-awarded receipt cannot bypass permit/cycle chronology validation.
-  // Its reward fields, clear counter, and history are deliberately internally consistent;
-  // only the permit's started_at is outside the cycle window.
-  const invalidStartAwardedPermitBefore = queryRows(`SELECT started_at, battle_status, player_hp, player_mana,
-    enemy_hp, turn_count, reward_state, reward_clear_number, reward_xp, reward_currency, reward_tier,
-    reward_level, reward_remaining_xp, reward_claim_token, reward_claimed_at, completed_at
-    FROM battle_permits WHERE id='permit-awarded-start-after-close'`);
-  const invalidStartAwardedCharacterBefore = queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'");
-  const invalidStartAwardedInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key");
-  const invalidStartAwardedClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id='start-after-close-cycle'");
-  const invalidStartAwardedHistoryBefore = queryRows("SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded FROM battle_history WHERE id='permit-awarded-start-after-close:victory'");
-  const invalidStartAwardedReplay = await complete('permit-awarded-start-after-close', 'integration-player', {
-    victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
-  });
-  assert.equal(invalidStartAwardedReplay.status, 409, JSON.stringify(invalidStartAwardedReplay.data));
-  assert.equal(invalidStartAwardedReplay.data.error, 'Battle permit was not issued during its event cycle.');
-  assert.equal('reward' in invalidStartAwardedReplay.data, false);
-  assert.equal('player' in invalidStartAwardedReplay.data, false);
-  assert.deepEqual(queryRows(`SELECT started_at, battle_status, player_hp, player_mana,
-    enemy_hp, turn_count, reward_state, reward_clear_number, reward_xp, reward_currency, reward_tier,
-    reward_level, reward_remaining_xp, reward_claim_token, reward_claimed_at, completed_at
-    FROM battle_permits WHERE id='permit-awarded-start-after-close'`), invalidStartAwardedPermitBefore,
-    'rejected awarded receipt must remain unchanged');
-  assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'"), invalidStartAwardedCharacterBefore);
-  assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key"), invalidStartAwardedInventoryBefore);
-  assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id='start-after-close-cycle'"), invalidStartAwardedClearsBefore);
-  assert.deepEqual(queryRows("SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded FROM battle_history WHERE id='permit-awarded-start-after-close:victory'"), invalidStartAwardedHistoryBefore);
-
+  // The isolated out-of-cycle awarded receipt must remain unchanged:
+  // no progression, inventory, clear counter, or history mutation is allowed.
   // A valid action without the turn precondition is rejected before any combat mutation.
   const missingTurnPreconditionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -2003,7 +2000,15 @@ try {
     WHERE id LIKE 'invalid-insert-%'`), 0,
     'invalid insert attempts must not create inventory rows');
 
-
+  assert.deepEqual(queryRows(`SELECT started_at, battle_status, player_hp, player_mana,
+    enemy_hp, turn_count, reward_state, reward_clear_number, reward_xp, reward_currency, reward_tier,
+    reward_level, reward_remaining_xp, reward_claim_token, reward_claimed_at, completed_at
+    FROM battle_permits WHERE id='permit-awarded-start-after-close'`), invalidStartAwardedPermitBefore,
+    'rejected awarded receipt must remain unchanged');
+  assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='out-of-cycle-award-player'"), invalidStartAwardedCharacterBefore);
+  assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='out-of-cycle-award-player' ORDER BY item_type, item_key"), invalidStartAwardedInventoryBefore);
+  assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='out-of-cycle-award-player' AND cycle_id='start-after-close-cycle'"), invalidStartAwardedClearsBefore);
+  assert.deepEqual(queryRows("SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded FROM battle_history WHERE id='permit-awarded-start-after-close:victory'"), invalidStartAwardedHistoryBefore);
 
   console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, invalid permit start-window rejection, permit survives event closure');
 } finally {
