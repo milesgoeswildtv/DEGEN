@@ -1,3 +1,17 @@
+## Latest run — 2026-10-26 (stale reward-claim lease and takeover race)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
+- **PUSHED / PR #73 OPEN:** `automation/degen/stale-reward-lease-recovery-v01`, code/test head `5e1ad970b4131c78609d53342ef2f278c5751946`. This remains a test-only change; production runtime, schema, migrations, and deploy configuration are untouched.
+- **Exact code/test-head QA PASS:** [CI run 40270845090](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40270845090) completed successfully. Deterministic tests, Worker/D1 reward concurrency, reward recovery, Underpass cycle and rollover concurrency, atomic defeat history, production web build, Chromium mobile battle vertical slice, and Cloudflare Worker validation all passed. The previous progress-only head also passed [CI run 40270781360](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40270781360).
+- **Files changed:** `tests/worker-d1-reward-recovery.mjs`. Regression coverage now proves (1) a live reward claim is not stolen before 60 seconds; (2) a stale claim is reclaimed and its abandoned token replaced; (3) two simultaneous callers racing to reclaim one stale lease settle at most once, with a retry/replay returning the same receipt; (4) clear numbers, full-tier reward, XP/currency, inventory, and history remain exactly-once; and (5) an old token-scoped cleanup cannot reset the recovered/awarded permit.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, persisted player Mana, rejection without mutation, exact deduction, zero-cost-at-zero, terminal combat behavior, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration 0006 remain unchanged.
+- **Battle authority / reward idempotency:** Worker-resolved victory only, permit ownership/expiry and event/cycle/encounter guards, action compare-and-swap, token-scoped reward claims, audited receipts, transient-D1 recovery, stable clear sequencing, full/reduced tiers, shared XP/level-up math, and duplicate completion protection remain intact. PR #72's action event/cycle guard is a separate open PR.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for binding `DB` → `DEGEN` and `db/migrations`. No migration is required for this test-only change. CI used isolated local D1; no production D1 mutation, Worker deployment, or live HTTP smoke is claimed for PR #73.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** once the continuity-only head's exact CI is green, review the open action permit event/cycle guard PR #72 and continue any remaining reward-claim race coverage without changing reward values or combat balance.
+
+---
+
 ## Latest run — 2026-10-26 (stale reward-claim lease recovery regression)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
