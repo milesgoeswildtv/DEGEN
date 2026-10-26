@@ -246,6 +246,8 @@ try {
   // Close the cycle only after the issued permit is seeded, but before starting
   // the live Worker. Opening a second Wrangler D1 CLI against the same persisted
   // SQLite store while Miniflare is serving requests can drop the Worker socket.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='closed-after-entry-cycle'"]);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='closed-after-entry-cycle' AND julianday(closes_at) < julianday('now')"), 1,
     'the issued permit must predate the cycle closure');
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
@@ -1864,8 +1866,6 @@ try {
   // An encounter issued while the Underpass cycle was open remains valid after
   // the event closes. Closure is not permit expiry: the Worker must still resolve
   // the entered fight and settle its authoritative victory while the permit lives.
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    "--command=UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='closed-after-entry-cycle'"]);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='closed-after-entry-cycle' AND julianday(closes_at) < julianday('now')"), 1,
     'the test cycle must be closed before the already-issued action is submitted');
   const closureActionResponse = await fetch(base + '/api/battle/action', {
