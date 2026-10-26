@@ -100,9 +100,12 @@ try {
         ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-reservation-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-cleanup-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
-        ('qa-action-race-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+        ('qa-action-race-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-poison-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
     INSERT INTO world_event_clears(player_id, event_key, cycle_id, full_reward_clears)
-      VALUES ('qa-player', 'underpass', 'qa-legacy-cycle', 3);
+      VALUES
+        ('qa-player', 'underpass', 'qa-legacy-cycle', 3),
+        ('qa-player', 'underpass', 'qa-poison-cycle', 1);
     INSERT INTO battle_permits(
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count,
@@ -174,9 +177,20 @@ try {
       (
         'permit-action-complete-race', 'qa-player', 'underpass', 'qa-action-race-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 12, 1, 'active', 0, 'pending', NULL, NULL
+      ),
+      (
+        'permit-poisoned-reservation', 'qa-player', 'underpass', 'qa-poison-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'poisoned-reservation-token', datetime('now', '-2 minutes')
+      ),
+      (
+        'permit-poison-recovery', 'qa-player', 'underpass', 'qa-poison-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
     UPDATE battle_permits SET completed_at = datetime('now', '-2 minutes')
       WHERE id = 'permit-completed-claim';
+    UPDATE battle_permits SET reward_clear_number = 999999
+      WHERE id = 'permit-poisoned-reservation';
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
 
@@ -690,6 +704,76 @@ try {
     beforeNonnormalizedLeaseClearCount);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
     WHERE id = 'permit-nonnormalized-claim-time:victory'`)[0]?.n ?? 0, 0);
+
+
+  // An unauditable pre-reserved sequence number must fail closed without
+  // permanently blocking a separate valid victory in the same event cycle.
+  const poisonCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const poisonInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const poisonClearCountBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears;
+  assert.equal(poisonClearCountBefore, 1);
+  const poisonedReservation = await complete('permit-poisoned-reservation');
+  assert.equal(poisonedReservation.status, 409, JSON.stringify(poisonedReservation.body));
+  assert.equal('reward' in (poisonedReservation.body ?? {}), false);
+  assert.equal('player' in (poisonedReservation.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-poisoned-reservation'`), [{
+    reward_state: 'pending',
+    reward_claim_token: null,
+    reward_claimed_at: null,
+    reward_clear_number: null,
+    reward_xp: null,
+    reward_currency: null,
+    reward_tier: null,
+    reward_level: null,
+    reward_remaining_xp: null,
+    completed_at: null,
+  }], 'an invalid unawarded reservation must be released, not left to poison future sequence allocation');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), poisonCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), poisonInventoryBefore);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears,
+    poisonClearCountBefore, 'rejecting the bad reservation must not advance the cycle counter');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-poisoned-reservation:victory'`)[0]?.n ?? 0, 0);
+
+  const poisonRecovery = await complete('permit-poison-recovery');
+  assert.equal(poisonRecovery.status, 200, JSON.stringify(poisonRecovery.body));
+  assert.equal(poisonRecovery.body.reward.tier, 'full');
+  assert.deepEqual(sql(`SELECT reward_state, reward_clear_number, reward_xp, reward_currency,
+      reward_tier, completed_at FROM battle_permits WHERE id = 'permit-poison-recovery'`), [{
+    reward_state: 'awarded',
+    reward_clear_number: 2,
+    reward_xp: poisonRecovery.body.reward.xp,
+    reward_currency: poisonRecovery.body.reward.currency,
+    reward_tier: 'full',
+    completed_at: sql(`SELECT completed_at FROM battle_permits WHERE id = 'permit-poison-recovery'`)[0]?.completed_at,
+  }]);
+  assert.ok(sql(`SELECT completed_at FROM battle_permits WHERE id = 'permit-poison-recovery'`)[0]?.completed_at);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears, 2);
+  const poisonRecoveryCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const poisonRecoveryInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const poisonRecoveryReplay = await complete('permit-poison-recovery');
+  assert.equal(poisonRecoveryReplay.status, 200, JSON.stringify(poisonRecoveryReplay.body));
+  assert.deepEqual(poisonRecoveryReplay.body.reward, poisonRecovery.body.reward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), poisonRecoveryCharacter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), poisonRecoveryInventory);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears, 2);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-poison-recovery:victory'`)[0]?.n ?? 0, 1);
 
   // Failure while reserving a clear slot must roll back that reservation batch,
   // release only this claim, and allow a retry without losing the valid victory.

@@ -713,7 +713,6 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
     if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 
-  const hadReservedClearNumber = claim.reward_clear_number !== null;
   if (claim.reward_clear_number === null) {
     await env.DB.batch([
       env.DB.prepare(`INSERT OR IGNORE INTO world_event_clears
@@ -791,7 +790,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     || !isSafeIntegerBetween(owned.reward_clear_number, 1, Number.MAX_SAFE_INTEGER)
     || !isSafeIntegerBetween(owned.cycle_clear_count, owned.reward_clear_number, Number.MAX_SAFE_INTEGER)
     || !isSafeIntegerBetween(owned.duplicate_clear_count, 0, 0)) {
-    await releaseClaim(!hadReservedClearNumber && typeof owned?.reward_clear_number === 'number');
+    // A reservation that fails its authoritative audit is not a recoverable slot.
+    // Clear it before releasing the lease so a corrupt number cannot block later clears.
+    await releaseClaim(typeof owned?.reward_clear_number === 'number');
     return fail(request, env, 'Unable to assign authoritative reward clear.', 409);
   }
 

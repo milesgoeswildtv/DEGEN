@@ -1,3 +1,19 @@
+## Latest run — 2026-10-26 (release unauditable reward clear reservations)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **Prior exact-head CI PASS:** [run 40408643491](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40408643491) passed all 13 steps on `83b17fec3c524b52df294025cb74de4748ad240e`: deterministic tests, Worker/D1 reward concurrency and recovery, Underpass cycle/rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker validation.
+- **PUSHED / PR #76 OPEN:** `automation/degen/reward-claim-completed-at-guard-v01`; this run adds a narrow recovery guard plus isolated D1 regression coverage. No direct-main write.
+- **Task / files changed:** `worker/index.ts` releases a previously reserved clear number when the current claim's sequence audit fails; valid audited reservations are still retained after later settlement failures for retry. `tests/worker-d1-reward-recovery.mjs` seeds a stale claim with an unauditable sequence number `999999`, verifies rejection without reward/progression/inventory/history/counter mutation, then verifies a separate valid permit in that cycle can claim sequence 2 and replay idempotently. `tests/mana-expiry-precision.test.ts` adds a deterministic guard assertion.
+- **Why:** D1 batches make the normal reservation/counter update atomic. A pre-existing unawarded reservation that fails the cycle-counter/duplicate-sequence audit is therefore not a valid recoverable slot; retaining it can make the maximum-reserved-sequence guard block subsequent valid victories.
+- **QA:** the prior exact-head workflow is green. This implementation/test/continuity commit is pending its own CI; do not claim the new regression or the new head green until the full workflow completes. No local-shell run, production D1 mutation, schema/migration change, merge, or Worker deployment.
+- **Mana:** COMPLETE / MERGED on main; Degen-only `maxMana`, bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal coverage, cost-aware UI, no monster Mana, no Mana-triggered reversion, and migration `0006_backfill_active_battle_mana.sql` remain intact.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only settlement, action CAS, permit ownership/expiry/event/cycle/encounter validation, audited receipts, normalized stale-lease recovery, transient-D1 recovery, unique clear sequencing, and exactly-once progression/inventory/history remain in place. No reward values or combat balance changed.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. This change needs no migration.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass the release gate for Shield/housing.
+- **One best next task:** verify exact-head CI for this reservation-recovery guard; then continue only if the new integration test is green.
+
+---
+
 ## Latest run — 2026-10-26 (clear reservation completion race verified)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.

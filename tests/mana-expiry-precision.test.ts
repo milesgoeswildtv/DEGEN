@@ -225,3 +225,14 @@ test('completion timestamps are rechecked during reward clear reservation and fa
     'settlement must recheck the same completion marker before any reward write',
   );
 });
+
+test('an invalid pre-reserved clear number is released so it cannot block later valid claims', () => {
+  const ownedStart = worker.indexOf('const owned = await env.DB.prepare');
+  const rewardStart = worker.indexOf('const reward = underpassRewardForClear', ownedStart);
+  assert.ok(ownedStart >= 0 && rewardStart > ownedStart, 'the audited reservation check must exist');
+  const auditFailure = worker.slice(ownedStart, rewardStart);
+  assert.match(auditFailure, /if \(!owned\?\.reward_clear_number[\s\S]*await releaseClaim\(typeof owned\?\.reward_clear_number === 'number'\)/,
+    'any numeric reservation that fails its authoritative audit must be cleared while releasing the unawarded claim');
+  assert.doesNotMatch(auditFailure, /hadReservedClearNumber/,
+    'whether the reservation pre-existed the current attempt must not preserve an unauditable sequence number');
+});
