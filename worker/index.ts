@@ -711,6 +711,11 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     || receipt.encounter_key !== TUNNEL_MAW.id) {
     return fail(request, env, 'Unsupported battle permit.', 409);
   }
+  // Permit chronology is part of authority and must gate every completion path,
+  // including idempotent replay of a previously awarded receipt.
+  if (receipt.permit_started_in_cycle !== 1) {
+    return fail(request, env, 'Battle permit was not issued during its event cycle.', 409);
+  }
 
   // Validate current inventory before replaying an awarded receipt or attempting
   // settlement. Legacy rows are rejected, never silently truncated or rewritten.
@@ -728,11 +733,6 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       tier: row.reward_tier ?? 'reduced',
     }, worldEvent: event });
   };
-  // Cycle eligibility is permit authority, not combat snapshot state. Enforce it
-  // before both first-time settlement and idempotent replay of an awarded receipt.
-  if (receipt.permit_started_in_cycle !== 1) {
-    return fail(request, env, 'Battle permit was not issued during its event cycle.', 409);
-  }
   if (receipt.reward_state === 'awarded') {
     if (!isValidAwardedReceipt(receipt)) return fail(request, env, 'Battle reward receipt is invalid.', 409);
     // The independently audited awarded receipt is the recovery authority for an
