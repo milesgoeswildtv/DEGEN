@@ -249,6 +249,14 @@ test('a valid claim repairs stale unawarded reservations above the committed cle
   const cleanup = batch.slice(cleanupStart, allocationStart);
   assert.match(cleanup, /reward_clear_number > \(SELECT full_reward_clears FROM world_event_clears/,
     'cleanup is limited to reservations above the committed cycle counter');
+  assert.match(cleanup, /typeof\(\(SELECT full_reward_clears FROM world_event_clears[\s\S]*\) = 'integer'/,
+    'corrupt counters must fail closed without triggering reservation cleanup');
+  assert.ok(cleanup.includes("BETWEEN 0 AND ${Number.MAX_SAFE_INTEGER}"),
+    'counter cleanup must preserve the same safe-integer bounds as sequence allocation');
+  assert.match(cleanup, /battle_status = 'victory'[\s\S]*NOT EXISTS \(SELECT 1 FROM battle_history/,
+    'only unresolved victory permits with no victory history can be reset');
+  assert.match(cleanup, /NOT EXISTS \(SELECT 1 FROM characters[\s\S]*last_reward_claim_token = battle_permits\.reward_claim_token/,
+    'a reservation tied to an already-applied progression token must not be cleared');
   assert.match(cleanup, /reward_xp IS NULL AND reward_currency IS NULL[\s\S]*reward_tier IS NULL AND reward_level IS NULL AND reward_remaining_xp IS NULL/,
     'cleanup must not erase any reservation with a partial or completed reward receipt');
   assert.match(cleanup, /reward_state = 'pending' OR \(reward_state = 'claiming'[\s\S]*strftime\('%Y-%m-%d %H:%M:%S', reward_claimed_at\) = reward_claimed_at[\s\S]*julianday\(reward_claimed_at\) < julianday\('now', '-60 seconds'\)/,
