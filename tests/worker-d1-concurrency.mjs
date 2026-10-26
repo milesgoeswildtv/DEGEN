@@ -448,7 +448,7 @@ try {
     currency: closureRewardResponse.data.player.currency,
   }], 'replaying a post-closure receipt must not duplicate progression');
 
-  assert.deepEqual(queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-start-before-open','permit-start-after-close') ORDER BY id"), invalidStartPermitsBefore,
+  assert.deepEqual(queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-start-before-open','permit-start-after-close','permit-start-at-close') ORDER BY id"), invalidStartPermitsBefore,
     'invalid permit start timestamps must not be normalized or settled');
   assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'"), invalidStartCharacterBefore);
   assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key"), invalidStartInventoryBefore);
