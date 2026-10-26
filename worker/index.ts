@@ -699,7 +699,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     const claim = await env.DB.prepare(`UPDATE battle_permits
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND event_key = 'underpass'
-      AND encounter_key = ?
+      AND encounter_key = ? AND completed_at IS NULL
       AND EXISTS (SELECT 1 FROM world_event_cycles
         WHERE id = battle_permits.cycle_id AND event_key = 'underpass')
       AND battle_status = 'victory' AND (
@@ -790,7 +790,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     return fail(request, env, 'Player inventory is at its supported snapshot limit.', 409);
   }
   const owns = `EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
-    AND reward_state = 'claiming' AND reward_claim_token = ?)`;
+    AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL)`;
   const applied = `EXISTS (SELECT 1 FROM characters WHERE player_id = ?
     AND last_reward_claim_token = ?)`;
   // Capacity is checked on the first character CAS. Once that CAS applies, the
@@ -861,7 +861,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
         completed_at = CURRENT_TIMESTAMP, reward_xp = ?, reward_currency = ?,
         reward_tier = ?, reward_level = ?, reward_remaining_xp = ?
       WHERE id = ? AND player_id = ? AND reward_state = 'claiming'
-        AND reward_claim_token = ? AND ${applied}`)
+        AND reward_claim_token = ? AND completed_at IS NULL AND ${applied}`)
       .bind(reward.xp, reward.currency, reward.tier, progression.level, progression.xp,
         input.permitId, input.playerId, token, input.playerId, token));
 
