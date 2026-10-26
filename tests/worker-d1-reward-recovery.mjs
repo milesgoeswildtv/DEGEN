@@ -307,40 +307,40 @@ try {
   sql(`CREATE TRIGGER qa_complete_claim_after_acquire AFTER UPDATE OF reward_state ON battle_permits
     WHEN NEW.id = 'permit-completion-race' AND NEW.reward_state = 'claiming'
     BEGIN UPDATE battle_permits SET completed_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END`);
-  const completionRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+  const claimTimestampRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
     FROM characters WHERE player_id = 'qa-player'`);
-  const completionRaceInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+  const claimTimestampRaceInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
     WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
-  const completionRaceClearsBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+  const claimTimestampRaceClearsBefore = sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`);
-  const completionRaceHistoryBefore = sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+  const claimTimestampRaceHistoryBefore = sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
     WHERE id = 'permit-completion-race:victory'`);
-  const completionRace = await complete('permit-completion-race');
-  assert.equal(completionRace.status, 409, JSON.stringify(completionRace.body));
-  assert.equal('reward' in (completionRace.body ?? {}), false);
-  assert.equal('player' in (completionRace.body ?? {}), false);
-  const completionRacePermitAfter = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+  const claimTimestampRace = await complete('permit-completion-race');
+  assert.equal(claimTimestampRace.status, 409, JSON.stringify(claimTimestampRace.body));
+  assert.equal('reward' in (claimTimestampRace.body ?? {}), false);
+  assert.equal('player' in (claimTimestampRace.body ?? {}), false);
+  const claimTimestampRacePermitAfter = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
       reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
     FROM battle_permits WHERE id = 'permit-completion-race'`);
-  assert.equal(completionRacePermitAfter[0]?.reward_state, 'claiming');
-  assert.ok(completionRacePermitAfter[0]?.reward_claim_token);
-  assert.ok(completionRacePermitAfter[0]?.reward_claimed_at);
-  assert.equal(completionRacePermitAfter[0]?.reward_clear_number, null,
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_state, 'claiming');
+  assert.ok(claimTimestampRacePermitAfter[0]?.reward_claim_token);
+  assert.ok(claimTimestampRacePermitAfter[0]?.reward_claimed_at);
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_clear_number, null,
     'a completed claim must not reserve a clear number');
-  assert.equal(completionRacePermitAfter[0]?.reward_xp, null);
-  assert.equal(completionRacePermitAfter[0]?.reward_currency, null);
-  assert.equal(completionRacePermitAfter[0]?.reward_tier, null);
-  assert.ok(completionRacePermitAfter[0]?.completed_at,
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_xp, null);
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_currency, null);
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_tier, null);
+  assert.ok(claimTimestampRacePermitAfter[0]?.completed_at,
     'the concurrent completion marker is retained for audit');
   assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
-    FROM characters WHERE player_id = 'qa-player'`), completionRaceCharacterBefore);
+    FROM characters WHERE player_id = 'qa-player'`), claimTimestampRaceCharacterBefore);
   assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
-    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), completionRaceInventoryBefore);
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), claimTimestampRaceInventoryBefore);
   assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
-    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), completionRaceClearsBefore,
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), claimTimestampRaceClearsBefore,
     'a completion timestamp race must not advance the clear counter');
   assert.deepEqual(sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
-    WHERE id = 'permit-completion-race:victory'`), completionRaceHistoryBefore);
+    WHERE id = 'permit-completion-race:victory'`), claimTimestampRaceHistoryBefore);
   sql('DROP TRIGGER qa_complete_claim_after_acquire');
 
   // A process that died while holding a claim must be recoverable after the 60-second lease.
