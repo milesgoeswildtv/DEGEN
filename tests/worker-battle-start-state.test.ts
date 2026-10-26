@@ -55,7 +55,7 @@ function makeEnv(
       };
     },
   };
-  return { env: { DB: db }, inserts };
+  return { env: { DB: db }, inserts, persistedExpiry };
 }
 
 function request(cycleId = 'open-cycle', extraFields: Record<string, unknown> = {}) {
@@ -79,7 +79,7 @@ test('battle start ignores forged client combat state and returns exactly the De
     opens_at: new Date(Date.now() - 60_000).toISOString(),
     closes_at: new Date(Date.now() + 60_000).toISOString(),
   };
-  const { env, inserts } = makeEnv(cycle);
+  const { env, inserts, persistedExpiry } = makeEnv(cycle);
   const response = await handleStartBattle(request(cycle.id, {
     playerHp: 1,
     playerMana: 0,
