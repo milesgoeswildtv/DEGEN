@@ -179,3 +179,32 @@ test('new clear allocation fails closed when the persisted counter trails a rese
   assert.match(owned, /isSafeIntegerBetween\(owned\.duplicate_clear_count, 0, 0\)/,
     'both newly assigned and previously reserved sequence numbers must be audited before progression writes');
 });
+
+test('completion timestamps are rechecked during reward clear reservation and failed-claim cleanup', () => {
+  const releaseStart = worker.indexOf('const releaseClaim = async');
+  const releaseEnd = worker.indexOf('};', releaseStart);
+  assert.ok(releaseStart >= 0 && releaseEnd > releaseStart, 'token-scoped claim cleanup must exist');
+  assert.match(
+    worker.slice(releaseStart, releaseEnd),
+    /reward_state = 'claiming' AND reward_claim_token = \\?[\\s\\S]*AND completed_at IS NULL/,
+    'cleanup must not rewrite a claim whose completion marker appeared after acquisition',
+  );
+
+  const allocationStart = worker.indexOf('UPDATE battle_permits SET reward_clear_number = (');
+  const allocationEnd = worker.indexOf('UPDATE world_event_clears SET full_reward_clears =', allocationStart);
+  assert.ok(allocationStart >= 0 && allocationEnd > allocationStart, 'clear allocation must exist');
+  assert.match(
+    worker.slice(allocationStart, allocationEnd),
+    /reward_claim_token = \\? AND reward_clear_number IS NULL AND completed_at IS NULL/,
+    'a completion marker appearing after claim acquisition must block clear reservation',
+  );
+
+  const ownsStart = worker.indexOf('const owns =');
+  const ownsEnd = worker.indexOf(';', ownsStart);
+  assert.ok(ownsStart >= 0 && ownsEnd > ownsStart, 'settlement ownership guard must exist');
+  assert.match(
+    worker.slice(ownsStart, ownsEnd),
+    /reward_state = 'claiming' AND reward_claim_token = \\? AND completed_at IS NULL/,
+    'settlement must recheck the same completion marker before any reward write',
+  );
+});
