@@ -1,3 +1,18 @@
+## Latest run — 2026-10-26 (guard clear-sequence reservation against completion race)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **PUSHED / PR #76 OPEN:** `automation/degen/reward-claim-completed-at-guard-v01`; Worker fix `a0ee2a7757d645bd50f62acb2b2d93c581ab4256`, regression `3db4fb62eb7e6b581f14f1fe47689b762ec72fa0`. No direct-main write.
+- **Task / files changed:** `worker/index.ts`, `tests/worker-d1-reward-recovery.mjs`, and this progress file. The cycle-clear counter update now requires the same still-incomplete, token-owned claim as the clear-number assignment. If an inconsistent completion marker appears after assignment, only that unawarded reservation is cleared; the counter cannot advance.
+- **Regression:** isolated local Worker/D1 trigger sets `completed_at` immediately after `reward_clear_number` is assigned. The test requires 409 without reward/player payload, no progression/inventory/history changes, no cycle-counter increment, and no retained clear-number reservation.
+- **QA:** the previous exact head `1c55db090538f6d16739406c068449c405e175cf` passed all 13 CI steps in [run 40399087878](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40399087878). The new code/test head `3db4fb62eb7e6b581f14f1fe47689b762ec72fa0` and its following continuity-only head need their own exact-head CI; do not call this change green yet. PR #75's current code/test head `5bb6b2ece36f5ce56def3fcf27bea1f332086abb` separately passed all 13 steps in [run 40385740522](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40385740522). No local-shell execution, production D1 operation, merge, or Worker deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql` remain intact.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only settlement, action CAS, permit owner/expiry/event/cycle/encounter checks, audited receipts, normalized stale-lease recovery, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, full/reduced reward tiers, and shared level-up math remain in place. No reward values or combat balance changed.
+- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. No schema/migration or deployment-config changes.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** verify exact-head CI for the new post-reservation race regression, then inspect the next uncovered settlement-recovery invariant only if the full matrix passes.
+
+---
+
 ## Latest run — 2026-10-26 (correct Worker/D1 race fixture collision)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
