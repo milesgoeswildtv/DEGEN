@@ -155,6 +155,10 @@ try {
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       ),
       (
+        'permit-completion-after-reservation', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
         'permit-reservation-recovery', 'qa-player', 'underpass', 'qa-reservation-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       ),
@@ -342,6 +346,49 @@ try {
   assert.deepEqual(sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
     WHERE id = 'permit-completion-race:victory'`), claimTimestampRaceHistoryBefore);
   sql('DROP TRIGGER qa_complete_claim_after_acquire');
+
+  // Completion can also become inconsistent after the clear-number UPDATE fires.
+  // The cycle counter must stay unchanged, and the unawarded reservation must be
+  // cleared without touching progression, inventory, or victory history.
+  sql(`CREATE TRIGGER qa_complete_after_clear_reservation AFTER UPDATE OF reward_clear_number ON battle_permits
+    WHEN NEW.id = 'permit-completion-after-reservation' AND NEW.reward_clear_number IS NOT NULL
+    BEGIN UPDATE battle_permits SET completed_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END`);
+  const postReservationCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const postReservationInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const postReservationClearsBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`);
+  const postReservationHistoryBefore = sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completion-after-reservation:victory'`);
+  const postReservation = await complete('permit-completion-after-reservation');
+  assert.equal(postReservation.status, 409, JSON.stringify(postReservation.body));
+  assert.equal('reward' in (postReservation.body ?? {}), false);
+  assert.equal('player' in (postReservation.body ?? {}), false);
+  const postReservationPermitAfter = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-completion-after-reservation'`);
+  assert.equal(postReservationPermitAfter[0]?.reward_state, 'claiming');
+  assert.ok(postReservationPermitAfter[0]?.reward_claim_token);
+  assert.ok(postReservationPermitAfter[0]?.reward_claimed_at);
+  assert.equal(postReservationPermitAfter[0]?.reward_clear_number, null,
+    'the inconsistent claim must not retain an unawarded clear reservation');
+  assert.equal(postReservationPermitAfter[0]?.reward_xp, null);
+  assert.equal(postReservationPermitAfter[0]?.reward_currency, null);
+  assert.equal(postReservationPermitAfter[0]?.reward_tier, null);
+  assert.equal(postReservationPermitAfter[0]?.reward_level, null);
+  assert.equal(postReservationPermitAfter[0]?.reward_remaining_xp, null);
+  assert.ok(postReservationPermitAfter[0]?.completed_at);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), postReservationCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), postReservationInventoryBefore);
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), postReservationClearsBefore,
+    'a completion marker after reservation must not consume a cycle clear');
+  assert.deepEqual(sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completion-after-reservation:victory'`), postReservationHistoryBefore);
+  sql('DROP TRIGGER qa_complete_after_clear_reservation');
 
   // A process that died while holding a claim must be recoverable after the 60-second lease.
   const staleClaim = await complete('permit-stale-claim');
