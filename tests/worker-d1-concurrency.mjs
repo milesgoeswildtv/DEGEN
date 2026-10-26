@@ -1872,6 +1872,7 @@ try {
       abilityId: 'slash',
       expectedTurnCount: 0,
     }),
+    signal: AbortSignal.timeout(30_000),
   });
   const closureAction = await closureActionResponse.json();
   assert.equal(closureActionResponse.status, 200, JSON.stringify(closureAction));
