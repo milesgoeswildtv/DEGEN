@@ -298,7 +298,7 @@ try {
   for (const [permitId, state] of [
     ['permit-unsupported-event', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3 }],
     ['permit-cycle-mismatch', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3 }],
-  ] as const) {
+  ]) {
     await assertUnsupportedActionPermit(permitId, state);
   }
 
