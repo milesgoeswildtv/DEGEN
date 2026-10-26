@@ -1265,6 +1265,10 @@ try {
   assert.equal(malformedCleanupRecovered.status, 200, JSON.stringify(malformedCleanupRecovered.body));
   const malformedCleanupReward = malformedCleanupRecovered.body.reward;
   assert.equal(malformedCleanupReward.tier, 'full');
+  const malformedCleanupCharacterAfter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const malformedCleanupInventoryAfter = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
   assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number,
       reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
     FROM battle_permits WHERE id = 'permit-malformed-reservation'`), [{
@@ -1292,10 +1296,6 @@ try {
   assert.ok(malformedCleanupAwardedPermit?.completed_at);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-malformed-cleanup-cycle'`)[0]?.full_reward_clears, 2);
-  const malformedCleanupCharacterAfter = sql(`SELECT level, xp, currency, last_reward_claim_token
-    FROM characters WHERE player_id = 'qa-player'`);
-  const malformedCleanupInventoryAfter = sql(`SELECT item_key, item_type, quantity FROM player_inventory
-    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
     WHERE id IN ('permit-malformed-reservation:victory', 'permit-malformed-reservation-recovery:victory')`)[0]?.n ?? 0, 1);
   const malformedCleanupReplay = await complete('permit-malformed-reservation-recovery');
