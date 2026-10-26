@@ -113,6 +113,10 @@ try {
         'claiming', 'abandoned-race-token', datetime('now', '-2 minutes')
       ),
       (
+        'permit-fresh-race', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
         'permit-missing-claim-time', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
         'claiming', 'missing-time-token', NULL
@@ -326,6 +330,86 @@ try {
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-stale-race:victory'`)[0]?.n, 1);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 3);
+
+  // Race two completions against a fresh pending victory, not just a stale lease.
+  // The first claimant may settle before the second reads, or the loser may see
+  // the live lease; either way, one stored receipt and one reward application win.
+  const beforeFreshRaceCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const beforeFreshRaceInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const freshRaceResults = await Promise.all([
+    complete('permit-fresh-race'),
+    complete('permit-fresh-race'),
+  ]);
+  assert.ok(freshRaceResults.every(result => result.status === 200 || result.status === 409),
+    JSON.stringify(freshRaceResults));
+  for (const result of freshRaceResults.filter(result => result.status === 409)) {
+    assert.equal(result.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+    assert.equal('reward' in (result.body ?? {}), false);
+    assert.equal('player' in (result.body ?? {}), false);
+  }
+  const freshRaceSuccesses = freshRaceResults.filter(result => result.status === 200);
+  for (const result of freshRaceSuccesses) assert.ok(result.body?.reward);
+  if (freshRaceSuccesses.length === 2) {
+    assert.deepEqual(freshRaceSuccesses[0].body.reward, freshRaceSuccesses[1].body.reward,
+      'both successful concurrent responses must return the same stored receipt');
+  }
+
+  const freshRaceRetry = await complete('permit-fresh-race');
+  assert.equal(freshRaceRetry.status, 200, JSON.stringify(freshRaceRetry.body));
+  const freshRaceReward = freshRaceRetry.body.reward;
+  assert.ok(freshRaceReward);
+  const freshRacePermit = sql(`SELECT reward_state, reward_claim_token, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-fresh-race'`);
+  assert.equal(freshRacePermit[0]?.reward_state, 'awarded');
+  assert.notEqual(freshRacePermit[0]?.reward_claim_token, null);
+  assert.equal(freshRacePermit[0]?.reward_clear_number, 4);
+  assert.equal(freshRacePermit[0]?.reward_xp, freshRaceReward.xp);
+  assert.equal(freshRacePermit[0]?.reward_currency, freshRaceReward.currency);
+  assert.equal(freshRacePermit[0]?.reward_tier, freshRaceReward.tier);
+  assert.equal(freshRacePermit[0]?.completed_at != null, true);
+
+  const afterFreshRaceCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  assert.equal(afterFreshRaceCharacter[0]?.level, freshRacePermit[0]?.reward_level);
+  assert.equal(afterFreshRaceCharacter[0]?.xp, freshRacePermit[0]?.reward_remaining_xp);
+  assert.equal(afterFreshRaceCharacter[0]?.currency,
+    beforeFreshRaceCharacter[0].currency + freshRaceReward.currency,
+    'concurrent completion must apply currency exactly once');
+  assert.equal(afterFreshRaceCharacter[0]?.last_reward_claim_token, freshRacePermit[0]?.reward_claim_token);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-fresh-race:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM defeated_bosses
+    WHERE player_id = 'qa-player' AND boss_key = 'tunnel-maw'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 4,
+    'two concurrent requests must reserve only one clear number');
+  const afterFreshRaceInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const scrapBeforeFreshRace = beforeFreshRaceInventory.find(row =>
+    row.item_key === 'underpass-scrap' && row.item_type === 'item')?.quantity ?? 0;
+  const scrapAfterFreshRace = afterFreshRaceInventory.find(row =>
+    row.item_key === 'underpass-scrap' && row.item_type === 'item')?.quantity ?? 0;
+  assert.equal(scrapAfterFreshRace, scrapBeforeFreshRace +
+    (freshRaceReward.items.includes('underpass-scrap') ? 1 : 0),
+    'concurrent completion must apply inventory once');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE player_id = 'qa-player' AND item_key = 'tunnel-trophy' AND item_type = 'furniture'`)[0]?.n, 1);
+
+  const freshRaceReplay = await complete('permit-fresh-race');
+  assert.equal(freshRaceReplay.status, 200, JSON.stringify(freshRaceReplay.body));
+  assert.deepEqual(freshRaceReplay.body.reward, freshRaceReward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), afterFreshRaceCharacter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), afterFreshRaceInventory);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-fresh-race'`), freshRacePermit);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 4);
 
   // A claiming receipt without a lease timestamp is malformed. Fail closed:
   // do not treat NULL as stale, steal the token, reserve a clear, or grant rewards.
