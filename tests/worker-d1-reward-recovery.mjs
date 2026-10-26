@@ -146,6 +146,11 @@ try {
         'claiming', 'nonnormalized-time-token', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 minutes')
       ),
       (
+        'permit-completed-claim', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'completed-claim-token', datetime('now', '-2 minutes')
+      ),
+      (
         'permit-reservation-recovery', 'qa-player', 'underpass', 'qa-reservation-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       ),
@@ -157,6 +162,8 @@ try {
         'permit-action-complete-race', 'qa-player', 'underpass', 'qa-action-race-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 12, 1, 'active', 0, 'pending', NULL, NULL
       );
+    UPDATE battle_permits SET completed_at = datetime('now', '-2 minutes')
+      WHERE id = 'permit-completed-claim';
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
 
@@ -253,6 +260,42 @@ try {
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 1);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-live-claim:victory'`)[0]?.n, 0);
+
+  // An inconsistent claim with completed_at already set is not a recoverable lease.
+  // Completion timestamps are written atomically with reward_state='awarded'; accepting
+  // this row would let a malformed receipt bypass the awarded-receipt audit and settle.
+  const completedClaimPermitBefore = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-completed-claim'`);
+  const completedClaimCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const completedClaimInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const completedClaimClearsBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`);
+  const completedClaimHistoryBefore = sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completed-claim:victory'`);
+  const inconsistentClaim = await complete('permit-completed-claim');
+  assert.equal(inconsistentClaim.status, 409, JSON.stringify(inconsistentClaim.body));
+  assert.equal(inconsistentClaim.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal('reward' in (inconsistentClaim.body ?? {}), false);
+  assert.equal('player' in (inconsistentClaim.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-completed-claim'`), completedClaimPermitBefore,
+    'an inconsistent completed claim must not be reclaimed or rewritten');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), completedClaimCharacterBefore,
+    'an inconsistent completed claim must not award progression or currency');
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), completedClaimInventoryBefore,
+    'an inconsistent completed claim must not award inventory');
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), completedClaimClearsBefore,
+    'an inconsistent completed claim must not reserve another clear');
+  assert.deepEqual(sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completed-claim:victory'`), completedClaimHistoryBefore,
+    'an inconsistent completed claim must not create victory history');
 
   // A process that died while holding a claim must be recoverable after the 60-second lease.
   const staleClaim = await complete('permit-stale-claim');
