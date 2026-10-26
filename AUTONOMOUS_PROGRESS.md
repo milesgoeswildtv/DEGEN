@@ -1,3 +1,18 @@
+## Latest run — 2026-10-26 (malformed reward-claim lease fails closed)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
+- **PUSHED / PR #73 OPEN:** `automation/degen/stale-reward-lease-recovery-v01`; test commit `2979ac82504f1f42643b48feede36be4f0043cd8`. This remains a test-only slice; no Worker runtime, schema, migration, or deployment configuration changed.
+- **New regression:** a victory receipt stuck in `claiming` with a NULL `reward_claimed_at` must fail closed with HTTP 409. The test asserts that the token/state remain unchanged, no clear sequence is reserved, no victory history is written, and player progression/inventory/reward payloads are not mutated or exposed.
+- **Exact-head CI:** pending for the new code/test commit. Previous code/test head `5e1ad970b4131c78609d53342ef2f278c5751946` passed the full workflow in [CI run 40270845090](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40270845090). Do not treat the new head as green until its own run completes.
+- **Files changed this run:** `tests/worker-d1-reward-recovery.mjs`, `AUTONOMOUS_PROGRESS.md`.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, authoritative persisted player Mana, rejection without mutation, exact deduction, zero-cost-at-zero, terminal behavior, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql` remain unchanged.
+- **Battle authority / reward idempotency:** server-resolved victories only; owner/expiry/event/cycle/encounter checks; action compare-and-swap; audited receipt validation; stale-lease token replacement; transient-D1 retry; exactly-once progression/inventory/history; stable clear sequencing and shared level-up math. PR #72's action event/cycle guard remains a separate open PR.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`. Local CI uses isolated Wrangler D1; no production D1 operation or deployment of PR #73 is claimed.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** verify exact-head CI, then continue with the next uncovered reward-recovery invariant or complete the separate action permit event/cycle guard review.
+
+---
+
 ## Latest run — 2026-10-26 (stale reward-claim lease and takeover race)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
