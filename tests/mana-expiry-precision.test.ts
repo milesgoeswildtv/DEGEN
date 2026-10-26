@@ -199,6 +199,23 @@ test('completion timestamps are rechecked during reward clear reservation and fa
     'a completion marker appearing after claim acquisition must block clear reservation',
   );
 
+  const reservationBatch = worker.slice(
+    allocationStart,
+    worker.indexOf('const owned = await env.DB.prepare', allocationStart),
+  );
+  const counterStart = reservationBatch.indexOf('UPDATE world_event_clears SET full_reward_clears =');
+  assert.ok(counterStart >= 0, 'the cycle clear counter update must exist in the reservation batch');
+  assert.match(
+    reservationBatch.slice(counterStart),
+    /reward_state = 'claiming' AND reward_claim_token = \\? AND completed_at IS NULL/,
+    'the cycle counter may advance only while the same incomplete claim still owns the reservation',
+  );
+  assert.match(
+    reservationBatch,
+    /UPDATE battle_permits SET reward_clear_number = NULL[\\s\\S]*completed_at IS NOT NULL[\\s\\S]*reward_tier IS NULL/,
+    'a completion marker appearing after assignment must release the unawarded clear number',
+  );
+
   const ownsStart = worker.indexOf('const owns =');
   const ownsEnd = worker.indexOf(';', ownsStart);
   assert.ok(ownsStart >= 0 && ownsEnd > ownsStart, 'settlement ownership guard must exist');
