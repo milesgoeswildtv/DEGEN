@@ -733,7 +733,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
               AND cycle_id = battle_permits.cycle_id)) = 'integer'
           AND (SELECT full_reward_clears FROM world_event_clears
             WHERE player_id = battle_permits.player_id AND event_key = 'underpass'
-              AND cycle_id = battle_permits.cycle_id) BETWEEN 0 AND \${Number.MAX_SAFE_INTEGER}
+              AND cycle_id = battle_permits.cycle_id) BETWEEN 0 AND ${Number.MAX_SAFE_INTEGER}
           AND reward_clear_number > (SELECT full_reward_clears FROM world_event_clears
             WHERE player_id = battle_permits.player_id AND event_key = 'underpass'
               AND cycle_id = battle_permits.cycle_id)
