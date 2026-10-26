@@ -1,3 +1,19 @@
+## Latest run — 2026-10-26 (post-merge reward lease recovery)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7` (squash merge of PR #73).
+- **MERGED through PR #73:** `fix(worker): fail closed on malformed reward lease timestamps`. The exact PR head `de612815895895457fa0b107ab1500ac4d618db0` passed all 13 CI workflow steps in [run 40308345925](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40308345925) before merge. Merge commit: `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **Merged files:** `worker/index.ts`, `tests/worker-d1-reward-recovery.mjs`, and this continuity file. Stale reward-claim takeover now requires a normalized SQLite timestamp that parses to an age older than the existing 60-second lease. NULL, malformed, and parseable-but-noncanonical timestamps cannot authorize takeover.
+- **Regression / QA evidence:** isolated Worker/D1 tests cover malformed and noncanonical lease times, active-battle completion rejection, a real killing action racing completion, concurrent fresh/stale claims, failed atomic award plus failed cleanup recovery, stable clear-slot reuse, and exactly-once receipt replay. The full pre-merge CI matrix also covered deterministic tests, Underpass cycle/rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker validation. No local-shell execution is claimed.
+- **Post-merge CI/deploy boundary:** the GitHub connector confirmed the squash merge and current main SHA. Its workflow-run lookup exposes PR-triggered runs only, and no combined commit-status records were returned for the merge SHA; therefore **post-merge main CI, Worker deployment, and live production behavior are not yet verified here**. No manual/remote D1 operation was performed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, persisted server-owned `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal behavior, cost-aware UI, and tracked migration `0006_backfill_active_battle_mana.sql` remain intact. No monster Mana and no Mana-triggered reversion.
+- **Battle authority / reward idempotency:** victory remains Worker-resolved; action CAS and turn preconditions, permit ownership/expiry checks, audited receipts, clear-slot uniqueness, transient-D1 recovery, and exactly-once progression/inventory/history remain in place. PR #73 changed no schema, migration, reward values, combat balance, or deployment config.
+- **D1 assumptions:** `wrangler.toml` remains the source of truth for binding `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker.
+- **Open related work:** PR #72's permit event/cycle guard is still open. Its current head `532bc1328417ccf30d7629917fbdbc8cc3cad584` passed exact-head CI run [40322506279](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40322506279), but it must be checked against the post-merge main base before merging. Do not infer that the pre-merge run validates a new merge result.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** reconcile PR #72's event/cycle guard against current main, preserve all newer reward-recovery code, then run exact-head CI before deciding whether it is ready for normal review.
+
+---
+
 ## Latest run — 2026-10-26 (reject parseable noncanonical reward-lease timestamps)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
