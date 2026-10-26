@@ -141,6 +141,11 @@ try {
         'claiming', 'invalid-time-token', '0000-not-a-date'
       ),
       (
+        'permit-nonnormalized-claim-time', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'nonnormalized-time-token', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 minutes')
+      ),
+      (
         'permit-reservation-recovery', 'qa-player', 'underpass', 'qa-reservation-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       ),
@@ -503,6 +508,47 @@ try {
     beforeInvalidLeaseTimeClearCount);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
     WHERE id = 'permit-invalid-claim-time:victory'`)[0]?.n ?? 0, 0);
+
+  // An ISO-8601 timestamp can be parseable and older than the lease threshold
+  // while still violating the canonical SQLite timestamp representation. Prove
+  // the old age predicate alone would call it stale, then ensure the normalized
+  // timestamp guard prevents lease theft and every reward-side mutation.
+  const nonnormalizedLease = sql(`SELECT reward_claimed_at,
+      julianday(reward_claimed_at) < julianday('now', '-60 seconds') AS appears_stale,
+      strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at AS is_normalized
+    FROM battle_permits WHERE id = 'permit-nonnormalized-claim-time'`);
+  assert.equal(nonnormalizedLease[0]?.appears_stale, 1,
+    'the ISO timestamp must be old enough that age-only recovery would accept it');
+  assert.equal(nonnormalizedLease[0]?.is_normalized, 0,
+    'ISO timestamp representation must not pass the canonical SQLite format guard');
+  const beforeNonnormalizedLeaseCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const beforeNonnormalizedLeaseInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const beforeNonnormalizedLeaseClearCount = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0;
+  const nonnormalizedLeaseResponse = await complete('permit-nonnormalized-claim-time');
+  assert.equal(nonnormalizedLeaseResponse.status, 409, JSON.stringify(nonnormalizedLeaseResponse.body));
+  assert.equal('reward' in (nonnormalizedLeaseResponse.body ?? {}), false);
+  assert.equal('player' in (nonnormalizedLeaseResponse.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-nonnormalized-claim-time'`), [{
+    reward_state: 'claiming',
+    reward_claim_token: 'nonnormalized-time-token',
+    reward_claimed_at: nonnormalizedLease[0].reward_claimed_at,
+    reward_clear_number: null,
+    completed_at: null,
+  }], 'a parseable but noncanonical timestamp must not authorize stale-lease takeover');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), beforeNonnormalizedLeaseCharacter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), beforeNonnormalizedLeaseInventory);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0,
+    beforeNonnormalizedLeaseClearCount);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-nonnormalized-claim-time:victory'`)[0]?.n ?? 0, 0);
 
   // Failure while reserving a clear slot must roll back that reservation batch,
   // release only this claim, and allow a retry without losing the valid victory.
