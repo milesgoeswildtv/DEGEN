@@ -1,3 +1,17 @@
+## Latest run — 2026-10-26 (battle action/completion concurrency)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
+- **PUSHED / PR #73 OPEN:** continuing `automation/degen/stale-reward-lease-recovery-v01`; action/completion integration-test commit `833d129203459cdb3e03e2f85f2955e18638dbc6`. No direct-main write.
+- **Task / files:** `tests/worker-d1-reward-recovery.mjs` adds a local Worker/D1 scenario that first proves an active permit cannot be completed or reserve a clear, then races the actual killing action against `/api/battle/complete`. It checks authoritative terminal HP/Mana/turn state, one clear slot, one history row, one currency/inventory award, replay stability, and rejection of a repeated terminal action.
+- **QA:** exact-head CI for commit `833d129203459cdb3e03e2f85f2955e18638dbc6` is pending; no local shell execution is claimed. This progress refresh will create a new docs-only branch head, which also needs exact-head CI before it is marked green.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation for unaffordable actions, exact deduction, zero-cost use at zero, terminal behavior, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration 0006 remain intact.
+- **Battle authority / reward idempotency:** this extends PR #73's stale-lease/token recovery and fresh/stale completion races. Victory remains Worker-resolved; permit ownership/expiry/event/cycle/encounter checks, action CAS, audited receipts, full/reduced reward tiers, bounded progression retry, and exactly-once settlement remain unchanged. PR #72's action event/cycle guard is still separate and open.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy ordering is schema → tracked migrations → Worker. The new test uses only isolated Wrangler local D1. No production D1 operation, Worker deployment, reward-value change, or combat rebalance occurred.
+- **Miles blocker:** platform-auth PR #21 still needs approved Discord/Telegram production credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions. Do not bypass this release gate for Shield/housing.
+- **One best next task:** finish exact-head CI for this action/completion race; if green, inspect the still-open PR #72 event/cycle action guard for interaction with terminal-state and expiry handling.
+
+---
+
 ## Latest run — 2026-10-26 (malformed reward-lease timestamps and failed cleanup recovery)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
