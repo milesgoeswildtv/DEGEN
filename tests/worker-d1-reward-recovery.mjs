@@ -323,6 +323,8 @@ try {
   // do not treat NULL as stale, steal the token, reserve a clear, or grant rewards.
   const beforeMissingLeaseTimeCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
     FROM characters WHERE player_id = 'qa-player'`);
+  const beforeMissingLeaseTimeInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
   const beforeMissingLeaseTimeClearCount = sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0;
   const missingLeaseTime = await complete('permit-missing-claim-time');
@@ -341,6 +343,9 @@ try {
   }], 'NULL lease timestamps must not be interpreted as expired leases');
   assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
     FROM characters WHERE player_id = 'qa-player'`), beforeMissingLeaseTimeCharacter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), beforeMissingLeaseTimeInventory,
+    'malformed lease must not mutate inventory');
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0,
     beforeMissingLeaseTimeClearCount, 'malformed lease must not reserve a reward clear');
