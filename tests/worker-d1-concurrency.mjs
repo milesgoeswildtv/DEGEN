@@ -1658,23 +1658,6 @@ try {
     WHERE id = 'inventory-cap-player:item:underpass-scrap'`);
   expectInventoryGuardFailure(`UPDATE player_inventory SET quantity = 9007199254740992
     WHERE id = 'inventory-cap-player:item:underpass-scrap'`);
-  // Exercise the INSERT trigger independently: update coverage cannot prove that
-  // new inventory rows are protected from the same malformed quantities.
-  expectInventoryGuardFailure(`INSERT INTO player_inventory
-    (id, player_id, item_key, item_type, quantity)
-    VALUES ('invalid-insert-zero', 'inventory-cap-player', 'probe', 'item', 0)`);
-  expectInventoryGuardFailure(`INSERT INTO player_inventory
-    (id, player_id, item_key, item_type, quantity)
-    VALUES ('invalid-insert-negative', 'inventory-cap-player', 'probe', 'item', -1)`);
-  expectInventoryGuardFailure(`INSERT INTO player_inventory
-    (id, player_id, item_key, item_type, quantity)
-    VALUES ('invalid-insert-fractional', 'inventory-cap-player', 'probe', 'item', 1.5)`);
-  expectInventoryGuardFailure(`INSERT INTO player_inventory
-    (id, player_id, item_key, item_type, quantity)
-    VALUES ('invalid-insert-unsafe', 'inventory-cap-player', 'probe', 'item', 9007199254740992)`);
-  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
-    WHERE id LIKE 'invalid-insert-%'`), 0,
-    'invalid insert attempts must not create inventory rows');
   assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
     WHERE id = 'inventory-cap-player:item:underpass-scrap'`), [{ quantity: 10000 }],
     'failed quantity updates must leave the existing stack unchanged');
@@ -1816,6 +1799,24 @@ try {
     WHERE id IN ('permit-inventory-race-a','permit-inventory-race-b')
       AND reward_clear_number IN (1,2)`), 2,
     'concurrent completions must retain distinct reserved clear numbers');
+
+  // Exercise the INSERT trigger independently: update coverage cannot prove that
+  // new inventory rows are protected from the same malformed quantities.
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-zero', 'inventory-cap-player', 'probe', 'item', 0)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-negative', 'inventory-cap-player', 'probe', 'item', -1)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-fractional', 'inventory-cap-player', 'probe', 'item', 1.5)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-unsafe', 'inventory-cap-player', 'probe', 'item', 9007199254740992)`);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE id LIKE 'invalid-insert-%'`), 0,
+    'invalid insert attempts must not create inventory rows');
 
   console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
