@@ -1,3 +1,17 @@
+## Latest run — 2026-10-26 (recover a reward after claim-release failure)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
+- **PUSHED / PR #73:** continuing `automation/degen/stale-reward-lease-recovery-v01` from verified head `fa83f6c8aa49239df4cec26f07b058c3b41d7b3d`; this run adds isolated local Worker/D1 fault-injection coverage and updates this continuity record. No production runtime, schema, migration, reward value, or deployment configuration changes.
+- **Task / files changed:** `tests/worker-d1-reward-recovery.mjs`, `AUTONOMOUS_PROGRESS.md`. A trigger aborts the atomic victory-award batch and a second trigger independently aborts the token-scoped claim-release update. The test checks that no progression, inventory, or history is partially awarded; the claim remains visibly leased with its original clear number; after the normal stale threshold, a retry replaces the abandoned token, settles the same clear number exactly once, and replays the same receipt.
+- **QA:** prior PR head `fa83f6c8aa49239df4cec26f07b058c3b41d7b3d` passed all 13 workflow steps in [CI run 40284259278](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40284259278). Exact-head CI for this added regression must pass before this new head is marked green.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, authoritative persisted player_mana, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal behavior, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration 0006 remain unchanged.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only settlement, permit ownership/expiry/event/cycle/encounter checks, action CAS, audited receipts, stale-lease token replacement, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, full/reduced tiers, and shared level-up math remain in place. PR #72's action event/cycle guard is separate and still open.
+- **D1 assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. This test uses isolated Wrangler local D1 only; no production D1 operation or deployment occurred.
+- **Miles blocker:** platform-auth PR #21 still needs approved Discord/Telegram production credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** continue reviewable reward-recovery coverage while keeping PR #73 open until normal review; do not merge or deploy auth-gated work.
+
+---
+
 ## Latest run — 2026-10-26 (fresh and stale reward completion races)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.

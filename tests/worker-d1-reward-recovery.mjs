@@ -81,7 +81,8 @@ try {
       VALUES
         ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
-        ('qa-reservation-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+        ('qa-reservation-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-cleanup-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
     INSERT INTO world_event_clears(player_id, event_key, cycle_id, full_reward_clears)
       VALUES ('qa-player', 'underpass', 'qa-legacy-cycle', 3);
     INSERT INTO battle_permits(
@@ -123,6 +124,10 @@ try {
       ),
       (
         'permit-reservation-recovery', 'qa-player', 'underpass', 'qa-reservation-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-cleanup-failure', 'qa-player', 'underpass', 'qa-cleanup-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
   `);
@@ -515,6 +520,98 @@ try {
     WHERE id = 'permit-reservation-recovery:victory'`)[0]?.n ?? 0, 1);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-reservation-cycle'`)[0]?.full_reward_clears, 1);
+  await stop();
+
+  // If settlement fails and the token-scoped lease release also fails, the
+  // valid victory must remain recoverable after the normal stale-lease threshold.
+  const beforeCleanupFailureCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const beforeCleanupFailureInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  sql(`CREATE TRIGGER qa_fail_cleanup_award BEFORE INSERT ON battle_history
+    WHEN NEW.id = 'permit-cleanup-failure:victory'
+    BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_CLEANUP_AWARD_FAILURE'); END`);
+  sql(`CREATE TRIGGER qa_fail_cleanup_release BEFORE UPDATE ON battle_permits
+    WHEN OLD.id = 'permit-cleanup-failure' AND OLD.reward_state = 'claiming'
+      AND NEW.reward_state = 'pending'
+    BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_CLEANUP_RELEASE_FAILURE'); END`);
+  await start();
+  const cleanupFailure = await complete('permit-cleanup-failure');
+  assert.equal(cleanupFailure.status, 500, JSON.stringify(cleanupFailure.body));
+  await stop();
+
+  const stuckClaim = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-cleanup-failure'`);
+  assert.equal(stuckClaim[0]?.reward_state, 'claiming');
+  assert.ok(stuckClaim[0]?.reward_claim_token, 'failed cleanup must not pretend the lease was released');
+  assert.ok(stuckClaim[0]?.reward_claimed_at);
+  assert.equal(stuckClaim[0]?.reward_clear_number, 1,
+    'the reserved clear number survives an ambiguous settlement failure');
+  assert.equal(stuckClaim[0]?.completed_at, null);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cleanup-cycle'`)[0]?.full_reward_clears, 1);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-cleanup-failure:victory'`)[0]?.n ?? 0, 0,
+    'the failed atomic award must not leave a victory receipt');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), beforeCleanupFailureCharacter,
+    'failed settlement and failed cleanup must not partially award progression');
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), beforeCleanupFailureInventory,
+    'failed settlement and failed cleanup must not partially award inventory');
+
+  // Simulate the abandoned worker lease aging past 60 seconds, then retry.
+  sql(`UPDATE battle_permits SET reward_claimed_at = datetime('now', '-2 minutes')
+    WHERE id = 'permit-cleanup-failure' AND reward_state = 'claiming'`);
+  sql('DROP TRIGGER qa_fail_cleanup_award');
+  sql('DROP TRIGGER qa_fail_cleanup_release');
+  await start();
+  const cleanupRecovered = await complete('permit-cleanup-failure');
+  assert.equal(cleanupRecovered.status, 200, JSON.stringify(cleanupRecovered.body));
+  const cleanupReward = cleanupRecovered.body.reward;
+  assert.equal(cleanupReward.tier, 'full');
+  const cleanupPermitAfter = sql(`SELECT reward_state, reward_claim_token, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-cleanup-failure'`);
+  assert.equal(cleanupPermitAfter[0]?.reward_state, 'awarded');
+  assert.notEqual(cleanupPermitAfter[0]?.reward_claim_token, stuckClaim[0]?.reward_claim_token,
+    'stale recovery must replace the token whose cleanup failed');
+  assert.equal(cleanupPermitAfter[0]?.reward_clear_number, 1,
+    'recovery must reuse the original clear number, not reserve another');
+  assert.equal(cleanupPermitAfter[0]?.reward_xp, cleanupReward.xp);
+  assert.equal(cleanupPermitAfter[0]?.reward_currency, cleanupReward.currency);
+  assert.equal(cleanupPermitAfter[0]?.reward_tier, 'full');
+  assert.ok(cleanupPermitAfter[0]?.completed_at);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cleanup-cycle'`)[0]?.full_reward_clears, 1);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-cleanup-failure:victory'`)[0]?.n ?? 0, 1);
+  const cleanupCharacterAfter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  assert.equal(cleanupCharacterAfter[0]?.currency,
+    beforeCleanupFailureCharacter[0].currency + cleanupReward.currency);
+  assert.equal(cleanupCharacterAfter[0]?.last_reward_claim_token, cleanupPermitAfter[0]?.reward_claim_token);
+  const cleanupInventoryAfter = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const scrapBeforeCleanup = beforeCleanupFailureInventory.find(row =>
+    row.item_key === 'underpass-scrap' && row.item_type === 'item')?.quantity ?? 0;
+  const scrapAfterCleanup = cleanupInventoryAfter.find(row =>
+    row.item_key === 'underpass-scrap' && row.item_type === 'item')?.quantity ?? 0;
+  assert.equal(scrapAfterCleanup, scrapBeforeCleanup + 1,
+    'recovery must apply the full-tier scrap reward exactly once');
+
+  const cleanupReplay = await complete('permit-cleanup-failure');
+  assert.equal(cleanupReplay.status, 200, JSON.stringify(cleanupReplay.body));
+  assert.deepEqual(cleanupReplay.body.reward, cleanupReward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), cleanupCharacterAfter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), cleanupInventoryAfter);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-cleanup-failure:victory'`)[0]?.n ?? 0, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cleanup-cycle'`)[0]?.full_reward_clears, 1);
   await stop();
 
   // Repeat the transient-failure recovery against a valid pre-Mana victory.
