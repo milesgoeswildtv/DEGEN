@@ -1,3 +1,17 @@
+## Latest run — 2026-10-26 (malformed permit expiry fails closed)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **PUSHED / PR #75 OPEN:** `automation/degen/action-permit-event-guard-v02`; code/test commit `8eb9a16ffd2f30bd97aaf1422e9d22831d6dae0d`. No direct-main write.
+- **Task / file changed:** `tests/worker-d1-concurrency.mjs`. Added a valid in-cycle active permit whose `expires_at` is unparsable. The real Worker/D1 action must reject it without returning a battle snapshot; forged completion fields must not create a victory, reward, or player payload. Final persisted-state checks compare the permit, character progression, inventory, clear counters, and battle history to pre-request snapshots, and confirm no claim token or clear number was reserved.
+- **QA:** exact-head CI for `8eb9a16ffd2f30bd97aaf1422e9d22831d6dae0d` is pending. Predecessor `df34b65a91b4fe9b34827a34f89aaf1b57a757be` passed all 13 workflow steps in [CI run 40358006555](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40358006555). No local-shell test, production D1 operation, runtime change, migration, merge, or deployment is claimed. Do not mark the new head green until its own complete workflow passes.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql`.
+- **Battle authority / reward idempotency:** PR #75's event/cycle/encounter/start-window guards preserve valid entered fights across event closure. This run extends fail-closed permit coverage to malformed expiry data. Worker-resolved victory-only settlement, action compare-and-swap, audited receipts, stale-lease recovery, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, full/reduced reward tiers, and shared level-up math remain in place.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. Tests use isolated local Wrangler D1 only.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Keep the stale Shield PR #20 draft/unmerged; its migration depends on session migration 0007, which is not on main. Do not bypass that release gate.
+- **One best next task:** verify exact-head CI for this malformed-expiry regression; if green, continue only with the next uncovered permit/reward invariant while keeping PR #75 reviewable and not duplicating Mana work.
+
+---
+
 ## Latest run — 2026-10-26 (inclusive Underpass opening boundary)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
