@@ -108,7 +108,7 @@ try {
       ),
       (
         'permit-stale-race', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
-        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        datetime('now', '-20 minutes'), 90, 0, 0, 'victory', 1,
         'claiming', 'abandoned-race-token', datetime('now', '-2 minutes')
       ),
       (
@@ -266,6 +266,9 @@ try {
     FROM characters WHERE player_id = 'qa-player'`);
   const inventoryBeforeStaleRace = sql(`SELECT item_key, item_type, quantity FROM player_inventory
     WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  assert.equal(sql(`SELECT julianday(expires_at) < julianday('now') AS expired
+    FROM battle_permits WHERE id = 'permit-stale-race'`)[0]?.expired, 1,
+    'the stale victory claim is already expired before recovery starts');
   const staleRaceResults = await Promise.all([
     complete('permit-stale-race'),
     complete('permit-stale-race'),
