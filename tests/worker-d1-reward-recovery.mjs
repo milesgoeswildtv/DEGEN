@@ -80,7 +80,8 @@ try {
     INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at)
       VALUES
         ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
-        ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+        ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-reservation-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
     INSERT INTO world_event_clears(player_id, event_key, cycle_id, full_reward_clears)
       VALUES ('qa-player', 'underpass', 'qa-legacy-cycle', 3);
     INSERT INTO battle_permits(
@@ -115,6 +116,10 @@ try {
         'permit-missing-claim-time', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
         'claiming', 'missing-time-token', NULL
+      ),
+      (
+        'permit-reservation-recovery', 'qa-player', 'underpass', 'qa-reservation-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
@@ -354,6 +359,78 @@ try {
     beforeMissingLeaseTimeClearCount, 'malformed lease must not reserve a reward clear');
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
     WHERE id = 'permit-missing-claim-time:victory'`)[0]?.n ?? 0, 0);
+
+  // Failure while reserving a clear slot must roll back that reservation batch,
+  // release only this claim, and allow a retry without losing the valid victory.
+  const beforeReservationFailureCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const beforeReservationFailureInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-reservation-cycle'`)[0]?.n ?? 0, 0);
+  sql(`CREATE TRIGGER qa_fail_clear_reservation BEFORE INSERT ON world_event_clears
+    WHEN NEW.player_id = 'qa-player' AND NEW.event_key = 'underpass'
+      AND NEW.cycle_id = 'qa-reservation-cycle'
+    BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_CLEAR_RESERVATION_FAILURE'); END`);
+  const reservationFailure = await complete('permit-reservation-recovery');
+  assert.equal(reservationFailure.status, 500, JSON.stringify(reservationFailure.body));
+  await stop();
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-reservation-recovery'`), [{
+    reward_state: 'pending',
+    reward_claim_token: null,
+    reward_claimed_at: null,
+    reward_clear_number: null,
+    completed_at: null,
+  }], 'failed clear reservation must release the lease and retain no partial receipt');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-reservation-cycle'`)[0]?.n ?? 0, 0,
+    'failed reservation batch must not leave a clear counter');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-reservation-recovery:victory'`)[0]?.n ?? 0, 0);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), beforeReservationFailureCharacter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), beforeReservationFailureInventory);
+  sql('DROP TRIGGER qa_fail_clear_reservation');
+  await start();
+  const reservationRecovered = await complete('permit-reservation-recovery');
+  assert.equal(reservationRecovered.status, 200, JSON.stringify(reservationRecovered.body));
+  const reservationReward = reservationRecovered.body.reward;
+  assert.equal(reservationReward.tier, 'full');
+  const reservationPermitAfter = sql(`SELECT reward_state, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-reservation-recovery'`);
+  assert.equal(reservationPermitAfter[0]?.reward_state, 'awarded');
+  assert.equal(reservationPermitAfter[0]?.reward_clear_number, 1);
+  assert.equal(reservationPermitAfter[0]?.reward_xp, reservationReward.xp);
+  assert.equal(reservationPermitAfter[0]?.reward_currency, reservationReward.currency);
+  assert.equal(reservationPermitAfter[0]?.reward_tier, 'full');
+  assert.ok(reservationPermitAfter[0]?.completed_at);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-reservation-cycle'`)[0]?.full_reward_clears, 1);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-reservation-recovery:victory'`)[0]?.n ?? 0, 1);
+  const reservationCharacterAfter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  assert.equal(reservationCharacterAfter[0]?.currency,
+    beforeReservationFailureCharacter[0].currency + reservationReward.currency);
+  const reservationInventoryAfter = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const reservationReplay = await complete('permit-reservation-recovery');
+  assert.equal(reservationReplay.status, 200, JSON.stringify(reservationReplay.body));
+  assert.deepEqual(reservationReplay.body.reward, reservationReward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), reservationCharacterAfter,
+    'retry after recovered clear reservation must not double-apply progression');
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), reservationInventoryAfter,
+    'retry after recovered clear reservation must not double-apply inventory');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-reservation-recovery:victory'`)[0]?.n ?? 0, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-reservation-cycle'`)[0]?.full_reward_clears, 1);
   await stop();
 
   // Repeat the transient-failure recovery against a valid pre-Mana victory.
