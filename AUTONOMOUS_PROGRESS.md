@@ -1,3 +1,19 @@
+## Latest run — 2026-10-26 (reconcile permit event/cycle guard with post-merge main)
+
+- **Authoritative main base:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`. PR #73's normalized SQLite stale-lease guard is merged at this SHA and must be preserved.
+- **PUSHED successor branch:** `automation/degen/action-permit-event-guard-v02`, created from that exact main SHA after the normal merge of PR #72 was rejected for conflicts. The old PR #72 branch remains open and has not been force-pushed or rewritten.
+- **Implementation port:** validates permit event, referenced cycle event, supported encounter, and `started_at` window for active actions, terminal-action recovery, compare-and-swap updates, and completion/replay eligibility. A valid permit entered before event closure remains usable until expiry; unsupported or retroactively invalid permits cannot mutate combat or replay rewards. The Worker file also retains PR #73's normalized stale-lease predicate.
+- **Files changed:** `worker/index.ts`; `tests/mana-expiry-precision.test.ts`; `tests/worker-battle-action-conflict.test.ts`; `tests/worker-battle-start-state.test.ts`; `tests/worker-d1-concurrency.mjs`; `tests/worker-d1-defeat-atomic.mjs`; `tests/worker-defeat-atomic.test.ts`; and this progress file. No schema/migration or deployment-config change.
+- **Prior branch QA:** code/test commit `731b99edf418aacacae0125e1751956430c6ad10` passed CI run [40327368866](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40327368866), but later commits followed it, so it is not exact-head proof for this successor. The direct merge attempt for PR #72 failed because GitHub reported merge conflicts. No direct-main write or production D1 operation.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, and migration `0006_backfill_active_battle_mana.sql` remain intact. No monster Mana and no Mana-triggered reversion.
+- **Battle authority / reward idempotency:** worker-resolved victory-only settlement, action CAS, audited receipts, token-scoped stale-lease recovery, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, and full/reduced reward tiers remain intact. No reward values, XP math, inventory semantics, or combat balance changed.
+- **D1 assumptions:** `wrangler.toml` remains authoritative for binding `DB` → `DEGEN` and `db/migrations`; deploy order remains base schema → tracked migrations → Worker.
+- **QA boundary:** exact-head CI is required for deterministic tests, Worker/D1 concurrency and recovery, Underpass cycle/rollover, atomic defeat, production build, Chromium mobile vertical slice, and Worker dry-run. No merge/deploy/live claim until these checks are observed.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** finish the successor port, open its PR, and verify exact-head CI before merge.
+
+---
+
 ## Latest run — 2026-10-26 (reject parseable noncanonical reward-lease timestamps)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
