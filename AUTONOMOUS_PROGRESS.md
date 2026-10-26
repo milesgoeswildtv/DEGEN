@@ -1,3 +1,17 @@
+## Latest run — 2026-10-26 (reject parseable noncanonical reward-lease timestamps)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
+- **PUSHED / PR #73 OPEN:** `automation/degen/stale-reward-lease-recovery-v01`; new regression commit `786a346cf8f42d50bd50c60e9263ad3b993a1b58`. No direct-main write.
+- **Task / file changed:** `tests/worker-d1-reward-recovery.mjs`. Added a local Worker/D1 fixture whose ISO-8601 `reward_claimed_at` is parseable and older than 60 seconds but is not the canonical SQLite timestamp form. The test proves the age-only `julianday` predicate would accept it, while the normalized-format guard must reject takeover; it then asserts no claim-token replacement, clear reservation, reward response, character progression, inventory mutation, or victory-history row.
+- **QA:** exact-head CI for this new commit is pending; the preceding PR head `c5835e17f27bb2b867278da0abdde6a4952946bc` has CI run [40306949372](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40306949372) in progress and does not validate the new test. Do not call the new head green until its own complete 13-step workflow passes. No local shell execution is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration 0006 remain intact.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only settlement, action CAS, permit ownership/expiry/event/cycle/encounter validation, audited receipts, token-scoped stale-lease recovery, transient-D1 retry, unique clear sequencing, exactly-once progression/inventory/history, full/reduced tiers, and shared level-up math remain in place. No runtime behavior or reward values changed in this commit.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. This is isolated local D1 regression coverage only; no production D1 operation or Worker deployment occurred.
+- **Miles blocker:** platform-auth PR #21 still needs approved Discord/Telegram production credentials/configuration, controlled live identity/session verification, and a policy for unverified legacy identity collisions. Do not bypass that release gate for Shield/housing.
+- **One best next task:** verify exact-head CI for this new lease-format regression, then inspect any remaining uncovered settlement recovery invariant without changing rewards or combat balance.
+
+---
+
 ## Latest run — 2026-10-26 (battle action/completion concurrency)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
