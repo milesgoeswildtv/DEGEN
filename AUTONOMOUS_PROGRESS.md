@@ -1,3 +1,17 @@
+## Latest run — 2026-10-26 (stale reward-claim lease recovery regression)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
+- **PUSHED / PR #73 OPEN:** `automation/degen/stale-reward-lease-recovery-v01`, code/test head `aafcd58283b4dd5ea634c75c854d6c52403a99d5`. The PR is test-only; no production runtime change.
+- **Exact-head QA PASS:** [CI run 40269972720](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40269972720) completed successfully. Deterministic game tests, Worker/D1 reward concurrency, transient-failure reward recovery (including the new lease cases), Underpass cycle and rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker validation all passed.
+- **Files changed:** `tests/worker-d1-reward-recovery.mjs`. Added local Worker/D1 coverage proving a live claim cannot be stolen before the 60-second lease expires; an abandoned claim can be reclaimed; the new token replaces the stale token; the reserved clear sequence and full-tier reward remain consistent; a stale worker's token-scoped cleanup cannot reset the awarded claim; and duplicate completion does not award progression, inventory, history, or clear count twice.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, persisted player Mana, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal combat behavior, cost-aware UI, no monster Mana, no Mana-triggered reversion, and migration 0006 remain unchanged.
+- **Battle authority / reward idempotency:** Worker-resolved victory only, permit ownership/expiry and event/cycle/encounter guards, action compare-and-swap, token-scoped reward claims, audited receipts, transient-D1 recovery, stable clear sequencing, full/reduced tiers, shared XP/level-up math, and duplicate completion protection remain in place. PR #72's action event/cycle guard is separate and remains open.
+- **D1 / deployment assumptions:** `wrangler.toml` remains the source of truth for binding `DB` → `DEGEN` and `db/migrations`. No migration is needed for this test-only change. CI used isolated local D1; no production D1 mutation, Worker deployment, or live HTTP smoke is claimed for PR #73.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** after the continuity-only head's own CI is green, continue reward-claim concurrency hardening with a controlled simultaneous stale-lease takeover regression, without changing reward values or combat balance.
+
+---
+
 ## Latest run — 2026-10-25 (isolate inventory INSERT-trigger probes from live Worker)
 
 - **Authoritative main SHA:** `230c02f3acf33c877b5ab591bb7bb0e899fb7515`. Rechecked the original Mana branch and all Mana-named successors first. Current main contains the complete Degen-only Mana runtime, authoritative Worker state, cost-aware UI, matching shared combat types/rules, terminal/expiry tests, and tracked migration 0006; the divergent branches are stale history/tests, not an unfinished unique runtime slice.
