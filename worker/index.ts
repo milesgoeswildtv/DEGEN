@@ -60,6 +60,41 @@ type BattlePermitStateRow = {
 const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
 
+// The current PlayerState contract expands stack quantities into string[] entries.
+// Keep malformed/corrupt D1 rows from allocating unbounded arrays; this is an API
+// snapshot safety bound, not a gameplay inventory or stack-balance rule.
+const MAX_INVENTORY_SNAPSHOT_ITEMS = 10_000;
+type InventoryQuantityRow = { item_type: string; quantity: number };
+
+class InventoryIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InventoryIntegrityError';
+  }
+}
+
+const countInventorySnapshotItems = (rows: InventoryQuantityRow[]): number => {
+  let total = 0;
+  for (const row of rows) {
+    if (!isSafeIntegerBetween(row.quantity, 1, Number.MAX_SAFE_INTEGER)) {
+      throw new InventoryIntegrityError('Player inventory quantity is invalid.');
+    }
+    if (row.item_type !== 'furniture') {
+      if (row.quantity > MAX_INVENTORY_SNAPSHOT_ITEMS - total) {
+        throw new InventoryIntegrityError('Player inventory exceeds the supported snapshot size.');
+      }
+      total += row.quantity;
+    }
+  }
+  return total;
+};
+
+async function inventorySnapshotItemCount(db: D1Database, playerId: string): Promise<number> {
+  const inventory = await db.prepare(`SELECT item_type, quantity FROM player_inventory WHERE player_id = ?`)
+    .bind(playerId).all<InventoryQuantityRow>();
+  return countInventorySnapshotItems(inventory.results);
+}
+
 const isValidProgressionState = (level: unknown, xp: unknown): boolean => {
   if (!isSafeIntegerBetween(level, 1, Number.MAX_SAFE_INTEGER)
     || !isSafeIntegerBetween(xp, 0, Number.MAX_SAFE_INTEGER)) return false;
@@ -131,6 +166,7 @@ async function loadPlayer(db: D1Database, playerId: string) {
     db.prepare(`SELECT boss_key FROM defeated_bosses WHERE player_id = ?`).bind(playerId).all<{ boss_key: string }>(),
   ]);
 
+  countInventorySnapshotItems(inventory.results);
   const furniture = inventory.results.filter((row) => row.item_type === 'furniture').map((row) => row.item_key);
   const items = inventory.results
     .filter((row) => row.item_type !== 'furniture')
@@ -614,6 +650,10 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     return fail(request, env, 'Unsupported battle permit.', 409);
   }
 
+  // Validate current inventory before replaying an awarded receipt or attempting
+  // settlement. Legacy rows are rejected, never silently truncated or rewritten.
+  await inventorySnapshotItemCount(env.DB, input.playerId);
+
   const respond = async (row: ReceiptRow) => {
     const player = await loadPlayer(env.DB, input.playerId!);
     const cycle = await env.DB.prepare(`SELECT id, event_key, opens_at, closes_at FROM world_event_cycles WHERE id = ?`)
@@ -742,11 +782,24 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   }
 
   const reward = underpassRewardForClear(owned.reward_clear_number);
+  const inventoryCount = await inventorySnapshotItemCount(env.DB, input.playerId);
+  if (reward.tier === 'full' && inventoryCount >= MAX_INVENTORY_SNAPSHOT_ITEMS) {
+    await releaseClaim();
+    return fail(request, env, 'Player inventory is at its supported snapshot limit.', 409);
+  }
   const owns = `EXISTS (SELECT 1 FROM battle_permits WHERE id = ? AND player_id = ?
     AND reward_state = 'claiming' AND reward_claim_token = ?)`;
   const applied = `EXISTS (SELECT 1 FROM characters WHERE player_id = ?
     AND last_reward_claim_token = ?)`;
+  // Capacity is checked on the first character CAS. Once that CAS applies, the
+  // remaining reward writes run atomically in the same D1 batch under the token guard.
+  const inventoryCapacity = reward.tier === 'full'
+    ? ` AND (SELECT COALESCE(SUM(quantity), 0) FROM player_inventory
+        WHERE player_id = ? AND item_type <> 'furniture') < ${MAX_INVENTORY_SNAPSHOT_ITEMS}`
+    : '';
+  const settlementGuard = `${owns}${inventoryCapacity}`;
   const guard = `${owns} AND ${applied}`;
+  const inventoryCapacityBinds = reward.tier === 'full' ? [input.playerId] : [];
 
   // Other permits may award the same character after our snapshot. Retry
   // a failed compare-and-swap with fresh progression rather than losing XP.
@@ -774,9 +827,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     const writes: D1PreparedStatement[] = [
       env.DB.prepare(`UPDATE characters SET level = ?, xp = ?, currency = currency + ?,
           last_reward_claim_token = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE player_id = ? AND level = ? AND xp = ? AND ${owns}`)
+        WHERE player_id = ? AND level = ? AND xp = ? AND ${settlementGuard}`)
         .bind(progression.level, progression.xp, reward.currency, token, input.playerId,
-          character.level, character.xp, input.permitId, input.playerId, token),
+          character.level, character.xp, input.permitId, input.playerId, token, ...inventoryCapacityBinds),
       // A pre-existing victory marker must fail the whole D1 transaction.
       env.DB.prepare(`INSERT INTO battle_history
         (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
@@ -826,6 +879,11 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       await releaseClaim();
       return fail(request, env, 'Reward claim changed; retry.', 409);
     }
+    if (reward.tier === 'full'
+      && await inventorySnapshotItemCount(env.DB, input.playerId) >= MAX_INVENTORY_SNAPSHOT_ITEMS) {
+      await releaseClaim();
+      return fail(request, env, 'Player inventory is at its supported snapshot limit.', 409);
+    }
   }
 
   // Release only this token after bounded contention; retain its reserved
@@ -845,19 +903,20 @@ export default {
 
     try {
       if (request.method === 'GET' && url.pathname === '/api/health') return json(request, env, { ok: true, service: 'degen-api' });
-      if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return handleBootstrap(request, env);
-      if (request.method === 'PUT' && url.pathname === '/api/player/housing') return handleHousing(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return await handleBootstrap(request, env);
+      if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(request, env);
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
         const playerId = url.searchParams.get('playerId');
         if (!playerId) return fail(request, env, 'playerId is required');
         const snapshot = await worldSnapshot(env.DB, playerId);
         return json(request, env, snapshot);
       }
-      if (request.method === 'POST' && url.pathname === '/api/battle/start') return handleStartBattle(request, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/action') return handleBattleAction(request, env);
-      if (request.method === 'POST' && url.pathname === '/api/battle/complete') return handleCompleteBattle(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/start') return await handleStartBattle(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/action') return await handleBattleAction(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/battle/complete') return await handleCompleteBattle(request, env);
       return fail(request, env, 'Not found', 404);
     } catch (error) {
+      if (error instanceof InventoryIntegrityError) return fail(request, env, error.message, 409);
       console.error(error);
       return fail(request, env, error instanceof Error ? error.message : 'Internal server error', 500);
     }

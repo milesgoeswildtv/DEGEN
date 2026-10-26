@@ -20,10 +20,16 @@ function cli(args) {
   if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
 }
 async function complete(permitId, playerId = 'integration-player', extraFields = {}) {
-  const r = await fetch(base + '/api/battle/complete', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...extraFields, playerId, permitId }),
-  });
+  let r;
+  try {
+    r = await fetch(base + '/api/battle/complete', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...extraFields, playerId, permitId }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    throw new Error(`Battle completion request ${permitId} failed or timed out: ${String(error)}`);
+  }
   assert.equal(r.headers.get('cache-control'), 'no-store',
     '/api/battle/complete success and error responses must not be cached');
   return { status: r.status, data: await r.json() };
@@ -46,6 +52,12 @@ function queryRows(query) {
 }
 function countRows(query) {
   return queryRows(query)[0]?.n;
+}
+function expectInventoryGuardFailure(query) {
+  const r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  assert.notEqual(r.status, 0, 'inventory quantity guard must reject: ' + query);
+  assert.match(`${r.stdout}\n${r.stderr}`, /player_inventory\.quantity must be a positive safe integer/i);
 }
 function assertPersistedPermitState(permitId, state) {
   const query = `SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
@@ -76,14 +88,28 @@ try {
       ('xp-boundary-player','XP Boundary'),
       ('invalid-progression-player','Invalid Progression'),
       ('post-award-overflow-player','Post-award Overflow'),
-      ('currency-overflow-player','Currency Overflow');
+      ('currency-overflow-player','Currency Overflow'),
+      ('inventory-cap-player','Inventory Cap'),
+      ('inventory-atomic-player','Inventory Atomicity'),
+      ('inventory-race-player','Inventory Race'),
+      ('inventory-oversized-player','Oversized Inventory');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES
         ('integration-player',1,0,0,'test-degen'),
         ('xp-boundary-player',2,174,30,'test-degen'),
         ('invalid-progression-player',120095990063214,0,0,'test-degen'),
         ('post-award-overflow-player',120095990063212,9007199254740924,0,'test-degen'),
-        ('currency-overflow-player',2,0,9007199254740971,'test-degen');
+        ('currency-overflow-player',2,0,9007199254740971,'test-degen'),
+        ('inventory-cap-player',1,0,0,'test-degen'),
+        ('inventory-atomic-player',1,0,0,'test-degen'),
+        ('inventory-race-player',1,0,0,'test-degen'),
+        ('inventory-oversized-player',1,0,0,'test-degen');
+    INSERT INTO player_inventory(id,player_id,item_key,item_type,quantity)
+      VALUES
+        ('inventory-cap-player:item:underpass-scrap','inventory-cap-player','underpass-scrap','item',10000),
+        ('inventory-atomic-player:item:underpass-scrap','inventory-atomic-player','underpass-scrap','item',1),
+        ('inventory-race-player:item:underpass-scrap','inventory-race-player','underpass-scrap','item',9999),
+        ('inventory-oversized-player:item:bulk','inventory-oversized-player','bulk','item',10001);
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
@@ -170,7 +196,11 @@ try {
       -- Legacy terminal defeat is recoverable for display, never reward-eligible.
       ('permit-legacy-terminal-defeat','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'defeat',0,NULL,40,3),
       -- NULL Mana is not permission to accept an internally inconsistent legacy victory.
-      ('permit-legacy-malformed-victory','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,NULL,40,3);
+      ('permit-legacy-malformed-victory','integration-player','underpass','legacy-terminal-cycle','tunnel-maw',datetime('now','-20 minutes'),'victory',70,NULL,40,3),
+      ('permit-inventory-cap','inventory-cap-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-inventory-atomic','inventory-atomic-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-inventory-race-a','inventory-race-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-inventory-race-b','inventory-race-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
     INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
       VALUES
         ('integration-player','underpass','counter-lag-cycle',0),
@@ -1618,7 +1648,177 @@ try {
     WHERE player_id='currency-overflow-player' AND event_key='underpass'
       AND cycle_id='currency-overflow-cycle'`), [{ full_reward_clears: 1 }]);
 
-  console.log('PASS isolated Worker/D1: corrupt and post-award progression rejection, currency overflow rejection, repair/retry, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  // D1 quantity guards reject non-positive, fractional, and JS-unsafe quantities
+  // without rewriting the existing stack.
+  expectInventoryGuardFailure(`UPDATE player_inventory SET quantity = 0
+    WHERE id = 'inventory-cap-player:item:underpass-scrap'`);
+  expectInventoryGuardFailure(`UPDATE player_inventory SET quantity = -1
+    WHERE id = 'inventory-cap-player:item:underpass-scrap'`);
+  expectInventoryGuardFailure(`UPDATE player_inventory SET quantity = 1.5
+    WHERE id = 'inventory-cap-player:item:underpass-scrap'`);
+  expectInventoryGuardFailure(`UPDATE player_inventory SET quantity = 9007199254740992
+    WHERE id = 'inventory-cap-player:item:underpass-scrap'`);
+  assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
+    WHERE id = 'inventory-cap-player:item:underpass-scrap'`), [{ quantity: 10000 }],
+    'failed quantity updates must leave the existing stack unchanged');
+
+  // Corrupt/oversized legacy inventory is rejected before array expansion or reward replay.
+  const oversizedBootstrapResponse = await fetch(base + '/api/player/bootstrap', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'inventory-oversized-player', displayName: 'Oversized' }),
+  });
+  const oversizedBootstrap = await oversizedBootstrapResponse.json();
+  assert.equal(oversizedBootstrapResponse.status, 409, JSON.stringify(oversizedBootstrap));
+  assert.equal(oversizedBootstrap.error, 'Player inventory exceeds the supported snapshot size.');
+  assert.equal('player' in oversizedBootstrap, false);
+
+  // A full clear at snapshot capacity must not award XP, currency, history, or loot.
+  const capBefore = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'inventory-cap-player'`);
+  const capRejected = await complete('permit-inventory-cap', 'inventory-cap-player');
+  assert.equal(capRejected.status, 409, JSON.stringify(capRejected.data));
+  assert.equal(capRejected.data.error, 'Player inventory is at its supported snapshot limit.');
+  assert.equal('reward' in capRejected.data, false);
+  assert.equal('player' in capRejected.data, false);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'inventory-cap-player'`), capBefore);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-inventory-cap:victory'`), 0);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = 'permit-inventory-cap' AND reward_state = 'pending'
+      AND reward_clear_number = 1 AND reward_claim_token IS NULL
+      AND reward_claimed_at IS NULL AND completed_at IS NULL`), 1);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'inventory-cap-player' AND event_key = 'underpass'
+      AND cycle_id = 'integration-cycle'`), [{ full_reward_clears: 1 }],
+    'capacity rejection retains the reserved clear slot for a repair/retry');
+
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    `--command=UPDATE player_inventory SET quantity = 9999 WHERE id = 'inventory-cap-player:item:underpass-scrap'`]);
+  const capRetry = await complete('permit-inventory-cap', 'inventory-cap-player');
+  assert.equal(capRetry.status, 200, JSON.stringify(capRetry.data));
+  assert.equal(capRetry.data.reward.tier, 'full');
+  assert.equal(capRetry.data.player.inventory.length, 10000);
+  assert.equal(countRows(`SELECT quantity AS n FROM player_inventory
+    WHERE id = 'inventory-cap-player:item:underpass-scrap'`), 10000);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-inventory-cap:victory'`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = 'permit-inventory-cap' AND reward_state = 'awarded'
+      AND reward_clear_number = 1 AND completed_at IS NOT NULL`), 1);
+
+  // Inject a failure after the character CAS, history insert, and clear reservation
+  // have started. D1 batch atomicity must roll all settlement writes back; retrying
+  // the same reserved permit after removing the injected fault must award once.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    `--command=CREATE TRIGGER test_abort_inventory_award BEFORE UPDATE OF quantity ON player_inventory
+      WHEN OLD.id = 'inventory-atomic-player:item:underpass-scrap'
+      BEGIN SELECT RAISE(ABORT, 'injected inventory settlement failure'); END`]);
+  const atomicCharacterBefore = queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'inventory-atomic-player'`);
+  const atomicFailure = await complete('permit-inventory-atomic', 'inventory-atomic-player');
+  assert.equal(atomicFailure.status, 500, JSON.stringify(atomicFailure.data));
+  assert.match(atomicFailure.data.error, /injected inventory settlement failure/i);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'inventory-atomic-player'`), atomicCharacterBefore,
+    'inventory write failure must roll back character progression');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-inventory-atomic:victory'`), 0,
+    'inventory write failure must roll back victory history');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM defeated_bosses
+    WHERE player_id = 'inventory-atomic-player' AND boss_key = 'tunnel-maw'`), 0,
+    'inventory write failure must roll back the boss trophy marker');
+  assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
+    WHERE id = 'inventory-atomic-player:item:underpass-scrap'`), [{ quantity: 1 }],
+    'inventory stack must remain unchanged after batch rollback');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE player_id = 'inventory-atomic-player' AND item_key = 'tunnel-trophy'`), 0);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = 'permit-inventory-atomic' AND reward_state = 'pending'
+      AND reward_clear_number = 1 AND reward_claim_token IS NULL
+      AND reward_claimed_at IS NULL AND completed_at IS NULL`), 1,
+    'failed settlement releases only its claim and retains its clear slot');
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'inventory-atomic-player' AND event_key = 'underpass'
+      AND cycle_id = 'integration-cycle'`), [{ full_reward_clears: 1 }]);
+
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    '--command=DROP TRIGGER test_abort_inventory_award']);
+  const atomicRetry = await complete('permit-inventory-atomic', 'inventory-atomic-player');
+  assert.equal(atomicRetry.status, 200, JSON.stringify(atomicRetry.data));
+  assert.equal(atomicRetry.data.reward.tier, 'full');
+  assert.equal(atomicRetry.data.player.level, 1);
+  assert.equal(atomicRetry.data.player.xp, 75);
+  assert.equal(atomicRetry.data.player.currency, 30);
+  assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
+    WHERE id = 'inventory-atomic-player:item:underpass-scrap'`), [{ quantity: 2 }]);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE player_id = 'inventory-atomic-player' AND item_key = 'tunnel-trophy'`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-inventory-atomic:victory'`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = 'permit-inventory-atomic' AND reward_state = 'awarded'
+      AND reward_clear_number = 1 AND completed_at IS NOT NULL`), 1);
+
+  // Two simultaneous full-clear completions share a player with one remaining
+  // inventory slot. The character CAS must allow at most one reward to consume it.
+  const inventoryCapacityRaceResults = await Promise.all([
+    complete('permit-inventory-race-a', 'inventory-race-player'),
+    complete('permit-inventory-race-b', 'inventory-race-player'),
+  ]);
+  const inventoryCapacityRaceWinners = inventoryCapacityRaceResults.filter((result) => result.status === 200);
+  const inventoryCapacityRaceRejected = inventoryCapacityRaceResults.filter((result) => result.status === 409);
+  assert.equal(inventoryCapacityRaceWinners.length, 1, JSON.stringify(inventoryCapacityRaceResults));
+  assert.equal(inventoryCapacityRaceRejected.length, 1, JSON.stringify(inventoryCapacityRaceResults));
+  assert.equal(inventoryCapacityRaceRejected[0].data.error, 'Player inventory is at its supported snapshot limit.');
+  assert.equal('reward' in inventoryCapacityRaceRejected[0].data, false);
+  assert.equal('player' in inventoryCapacityRaceRejected[0].data, false);
+  assert.equal(inventoryCapacityRaceWinners[0].data.reward.tier, 'full');
+  assert.equal(inventoryCapacityRaceWinners[0].data.player.inventory.length, 10000);
+  assert.deepEqual(queryRows(`SELECT quantity FROM player_inventory
+    WHERE id = 'inventory-race-player:item:underpass-scrap'`), [{ quantity: 10000 }]);
+  assert.deepEqual(queryRows(`SELECT level, xp, currency FROM characters
+    WHERE player_id = 'inventory-race-player'`), [{ level: 1, xp: 75, currency: 30 }],
+    'only one concurrent full clear may award progression at inventory capacity');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE player_id = 'inventory-race-player' AND result = 'victory'`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE player_id = 'inventory-race-player' AND item_key = 'tunnel-trophy' AND item_type = 'furniture'`), 1);
+  assert.deepEqual(queryRows(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'inventory-race-player' AND event_key = 'underpass'
+      AND cycle_id = 'integration-cycle'`), [{ full_reward_clears: 2 }],
+    'both clear numbers stay reserved for idempotent retry even though only one reward fits');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id IN ('permit-inventory-race-a','permit-inventory-race-b')
+      AND reward_state = 'awarded' AND completed_at IS NOT NULL`), 1);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id IN ('permit-inventory-race-a','permit-inventory-race-b')
+      AND reward_state = 'pending' AND reward_clear_number IN (1,2)
+      AND reward_claim_token IS NULL AND reward_claimed_at IS NULL AND completed_at IS NULL`), 1);
+  assert.equal(countRows(`SELECT COUNT(DISTINCT reward_clear_number) AS n FROM battle_permits
+    WHERE id IN ('permit-inventory-race-a','permit-inventory-race-b')
+      AND reward_clear_number IN (1,2)`), 2,
+    'concurrent completions must retain distinct reserved clear numbers');
+
+  // Exercise the INSERT trigger independently: update coverage cannot prove that
+  // new inventory rows are protected from the same malformed quantities.
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-zero', 'inventory-cap-player', 'probe', 'item', 0)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-negative', 'inventory-cap-player', 'probe', 'item', -1)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-fractional', 'inventory-cap-player', 'probe', 'item', 1.5)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-unsafe', 'inventory-cap-player', 'probe', 'item', 9007199254740992)`);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE id LIKE 'invalid-insert-%'`), 0,
+    'invalid insert attempts must not create inventory rows');
+
+  console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
