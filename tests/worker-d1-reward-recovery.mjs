@@ -85,15 +85,26 @@ try {
       VALUES ('qa-player', 'underpass', 'qa-legacy-cycle', 3);
     INSERT INTO battle_permits(
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
-      player_hp, player_mana, enemy_hp, battle_status, turn_count
+      player_hp, player_mana, enemy_hp, battle_status, turn_count,
+      reward_state, reward_claim_token, reward_claimed_at
     ) VALUES
       (
         'permit-recovery', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
-        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       ),
       (
         'permit-legacy-recovery', 'qa-player', 'underpass', 'qa-legacy-cycle', 'tunnel-maw',
-        datetime('now', '-20 minutes'), 70, NULL, 0, 'victory', 3
+        datetime('now', '-20 minutes'), 70, NULL, 0, 'victory', 3, 'pending', NULL, NULL
+      ),
+      (
+        'permit-live-claim', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'live-claim-token', CURRENT_TIMESTAMP
+      ),
+      (
+        'permit-stale-claim', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'abandoned-claim-token', datetime('now', '-2 minutes')
       );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
@@ -169,6 +180,76 @@ try {
     reward.furniture.includes('tunnel-trophy') ? 1 : 0);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 1);
+
+  // A live claim lease must not be stolen by a concurrent completion attempt.
+  const beforeLiveClaim = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const liveClaim = await complete('permit-live-claim');
+  assert.equal(liveClaim.status, 409, JSON.stringify(liveClaim.body));
+  assert.equal(liveClaim.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal('reward' in (liveClaim.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-live-claim'`), [{
+    reward_state: 'claiming',
+    reward_claim_token: 'live-claim-token',
+    reward_claimed_at: sql(`SELECT reward_claimed_at FROM battle_permits WHERE id = 'permit-live-claim'`)[0].reward_claimed_at,
+    reward_clear_number: null,
+    completed_at: null,
+  }]);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), beforeLiveClaim,
+    'a live claim lease must not mutate progression');
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 1);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-live-claim:victory'`)[0]?.n, 0);
+
+  // A process that died while holding a claim must be recoverable after the 60-second lease.
+  const staleClaim = await complete('permit-stale-claim');
+  assert.equal(staleClaim.status, 200, JSON.stringify(staleClaim.body));
+  assert.ok(staleClaim.body?.reward, 'stale claim recovery must return the authoritative receipt');
+  const staleReward = staleClaim.body.reward;
+  assert.equal(staleReward.tier, 'full', 'the second clear in this cycle remains full-tier');
+  const stalePermitAfterAward = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-stale-claim'`);
+  assert.equal(stalePermitAfterAward[0]?.reward_state, 'awarded');
+  assert.notEqual(stalePermitAfterAward[0]?.reward_claim_token, 'abandoned-claim-token',
+    'recovery must replace the abandoned worker token');
+  assert.ok(stalePermitAfterAward[0]?.reward_claimed_at);
+  assert.equal(stalePermitAfterAward[0]?.reward_clear_number, 2);
+  assert.equal(stalePermitAfterAward[0]?.reward_xp, staleReward.xp);
+  assert.equal(stalePermitAfterAward[0]?.reward_currency, staleReward.currency);
+  assert.equal(stalePermitAfterAward[0]?.reward_tier, staleReward.tier);
+  assert.ok(stalePermitAfterAward[0]?.completed_at);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-stale-claim:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 2);
+  const characterAfterStaleAward = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const inventoryAfterStaleAward = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+
+  // The abandoned worker's token-scoped cleanup is harmless after lease takeover.
+  sql(`UPDATE battle_permits SET reward_state = 'pending', reward_claim_token = NULL, reward_claimed_at = NULL
+    WHERE id = 'permit-stale-claim' AND player_id = 'qa-player'
+      AND reward_state = 'claiming' AND reward_claim_token = 'abandoned-claim-token'`);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-stale-claim'`), stalePermitAfterAward,
+    'an abandoned worker cannot release or reset the recovered/awarded claim');
+
+  const staleDuplicate = await complete('permit-stale-claim');
+  assert.equal(staleDuplicate.status, 200, JSON.stringify(staleDuplicate.body));
+  assert.deepEqual(staleDuplicate.body.reward, staleReward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), characterAfterStaleAward,
+    'duplicate completion after stale-lease recovery must not award progression twice');
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), inventoryAfterStaleAward);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-stale-claim:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 2);
   await stop();
 
   // Repeat the transient-failure recovery against a valid pre-Mana victory.
