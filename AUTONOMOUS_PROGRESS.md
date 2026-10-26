@@ -1,3 +1,17 @@
+## Latest run — 2026-10-26 (fail closed on malformed Underpass cycle timestamps)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **PUSHED / PR #75 OPEN:** continuing `automation/degen/action-permit-event-guard-v02` from verified parent `ab7bc8f64faea3100df5551a59de4cc9a5ff70cb`. This commit adds isolated Worker/D1 integration coverage for malformed `world_event_cycles.opens_at` and `closes_at` values. Both permits otherwise have supported event/encounter values, valid permit start timestamps, active battle state, and future expiry. Action and forged-completion requests must reject without exposing snapshots/rewards/player state; persisted permit, progression, inventory, clear counter, and battle history must remain unchanged. No runtime, schema, migration, reward-value, combat-balance, or deployment-config change.
+- **Files changed:** `tests/worker-d1-concurrency.mjs` and this progress record. No direct-main write or production D1 operation.
+- **QA at commit creation:** prior exact-head CI `40343826301` passed on `ab7bc8f64faea3100df5551a59de4cc9a5ff70cb`. This new regression head still requires its own complete CI run; no pass is claimed for it until verified.
+- **Mana:** COMPLETE / MERGED on main, including authoritative persisted player Mana, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql`. Inspected `sidekick/degen-mana-foundation-v01`: it is divergent (11 unique commits ahead, 69 behind current main), and its older Worker/rules do not contain the later authoritative Mana and security fixes now on main. It is not a safe continuation base; no stale branch code was cherry-picked.
+- **Battle authority / reward idempotency:** PR #75 continues permit event/cycle/encounter/start-window validation on action, completion, and receipt replay while preserving valid unexpired fights across event closure. Worker-resolved victory, action CAS, audited receipts, stale-lease recovery, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, full/reduced reward tiers, and shared level-up math remain unchanged.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for binding `DB` → `DEGEN` and `db/migrations`; main deployment ordering remains schema → tracked migrations → Worker. New tests use isolated local Wrangler D1 only.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a policy for unverified legacy identity collisions. Do not bypass that release gate for Shield/housing.
+- **One best next task:** verify exact-head CI for malformed cycle timestamps, then continue with the next uncovered battle-authority invariant without starting duplicate Mana work.
+
+---
+
 ## Latest run — 2026-10-26 (fail closed on malformed and boundary permit timestamps)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`. Main CI `40335709372`, Deploy Worker `40335709424`, and Deploy Preview `40335709761` all completed successfully. The Worker deployment workflow explicitly passed schema, tracked migration, and Worker deployment steps.

@@ -141,6 +141,8 @@ try {
         ('start-before-open-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('start-after-close-cycle','underpass',datetime('now','-20 minutes'),datetime('now','-10 minutes')),
         ('malformed-start-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('malformed-open-cycle','underpass','not-a-timestamp',datetime('now','+90 minutes')),
+        ('malformed-close-cycle','underpass',datetime('now','-10 minutes'),'not-a-timestamp'),
         ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('unsupported-event-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('uncounted-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
@@ -172,6 +174,8 @@ try {
       ('permit-active-cycle-mismatch','integration-player','underpass','unsupported-event-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
       ('permit-start-before-open','integration-player','underpass','start-before-open-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
       ('permit-start-after-close','integration-player','underpass','start-after-close-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-malformed-open-cycle','integration-player','underpass','malformed-open-cycle','tunnel-maw',datetime('now','-5 minutes'),datetime('now','+20 minutes'),'active',80,12,92,0),
+      ('permit-malformed-close-cycle','integration-player','underpass','malformed-close-cycle','tunnel-maw',datetime('now','-5 minutes'),datetime('now','+20 minutes'),'active',80,12,92,0),
       ('permit-corrupt-awarded-reward','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
@@ -314,6 +318,15 @@ try {
   const malformedStartClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='malformed-start-player' AND cycle_id='malformed-start-cycle'");
   const malformedStartHistoryBefore = countRows("SELECT COUNT(*) AS n FROM battle_history WHERE player_id='malformed-start-player'");
   const invalidStartClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('start-before-open-cycle','start-after-close-cycle') ORDER BY cycle_id");
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='malformed-open-cycle' AND opens_at='not-a-timestamp' AND julianday(opens_at) IS NULL"), 1,
+    'malformed cycle-open fixture must remain unparsable in SQLite');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='malformed-close-cycle' AND closes_at='not-a-timestamp' AND julianday(closes_at) IS NULL"), 1,
+    'malformed cycle-close fixture must remain unparsable in SQLite');
+  const malformedCyclePermitsBefore = queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-malformed-open-cycle','permit-malformed-close-cycle') ORDER BY id");
+  const malformedCycleClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('malformed-open-cycle','malformed-close-cycle') ORDER BY cycle_id");
+  const malformedCycleHistoryBefore = countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-malformed-open-cycle:victory','permit-malformed-open-cycle:defeat','permit-malformed-close-cycle:victory','permit-malformed-close-cycle:defeat')");
+  const malformedCycleCharacterBefore = queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'");
+  const malformedCycleInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key");
   // Capture the isolated invalid awarded receipt before the Worker starts; later
   // D1 CLI reads while Miniflare is serving requests can drop its HTTP socket.
   const invalidStartAwardedPermitBefore = queryRows(`SELECT started_at, battle_status, player_hp, player_mana,
@@ -397,6 +410,29 @@ try {
   assert.equal('reward' in exactCloseCompletion.data, false);
   assert.equal('player' in exactCloseCompletion.data, false);
 
+  // Malformed cycle bounds are also invalid authority data. SQLite comparisons with
+  // an unparsable opens_at/closes_at produce NULL, which must fail closed for both
+  // the action snapshot path and reward completion.
+  for (const permitId of ['permit-malformed-open-cycle', 'permit-malformed-close-cycle']) {
+    const malformedCycleActionResponse = await fetch(base + '/api/battle/action', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash', expectedTurnCount: 0 }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const malformedCycleAction = await malformedCycleActionResponse.json();
+    assert.equal(malformedCycleActionResponse.status, 409, JSON.stringify(malformedCycleAction));
+    assert.equal(malformedCycleAction.error, 'Battle permit is invalid, expired, or already completed.');
+    assert.equal('battleState' in malformedCycleAction, false);
+
+    const malformedCycleCompletion = await complete(permitId, 'integration-player', {
+      victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
+    });
+    assert.equal(malformedCycleCompletion.status, 409, JSON.stringify(malformedCycleCompletion.data));
+    assert.equal(malformedCycleCompletion.data.error, 'Battle permit was not issued during its event cycle.');
+    assert.equal('reward' in malformedCycleCompletion.data, false);
+    assert.equal('player' in malformedCycleCompletion.data, false);
+  }
+
   // A legitimately issued permit remains valid after the cycle closes. Closure is
   // not permit expiry: the Worker must resolve the entered fight and settle its victory.
   const closureActionResponse = await fetch(base + '/api/battle/action', {
@@ -454,6 +490,18 @@ try {
   assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key"), invalidStartInventoryBefore);
   assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('start-before-open-cycle','start-after-close-cycle') ORDER BY cycle_id"), invalidStartClearsBefore);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-start-before-open:victory','permit-start-before-open:defeat','permit-start-after-close:victory','permit-start-after-close:defeat','permit-start-at-close:victory','permit-start-at-close:defeat')"), 0);
+  assert.deepEqual(queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-malformed-open-cycle','permit-malformed-close-cycle') ORDER BY id"), malformedCyclePermitsBefore,
+    'malformed cycle timestamps must not advance, normalize, or claim permits');
+  assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'"), malformedCycleCharacterBefore,
+    'malformed cycle timestamps must not mutate progression');
+  assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key"), malformedCycleInventoryBefore,
+    'malformed cycle timestamps must not award inventory');
+  assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('malformed-open-cycle','malformed-close-cycle') ORDER BY cycle_id"), malformedCycleClearsBefore,
+    'malformed cycle timestamps must not reserve a clear');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-malformed-open-cycle:victory','permit-malformed-open-cycle:defeat','permit-malformed-close-cycle:victory','permit-malformed-close-cycle:defeat')"), malformedCycleHistoryBefore,
+    'malformed cycle timestamps must not create battle history');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id IN ('permit-malformed-open-cycle','permit-malformed-close-cycle') AND reward_state='pending' AND reward_clear_number IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL AND completed_at IS NULL"), 2,
+    'malformed cycle timestamps must leave both permits unclaimed');
 
   // The isolated out-of-cycle awarded receipt must remain unchanged:
   // no progression, inventory, clear counter, or history mutation is allowed.
