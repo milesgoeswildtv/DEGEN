@@ -105,6 +105,11 @@ try {
         'permit-stale-claim', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
         'claiming', 'abandoned-claim-token', datetime('now', '-2 minutes')
+      ),
+      (
+        'permit-stale-race', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'abandoned-race-token', datetime('now', '-2 minutes')
       );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
@@ -249,6 +254,65 @@ try {
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-stale-claim:victory'`)[0]?.n, 1);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 2);
+
+  // Two callers racing to recover the same stale lease may settle once; a loser
+  // can receive a conflict while the winner owns the fresh lease, then replay it.
+  const beforeStaleRace = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const inventoryBeforeStaleRace = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const staleRaceResults = await Promise.all([
+    complete('permit-stale-race'),
+    complete('permit-stale-race'),
+  ]);
+  assert.ok(staleRaceResults.every(result => result.status === 200 || result.status === 409),
+    JSON.stringify(staleRaceResults));
+  assert.ok(staleRaceResults.some(result => result.status === 200),
+    'at least one concurrent stale-lease claimant must settle or replay the receipt');
+  for (const result of staleRaceResults.filter(result => result.status === 409)) {
+    assert.equal(result.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  }
+
+  const staleRaceRetry = await complete('permit-stale-race');
+  assert.equal(staleRaceRetry.status, 200, JSON.stringify(staleRaceRetry.body));
+  assert.ok(staleRaceRetry.body?.reward);
+  const staleRaceReward = staleRaceRetry.body.reward;
+  assert.equal(staleRaceReward.tier, 'full', 'the third clear in this cycle remains full-tier');
+  const staleRacePermit = sql(`SELECT reward_state, reward_claim_token, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-stale-race'`);
+  assert.equal(staleRacePermit[0]?.reward_state, 'awarded');
+  assert.notEqual(staleRacePermit[0]?.reward_claim_token, 'abandoned-race-token');
+  assert.equal(staleRacePermit[0]?.reward_clear_number, 3);
+  assert.equal(staleRacePermit[0]?.reward_xp, staleRaceReward.xp);
+  assert.equal(staleRacePermit[0]?.reward_currency, staleRaceReward.currency);
+  assert.equal(staleRacePermit[0]?.reward_tier, staleRaceReward.tier);
+  assert.ok(staleRacePermit[0]?.completed_at);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-stale-race:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 3);
+  const characterAfterStaleRace = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  assert.equal(characterAfterStaleRace[0]?.currency,
+    beforeStaleRace[0].currency + staleRaceReward.currency,
+    'concurrent stale-lease recovery applies currency once');
+  assert.equal(characterAfterStaleRace[0]?.last_reward_claim_token,
+    staleRacePermit[0]?.reward_claim_token);
+  const inventoryAfterStaleRace = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const scrapBefore = inventoryBeforeStaleRace.find(row => row.item_key === 'underpass-scrap' && row.item_type === 'item')?.quantity ?? 0;
+  const scrapAfter = inventoryAfterStaleRace.find(row => row.item_key === 'underpass-scrap' && row.item_type === 'item')?.quantity ?? 0;
+  assert.equal(scrapAfter, scrapBefore + 1, 'concurrent stale-lease recovery adds one scrap');
+  const staleRaceReplay = await complete('permit-stale-race');
+  assert.equal(staleRaceReplay.status, 200, JSON.stringify(staleRaceReplay.body));
+  assert.deepEqual(staleRaceReplay.body.reward, staleRaceReward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), characterAfterStaleRace);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), inventoryAfterStaleRace);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-stale-race:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 3);
   await stop();
 
   // Repeat the transient-failure recovery against a valid pre-Mana victory.
@@ -316,7 +380,7 @@ try {
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-legacy-cycle'`)[0]?.full_reward_clears, 4);
   await stop();
 
-  console.log('PASS local Worker/D1 normal and legacy reward failure recovery, expired victory settlement, reduced tier, stable receipts, and exactly-once rewards');
+  console.log('PASS local Worker/D1 normal and legacy reward recovery, live/stale claim leases, concurrent stale-lease takeover, expired victory settlement, stable receipts, and exactly-once rewards');
 } finally {
   await stop();
   rmSync(scratch, { recursive: true, force: true });
