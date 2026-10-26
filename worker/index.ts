@@ -295,9 +295,6 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   if (cycle.id !== input.cycleId || phaseFor(cycle) !== 'open') return fail(request, env, 'The Underpass is sealed.', 409);
 
   const permitId = crypto.randomUUID();
-  const now = Date.now();
-  const startedAt = iso(now);
-  const expiresAt = iso(now + 20 * 60_000);
   const initialState = {
     permitId,
     status: 'active' as const,
@@ -306,24 +303,29 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   };
-  // Recheck the cycle inside the permit-issuing statement. The earlier phase
-  // read is advisory: the cycle can close between that read and this write.
+  // Use D1's clock for both persisted timestamps. SQLite keeps every 'now'
+  // value in this statement stable, so Worker/D1 clock skew cannot issue a
+  // permit whose started_at is already in the future to later authority checks.
+  // Recheck the cycle in the same statement: the earlier phase read is advisory.
   const issuedPermit = await env.DB.prepare(`INSERT INTO battle_permits (
       id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count
     )
-    SELECT ?, ?, 'underpass', ?, ?, ?, ?, ?, ?, ?, 'active', 0
+    SELECT ?, ?, 'underpass', ?, ?,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+20 minutes'),
+      ?, ?, ?, 'active', 0
     WHERE EXISTS (
       SELECT 1 FROM world_event_cycles
       WHERE id = ? AND event_key = 'underpass'
-        AND julianday(opens_at) <= julianday(?)
-        AND julianday(?) < julianday(closes_at)
+        AND julianday(opens_at) <= julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        AND julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) < julianday(closes_at)
         AND julianday(closes_at) > julianday('now')
     )
-    RETURNING id`)
-    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, startedAt, expiresAt,
-      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id, startedAt, startedAt)
-    .first<{ id: string }>();
+    RETURNING id, expires_at`)
+    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id,
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id)
+    .first<{ id: string; expires_at: string }>();
   if (!issuedPermit) return fail(request, env, 'The Underpass is sealed.', 409);
 
   return json(request, env, {
@@ -331,7 +333,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     eventKey: 'underpass',
     cycleId: cycle.id,
     encounterKey: TUNNEL_MAW.id,
-    expiresAt,
+    expiresAt: issuedPermit.expires_at,
     initialState,
   });
 }
