@@ -1,3 +1,17 @@
+## CI closeout — 2026-10-26 (recoverable stale reward reservation)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **PUSHED / PR #76 OPEN:** `automation/degen/reward-claim-completed-at-guard-v01`, exact head `beea36ff96bfef1a605362ddc6cad86a1db139ca`. No direct-main write; not merged.
+- **Task / files changed on this PR:** `worker/index.ts`, `tests/worker-d1-reward-recovery.mjs`, `tests/mana-expiry-precision.test.ts`, and this progress file. The D1 reservation batch repairs only tightly audited unawarded stale reservations that are ahead of the committed cycle counter; valid victories remain retryable if cleanup fails.
+- **Exact-head QA PASS:** [CI run 40414467554](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40414467554) completed successfully on `beea36ff96bfef1a605362ddc6cad86a1db139ca`. All 13 substantive workflow steps passed: deterministic tests; isolated Worker/D1 reward concurrency; transient D1 reward-recovery fault injection; Underpass cycle and rollover concurrency; atomic defeat history; production web build; Chromium mobile battle vertical slice; and Cloudflare Worker validation. The Cloudflare Pages check for this head also passed. This is PR/preview QA, not a production Worker deployment.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql`.
+- **Battle authority / reward idempotency:** Worker-resolved victory only; action CAS and permit ownership/expiry/event/cycle/encounter guards; audited receipts; stale-lease recovery; transient D1 recovery; unique clear sequencing; and exactly-once progression/inventory/history remain server-owned. This PR adds guarded recovery for invalid ahead-of-counter reservations and proves a valid victory can settle after a transient cleanup failure without duplicate awards.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. No schema/migration, production D1, reward-value, combat-balance, or deployment-config change in this PR.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved policy for unverified legacy identity collisions. Do not bypass that release gate for auth-gated Shield/housing work.
+- **One best next task:** review PR #75's permit chronology guard against this now-green reward-recovery PR, resolve integration ordering through normal PR review, and rerun the full exact-head CI before merging either dependent change.
+
+---
+
 ## Latest run — 2026-10-26 (recover valid rewards after stale invalid reservation cleanup failure)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
