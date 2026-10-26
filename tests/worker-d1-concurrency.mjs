@@ -2093,6 +2093,20 @@ try {
     WHERE id LIKE 'invalid-insert-%'`), 0,
     'invalid insert attempts must not create inventory rows');
 
+  // All HTTP assertions are complete. Stop Miniflare before final D1 CLI snapshots:
+  // querying the same local persistence store while the Worker is serving can close
+  // its HTTP socket and make an otherwise valid integration run nondeterministic.
+  if (server && server.exitCode === null) {
+    const worker = server;
+    worker.kill('SIGTERM');
+    await Promise.race([new Promise(r => worker.once('exit', r)), sleep(2000)]);
+    if (worker.exitCode === null) {
+      worker.kill('SIGKILL');
+      await Promise.race([new Promise(r => worker.once('exit', r)), sleep(1000)]);
+    }
+    server = undefined;
+  }
+
   assert.deepEqual(queryRows(`SELECT started_at, battle_status, player_hp, player_mana,
     enemy_hp, turn_count, reward_state, reward_clear_number, reward_xp, reward_currency, reward_tier,
     reward_level, reward_remaining_xp, reward_claim_token, reward_claimed_at, completed_at
