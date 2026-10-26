@@ -255,11 +255,6 @@ try {
       "WHEN 'permit-start-before-open' THEN datetime('now','-20 minutes') " +
       "WHEN 'permit-start-after-close' THEN datetime('now','-5 minutes') END " +
       "WHERE id IN ('permit-start-before-open','permit-start-after-close')"]);
-  // Model a permit issued five minutes before the cycle's scheduled close.
-  // The close time is moved into the past for a fast deterministic test, but must
-  // remain later than started_at or this would simulate a retroactively invalid permit.
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    "--command=UPDATE battle_permits SET started_at=datetime('now','-5 minutes') WHERE id='permit-survives-event-closure'"]);
   // Close the cycle after that persisted entry time, before starting the Worker.
   // Opening a second Wrangler D1 CLI against the same persisted SQLite store while
   // Miniflare is serving requests can drop the Worker socket.
@@ -1141,6 +1136,11 @@ try {
   const expiredClosureStart = await expiredClosureStartResponse.json();
   assert.equal(expiredClosureStartResponse.status, 200, JSON.stringify(expiredClosureStart));
 
+  // Preserve the entry-before-close chronology for both issued permits. The
+  // simulated close is moved into the past for a deterministic test, so backdate
+  // their persisted start times first; neither permit should be retroactively invalidated.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET started_at = datetime('now','-2 minutes') WHERE id IN ('" + closureStart.permitId + "','" + expiredClosureStart.permitId + "')"]);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE world_event_cycles SET closes_at = datetime('now','-1 minute') WHERE id = 'closure-cycle'"]);
 
