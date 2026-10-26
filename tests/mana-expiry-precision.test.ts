@@ -186,7 +186,7 @@ test('completion timestamps are rechecked during reward clear reservation and fa
   assert.ok(releaseStart >= 0 && releaseEnd > releaseStart, 'token-scoped claim cleanup must exist');
   assert.match(
     worker.slice(releaseStart, releaseEnd),
-    /reward_state = 'claiming' AND reward_claim_token = \?[\\s\\S]*AND completed_at IS NULL/,
+    /reward_state = 'claiming' AND reward_claim_token = \?[\s\S]*AND completed_at IS NULL/,
     'cleanup must not rewrite a claim whose completion marker appeared after acquisition',
   );
 
