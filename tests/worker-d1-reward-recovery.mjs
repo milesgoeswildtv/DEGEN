@@ -188,15 +188,14 @@ try {
   assert.equal(liveClaim.status, 409, JSON.stringify(liveClaim.body));
   assert.equal(liveClaim.body?.error, 'Battle reward is already being claimed, or the permit expired.');
   assert.equal('reward' in (liveClaim.body ?? {}), false);
-  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+  const livePermitState = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
       reward_clear_number, completed_at
-    FROM battle_permits WHERE id = 'permit-live-claim'`), [{
-    reward_state: 'claiming',
-    reward_claim_token: 'live-claim-token',
-    reward_claimed_at: sql(`SELECT reward_claimed_at FROM battle_permits WHERE id = 'permit-live-claim'`)[0].reward_claimed_at,
-    reward_clear_number: null,
-    completed_at: null,
-  }]);
+    FROM battle_permits WHERE id = 'permit-live-claim'`);
+  assert.equal(livePermitState[0]?.reward_state, 'claiming');
+  assert.equal(livePermitState[0]?.reward_claim_token, 'live-claim-token');
+  assert.ok(livePermitState[0]?.reward_claimed_at, 'the live claim must retain its lease timestamp');
+  assert.equal(livePermitState[0]?.reward_clear_number, null);
+  assert.equal(livePermitState[0]?.completed_at, null);
   assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
     FROM characters WHERE player_id = 'qa-player'`), beforeLiveClaim,
     'a live claim lease must not mutate progression');
