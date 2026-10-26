@@ -106,6 +106,7 @@ try {
       ('event-closure-player','Event Closure QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
+      ('malformed-cycle-player','Malformed Cycle QA'),
       ('xp-boundary-player','XP Boundary'),
       ('invalid-progression-player','Invalid Progression'),
       ('post-award-overflow-player','Post-award Overflow'),
@@ -120,6 +121,7 @@ try {
         ('event-closure-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
+        ('malformed-cycle-player',1,0,0,'test-degen'),
         ('xp-boundary-player',2,174,30,'test-degen'),
         ('invalid-progression-player',120095990063214,0,0,'test-degen'),
         ('post-award-overflow-player',120095990063212,9007199254740924,0,'test-degen'),
@@ -174,8 +176,8 @@ try {
       ('permit-active-cycle-mismatch','integration-player','underpass','unsupported-event-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
       ('permit-start-before-open','integration-player','underpass','start-before-open-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
       ('permit-start-after-close','integration-player','underpass','start-after-close-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
-      ('permit-malformed-open-cycle','integration-player','underpass','malformed-open-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
-      ('permit-malformed-close-cycle','integration-player','underpass','malformed-close-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
+      ('permit-malformed-open-cycle','malformed-cycle-player','underpass','malformed-open-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
+      ('permit-malformed-close-cycle','malformed-cycle-player','underpass','malformed-close-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
       ('permit-corrupt-awarded-reward','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
@@ -323,10 +325,10 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='malformed-close-cycle' AND closes_at='not-a-timestamp' AND julianday(closes_at) IS NULL"), 1,
     'malformed cycle-close fixture must remain unparsable in SQLite');
   const malformedCyclePermitsBefore = queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-malformed-open-cycle','permit-malformed-close-cycle') ORDER BY id");
-  const malformedCycleClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('malformed-open-cycle','malformed-close-cycle') ORDER BY cycle_id");
-  const malformedCycleHistoryBefore = countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-malformed-open-cycle:victory','permit-malformed-open-cycle:defeat','permit-malformed-close-cycle:victory','permit-malformed-close-cycle:defeat')");
-  const malformedCycleCharacterBefore = queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'");
-  const malformedCycleInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key");
+  const malformedCycleClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='malformed-cycle-player' AND cycle_id IN ('malformed-open-cycle','malformed-close-cycle') ORDER BY cycle_id");
+  const malformedCycleHistoryBefore = countRows("SELECT COUNT(*) AS n FROM battle_history WHERE player_id='malformed-cycle-player' AND id IN ('permit-malformed-open-cycle:victory','permit-malformed-open-cycle:defeat','permit-malformed-close-cycle:victory','permit-malformed-close-cycle:defeat')");
+  const malformedCycleCharacterBefore = queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='malformed-cycle-player'");
+  const malformedCycleInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='malformed-cycle-player' ORDER BY item_type, item_key");
   // Capture the isolated invalid awarded receipt before the Worker starts; later
   // D1 CLI reads while Miniflare is serving requests can drop its HTTP socket.
   const invalidStartAwardedPermitBefore = queryRows(`SELECT started_at, battle_status, player_hp, player_mana,
@@ -416,7 +418,7 @@ try {
   for (const permitId of ['permit-malformed-open-cycle', 'permit-malformed-close-cycle']) {
     const malformedCycleActionResponse = await fetch(base + '/api/battle/action', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash', expectedTurnCount: 0 }),
+      body: JSON.stringify({ playerId: 'malformed-cycle-player', permitId, abilityId: 'slash', expectedTurnCount: 0 }),
       signal: AbortSignal.timeout(30_000),
     });
     const malformedCycleAction = await malformedCycleActionResponse.json();
@@ -424,7 +426,7 @@ try {
     assert.equal(malformedCycleAction.error, 'Battle permit is invalid, expired, or already completed.');
     assert.equal('battleState' in malformedCycleAction, false);
 
-    const malformedCycleCompletion = await complete(permitId, 'integration-player', {
+    const malformedCycleCompletion = await complete(permitId, 'malformed-cycle-player', {
       victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
     });
     assert.equal(malformedCycleCompletion.status, 409, JSON.stringify(malformedCycleCompletion.data));
@@ -2129,11 +2131,11 @@ try {
 
   assert.deepEqual(queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-malformed-open-cycle','permit-malformed-close-cycle') ORDER BY id"), malformedCyclePermitsBefore,
     'malformed cycle timestamps must not advance, normalize, or claim permits');
-  assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'"), malformedCycleCharacterBefore,
+  assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='malformed-cycle-player'"), malformedCycleCharacterBefore,
     'malformed cycle timestamps must not mutate progression');
-  assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key"), malformedCycleInventoryBefore,
+  assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='malformed-cycle-player' ORDER BY item_type, item_key"), malformedCycleInventoryBefore,
     'malformed cycle timestamps must not award inventory');
-  assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('malformed-open-cycle','malformed-close-cycle') ORDER BY cycle_id"), malformedCycleClearsBefore,
+  assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='malformed-cycle-player' AND cycle_id IN ('malformed-open-cycle','malformed-close-cycle') ORDER BY cycle_id"), malformedCycleClearsBefore,
     'malformed cycle timestamps must not reserve a clear');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-malformed-open-cycle:victory','permit-malformed-open-cycle:defeat','permit-malformed-close-cycle:victory','permit-malformed-close-cycle:defeat')"), malformedCycleHistoryBefore,
     'malformed cycle timestamps must not create battle history');
