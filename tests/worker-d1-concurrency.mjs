@@ -106,6 +106,7 @@ try {
       ('event-closure-player','Event Closure QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
+      ('malformed-expiry-player','Malformed Expiry QA'),
       ('malformed-cycle-player','Malformed Cycle QA'),
       ('open-boundary-player','Open Boundary QA'),
       ('xp-boundary-player','XP Boundary'),
@@ -122,6 +123,7 @@ try {
         ('event-closure-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
+        ('malformed-expiry-player',1,0,0,'test-degen'),
         ('malformed-cycle-player',1,0,0,'test-degen'),
         ('open-boundary-player',1,0,0,'test-degen'),
         ('xp-boundary-player',2,174,30,'test-degen'),
@@ -250,6 +252,10 @@ try {
         'tunnel-maw','not-a-timestamp',datetime('now','+20 minutes'),'active',80,12,92,0);
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
+      VALUES ('permit-malformed-expiry','malformed-expiry-player','underpass','integration-cycle',
+        'tunnel-maw',datetime('now','-10 minutes'),'not-a-timestamp','active',80,12,92,0);
+    INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
+      battle_status,player_hp,player_mana,enemy_hp,turn_count)
       SELECT 'permit-start-at-close','integration-player','underpass','start-after-close-cycle',
         'tunnel-maw',closes_at,datetime('now','+20 minutes'),'active',80,12,92,0
       FROM world_event_cycles WHERE id='start-after-close-cycle';
@@ -356,6 +362,11 @@ try {
   const invalidStartAwardedInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='out-of-cycle-award-player' ORDER BY item_type, item_key");
   const invalidStartAwardedClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='out-of-cycle-award-player' AND cycle_id='start-after-close-cycle'");
   const invalidStartAwardedHistoryBefore = queryRows("SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded FROM battle_history WHERE id='permit-awarded-start-after-close:victory'");
+  const malformedExpiryPermitBefore = queryRows("SELECT started_at, expires_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='permit-malformed-expiry'");
+  const malformedExpiryCharacterBefore = queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='malformed-expiry-player'");
+  const malformedExpiryInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='malformed-expiry-player' ORDER BY item_type, item_key");
+  const malformedExpiryClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='malformed-expiry-player' ORDER BY cycle_id");
+  const malformedExpiryHistoryBefore = queryRows("SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded FROM battle_history WHERE player_id='malformed-expiry-player' ORDER BY id");
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
     cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -410,6 +421,27 @@ try {
   assert.equal(malformedStartCompletion.data.error, 'Battle permit was not issued during its event cycle.');
   assert.equal('reward' in malformedStartCompletion.data, false);
   assert.equal('player' in malformedStartCompletion.data, false);
+
+  // A valid in-cycle start does not rescue a permit with an unparsable expiry.
+  // New actions must fail closed, and client-supplied victory/reward fields must
+  // not turn that invalid permit into a settlement path.
+  const malformedExpiryActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'malformed-expiry-player', permitId: 'permit-malformed-expiry', abilityId: 'slash', expectedTurnCount: 0 }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const malformedExpiryAction = await malformedExpiryActionResponse.json();
+  assert.equal(malformedExpiryActionResponse.status, 409, JSON.stringify(malformedExpiryAction));
+  assert.equal(malformedExpiryAction.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in malformedExpiryAction, false);
+  const malformedExpiryCompletion = await complete('permit-malformed-expiry', 'malformed-expiry-player', {
+    victory: true, playerHp: 0, playerMana: 999, enemyHp: 0, turnCount: 999,
+    xp: 999999, currency: 999999, items: ['forged-item'],
+  });
+  assert.equal(malformedExpiryCompletion.status, 409, JSON.stringify(malformedExpiryCompletion.data));
+  assert.equal(malformedExpiryCompletion.data.error, 'Battle is not an authoritative victory.');
+  assert.equal('reward' in malformedExpiryCompletion.data, false);
+  assert.equal('player' in malformedExpiryCompletion.data, false);
 
   const exactCloseActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -2210,7 +2242,16 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id IN ('permit-malformed-open-cycle','permit-malformed-close-cycle') AND reward_state='pending' AND reward_clear_number IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL AND completed_at IS NULL"), 2,
     'malformed cycle timestamps must leave both permits unclaimed');
 
-  console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, inclusive-open/exclusive-close permit boundaries, malformed permit/cycle timestamps, permit survives event closure');
+  assert.deepEqual(queryRows("SELECT started_at, expires_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='permit-malformed-expiry'"), malformedExpiryPermitBefore,
+    'a malformed expiry must not mutate or complete the active permit');
+  assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='malformed-expiry-player'"), malformedExpiryCharacterBefore);
+  assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='malformed-expiry-player' ORDER BY item_type, item_key"), malformedExpiryInventoryBefore);
+  assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='malformed-expiry-player' ORDER BY cycle_id"), malformedExpiryClearsBefore);
+  assert.deepEqual(queryRows("SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded FROM battle_history WHERE player_id='malformed-expiry-player' ORDER BY id"), malformedExpiryHistoryBefore);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-malformed-expiry' AND reward_state='pending' AND reward_clear_number IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL AND completed_at IS NULL"), 1,
+    'a malformed expiry must not reserve a reward claim or clear slot');
+
+  console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, inclusive-open/exclusive-close permit boundaries, malformed start/expiry/cycle timestamps, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
