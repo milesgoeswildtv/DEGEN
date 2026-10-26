@@ -226,6 +226,9 @@ try {
       ('permit-inventory-atomic','inventory-atomic-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-inventory-race-a','inventory-race-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-inventory-race-b','inventory-race-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3);
+    -- Model the permit as issued two minutes before the cycle closes.
+    UPDATE battle_permits SET started_at=datetime('now','-2 minutes')
+      WHERE id='permit-survives-event-closure';
     INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
       VALUES
         ('integration-player','underpass','counter-lag-cycle',0),
@@ -249,7 +252,15 @@ try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='closed-after-entry-cycle'"]);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='closed-after-entry-cycle' AND julianday(closes_at) < julianday('now')"), 1,
-    'the issued permit must predate the cycle closure');
+    'the Underpass cycle must be closed before the action is submitted');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits AS permit
+    JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+    WHERE permit.id='permit-survives-event-closure'
+      AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+      AND julianday(permit.started_at) < julianday(cycle.closes_at)
+      AND julianday(cycle.closes_at) < julianday('now')
+      AND julianday(permit.expires_at) > julianday('now')`), 1,
+    'the permit must be issued while the cycle is open and remain unexpired after closure');
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
     cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
