@@ -718,6 +718,23 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       env.DB.prepare(`INSERT OR IGNORE INTO world_event_clears
         (player_id, event_key, cycle_id, full_reward_clears) VALUES (?, 'underpass', ?, 0)`)
         .bind(input.playerId, claim.cycle_id),
+      // A reservation above the committed cycle counter cannot be legitimate:
+      // reservation and counter advance are one atomic D1 batch. Clear only
+      // unawarded pending claims or normalized, expired leases so a transient
+      // cleanup failure on an older permit cannot strand this valid victory.
+      env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
+          reward_claim_token = NULL, reward_claimed_at = NULL, reward_clear_number = NULL
+        WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
+          AND encounter_key = ? AND id <> ? AND reward_clear_number IS NOT NULL
+          AND completed_at IS NULL AND reward_xp IS NULL AND reward_currency IS NULL
+          AND reward_tier IS NULL AND reward_level IS NULL AND reward_remaining_xp IS NULL
+          AND reward_clear_number > (SELECT full_reward_clears FROM world_event_clears
+            WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?)
+          AND (reward_state = 'pending' OR (reward_state = 'claiming'
+            AND strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at
+            AND julianday(reward_claimed_at) < julianday('now', '-60 seconds')))`)
+        .bind(input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId,
+          input.playerId, claim.cycle_id),
       // Never allocate a sequence slot if the persisted counter already trails
       // a previously reserved receipt for this player and cycle.
       env.DB.prepare(`UPDATE battle_permits SET reward_clear_number = (
