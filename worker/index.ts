@@ -358,7 +358,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NULL
       AND julianday(expires_at) > julianday('now')
       AND julianday(cycle.opens_at) <= julianday(permit.started_at)
-      AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
+      AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
     .bind(input.permitId, input.playerId)
     .first<BattleActionPermitRow>();
 
@@ -373,6 +374,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NOT NULL
         AND permit.reward_state = 'awarded' AND permit.battle_status = 'victory'
         AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
       .first<BattleActionPermitRow>();
@@ -407,6 +409,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NULL
         AND permit.battle_status IN ('victory', 'defeat')
         AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
       .first<BattleActionPermitRow & {
@@ -471,6 +474,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
       WHERE permit.id = ? AND permit.player_id = ?
         AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
       .first<BattleActionPermitRow>();
@@ -528,6 +532,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       AND EXISTS (SELECT 1 FROM world_event_cycles
         WHERE id = battle_permits.cycle_id AND event_key = 'underpass'
           AND julianday(opens_at) <= julianday(battle_permits.started_at)
+          AND julianday(battle_permits.started_at) <= julianday('now')
           AND julianday(battle_permits.started_at) < julianday(closes_at))
       AND turn_count = ?
     RETURNING turn_count`)
@@ -567,6 +572,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
       WHERE permit.id = ? AND permit.player_id = ?
         AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
       .first<BattleActionPermitRow>();
@@ -635,6 +641,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       permit.reward_claim_token, permit.reward_claimed_at,
       cycle.event_key AS cycle_event_key,
       CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)
         THEN 1 ELSE 0 END AS permit_started_in_cycle,
       clears.full_reward_clears AS cycle_clear_count,
@@ -770,6 +777,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       AND EXISTS (SELECT 1 FROM world_event_cycles
         WHERE id = battle_permits.cycle_id AND event_key = 'underpass'
           AND julianday(opens_at) <= julianday(battle_permits.started_at)
+          AND julianday(battle_permits.started_at) <= julianday('now')
           AND julianday(battle_permits.started_at) < julianday(closes_at))
       AND battle_status = 'victory' AND (
       (reward_state = 'pending' AND completed_at IS NULL)
