@@ -1,3 +1,18 @@
+## Latest run — 2026-10-26 (malformed lease cannot be reclaimed by reservation cleanup)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **PUSHED / PR #76 OPEN:** `automation/degen/reward-claim-completed-at-guard-v01`; current code/test head `0456c4e1ffebd009adeec15a7ab147b36e473113`. No direct-main write; no merge.
+- **Task / files changed:** `tests/worker-d1-reward-recovery.mjs` adds an isolated Worker/D1 regression for an ahead-of-counter reservation whose `reward_claimed_at` is parseable and older than 60 seconds but noncanonical. The cleanup sweep must leave that reservation untouched, reject the competing valid victory without player/reward payload or progression/inventory/history/counter mutation, and recover sequence 2 only after the lease timestamp is repaired to canonical SQLite form. Replaying the recovered receipt must not duplicate settlement.
+- **QA status on current code/test head:** deterministic game tests passed in CI run [40420979933](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40420979933); the isolated Worker/D1 reward-concurrency step is running, and the new transient-recovery step plus build/mobile/Worker validation are still pending. Do not call the current head green until all 13 steps pass. The prior runtime/test head `beea36ff96bfef1a605362ddc6cad86a1db139ca` passed all 13 steps in [run 40414467554](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40414467554), before this additional integration regression.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql`.
+- **Stale Mana branch audit:** `sidekick/degen-mana-foundation-v01` is 11 commits ahead but 69 behind current main. Its `maxMana`, `manaCost`, player-Mana rules/UI, and migration 0003 are already represented on main; it lacks main's newer server-backed battle initialization/turn-count invariants and migration 0006. No unique unfinished Mana slice was found, so do not resume this stale branch or duplicate its work.
+- **Battle authority / reward idempotency:** Worker-resolved victory only; action CAS and permit ownership/expiry/event/cycle/encounter guards; audited receipts; stale-lease recovery; transient D1 recovery; unique clear sequencing; exactly-once progression/inventory/history remain server-owned. This run adds test coverage only; no runtime/reward change.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. No migration/schema, production D1, reward-value, combat-balance, or deployment-config change.
+- **Miles blocker:** platform-auth PR #21 is still open and not mergeable against the current base; approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved legacy identity-collision policy remain mandatory. Do not bypass that gate for auth-gated Shield/housing.
+- **One best next task:** finish exact-head CI for this malformed-reservation regression, then review PR #75's permit chronology guard together with PR #76 before merging overlapping Worker changes.
+
+---
+
 ## CI closeout — 2026-10-26 (recoverable stale reward reservation)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
