@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-26 (validate permit issuance inside the event window)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`. Re-read main README, package scripts, Wrangler/D1 config, schema, Worker battle routes, recent commits, open PRs, CI/deploy runs, and Mana branches. The original `sidekick/degen-mana-foundation-v01` remains divergent (11 ahead / 68 behind); its Mana runtime is superseded by main.
+- **PUSHED / PR #72 OPEN:** continuing `automation/degen/action-permit-event-guard-v01` from base head `97c336c49d697661043cc448ebac6fc702f5a7f7`. This run adds a narrow permit-integrity invariant: the Worker checks that persisted `started_at` falls inside the referenced cycle's opening interval. Event closure after a valid entry remains allowed; permits with a start time before opening or after closing fail closed.
+- **Files changed:** `worker/index.ts` (explicit precise Worker-owned start timestamp; start-window condition at issuance, action reads/CAS, and reward-claim CAS), `tests/worker-battle-start-state.test.ts` (assert timestamp binding and interval), `tests/worker-d1-concurrency.mjs` (active pre-open action and post-close terminal reward rejection with no progression/inventory/clear/history mutation), and this continuity record. No schema/migration or reward-value change.
+- **QA:** exact-head CI is pending for the new code/test commit. The prior PR #72 head `97c336c49d697661043cc448ebac6fc702f5a7f7` has a successful CI workflow; the new commit must pass the full workflow before being called green. No local-shell or production-D1 run is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, persisted `player_mana`, reject-without-mutation, exact single deduction, zero-cost at zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, tracked migration 0006.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only completion, action CAS, permit owner/expiry/event/cycle/encounter checks, reward receipt audit, stale-lease recovery, transient-D1 recovery, unique clear sequencing, full/reduced tiers, shared level-up math, and event-closure continuation remain in place. PR #73 latest head `de612815895895457fa0b107ab1500ac4d618db0` passed exact-head CI [40308345925](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40308345925); PR #71's latest recorded head passed [40263244515](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40263244515). Both remain open/unmerged.
+- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order is schema → tracked migrations → Worker. This change needs no migration. No production D1 operation or deployment occurred.
+- **Miles blocker:** platform-auth PR #21 still needs approved Discord/Telegram production credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions. Do not bypass that release gate.
+- **One best next task:** verify exact-head CI for this permit start-window invariant; if green, leave PR #72 open for normal review, then continue the approved Shield foundation only through its existing branch/PR and without bypassing the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-26 (stabilize event-closure Worker integration test)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`. Re-read main README/package/Wrangler/schema, Worker battle routes, combat Mana types/rules/UI, migrations, current open PRs and branch refs. `sidekick/degen-mana-foundation-v01` remains divergent (11 ahead / 68 behind); Degen-only Mana and migration 0006 are complete on main, so no duplicate Mana runtime work was started.

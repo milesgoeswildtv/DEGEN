@@ -36,7 +36,8 @@ function makeEnv(
             first: async () => {
               if (sql.includes('INSERT INTO battle_permits')) {
                 assert.match(sql, /WHERE EXISTS\s*\(\s*SELECT 1 FROM world_event_cycles/);
-                assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\('now'\)/);
+                assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\(\?\)/);
+                assert.match(sql, /julianday\(\?\)\s*<\s*julianday\(closes_at\)/);
                 assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
                 if (!permitInsertAllowed) return null;
                 inserts.push(params);
@@ -101,7 +102,12 @@ test('battle start ignores forged client combat state and returns exactly the De
     turnCount: 0,
   });
   assert.equal(inserts.length, 1);
-  const [, playerId, cycleId, encounterKey, , playerHp, playerMana, enemyHp] = inserts[0] as unknown[];
+  const [, playerId, cycleId, encounterKey, startedAt, , playerHp, playerMana, enemyHp, cycleGuardId, opensCheck, closesCheck] = inserts[0] as unknown[];
+  assert.equal(cycleGuardId, cycle.id);
+  assert.equal(startedAt, opensCheck);
+  assert.equal(startedAt, closesCheck);
+  assert.ok(Date.parse(cycle.opens_at) <= Date.parse(startedAt));
+  assert.ok(Date.parse(startedAt) < Date.parse(cycle.closes_at));
   assert.deepEqual(
     [playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp],
     ['player-1', cycle.id, TUNNEL_MAW.id, result.initialState.playerHp,

@@ -134,6 +134,8 @@ try {
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('closed-after-entry-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('start-before-open-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('start-after-close-cycle','underpass',datetime('now','-20 minutes'),datetime('now','-10 minutes')),
         ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('unsupported-event-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('uncounted-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
@@ -163,6 +165,8 @@ try {
       ('permit-cycle-mismatch','integration-player','underpass','unsupported-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-active-unsupported-event','integration-player','unapproved-event','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
       ('permit-active-cycle-mismatch','integration-player','underpass','unsupported-event-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
+      ('permit-start-before-open','integration-player','underpass','start-before-open-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
+      ('permit-start-after-close','integration-player','underpass','start-after-close-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-corrupt-awarded-reward','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
@@ -246,6 +250,11 @@ try {
       VALUES('permit-counter-lag-peer:victory','integration-player','tunnel-maw','victory',2,75,30);
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET started_at = CASE id " +
+      "WHEN 'permit-start-before-open' THEN datetime('now','-20 minutes') " +
+      "WHEN 'permit-start-after-close' THEN datetime('now','-5 minutes') END " +
+      "WHERE id IN ('permit-start-before-open','permit-start-after-close')"]);
   // Close the cycle only after the issued permit is seeded, but before starting
   // the live Worker. Opening a second Wrangler D1 CLI against the same persisted
   // SQLite store while Miniflare is serving requests can drop the Worker socket.
@@ -261,6 +270,10 @@ try {
       AND julianday(cycle.closes_at) < julianday('now')
       AND julianday(permit.expires_at) > julianday('now')`), 1,
     'the permit must be issued while the cycle is open and remain unexpired after closure');
+  const invalidStartCharacterBefore = queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'");
+  const invalidStartInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key");
+  const invalidStartPermitsBefore = queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-start-before-open','permit-start-after-close') ORDER BY id");
+  const invalidStartClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('start-before-open-cycle','start-after-close-cycle') ORDER BY cycle_id");
   server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
     cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -278,11 +291,26 @@ try {
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
 
-  // Run the post-closure permit check while the local Worker is fresh, before the
-  // long sequence of local D1 fault-injection probes that can close its socket.
-  // An encounter issued while the Underpass cycle was open remains valid after
-  // the event closes. Closure is not permit expiry: the Worker must still resolve
-  // the entered fight and settle its authoritative victory while the permit lives.
+  // Invalid start times must not authorize actions or rewards. Keep these requests
+  // adjacent to Worker startup so local D1 probes cannot disrupt HTTP.
+  const beforeOpenActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId: 'permit-start-before-open', abilityId: 'slash', expectedTurnCount: 0 }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const beforeOpenAction = await beforeOpenActionResponse.json();
+  assert.equal(beforeOpenActionResponse.status, 409, JSON.stringify(beforeOpenAction));
+  assert.equal(beforeOpenAction.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in beforeOpenAction, false);
+
+  const afterCloseCompletion = await complete('permit-start-after-close');
+  assert.equal(afterCloseCompletion.status, 409, JSON.stringify(afterCloseCompletion.body));
+  assert.equal(afterCloseCompletion.body.error, 'Battle permit was not issued during its event cycle.');
+  assert.equal('reward' in afterCloseCompletion.body, false);
+  assert.equal('player' in afterCloseCompletion.body, false);
+
+  // A legitimately issued permit remains valid after the cycle closes. Closure is
+  // not permit expiry: the Worker must resolve the entered fight and settle its victory.
   const closureActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -320,6 +348,13 @@ try {
     xp: closureRewardResponse.data.player.xp,
     currency: closureRewardResponse.data.player.currency,
   }], 'replaying a post-closure receipt must not duplicate progression');
+
+  assert.deepEqual(queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id IN ('permit-start-before-open','permit-start-after-close') ORDER BY id"), invalidStartPermitsBefore,
+    'invalid permit start timestamps must not be normalized or settled');
+  assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='integration-player'"), invalidStartCharacterBefore);
+  assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='integration-player' ORDER BY item_type, item_key"), invalidStartInventoryBefore);
+  assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('start-before-open-cycle','start-after-close-cycle') ORDER BY cycle_id"), invalidStartClearsBefore);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-start-before-open:victory','permit-start-before-open:defeat','permit-start-after-close:victory','permit-start-after-close:defeat')"), 0);
 
 
   // A valid action without the turn precondition is rejected before any combat mutation.
@@ -1920,7 +1955,7 @@ try {
 
 
 
-  console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
+  console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, invalid permit start-window rejection, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
