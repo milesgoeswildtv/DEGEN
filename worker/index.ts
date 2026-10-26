@@ -746,8 +746,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           AND (reward_state = 'pending' OR (reward_state = 'claiming'
             AND strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at
             AND julianday(reward_claimed_at) < julianday('now', '-60 seconds')))`)
-        .bind(input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId,
-          input.playerId, claim.cycle_id),
+        .bind(input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId),
       // Never allocate a sequence slot if the persisted counter already trails
       // a previously reserved receipt for this player and cycle.
       env.DB.prepare(`UPDATE battle_permits SET reward_clear_number = (
