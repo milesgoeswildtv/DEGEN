@@ -728,14 +728,16 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       tier: row.reward_tier ?? 'reduced',
     }, worldEvent: event });
   };
+  // Cycle eligibility is permit authority, not combat snapshot state. Enforce it
+  // before both first-time settlement and idempotent replay of an awarded receipt.
+  if (receipt.permit_started_in_cycle !== 1) {
+    return fail(request, env, 'Battle permit was not issued during its event cycle.', 409);
+  }
   if (receipt.reward_state === 'awarded') {
     if (!isValidAwardedReceipt(receipt)) return fail(request, env, 'Battle reward receipt is invalid.', 409);
     // The independently audited awarded receipt is the recovery authority for an
     // already-settled reward, even if a later write corrupts its combat snapshot.
     return respond(receipt);
-  }
-  if (receipt.permit_started_in_cycle !== 1) {
-    return fail(request, env, 'Battle permit was not issued during its event cycle.', 409);
   }
   if (receipt.battle_status !== 'victory') {
     return fail(request, env, 'Battle is not an authoritative victory.', 409);
