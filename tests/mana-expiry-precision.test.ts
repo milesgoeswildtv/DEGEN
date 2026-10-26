@@ -263,4 +263,6 @@ test('a valid claim repairs stale unawarded reservations above the committed cle
     'only pending reservations or normalized stale leases may be reset');
   assert.match(cleanup, /id <> \?/,
     'the current claim must not invalidate its own reservation');
+  assert.ok(cleanup.includes(".bind(input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId)"),
+    'cleanup statement bindings must exactly match its four scoped placeholders');
 });
