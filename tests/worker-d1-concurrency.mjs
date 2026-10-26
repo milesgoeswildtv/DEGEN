@@ -110,6 +110,7 @@ try {
       ('malformed-cycle-player','Malformed Cycle QA'),
       ('open-boundary-player','Open Boundary QA'),
       ('future-start-player','Future Start QA'),
+      ('future-terminal-player','Future Terminal Recovery QA'),
       ('xp-boundary-player','XP Boundary'),
       ('invalid-progression-player','Invalid Progression'),
       ('post-award-overflow-player','Post-award Overflow'),
@@ -128,6 +129,7 @@ try {
         ('malformed-cycle-player',1,0,0,'test-degen'),
         ('open-boundary-player',1,0,0,'test-degen'),
         ('future-start-player',1,0,0,'test-degen'),
+        ('future-terminal-player',1,0,0,'test-degen'),
         ('xp-boundary-player',2,174,30,'test-degen'),
         ('invalid-progression-player',120095990063214,0,0,'test-degen'),
         ('post-award-overflow-player',120095990063212,9007199254740924,0,'test-degen'),
@@ -263,6 +265,10 @@ try {
         'tunnel-maw',datetime('now','+15 minutes'),datetime('now','+30 minutes'),'active',80,12,92,0);
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
+      VALUES ('permit-future-start-terminal','future-terminal-player','underpass','future-start-cycle',
+        'tunnel-maw',datetime('now','+15 minutes'),datetime('now','+30 minutes'),'victory',80,12,0,1);
+    INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
+      battle_status,player_hp,player_mana,enemy_hp,turn_count)
       SELECT 'permit-start-at-close','integration-player','underpass','start-after-close-cycle',
         'tunnel-maw',closes_at,datetime('now','+20 minutes'),'active',80,12,92,0
       FROM world_event_cycles WHERE id='start-after-close-cycle';
@@ -354,6 +360,11 @@ try {
   const futureStartInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='future-start-player' ORDER BY item_type, item_key");
   const futureStartClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='future-start-player'");
   const futureStartHistoryBefore = countRows("SELECT COUNT(*) AS n FROM battle_history WHERE player_id='future-start-player'");
+  const futureTerminalPermitBefore = queryRows("SELECT id, started_at, expires_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='permit-future-start-terminal'");
+  const futureTerminalCharacterBefore = queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='future-terminal-player'");
+  const futureTerminalInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='future-terminal-player' ORDER BY item_type, item_key");
+  const futureTerminalClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='future-terminal-player'");
+  const futureTerminalHistoryBefore = countRows("SELECT COUNT(*) AS n FROM battle_history WHERE player_id='future-terminal-player'");
   const invalidStartClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='integration-player' AND cycle_id IN ('start-before-open-cycle','start-after-close-cycle') ORDER BY cycle_id");
   assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='malformed-open-cycle' AND opens_at='not-a-timestamp' AND julianday(opens_at) IS NULL"), 1,
     'malformed cycle-open fixture must remain unparsable in SQLite');
@@ -453,6 +464,20 @@ try {
   assert.equal(futureStartCompletion.data.error, 'Battle permit was not issued during its event cycle.');
   assert.equal('reward' in futureStartCompletion.data, false);
   assert.equal('player' in futureStartCompletion.data, false);
+
+  // Terminal recovery must apply the same D1-clock chronology guard. Without it,
+  // a future-dated victory with no completion receipt could leak a trusted snapshot
+  // back to the client even though the same permit cannot authorize a fresh action.
+  const futureTerminalActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'future-terminal-player', permitId: 'permit-future-start-terminal', abilityId: 'slash', expectedTurnCount: 1 }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const futureTerminalAction = await futureTerminalActionResponse.json();
+  assert.equal(futureTerminalActionResponse.status, 409, JSON.stringify(futureTerminalAction));
+  assert.equal('battleState' in futureTerminalAction, false);
+  assert.equal('reward' in futureTerminalAction, false);
+  assert.equal('player' in futureTerminalAction, false);
 
   // A valid in-cycle start does not rescue a permit with an unparsable expiry.
   // New actions must fail closed, and client-supplied victory/reward fields must
@@ -2266,6 +2291,12 @@ try {
   assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='future-start-player' ORDER BY item_type, item_key"), futureStartInventoryBefore);
   assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='future-start-player'"), futureStartClearsBefore);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE player_id='future-start-player'"), futureStartHistoryBefore);
+  assert.deepEqual(queryRows("SELECT id, started_at, expires_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='permit-future-start-terminal'"), futureTerminalPermitBefore,
+    'future-dated terminal recovery must not mutate its permit');
+  assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='future-terminal-player'"), futureTerminalCharacterBefore);
+  assert.deepEqual(queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='future-terminal-player' ORDER BY item_type, item_key"), futureTerminalInventoryBefore);
+  assert.deepEqual(queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='future-terminal-player'"), futureTerminalClearsBefore);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE player_id='future-terminal-player'"), futureTerminalHistoryBefore);
   assert.deepEqual(queryRows("SELECT id, started_at, battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='permit-malformed-start'"), malformedStartPermitBefore,
     'a malformed start timestamp must not advance or normalize the permit');
   assert.deepEqual(queryRows("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='malformed-start-player'"), malformedStartCharacterBefore,
