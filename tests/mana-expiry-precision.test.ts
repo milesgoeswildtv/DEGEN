@@ -29,7 +29,7 @@ test('Worker action expiry guards preserve millisecond precision while terminal 
   const claim = worker.slice(claimStart, claimEnd);
   assert.match(
     claim,
-    /WHERE id = \? AND player_id = \? AND event_key = 'underpass'\s+AND encounter_key = \?\s+AND EXISTS \(SELECT 1 FROM world_event_cycles\s+WHERE id = battle_permits\.cycle_id AND event_key = 'underpass'\)\s+AND battle_status = 'victory'/,
+    /WHERE id = \? AND player_id = \? AND event_key = 'underpass'\s+AND encounter_key = \? AND completed_at IS NULL\s+AND EXISTS \(SELECT 1 FROM world_event_cycles\s+WHERE id = battle_permits\.cycle_id AND event_key = 'underpass'\)\s+AND battle_status = 'victory'/,
     'the claim lease must be scoped to the supported event, encounter, and matching cycle',
   );
   assert.match(
