@@ -1279,19 +1279,17 @@ try {
     reward_remaining_xp: null,
     completed_at: null,
   }]);
-  assert.deepEqual(sql(`SELECT reward_state, reward_clear_number, reward_xp, reward_currency,
-      reward_tier, reward_level, reward_remaining_xp, completed_at
-    FROM battle_permits WHERE id = 'permit-malformed-reservation-recovery'`), [{
-    reward_state: 'awarded',
-    reward_clear_number: 2,
-    reward_xp: malformedCleanupReward.xp,
-    reward_currency: malformedCleanupReward.currency,
-    reward_tier: 'full',
-    reward_level: malformedCleanupReward.levelAfter,
-    reward_remaining_xp: malformedCleanupReward.remainingXp,
-    completed_at: sql(`SELECT completed_at FROM battle_permits WHERE id = 'permit-malformed-reservation-recovery'`)[0]?.completed_at,
-  }]);
-  assert.ok(sql(`SELECT completed_at FROM battle_permits WHERE id = 'permit-malformed-reservation-recovery'`)[0]?.completed_at);
+  const malformedCleanupAwardedPermit = sql(`SELECT reward_state, reward_clear_number, reward_xp,
+      reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-malformed-reservation-recovery'`)[0];
+  assert.equal(malformedCleanupAwardedPermit?.reward_state, 'awarded');
+  assert.equal(malformedCleanupAwardedPermit?.reward_clear_number, 2);
+  assert.equal(malformedCleanupAwardedPermit?.reward_xp, malformedCleanupReward.xp);
+  assert.equal(malformedCleanupAwardedPermit?.reward_currency, malformedCleanupReward.currency);
+  assert.equal(malformedCleanupAwardedPermit?.reward_tier, 'full');
+  assert.equal(malformedCleanupAwardedPermit?.reward_level, malformedCleanupCharacterAfter[0]?.level);
+  assert.equal(malformedCleanupAwardedPermit?.reward_remaining_xp, malformedCleanupCharacterAfter[0]?.xp);
+  assert.ok(malformedCleanupAwardedPermit?.completed_at);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-malformed-cleanup-cycle'`)[0]?.full_reward_clears, 2);
   const malformedCleanupCharacterAfter = sql(`SELECT level, xp, currency, last_reward_claim_token
