@@ -26,7 +26,7 @@ const handleBattleAction = runInNewContext(
 
 test('unaffordable battle conflict returns the latest persisted snapshot after a concurrent turn', async () => {
   const staleSnapshot = {
-    cycle_id: 'cycle-1',
+    event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
     encounter_key: TUNNEL_MAW.id,
     player_hp: 80,
     player_mana: 0,
@@ -50,7 +50,7 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
               reads.push(sql);
               assert.deepEqual(params.slice(0, 2), ['permit-1', 'player-1']);
               if (sql.includes('completed_at IS NULL')) return staleSnapshot;
-              if (sql.includes('FROM battle_permits WHERE id = ? AND player_id = ?')) return latestSnapshot;
+              if (sql.includes('WHERE permit.id = ? AND permit.player_id = ?')) return latestSnapshot;
               throw new Error('Unexpected query in deterministic conflict test: ' + sql);
             },
           };
@@ -93,7 +93,7 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
 
 test('replayed action after reward settlement returns the persisted victory snapshot', async () => {
   const completedSnapshot = {
-    cycle_id: 'cycle-1',
+    event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
     encounter_key: TUNNEL_MAW.id,
     player_hp: 70,
     player_mana: 0,
@@ -153,40 +153,51 @@ test('replayed action after reward settlement returns the persisted victory snap
   assert.equal(reads.length, 2, 'the handler must recover from persisted completed state, not client state');
 });
 
-test('completed permits for unsupported encounters are not returned as this battle snapshot', async () => {
-  const unsupportedSnapshot = {
-    cycle_id: 'cycle-1',
-    encounter_key: 'different-monster',
-    player_hp: 70,
-    player_mana: 0,
-    enemy_hp: 0,
-    battle_status: 'victory',
-    turn_count: 3,
-  };
-  const db = {
-    prepare(sql: string) {
-      return {
-        bind(..._params: unknown[]) {
-          return {
-            first: async () => sql.includes('completed_at IS NOT NULL') ? unsupportedSnapshot : null,
-          };
-        },
-      };
+test('completed permits for unsupported encounters, events, or cycles are not returned as battle snapshots', async () => {
+  const unsupportedSnapshots = [
+    {
+      event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
+      encounter_key: 'different-monster', player_hp: 70, player_mana: 0, enemy_hp: 0,
+      battle_status: 'victory', turn_count: 3,
     },
-  };
-  const request = new Request('https://degen-api.example/api/battle/action', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      playerId: 'player-1', permitId: 'permit-1', abilityId: 'slash', expectedTurnCount: 3,
-    }),
-  });
+    {
+      event_key: 'unapproved-event', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
+      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, enemy_hp: 0,
+      battle_status: 'victory', turn_count: 3,
+    },
+    {
+      event_key: 'underpass', cycle_event_key: 'unapproved-event', cycle_id: 'cycle-foreign',
+      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, enemy_hp: 0,
+      battle_status: 'victory', turn_count: 3,
+    },
+  ];
+  for (const unsupportedSnapshot of unsupportedSnapshots) {
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(..._params: unknown[]) {
+            return {
+              first: async () => sql.includes('completed_at IS NOT NULL') ? unsupportedSnapshot : null,
+            };
+          },
+        };
+      },
+    };
+    const request = new Request('https://degen-api.example/api/battle/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'player-1', permitId: 'permit-1', abilityId: 'slash', expectedTurnCount: 3,
+      }),
+    });
 
-  const response = await handleBattleAction(request, { DB: db });
-  const result = await response.json() as { error: string; battleState?: unknown };
-  assert.equal(response.status, 409);
-  assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
-  assert.equal('battleState' in result, false, 'an unsupported encounter must not be projected as the active prototype enemy');
+    const response = await handleBattleAction(request, { DB: db });
+    const result = await response.json() as { error: string; battleState?: unknown };
+    assert.equal(response.status, 409);
+    assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
+    assert.equal('battleState' in result, false,
+      'an unsupported encounter, event, or cycle must not be projected as a battle snapshot');
+  }
 });
 
 
@@ -194,7 +205,7 @@ test('expired terminal retries recover only valid pending victory or defeat snap
   const cases = [
     {
       state: {
-        cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
+        event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
         player_hp: 70, player_mana: 0, enemy_hp: 0,
         battle_status: 'victory', turn_count: 3,
         completed_at: null, reward_state: 'pending',
@@ -207,7 +218,7 @@ test('expired terminal retries recover only valid pending victory or defeat snap
     },
     {
       state: {
-        cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
+        event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
         player_hp: 0, player_mana: 0, enemy_hp: 63,
         battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
@@ -276,7 +287,7 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
 
   for (const scenario of scenarios) {
     const legacyTerminal = {
-      cycle_id: 'cycle-1',
+      event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
       encounter_key: TUNNEL_MAW.id,
       player_hp: scenario.playerHp,
       player_mana: null,
@@ -351,7 +362,7 @@ test('malformed pre-Mana terminal snapshots fail closed without display fallback
 
   for (const scenario of scenarios) {
     const malformedTerminal = {
-      cycle_id: 'cycle-legacy',
+      event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-legacy',
       encounter_key: TUNNEL_MAW.id,
       player_hp: scenario.playerHp,
       player_mana: null,
@@ -401,7 +412,7 @@ test('malformed pre-Mana terminal snapshots fail closed without display fallback
 
 test('replayed action after reward settlement projects display Mana for a legacy victory', async () => {
   const completedSnapshot = {
-    cycle_id: 'cycle-legacy',
+    event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-legacy',
     encounter_key: TUNNEL_MAW.id,
     player_hp: 70,
     player_mana: null,

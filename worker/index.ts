@@ -353,7 +353,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
     WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NULL
-      AND julianday(permit.expires_at) > julianday('now')`)
+      AND julianday(expires_at) > julianday('now')`)
     .bind(input.permitId, input.playerId)
     .first<BattleActionPermitRow>();
 
@@ -463,7 +463,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       WHERE permit.id = ? AND permit.player_id = ?`)
       .bind(input.permitId, input.playerId)
       .first<BattleActionPermitRow>();
-    if (latest && (latest.event_key !== 'underpass' || latest.cycle_event_key !== 'underpass')) {
+    if (latest && (latest.event_key !== 'underpass' || latest.cycle_event_key !== 'underpass' || latest.encounter_key !== TUNNEL_MAW.id)) {
       return fail(request, env, 'Unsupported battle permit.', 409);
     }
     if (!latest || !isValidBattlePermitState(latest)) {
@@ -555,7 +555,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       WHERE permit.id = ? AND permit.player_id = ?`)
       .bind(input.permitId, input.playerId)
       .first<BattleActionPermitRow>();
-    if (latest && (latest.event_key !== 'underpass' || latest.cycle_event_key !== 'underpass')) {
+    if (latest && (latest.event_key !== 'underpass' || latest.cycle_event_key !== 'underpass' || latest.encounter_key !== TUNNEL_MAW.id)) {
       return fail(request, env, 'Unsupported battle permit.', 409);
     }
     if (latest && isValidBattlePermitState(latest)) {

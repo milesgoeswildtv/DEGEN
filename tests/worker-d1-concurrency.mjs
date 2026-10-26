@@ -295,6 +295,13 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-mana-zero' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
     'forged completion must not reserve or claim rewards');
 
+  for (const [permitId, state] of [
+    ['permit-unsupported-event', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3 }],
+    ['permit-cycle-mismatch', { status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3 }],
+  ] as const) {
+    await assertUnsupportedActionPermit(permitId, state);
+  }
+
   // Victory state is not enough by itself: the permit, its referenced cycle,
   // and the encounter must all match the Worker-supported Underpass slice.
   for (const permitId of ['permit-unsupported-encounter', 'permit-unsupported-event', 'permit-cycle-mismatch']) {
