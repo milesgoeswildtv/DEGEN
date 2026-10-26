@@ -704,7 +704,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
         WHERE id = battle_permits.cycle_id AND event_key = 'underpass')
       AND battle_status = 'victory' AND (
       (reward_state = 'pending' AND completed_at IS NULL)
-      OR (reward_state = 'claiming' AND reward_claimed_at < datetime('now', '-60 seconds'))
+      OR (reward_state = 'claiming'
+        AND strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at
+        AND julianday(reward_claimed_at) < julianday('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();

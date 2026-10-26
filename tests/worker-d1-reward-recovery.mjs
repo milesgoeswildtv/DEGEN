@@ -123,6 +123,11 @@ try {
         'claiming', 'missing-time-token', NULL
       ),
       (
+        'permit-invalid-claim-time', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'invalid-time-token', '0000-not-a-date'
+      ),
+      (
         'permit-reservation-recovery', 'qa-player', 'underpass', 'qa-reservation-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       ),
@@ -448,6 +453,39 @@ try {
     beforeMissingLeaseTimeClearCount, 'malformed lease must not reserve a reward clear');
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
     WHERE id = 'permit-missing-claim-time:victory'`)[0]?.n ?? 0, 0);
+
+  // A non-NULL but malformed lease timestamp is not proof that a claim is
+  // stale. In particular, lexical TEXT comparison would treat '0000-not-a-date'
+  // as older than today's timestamp and could steal a live/unknown lease.
+  const beforeInvalidLeaseTimeCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const beforeInvalidLeaseTimeInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const beforeInvalidLeaseTimeClearCount = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0;
+  const invalidLeaseTime = await complete('permit-invalid-claim-time');
+  assert.equal(invalidLeaseTime.status, 409, JSON.stringify(invalidLeaseTime.body));
+  assert.equal(invalidLeaseTime.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal('reward' in (invalidLeaseTime.body ?? {}), false);
+  assert.equal('player' in (invalidLeaseTime.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-invalid-claim-time'`), [{
+    reward_state: 'claiming',
+    reward_claim_token: 'invalid-time-token',
+    reward_claimed_at: '0000-not-a-date',
+    reward_clear_number: null,
+    completed_at: null,
+  }], 'an invalid timestamp must not authorize stale-lease takeover or reserve a clear');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), beforeInvalidLeaseTimeCharacter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), beforeInvalidLeaseTimeInventory);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0,
+    beforeInvalidLeaseTimeClearCount);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-invalid-claim-time:victory'`)[0]?.n ?? 0, 0);
 
   // Failure while reserving a clear slot must roll back that reservation batch,
   // release only this claim, and allow a retry without losing the valid victory.

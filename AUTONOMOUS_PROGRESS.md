@@ -1,3 +1,19 @@
+## Latest run — 2026-10-26 (fail closed on malformed reward-lease timestamps)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
+- **PUSHED / PR #73:** continuing `automation/degen/stale-reward-lease-recovery-v01` from verified head `6085b67403e61772764cf3f9c07be1cfed3ed256`. This follow-up adds a narrow Worker fix plus isolated local Worker/D1 regression coverage; no schema, migration, reward-value, or deployment-config change.
+- **Implementation:** stale reward-claim takeover now requires a normalized SQLite timestamp and compares parsed Julian dates instead of lexicographically comparing TEXT. NULL and malformed timestamps cannot be treated as expired leases; the existing 60-second recovery threshold for valid timestamps remains.
+- **Regression:** seed a claiming permit with `reward_claimed_at = '0000-not-a-date'`, which sorts lexically before the current timestamp but is not a valid lease time. The test requires HTTP 409, unchanged token/state/clear counter/progression/inventory/history, and no reward payload. The preceding test also injects simultaneous settlement and claim-release failures, then proves recovery and exactly-once replay after the stale threshold.
+- **Files changed:** `worker/index.ts`, `tests/worker-d1-reward-recovery.mjs`, `AUTONOMOUS_PROGRESS.md`.
+- **QA:** the previous PR head `6085b67403e61772764cf3f9c07be1cfed3ed256` has exact-head CI in progress at [run 40301888779](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40301888779). The new implementation/test head requires its own exact-head CI before being marked green.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, authoritative persisted player_mana, unaffordable rejection without mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration 0006 remain unchanged.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only settlement, ownership and expiry guards, event/cycle/encounter validation, action CAS, audited receipts, stale-lease recovery, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, full/reduced rewards, and shared level-up math remain in place.
+- **D1 assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. CI uses isolated local D1 only; no production D1 operation or deployment occurred.
+- **Miles blocker:** platform-auth PR #21 still needs approved Discord/Telegram production credentials/configuration, controlled live identity/session verification, and a policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** finish exact-head CI on this reward-lease fix, then continue through normal review gates; do not merge or deploy auth-gated work.
+
+---
+
 ## Latest run — 2026-10-26 (recover a reward after claim-release failure)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
