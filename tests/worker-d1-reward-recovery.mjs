@@ -56,12 +56,17 @@ async function stop() {
   worker = undefined;
 }
 async function complete(permitId = 'permit-recovery') {
-  const response = await fetch(origin + '/api/battle/complete', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: 'qa-player', permitId }),
-    signal: AbortSignal.timeout(15_000),
-  });
+  let response;
+  try {
+    response = await fetch(origin + '/api/battle/complete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: 'qa-player', permitId }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    throw new Error(`POST /api/battle/complete failed for ${permitId}: ${error instanceof Error ? error.message : String(error)}\nWorker exit code: ${worker?.exitCode ?? 'running'}\nCaptured Worker logs:\n${logs}`);
+  }
   const raw = await response.text();
   let body;
   try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
