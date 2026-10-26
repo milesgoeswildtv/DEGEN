@@ -186,7 +186,7 @@ test('completion timestamps are rechecked during reward clear reservation and fa
   assert.ok(releaseStart >= 0 && releaseEnd > releaseStart, 'token-scoped claim cleanup must exist');
   assert.match(
     worker.slice(releaseStart, releaseEnd),
-    /reward_state = 'claiming' AND reward_claim_token = \\?[\\s\\S]*AND completed_at IS NULL/,
+    /reward_state = 'claiming' AND reward_claim_token = \?[\\s\\S]*AND completed_at IS NULL/,
     'cleanup must not rewrite a claim whose completion marker appeared after acquisition',
   );
 
@@ -195,7 +195,7 @@ test('completion timestamps are rechecked during reward clear reservation and fa
   assert.ok(allocationStart >= 0 && allocationEnd > allocationStart, 'clear allocation must exist');
   assert.match(
     worker.slice(allocationStart, allocationEnd),
-    /reward_claim_token = \\? AND reward_clear_number IS NULL AND completed_at IS NULL/,
+    /reward_claim_token = \? AND reward_clear_number IS NULL AND completed_at IS NULL/,
     'a completion marker appearing after claim acquisition must block clear reservation',
   );
 
@@ -204,7 +204,7 @@ test('completion timestamps are rechecked during reward clear reservation and fa
   assert.ok(ownsStart >= 0 && ownsEnd > ownsStart, 'settlement ownership guard must exist');
   assert.match(
     worker.slice(ownsStart, ownsEnd),
-    /reward_state = 'claiming' AND reward_claim_token = \\? AND completed_at IS NULL/,
+    /reward_state = 'claiming' AND reward_claim_token = \? AND completed_at IS NULL/,
     'settlement must recheck the same completion marker before any reward write',
   );
 });
