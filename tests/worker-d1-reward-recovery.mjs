@@ -57,16 +57,30 @@ async function stop() {
 }
 async function complete(permitId = 'permit-recovery') {
   let response;
-  try {
-    response = await fetch(origin + '/api/battle/complete', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ playerId: 'qa-player', permitId }),
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch (error) {
-    throw new Error(`POST /api/battle/complete failed for ${permitId}: ${error instanceof Error ? error.message : String(error)}\nWorker exit code: ${worker?.exitCode ?? 'running'}\nCaptured Worker logs:\n${logs}`);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      response = await fetch(origin + '/api/battle/complete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ playerId: 'qa-player', permitId }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      break;
+    } catch (error) {
+      // A local Wrangler socket can close while the Worker remains healthy.
+      // Completion is idempotent, so retry one transport failure only after
+      // confirming the same local Worker is still serving health checks.
+      if (attempt === 0 && worker?.exitCode === null) {
+        await sleep(100);
+        try {
+          const health = await fetch(origin + '/api/health', { signal: AbortSignal.timeout(2_000) });
+          if (health.ok && (await health.json()).ok) continue;
+        } catch {}
+      }
+      throw new Error(`POST /api/battle/complete failed for ${permitId}: ${error instanceof Error ? error.message : String(error)}\\nWorker exit code: ${worker?.exitCode ?? 'running'}\\nCaptured Worker logs:\\n${logs}`);
+    }
   }
+  if (!response) throw new Error(`POST /api/battle/complete produced no response for ${permitId}\\nCaptured Worker logs:\\n${logs}`);
   const raw = await response.text();
   let body;
   try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }

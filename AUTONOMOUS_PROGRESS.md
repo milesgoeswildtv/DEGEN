@@ -1,3 +1,18 @@
+## Latest run — 2026-10-26 (make local Worker transport recovery deterministic)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **Prior exact-head result:** code/test head `8993543b6bb222f958446580afd5fa848b823564`, [CI run 40410161988](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40410161988), passed deterministic tests **94/94** and isolated Worker/D1 reward concurrency. The recovery step failed at existing fixture `permit-completion-after-reservation` with a local `fetch failed` while Wrangler remained alive; captured logs showed no Worker request entry for that call, and the new poisoned-reservation regression was not reached. This matches the earlier local socket-close flake, not a reward assertion failure.
+- **PUSHED / PR #76 OPEN:** `automation/degen/reward-claim-completed-at-guard-v01`; this follow-up changes only the local Worker/D1 test harness and this continuity record. No direct-main write.
+- **Task / files changed:** `tests/worker-d1-reward-recovery.mjs` retries one transport-level completion POST failure only after `/api/health` confirms the same local Worker is still healthy. It never retries an HTTP error, and the completion endpoint is idempotent if the first response was lost after commit. Captured Worker logs remain in the final error. `AUTONOMOUS_PROGRESS.md` records the exact failure and retry policy.
+- **QA:** prior exact-head CI run 40410161988 failed only in the local recovery harness before the new regression ran; deterministic tests and reward-concurrency integration passed. The new harness/continuity head is pending exact-head CI. Do not claim the new poisoned-reservation regression or the current head green until all stages pass.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana`, bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal coverage, cost-aware UI, no monster Mana, no Mana-triggered reversion, and migration `0006_backfill_active_battle_mana.sql` remain intact.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only settlement, action CAS, permit ownership/expiry/event/cycle/encounter validation, audited receipts, normalized stale-lease recovery, transient-D1 recovery, unique clear sequencing, and exactly-once progression/inventory/history remain in place. No reward values or combat balance changed.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. No schema/migration change.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass the release gate for Shield/housing.
+- **One best next task:** verify exact-head CI for the single health-gated transport retry, then confirm the poisoned-clear regression passes before continuing reward hardening.
+
+---
+
 ## Latest run — 2026-10-26 (release unauditable reward clear reservations)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
