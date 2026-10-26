@@ -304,10 +304,10 @@ try {
   assert.equal('battleState' in beforeOpenAction, false);
 
   const afterCloseCompletion = await complete('permit-start-after-close');
-  assert.equal(afterCloseCompletion.status, 409, JSON.stringify(afterCloseCompletion.body));
-  assert.equal(afterCloseCompletion.body.error, 'Battle permit was not issued during its event cycle.');
-  assert.equal('reward' in afterCloseCompletion.body, false);
-  assert.equal('player' in afterCloseCompletion.body, false);
+  assert.equal(afterCloseCompletion.status, 409, JSON.stringify(afterCloseCompletion.data));
+  assert.equal(afterCloseCompletion.data.error, 'Battle permit was not issued during its event cycle.');
+  assert.equal('reward' in afterCloseCompletion.data, false);
+  assert.equal('player' in afterCloseCompletion.data, false);
 
   // A legitimately issued permit remains valid after the cycle closes. Closure is
   // not permit expiry: the Worker must resolve the entered fight and settle its victory.
