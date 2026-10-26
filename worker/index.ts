@@ -686,7 +686,8 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     try {
       await env.DB.prepare(`UPDATE battle_permits SET reward_state = 'pending',
           reward_claim_token = NULL, reward_claimed_at = NULL${resetClear}
-        WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?`)
+        WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?
+          AND completed_at IS NULL`)
         .bind(input.permitId, input.playerId, token).run();
     } catch {
       // Do not hide the original failure. A later retry can reclaim a stale lease.
@@ -724,7 +725,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           SELECT full_reward_clears + 1 FROM world_event_clears
           WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
         ) WHERE id = ? AND player_id = ? AND reward_state = 'claiming'
-          AND reward_claim_token = ? AND reward_clear_number IS NULL
+          AND reward_claim_token = ? AND reward_clear_number IS NULL AND completed_at IS NULL
           AND typeof((SELECT full_reward_clears FROM world_event_clears
             WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?)) = 'integer'
           AND (SELECT full_reward_clears FROM world_event_clears
