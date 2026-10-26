@@ -67,6 +67,18 @@ async function complete(permitId = 'permit-recovery') {
   try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
   return { status: response.status, body };
 }
+async function act(permitId, abilityId = 'slash', expectedTurnCount = 0) {
+  const response = await fetch(origin + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'qa-player', permitId, abilityId, expectedTurnCount }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const raw = await response.text();
+  let body;
+  try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
+  return { status: response.status, body };
+}
 
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, '--file=db/schema.sql']);
@@ -82,7 +94,8 @@ try {
         ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-reservation-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
-        ('qa-cleanup-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+        ('qa-cleanup-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-action-race-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
     INSERT INTO world_event_clears(player_id, event_key, cycle_id, full_reward_clears)
       VALUES ('qa-player', 'underpass', 'qa-legacy-cycle', 3);
     INSERT INTO battle_permits(
@@ -134,6 +147,10 @@ try {
       (
         'permit-cleanup-failure', 'qa-player', 'underpass', 'qa-cleanup-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-action-complete-race', 'qa-player', 'underpass', 'qa-action-race-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 12, 1, 'active', 0, 'pending', NULL, NULL
       );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
@@ -715,9 +732,100 @@ try {
     WHERE id = 'permit-legacy-recovery:victory'`)[0]?.n, 1);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-legacy-cycle'`)[0]?.full_reward_clears, 4);
+
+  // Completion must never manufacture a victory from permit possession. First
+  // prove an active encounter cannot reserve a clear or mutate progression.
+  const beforeActionRaceCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const beforeActionRaceInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const beforeActionRace = sql(`SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count,
+      reward_state, reward_clear_number FROM battle_permits WHERE id = 'permit-action-complete-race'`);
+  assert.deepEqual(beforeActionRace, [{
+    player_hp: 90, player_mana: 12, enemy_hp: 1, battle_status: 'active', turn_count: 0,
+    reward_state: 'pending', reward_clear_number: null,
+  }]);
+  const prematureCompletion = await complete('permit-action-complete-race');
+  assert.equal(prematureCompletion.status, 409);
+  assert.equal('reward' in (prematureCompletion.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count,
+      reward_state, reward_clear_number FROM battle_permits WHERE id = 'permit-action-complete-race'`), beforeActionRace);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), beforeActionRaceCharacter);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-action-complete-race:victory'`)[0]?.n, 0);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-action-race-cycle'`)[0]?.full_reward_clears ?? 0, 0);
+
+  // Race the actual killing action against completion. Either completion sees
+  // the still-active battle and conflicts, or it sees the committed victory and
+  // settles it. In both cases, the retry must converge on exactly one receipt.
+  const [actionRace, completionRace] = await Promise.all([
+    act('permit-action-complete-race', 'slash', 0),
+    complete('permit-action-complete-race'),
+  ]);
+  assert.equal(actionRace.status, 200, JSON.stringify(actionRace.body));
+  assert.equal(actionRace.body?.status, 'victory');
+  assert.equal(actionRace.body?.playerHp, 90, 'a killing blow does not trigger a monster retaliation');
+  assert.equal(actionRace.body?.playerMana, 12, 'zero-cost Slash does not consume Mana');
+  assert.equal(actionRace.body?.enemyHp, 0);
+  assert.equal(actionRace.body?.turnCount, 1);
+  assert.ok(completionRace.status === 200 || completionRace.status === 409,
+    JSON.stringify(completionRace));
+  if (completionRace.status === 200) assert.ok(completionRace.body?.reward);
+  else assert.equal('reward' in (completionRace.body ?? {}), false);
+
+  const actionRaceRetry = await complete('permit-action-complete-race');
+  assert.equal(actionRaceRetry.status, 200, JSON.stringify(actionRaceRetry.body));
+  const actionRaceReward = actionRaceRetry.body.reward;
+  assert.ok(actionRaceReward);
+  assert.equal(actionRaceReward.tier, 'full');
+  const actionRacePermit = sql(`SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count,
+      reward_state, reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-action-complete-race'`);
+  assert.deepEqual(actionRacePermit, [{
+    player_hp: 90, player_mana: 12, enemy_hp: 0, battle_status: 'victory', turn_count: 1,
+    reward_state: 'awarded', reward_clear_number: 1, reward_xp: actionRaceReward.xp,
+    reward_currency: actionRaceReward.currency, reward_tier: 'full',
+    completed_at: actionRacePermit[0]?.completed_at,
+  }]);
+  assert.ok(actionRacePermit[0]?.completed_at);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-action-race-cycle'`)[0]?.full_reward_clears, 1);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-action-complete-race:victory'`)[0]?.n, 1);
+  const afterActionRaceCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  assert.equal(afterActionRaceCharacter[0]?.currency,
+    beforeActionRaceCharacter[0].currency + actionRaceReward.currency);
+  const afterActionRaceInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const scrapBeforeActionRace = beforeActionRaceInventory.find(row => row.item_key === 'underpass-scrap' && row.item_type === 'item')?.quantity ?? 0;
+  const scrapAfterActionRace = afterActionRaceInventory.find(row => row.item_key === 'underpass-scrap' && row.item_type === 'item')?.quantity ?? 0;
+  assert.equal(scrapAfterActionRace, scrapBeforeActionRace + 1,
+    'the action/completion race applies one scrap reward');
+  assert.equal(afterActionRaceInventory.filter(row => row.item_key === 'tunnel-trophy' && row.item_type === 'furniture').length, 1,
+    'the full-clear trophy remains unique');
+  const replayAction = await act('permit-action-complete-race', 'slash', 0);
+  assert.equal(replayAction.status, 409, 'a replayed action cannot apply damage or advance the terminal turn');
+  assert.deepEqual(sql(`SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count
+    FROM battle_permits WHERE id = 'permit-action-complete-race'`), [{
+    player_hp: 90, player_mana: 12, enemy_hp: 0, battle_status: 'victory', turn_count: 1,
+  }]);
+  const actionRaceReplay = await complete('permit-action-complete-race');
+  assert.equal(actionRaceReplay.status, 200);
+  assert.deepEqual(actionRaceReplay.body.reward, actionRaceReward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), afterActionRaceCharacter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), afterActionRaceInventory);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-action-complete-race:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-action-race-cycle'`)[0]?.full_reward_clears, 1);
   await stop();
 
-  console.log('PASS local Worker/D1 normal and legacy reward recovery, live/stale claim leases, concurrent stale-lease takeover, expired victory settlement, stable receipts, and exactly-once rewards');
+  console.log('PASS local Worker/D1 reward recovery, stale/fresh claim races, premature completion rejection, action/completion concurrency, terminal action replay rejection, and exactly-once rewards');
 } finally {
   await stop();
   rmSync(scratch, { recursive: true, force: true });
