@@ -967,6 +967,16 @@ try {
     'forged enemyHp=1 must not initialize the server-owned encounter');
   assert.equal(started.initialState.turnCount, 0, 'forged turnCount=999 must be ignored');
   assert.equal(started.initialState.status, 'active', 'forged victory status must be ignored');
+  const issuedTimes = queryRows(`SELECT started_at, expires_at FROM battle_permits WHERE id='${started.permitId}'`);
+  assert.equal(issuedTimes.length, 1);
+  assert.equal(started.expiresAt, issuedTimes[0].expires_at,
+    'the returned expiry must be the same D1-authoritative timestamp that was persisted');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='${started.permitId}'
+      AND julianday(started_at) <= julianday('now')
+      AND julianday(expires_at) > julianday('now')
+      AND ABS((julianday(expires_at) - julianday(started_at)) * 1440 - 20) < 0.001`), 1,
+    'D1 must issue a non-future start and an expiry exactly 20 minutes after that start');
   assertPersistedPermitState(started.permitId, started.initialState);
 
   const firstActionResponse = await fetch(base + '/api/battle/action', {
