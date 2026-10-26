@@ -1,3 +1,18 @@
+## Latest run — 2026-10-26 (issue battle permits from D1's clock)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **PUSHED / PR #75 OPEN:** `automation/degen/action-permit-event-guard-v02`; implementation commit `7ae0cb8cb052cb11c7128eb13db79b65b9eb835c`, regression-test commit `c0c47ffd71398aa775075590e2056f9f035da4dc`. No direct-main write.
+- **Task / files changed:** `worker/index.ts` and `tests/worker-d1-concurrency.mjs`. Battle start now generates `started_at` and `expires_at` from D1's stable `now` within the same INSERT statement and returns the persisted D1 expiry. This removes a Worker/D1 clock-skew path where the start endpoint could issue a permit that the server's own future-start chronology guard immediately rejects.
+- **Regression coverage:** the isolated local Worker/D1 start test verifies persisted `started_at` is not in D1's future, `expires_at` remains future, the persisted duration is 20 minutes within sub-millisecond SQL tolerance, and the API expiry exactly matches the stored value. Client-forged combat fields remain ignored.
+- **QA:** new code/test head `c0c47ffd71398aa775075590e2056f9f035da4dc` awaits its exact-head CI; no pass is claimed yet. The prior continuity head `ff74cbf7c0de30b2615f17d62f645bebb26717e2` passed all 13 CI workflow steps in [run 40371408509](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40371408509), including deterministic tests, isolated Worker/D1 concurrency and reward recovery, Underpass cycle/rollover races, defeat atomicity, production build, Chromium mobile battle vertical slice, and Worker validation. No local-shell run is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql`.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only settlement, action CAS, permit ownership/expiry/event/cycle/encounter chronology, audited receipts, stale-lease recovery, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, full/reduced tiers, and shared level-up math remain in place. The change does not alter rewards or combat balance.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. Test uses isolated local Wrangler D1 only; no production D1 operation or Worker deployment.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Keep auth-gated Shield/housing work unmerged and unreleased.
+- **One best next task:** verify exact-head CI for the D1-clock permit-start fix; if green, keep PR #75 review-ready and continue only with a distinct uncovered battle-authority invariant.
+
+---
+
 ## Latest run — 2026-10-26 (malformed permit expiry fails closed)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
