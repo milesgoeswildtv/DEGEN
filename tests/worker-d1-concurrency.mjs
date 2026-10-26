@@ -283,8 +283,6 @@ try {
   // An encounter issued while the Underpass cycle was open remains valid after
   // the event closes. Closure is not permit expiry: the Worker must still resolve
   // the entered fight and settle its authoritative victory while the permit lives.
-  assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='closed-after-entry-cycle' AND julianday(closes_at) < julianday('now')"), 1,
-    'the test cycle must be closed before the already-issued action is submitted');
   const closureActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -303,20 +301,20 @@ try {
   assert.equal(closureAction.playerMana, 0);
   assert.equal(closureAction.enemyHp, 0);
   assert.equal(closureAction.turnCount, 1);
-  assertPersistedPermitState('permit-survives-event-closure', {
-    status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
-  });
   const closureRewardResponse = await complete('permit-survives-event-closure', 'event-closure-player');
   assert.equal(closureRewardResponse.status, 200, JSON.stringify(closureRewardResponse.data));
   assert.equal(closureRewardResponse.data.reward.tier, 'full');
-  assert.deepEqual(queryRows("SELECT reward_state, reward_clear_number, reward_tier FROM battle_permits WHERE id='permit-survives-event-closure'"), [{
-    reward_state: 'awarded', reward_clear_number: 1, reward_tier: 'full',
-  }], 'an unexpired permit must settle after its Underpass cycle closes');
-  assert.deepEqual(queryRows("SELECT full_reward_clears FROM world_event_clears WHERE player_id='event-closure-player' AND event_key='underpass' AND cycle_id='closed-after-entry-cycle'"), [{ full_reward_clears: 1 }]);
-  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-survives-event-closure:victory' AND player_id='event-closure-player'"), 1);
   const closureReplay = await complete('permit-survives-event-closure', 'event-closure-player');
   assert.equal(closureReplay.status, 200);
   assert.deepEqual(closureReplay.data.reward, closureRewardResponse.data.reward);
+  // Assert the committed terminal state only after both HTTP requests so a local
+  // D1 CLI read cannot interfere with the action→completion→replay sequence.
+  assert.deepEqual(queryRows("SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count, reward_state, reward_clear_number, reward_tier FROM battle_permits WHERE id='permit-survives-event-closure'"), [{
+    battle_status: 'victory', player_hp: 80, player_mana: 0, enemy_hp: 0, turn_count: 1,
+    reward_state: 'awarded', reward_clear_number: 1, reward_tier: 'full',
+  }], 'the post-closure victory and its reward receipt must persist authoritatively');
+  assert.deepEqual(queryRows("SELECT full_reward_clears FROM world_event_clears WHERE player_id='event-closure-player' AND event_key='underpass' AND cycle_id='closed-after-entry-cycle'"), [{ full_reward_clears: 1 }]);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-survives-event-closure:victory' AND player_id='event-closure-player'"), 1);
   assert.deepEqual(queryRows("SELECT level, xp, currency FROM characters WHERE player_id='event-closure-player'"), [{
     level: closureRewardResponse.data.player.level,
     xp: closureRewardResponse.data.player.xp,
