@@ -236,3 +236,23 @@ test('an invalid pre-reserved clear number is released so it cannot block later 
   assert.doesNotMatch(auditFailure, /hadReservedClearNumber/,
     'whether the reservation pre-existed the current attempt must not preserve an unauditable sequence number');
 });
+
+test('a valid claim repairs stale unawarded reservations above the committed clear counter before allocation', () => {
+  const batchStart = worker.indexOf('if (claim.reward_clear_number === null) {');
+  const batchEnd = worker.indexOf('const owned = await env.DB.prepare', batchStart);
+  assert.ok(batchStart >= 0 && batchEnd > batchStart, 'clear reservation must use an ordered D1 batch');
+  const batch = worker.slice(batchStart, batchEnd);
+  const cleanupStart = batch.indexOf("UPDATE battle_permits SET reward_state = 'pending'");
+  const allocationStart = batch.indexOf('UPDATE battle_permits SET reward_clear_number = (');
+  assert.ok(cleanupStart >= 0 && allocationStart > cleanupStart,
+    'stale invalid reservations must be cleaned before a new sequence is allocated');
+  const cleanup = batch.slice(cleanupStart, allocationStart);
+  assert.match(cleanup, /reward_clear_number > \(SELECT full_reward_clears FROM world_event_clears/,
+    'cleanup is limited to reservations above the committed cycle counter');
+  assert.match(cleanup, /reward_xp IS NULL AND reward_currency IS NULL[\s\S]*reward_tier IS NULL AND reward_level IS NULL AND reward_remaining_xp IS NULL/,
+    'cleanup must not erase any reservation with a partial or completed reward receipt');
+  assert.match(cleanup, /reward_state = 'pending' OR \(reward_state = 'claiming'[\s\S]*strftime\('%Y-%m-%d %H:%M:%S', reward_claimed_at\) = reward_claimed_at[\s\S]*julianday\(reward_claimed_at\) < julianday\('now', '-60 seconds'\)/,
+    'only pending reservations or normalized stale leases may be reset');
+  assert.match(cleanup, /id <> \?/,
+    'the current claim must not invalidate its own reservation');
+});
