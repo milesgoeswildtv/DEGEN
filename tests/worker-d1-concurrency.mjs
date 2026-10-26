@@ -255,9 +255,14 @@ try {
       "WHEN 'permit-start-before-open' THEN datetime('now','-20 minutes') " +
       "WHEN 'permit-start-after-close' THEN datetime('now','-5 minutes') END " +
       "WHERE id IN ('permit-start-before-open','permit-start-after-close')"]);
-  // Close the cycle only after the issued permit is seeded, but before starting
-  // the live Worker. Opening a second Wrangler D1 CLI against the same persisted
-  // SQLite store while Miniflare is serving requests can drop the Worker socket.
+  // Model a permit issued five minutes before the cycle's scheduled close.
+  // The close time is moved into the past for a fast deterministic test, but must
+  // remain later than started_at or this would simulate a retroactively invalid permit.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET started_at=datetime('now','-5 minutes') WHERE id='permit-survives-event-closure'"]);
+  // Close the cycle after that persisted entry time, before starting the Worker.
+  // Opening a second Wrangler D1 CLI against the same persisted SQLite store while
+  // Miniflare is serving requests can drop the Worker socket.
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='closed-after-entry-cycle'"]);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='closed-after-entry-cycle' AND julianday(closes_at) < julianday('now')"), 1,
