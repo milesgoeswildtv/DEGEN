@@ -1,3 +1,17 @@
+## Latest run — 2026-10-26 (inclusive Underpass opening boundary)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **PUSHED / PR #75 OPEN:** continuing `automation/degen/action-permit-event-guard-v02`; implementation/test commit `5294bcec1a561da795ef1c095b925e6777552ba8`. No direct-main write.
+- **Task / file changed:** `tests/worker-d1-concurrency.mjs`. Added an isolated player and active permit whose persisted `started_at` equals the referenced cycle's `opens_at` exactly. The real Worker/D1 action must accept the lower-bound equality, apply one ordinary turn, and preserve authoritative HP/Mana/enemy HP/turn count. A forged completion while the encounter remains active must return 409 without a reward/player payload. Final D1 snapshots after stopping the local Worker verify the permit remains active and no progression, inventory, clear reservation, or battle-history row is created.
+- **QA:** exact-head CI run `40354338423` was in progress for predecessor `a01d5357c9578bdde6e954edc94bbee95370baf8` when this test was added; this new commit requires its own complete workflow. Do not claim the new head green until verified. The previous run `40352944181` failed on a fixture that reused a player later changed by unrelated reward tests; `a01d5357` isolated that player, and this commit adds a separate boundary case. No local-shell execution, production D1 operation, merge, or branch deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main: authoritative Degen-only `maxMana` / bespoke `manaCost`, persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql`.
+- **Battle authority / reward idempotency:** PR #75 validates permit event/cycle/encounter/start-window chronology on action, terminal recovery, CAS update, completion, and receipt replay while preserving valid unexpired fights after event closure. Worker-resolved victory, action CAS, audited receipts, stale-lease recovery, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, full/reduced reward tiers, and shared level-up math remain intact.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. This is isolated local Wrangler D1 coverage only.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a policy for unverified legacy identity collisions. Do not bypass that release gate for Shield/housing.
+- **One best next task:** verify exact-head CI for this inclusive-open regression; if green, leave PR #75 review-ready and proceed to the next uncovered battle-authority invariant without duplicating Mana or bypassing platform-auth approval.
+
+---
+
 ## Latest run — 2026-10-26 (fail closed on malformed Underpass cycle timestamps)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
