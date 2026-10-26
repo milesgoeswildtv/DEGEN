@@ -207,12 +207,12 @@ test('completion timestamps are rechecked during reward clear reservation and fa
   assert.ok(counterStart >= 0, 'the cycle clear counter update must exist in the reservation batch');
   assert.match(
     reservationBatch.slice(counterStart),
-    /reward_state = 'claiming' AND reward_claim_token = \\? AND completed_at IS NULL/,
+    /reward_state = 'claiming' AND reward_claim_token = \? AND completed_at IS NULL/,
     'the cycle counter may advance only while the same incomplete claim still owns the reservation',
   );
   assert.match(
     reservationBatch,
-    /UPDATE battle_permits SET reward_clear_number = NULL[\\s\\S]*completed_at IS NOT NULL[\\s\\S]*reward_tier IS NULL/,
+    /UPDATE battle_permits SET reward_clear_number = NULL[\s\S]*completed_at IS NOT NULL[\s\S]*reward_tier IS NULL/,
     'a completion marker appearing after assignment must release the unawarded clear number',
   );
 
