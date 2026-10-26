@@ -278,6 +278,52 @@ try {
   }
   assert.ok(ready, 'Worker did not start: ' + logs);
 
+  // Run the post-closure permit check while the local Worker is fresh, before the
+  // long sequence of local D1 fault-injection probes that can close its socket.
+  // An encounter issued while the Underpass cycle was open remains valid after
+  // the event closes. Closure is not permit expiry: the Worker must still resolve
+  // the entered fight and settle its authoritative victory while the permit lives.
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='closed-after-entry-cycle' AND julianday(closes_at) < julianday('now')"), 1,
+    'the test cycle must be closed before the already-issued action is submitted');
+  const closureActionResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'event-closure-player',
+      permitId: 'permit-survives-event-closure',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const closureAction = await closureActionResponse.json();
+  assert.equal(closureActionResponse.status, 200, JSON.stringify(closureAction));
+  assert.equal(closureAction.status, 'victory');
+  assert.equal(closureAction.playerHp, 80);
+  assert.equal(closureAction.playerMana, 0);
+  assert.equal(closureAction.enemyHp, 0);
+  assert.equal(closureAction.turnCount, 1);
+  assertPersistedPermitState('permit-survives-event-closure', {
+    status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
+  });
+  const closureRewardResponse = await complete('permit-survives-event-closure', 'event-closure-player');
+  assert.equal(closureRewardResponse.status, 200, JSON.stringify(closureRewardResponse.data));
+  assert.equal(closureRewardResponse.data.reward.tier, 'full');
+  assert.deepEqual(queryRows("SELECT reward_state, reward_clear_number, reward_tier FROM battle_permits WHERE id='permit-survives-event-closure'"), [{
+    reward_state: 'awarded', reward_clear_number: 1, reward_tier: 'full',
+  }], 'an unexpired permit must settle after its Underpass cycle closes');
+  assert.deepEqual(queryRows("SELECT full_reward_clears FROM world_event_clears WHERE player_id='event-closure-player' AND event_key='underpass' AND cycle_id='closed-after-entry-cycle'"), [{ full_reward_clears: 1 }]);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-survives-event-closure:victory' AND player_id='event-closure-player'"), 1);
+  const closureReplay = await complete('permit-survives-event-closure', 'event-closure-player');
+  assert.equal(closureReplay.status, 200);
+  assert.deepEqual(closureReplay.data.reward, closureRewardResponse.data.reward);
+  assert.deepEqual(queryRows("SELECT level, xp, currency FROM characters WHERE player_id='event-closure-player'"), [{
+    level: closureRewardResponse.data.player.level,
+    xp: closureRewardResponse.data.player.xp,
+    currency: closureRewardResponse.data.player.currency,
+  }], 'replaying a post-closure receipt must not duplicate progression');
+
+
   // A valid action without the turn precondition is rejected before any combat mutation.
   const missingTurnPreconditionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
@@ -1874,48 +1920,7 @@ try {
     WHERE id LIKE 'invalid-insert-%'`), 0,
     'invalid insert attempts must not create inventory rows');
 
-  // An encounter issued while the Underpass cycle was open remains valid after
-  // the event closes. Closure is not permit expiry: the Worker must still resolve
-  // the entered fight and settle its authoritative victory while the permit lives.
-  assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='closed-after-entry-cycle' AND julianday(closes_at) < julianday('now')"), 1,
-    'the test cycle must be closed before the already-issued action is submitted');
-  const closureActionResponse = await fetch(base + '/api/battle/action', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      playerId: 'event-closure-player',
-      permitId: 'permit-survives-event-closure',
-      abilityId: 'slash',
-      expectedTurnCount: 0,
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  const closureAction = await closureActionResponse.json();
-  assert.equal(closureActionResponse.status, 200, JSON.stringify(closureAction));
-  assert.equal(closureAction.status, 'victory');
-  assert.equal(closureAction.playerHp, 80);
-  assert.equal(closureAction.playerMana, 0);
-  assert.equal(closureAction.enemyHp, 0);
-  assert.equal(closureAction.turnCount, 1);
-  assertPersistedPermitState('permit-survives-event-closure', {
-    status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
-  });
-  const closureRewardResponse = await complete('permit-survives-event-closure', 'event-closure-player');
-  assert.equal(closureRewardResponse.status, 200, JSON.stringify(closureRewardResponse.data));
-  assert.equal(closureRewardResponse.data.reward.tier, 'full');
-  assert.deepEqual(queryRows("SELECT reward_state, reward_clear_number, reward_tier FROM battle_permits WHERE id='permit-survives-event-closure'"), [{
-    reward_state: 'awarded', reward_clear_number: 1, reward_tier: 'full',
-  }], 'an unexpired permit must settle after its Underpass cycle closes');
-  assert.deepEqual(queryRows("SELECT full_reward_clears FROM world_event_clears WHERE player_id='event-closure-player' AND event_key='underpass' AND cycle_id='closed-after-entry-cycle'"), [{ full_reward_clears: 1 }]);
-  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-survives-event-closure:victory' AND player_id='event-closure-player'"), 1);
-  const closureReplay = await complete('permit-survives-event-closure', 'event-closure-player');
-  assert.equal(closureReplay.status, 200);
-  assert.deepEqual(closureReplay.data.reward, closureRewardResponse.data.reward);
-  assert.deepEqual(queryRows("SELECT level, xp, currency FROM characters WHERE player_id='event-closure-player'"), [{
-    level: closureRewardResponse.data.player.level,
-    xp: closureRewardResponse.data.player.xp,
-    currency: closureRewardResponse.data.player.currency,
-  }], 'replaying a post-closure receipt must not duplicate progression');
+
 
   console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, permit survives event closure');
 } finally {
