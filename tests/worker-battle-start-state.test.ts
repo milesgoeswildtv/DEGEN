@@ -24,6 +24,7 @@ function makeEnv(
   permitInsertAllowed = true,
 ) {
   const inserts: unknown[][] = [];
+  const persistedExpiry = new Date(Date.now() + 20 * 60_000).toISOString();
   const db = {
     prepare(sql: string) {
       return {
@@ -36,12 +37,15 @@ function makeEnv(
             first: async () => {
               if (sql.includes('INSERT INTO battle_permits')) {
                 assert.match(sql, /WHERE EXISTS\s*\(\s*SELECT 1 FROM world_event_cycles/);
-                assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\(\?\)/);
-                assert.match(sql, /julianday\(\?\)\s*<\s*julianday\(closes_at\)/);
+                assert.match(sql, /strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)/);
+                assert.match(sql, /strftime\('%Y-%m-%dT%H:%M:%fZ', 'now', '\+20 minutes'\)/);
+                assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)/);
+                assert.match(sql, /julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)\s*<\s*julianday\(closes_at\)/);
                 assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
+                assert.match(sql, /RETURNING id, expires_at/);
                 if (!permitInsertAllowed) return null;
                 inserts.push(params);
-                return { id: params[0] };
+                return { id: params[0], expires_at: persistedExpiry };
               }
               if (sql.includes('FROM world_event_cycles')) return cycle;
               throw new Error('Unexpected bound Worker query: ' + sql);
@@ -86,6 +90,7 @@ test('battle start ignores forged client combat state and returns exactly the De
   assert.equal(response.status, 200);
   const result = await response.json() as {
     permitId: string;
+    expiresAt: string;
     initialState: {
       permitId: string; status: string; playerHp: number; playerMana: number;
       enemyHp: number; turnCount: number;
@@ -102,12 +107,11 @@ test('battle start ignores forged client combat state and returns exactly the De
     turnCount: 0,
   });
   assert.equal(inserts.length, 1);
-  const [, playerId, cycleId, encounterKey, startedAt, , playerHp, playerMana, enemyHp, cycleGuardId, opensCheck, closesCheck] = inserts[0] as unknown[];
+  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp, cycleGuardId] = inserts[0] as unknown[];
+  assert.equal(permitId, result.permitId);
   assert.equal(cycleGuardId, cycle.id);
-  assert.equal(startedAt, opensCheck);
-  assert.equal(startedAt, closesCheck);
-  assert.ok(Date.parse(cycle.opens_at) <= Date.parse(startedAt));
-  assert.ok(Date.parse(startedAt) < Date.parse(cycle.closes_at));
+  assert.equal(inserts[0]?.length, 8, 'start and expiry timestamps must come from D1, not Worker-bound Date.now values');
+  assert.equal(result.expiresAt, persistedExpiry, 'the API must return the expiry returned from the persisted D1 row');
   assert.deepEqual(
     [playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp],
     ['player-1', cycle.id, TUNNEL_MAW.id, result.initialState.playerHp,
