@@ -728,8 +728,21 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           AND encounter_key = ? AND id <> ? AND reward_clear_number IS NOT NULL
           AND completed_at IS NULL AND reward_xp IS NULL AND reward_currency IS NULL
           AND reward_tier IS NULL AND reward_level IS NULL AND reward_remaining_xp IS NULL
+          AND typeof((SELECT full_reward_clears FROM world_event_clears
+            WHERE player_id = battle_permits.player_id AND event_key = 'underpass'
+              AND cycle_id = battle_permits.cycle_id)) = 'integer'
+          AND (SELECT full_reward_clears FROM world_event_clears
+            WHERE player_id = battle_permits.player_id AND event_key = 'underpass'
+              AND cycle_id = battle_permits.cycle_id) BETWEEN 0 AND \${Number.MAX_SAFE_INTEGER}
           AND reward_clear_number > (SELECT full_reward_clears FROM world_event_clears
-            WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?)
+            WHERE player_id = battle_permits.player_id AND event_key = 'underpass'
+              AND cycle_id = battle_permits.cycle_id)
+          AND battle_status = 'victory'
+          AND NOT EXISTS (SELECT 1 FROM battle_history
+            WHERE player_id = battle_permits.player_id AND id = battle_permits.id || ':victory')
+          AND NOT EXISTS (SELECT 1 FROM characters
+            WHERE player_id = battle_permits.player_id
+              AND last_reward_claim_token = battle_permits.reward_claim_token)
           AND (reward_state = 'pending' OR (reward_state = 'claiming'
             AND strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at
             AND julianday(reward_claimed_at) < julianday('now', '-60 seconds')))`)
