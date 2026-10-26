@@ -78,6 +78,24 @@ async function assertInvalidActionState(permitId, state) {
   assert.equal('battleState' in data, false, 'invalid persisted state must not be echoed as authoritative');
   assertPersistedPermitState(permitId, state);
 }
+
+async function assertUnsupportedActionPermit(permitId, state) {
+  const response = await fetch(base + '/api/battle/action', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'integration-player', permitId, abilityId: 'slash', expectedTurnCount: 0 }),
+  });
+  const data = await response.json();
+  assert.equal(response.status, 409, `${permitId} must reject an unsupported event or cycle`);
+  assert.equal(data.error, 'Unsupported battle permit.');
+  assert.equal('battleState' in data, false, 'unsupported permits must not expose a combat snapshot');
+  assertPersistedPermitState(permitId, state);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('${permitId}:victory', '${permitId}:defeat')`), 0,
+    'an unsupported permit must not record combat history');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
+    AND reward_state = 'pending' AND reward_clear_number IS NULL AND completed_at IS NULL`), 1,
+    'an unsupported permit must not reserve or claim a reward');
+}
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
@@ -114,6 +132,7 @@ try {
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('unsupported-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('unsupported-event-cycle','unapproved-event',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('uncounted-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('duplicate-receipt-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('counter-lag-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
@@ -139,6 +158,8 @@ try {
       ('permit-unsupported-encounter','integration-player','underpass','integration-cycle','unapproved-monster',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-unsupported-event','integration-player','unapproved-event','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-cycle-mismatch','integration-player','underpass','unsupported-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-active-unsupported-event','integration-player','unapproved-event','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
+      ('permit-active-cycle-mismatch','integration-player','underpass','unsupported-event-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,92,0),
       ('permit-corrupt-awarded-reward','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-without-history','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-awarded-clear-ahead','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
@@ -505,6 +526,12 @@ try {
       `${permitId} must retain its untouched pending claim`);
   }
   await assertInvalidActionState('permit-invalid-defeat-player', { status: 'defeat', playerHp: 1, playerMana: 0, enemyHp: 92, turnCount: 1 });
+  await assertUnsupportedActionPermit('permit-active-unsupported-event', {
+    status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: 0,
+  });
+  await assertUnsupportedActionPermit('permit-active-cycle-mismatch', {
+    status: 'active', playerHp: 80, playerMana: 12, enemyHp: 92, turnCount: 0,
+  });
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM characters
     WHERE player_id = 'integration-player' AND xp = 0 AND currency = 0`), 1,
     'invalid victories must not grant XP or currency');
