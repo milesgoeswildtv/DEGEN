@@ -1,8 +1,8 @@
 ## Latest run — 2026-10-26 (malformed reward-claim lease fails closed)
 
 - **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`.
-- **PUSHED / PR #73 OPEN:** `automation/degen/stale-reward-lease-recovery-v01`; test commit `2979ac82504f1f42643b48feede36be4f0043cd8`. This remains a test-only slice; no Worker runtime, schema, migration, or deployment configuration changed.
-- **New regression:** a victory receipt stuck in `claiming` with a NULL `reward_claimed_at` must fail closed with HTTP 409. The test asserts that the token/state remain unchanged, no clear sequence is reserved, no victory history is written, and player progression/inventory/reward payloads are not mutated or exposed.
+- **PUSHED / PR #73 OPEN:** `automation/degen/stale-reward-lease-recovery-v01`; test commit `53f714d2e0e9487afd4985b3a3baeddfb5170efd`. This remains a test-only slice; no Worker runtime, schema, migration, or deployment configuration changed.
+- **New regression:** a victory receipt stuck in `claiming` with a NULL `reward_claimed_at` must fail closed with HTTP 409. The test asserts that the token/state remain unchanged, no clear sequence is reserved, no victory history is written, and player progression, inventory, and reward/player response payloads are unchanged or absent.
 - **Exact-head CI:** pending for the new code/test commit. Previous code/test head `5e1ad970b4131c78609d53342ef2f278c5751946` passed the full workflow in [CI run 40270845090](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40270845090). Do not treat the new head as green until its own run completes.
 - **Files changed this run:** `tests/worker-d1-reward-recovery.mjs`, `AUTONOMOUS_PROGRESS.md`.
 - **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, authoritative persisted player Mana, rejection without mutation, exact deduction, zero-cost-at-zero, terminal behavior, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql` remain unchanged.
