@@ -41,6 +41,20 @@
 
 ---
 
+## Latest run — 2026-10-26 (fresh reward completion race coverage)
+
+- **Authoritative main SHA:** `193dbc95a3622546140f9a1e204528af7c4326d6`. Checked the original Mana branch and successor branches before selecting this task. `sidekick/degen-mana-foundation-v01` is absent from the current branch list; `automation/degen/active-permit-mana-invariant-v01` is 26 commits ahead / 28 behind and carries stale divergent history. Main already contains the complete Degen-only Mana runtime, Worker authority, migration 0006, cost-aware UI, and active-permit Mana validation. No duplicate Mana implementation was created.
+- **PUSHED / PR #73 OPEN:** `automation/degen/stale-reward-lease-recovery-v01`. Added a fresh-pending-victory completion race in `tests/worker-d1-reward-recovery.mjs` and a fixture for that race. Two simultaneous completion requests must converge on one stored receipt, one clear number, one history row, one progression/currency award, and one inventory application; a subsequent replay must return the same receipt without further mutation. This complements the existing stale-lease takeover race, which begins in `claiming`, rather than `pending`.
+- **Files changed this run:** `tests/worker-d1-reward-recovery.mjs`, `AUTONOMOUS_PROGRESS.md`. Test commit: `e5e34bf96ac4c209056cfa93f2c090ee2df372fb`. No Worker runtime, game balance, schema, migration, deployment configuration, or production data changed.
+- **QA status:** Exact-head CI for the new test commit has not yet completed. Previous PR #73 head `db51bfbdbe758211e40514d7df20ff31de250bf3` passed all 13 workflow steps in [run 40273091709](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40273091709), including deterministic tests, isolated Worker/D1 concurrency/recovery, cycle/rollover races, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker dry-run. That earlier run does **not** validate this new test. No local-shell execution is claimed.
+- **Mana:** COMPLETE / MERGED on main. `maxMana`, bespoke `manaCost`, persisted authoritative `player_mana`, no-mutation unaffordable rejection, exact deduction, zero-cost at zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration 0006 remain the baseline.
+- **Battle authority / reward idempotency:** Worker-resolved victory-only settlement, action compare-and-swap, event/cycle/encounter checks, audited reward receipts, stale-lease recovery, atomic settlement, stable clear sequencing, full/reduced reward tiers, and shared level-up math remain in place. PR #72 exact head `97c336c49d697661043cc448ebac6fc702f5a7f7` passed all 13 CI steps in [run 40281738558](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40281738558).
+- **D1 / deployment assumptions:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; CI's deployment workflow applies schema, tracked migrations, then Worker. No remote D1 operation or deployment occurred in this run.
+- **Miles blocker:** Platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions. Do not bypass this gate.
+- **One best next task:** verify exact-head CI for `e5e34bf96ac4c209056cfa93f2c090ee2df372fb`; if it passes, continue with the next uncovered reward-recovery invariant, not Shield or balance work.
+
+---
+
 ## Latest run — 2026-10-25 (isolate inventory INSERT-trigger probes from live Worker)
 
 - **Authoritative main SHA:** `230c02f3acf33c877b5ab591bb7bb0e899fb7515`. Rechecked the original Mana branch and all Mana-named successors first. Current main contains the complete Degen-only Mana runtime, authoritative Worker state, cost-aware UI, matching shared combat types/rules, terminal/expiry tests, and tracked migration 0006; the divergent branches are stale history/tests, not an unfinished unique runtime slice.
