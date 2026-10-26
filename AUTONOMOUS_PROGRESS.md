@@ -1,3 +1,18 @@
+## Latest run — 2026-10-26 (correct Worker/D1 race fixture collision)
+
+- **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
+- **PUSHED / PR #76 OPEN:** `automation/degen/reward-claim-completed-at-guard-v01`; runtime guard commit `58a24cb305f80e60bc662e949937f27e90f0d571`, regression commit `1aca11d7b481e8f4af50d05bdf9b2c6ec3767413`, latest fixture-name correction `4c224656391c921dedc6e3e6eae21b6abd8511c2`. No direct-main write.
+- **Task / files:** `worker/index.ts`, `tests/worker-d1-reward-recovery.mjs`, `tests/mana-expiry-precision.test.ts`, `AUTONOMOUS_PROGRESS.md`. Recheck `completed_at IS NULL` before clear reservation and token-scoped failed-claim cleanup; keep settlement ownership guarded by the same condition.
+- **Regression:** isolated local Worker/D1 trigger injects a completion timestamp immediately after claim acquisition. Expected behavior is 409 without reward/player payload, progression, inventory, victory history, clear number, or cycle-counter increment; preserve the inconsistent claim for audit.
+- **QA:** deterministic tests passed in CI run [40398240370](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40398240370), and the Worker/D1 concurrency step passed. The reward-recovery step then failed before executing assertions due to a test-only top-level name collision (`Identifier 'completionRace' has already been declared`). Renamed only the new fixture variables in `4c224656391c921dedc6e3e6eae21b6abd8511c2`. Exact-head CI for this corrected code and the next continuity head is pending; no full-pass claim. No local-shell run, production D1 operation, merge, or Worker deployment.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, unaffordable rejection without mutation, exact deduction, zero-cost use at zero, terminal handling, cost-aware UI, no monster Mana, no Mana-triggered reversion, migration `0006_backfill_active_battle_mana.sql`.
+- **Battle authority / reward idempotency:** server-resolved victory-only settlement, action CAS, permit ownership/expiry/event/cycle/encounter guards, audited receipts, normalized stale-lease recovery, transient-D1 recovery, unique clear sequencing, exactly-once progression/inventory/history, full/reduced tiers, shared level-up math. No reward values or combat balance changed.
+- **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. No schema/migration or deployment-config changes.
+- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Keep auth-gated Shield/housing work unreleased.
+- **One best next task:** verify exact-head CI for the corrected Worker/D1 fixture, then continue only if the race regression is green.
+
+---
+
 ## Latest run — 2026-10-26 (guard completion timestamp during in-flight reward claim)
 
 - **Authoritative main SHA:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7`.
