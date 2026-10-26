@@ -747,9 +747,20 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId),
       env.DB.prepare(`UPDATE world_event_clears SET full_reward_clears = (
           SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?
+            AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL
         ) WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
-          AND full_reward_clears < (SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?)`)
-        .bind(input.permitId, input.playerId, input.playerId, claim.cycle_id, input.permitId, input.playerId),
+          AND full_reward_clears < (SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?
+            AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL)`)
+        .bind(input.permitId, input.playerId, token, input.playerId, claim.cycle_id,
+          input.permitId, input.playerId, token),
+      // If the completion marker appeared after clear-number assignment, undo only
+      // this token's still-unawarded reservation. The cycle counter above is guarded
+      // by the same incomplete-claim predicate, so the sequence remains untouched.
+      env.DB.prepare(`UPDATE battle_permits SET reward_clear_number = NULL
+        WHERE id = ? AND player_id = ? AND reward_state = 'claiming' AND reward_claim_token = ?
+          AND completed_at IS NOT NULL AND reward_xp IS NULL AND reward_currency IS NULL
+          AND reward_tier IS NULL AND reward_level IS NULL AND reward_remaining_xp IS NULL`)
+        .bind(input.permitId, input.playerId, token),
     ]);
   }
 
