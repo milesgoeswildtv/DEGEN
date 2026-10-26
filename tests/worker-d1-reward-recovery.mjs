@@ -110,6 +110,11 @@ try {
         'permit-stale-race', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
         'claiming', 'abandoned-race-token', datetime('now', '-2 minutes')
+      ),
+      (
+        'permit-missing-claim-time', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'missing-time-token', NULL
       );
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
@@ -313,6 +318,34 @@ try {
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-stale-race:victory'`)[0]?.n, 1);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 3);
+
+  // A claiming receipt without a lease timestamp is malformed. Fail closed:
+  // do not treat NULL as stale, steal the token, reserve a clear, or grant rewards.
+  const beforeMissingLeaseTimeCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const beforeMissingLeaseTimeClearCount = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0;
+  const missingLeaseTime = await complete('permit-missing-claim-time');
+  assert.equal(missingLeaseTime.status, 409, JSON.stringify(missingLeaseTime.body));
+  assert.equal(missingLeaseTime.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal('reward' in (missingLeaseTime.body ?? {}), false);
+  assert.equal('player' in (missingLeaseTime.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-missing-claim-time'`), [{
+    reward_state: 'claiming',
+    reward_claim_token: 'missing-time-token',
+    reward_claimed_at: null,
+    reward_clear_number: null,
+    completed_at: null,
+  }], 'NULL lease timestamps must not be interpreted as expired leases');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), beforeMissingLeaseTimeCharacter);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0,
+    beforeMissingLeaseTimeClearCount, 'malformed lease must not reserve a reward clear');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-missing-claim-time:victory'`)[0]?.n ?? 0, 0);
   await stop();
 
   // Repeat the transient-failure recovery against a valid pre-Mana victory.
