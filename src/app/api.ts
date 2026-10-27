@@ -221,20 +221,30 @@ export class GameApi {
         throw retryError;
       }
     }
-    if (!permit || permit.permitId !== requestId
+    const resumedExisting = permit?.resumedExisting === true;
+    if (!permit
+      || (!resumedExisting && permit.permitId !== requestId)
+      || (resumedExisting && !isBattleStartRequestId(permit.permitId))
       || typeof permit.permitId !== 'string' || !permit.permitId.trim()
-      || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
+      || permit.eventKey !== 'underpass'
+      || typeof permit.cycleId !== 'string' || !permit.cycleId.trim()
+      || (!resumedExisting && permit.cycleId !== cycleId)
       || permit.encounterKey !== TUNNEL_MAW.id
       || typeof permit.expiresAt !== 'string' || !Number.isFinite(Date.parse(permit.expiresAt))
       || Date.parse(permit.expiresAt) <= Date.now()
+      || (resumedExisting && permit.initialState?.status !== 'active')
       || !isAuthoritativeBattleStartState(permit.initialState, permit.permitId)) {
       // Do not discard the key on a malformed 2xx response: the Worker may
       // have committed the permit, so a later retry must remain idempotent.
       throw new Error('Missing or malformed authoritative battle start state.');
     }
-    // Keep the key until AppController confirms it accepted this permit. If
-    // the account changes while the request is in flight, a later return to the
-    // original account can still recover the committed permit.
+    if (resumedExisting) {
+      // This request ID was not used to issue the returned permit. Clear the
+      // unused current-cycle key only after validating the Worker-owned snapshot.
+      clearPendingBattleStartRequestId(playerId, cycleId);
+    }
+    // For a newly issued permit, keep the key until AppController confirms it
+    // accepted the permit. A resumed permit remains recoverable by player ID.
     return permit;
   }
 
