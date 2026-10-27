@@ -335,6 +335,19 @@ try {
       battle_status: turn === 3 ? 'victory' : 'active',
       turn_count: turn,
     };
+    await until('accessible DOM HUD after authoritative turn ' + turn, () => cdp.evaluate(`(() => {
+      const text = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
+      return text.includes(`Mana ${expected.player_mana} of 12`)
+        && text.includes(`Turn ${turn}.`)
+        && text.includes(turn === 3 ? 'Victory. Verifying rewards.' : 'Choose an action.');
+    })()`));
+    const accessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
+    assert.ok(accessibleHud.includes(`Mana ${expected.player_mana} of 12`),
+      'accessible HUD Mana must follow the Worker result for turn ' + turn);
+    assert.ok(accessibleHud.includes(`Turn ${turn}.`),
+      'accessible HUD turn count must follow the Worker result for turn ' + turn);
+    assert.ok(accessibleHud.includes(turn === 3 ? 'Victory. Verifying rewards.' : 'Choose an action.'),
+      'accessible HUD outcome must follow the authoritative battle state for turn ' + turn);
     const persisted = await until('D1 state for authoritative turn ' + turn, () => {
       const row = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
       return row?.turn_count === turn ? row : null;
@@ -350,13 +363,6 @@ try {
     assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
     assert.ok(hudOrder.manifested > hudOrder.mana,
       'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
-    const accessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
-    assert.ok(accessibleHud.includes(`Mana ${expected.player_mana} of 12`),
-      'accessible HUD Mana must follow the persisted Worker result for turn ' + turn);
-    assert.ok(accessibleHud.includes(`Turn ${turn}.`),
-      'accessible HUD turn count must follow the persisted Worker result for turn ' + turn);
-    assert.ok(accessibleHud.includes(turn === 3 ? 'Victory. Verifying rewards.' : 'Choose an action.'),
-      'accessible HUD outcome must follow the authoritative battle state for turn ' + turn);
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
