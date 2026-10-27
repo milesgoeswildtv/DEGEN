@@ -108,6 +108,7 @@ try {
       ('start-collision-a','Start ID Collision A'),
       ('start-collision-b','Start ID Collision B'),
       ('start-replay-player','Start Replay After Closure QA'),
+      ('restart-after-victory-player','Restart After Victory QA'),
       ('event-closure-player','Event Closure QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
@@ -132,6 +133,7 @@ try {
         ('start-collision-a',1,0,0,'test-degen'),
         ('start-collision-b',1,0,0,'test-degen'),
         ('start-replay-player',1,0,0,'test-degen'),
+        ('restart-after-victory-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
@@ -186,6 +188,7 @@ try {
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
       ('permit-a','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-restart-after-victory','restart-after-victory-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
@@ -974,11 +977,16 @@ try {
     status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
   });
 
+  // This player has one terminal victory and no unrelated active/corrupt fixture permits.
+  // Other integration-player rows intentionally include active/corrupt permits, which
+  // correctly block a new start under the single-active-per-player invariant.
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='restart-after-victory-player' AND battle_status='active' AND completed_at IS NULL AND julianday(expires_at) > julianday('now')"), 0);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-restart-after-victory' AND player_id='restart-after-victory-player' AND battle_status='victory' AND completed_at IS NULL"), 1, 'the restart fixture must contain a server-resolved terminal victory');
   const startResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'restart-after-victory-player',
       eventKey: 'underpass',
       cycleId: 'integration-cycle',
       encounterKey: 'tunnel-maw',
