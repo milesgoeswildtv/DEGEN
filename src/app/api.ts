@@ -43,6 +43,7 @@ export class GameApiError extends Error {
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const BATTLE_ACTION_TIMEOUT_MS = 12_000;
+const BATTLE_COMPLETION_TIMEOUT_MS = 20_000;
 
 export class GameApi {
   readonly enabled: boolean;
@@ -53,6 +54,7 @@ export class GameApi {
     apiBase: string = API_BASE,
     fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     private readonly actionTimeoutMs = BATTLE_ACTION_TIMEOUT_MS,
+    private readonly completionTimeoutMs = BATTLE_COMPLETION_TIMEOUT_MS,
   ) {
     this.apiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
     this.fetcher = fetcher;
@@ -109,18 +111,9 @@ export class GameApi {
       method: 'POST',
       body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
     };
-    const sendAction = async (): Promise<BattleActionResult> => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.actionTimeoutMs);
-      try {
-        return await this.request<BattleActionResult>('/api/battle/action', {
-          ...actionRequest,
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    };
+    const sendAction = () => this.requestWithTimeout<BattleActionResult>(
+      '/api/battle/action', actionRequest, this.actionTimeoutMs,
+    );
     let result: BattleActionResult;
     try {
       result = await sendAction();
@@ -138,10 +131,32 @@ export class GameApi {
 
   async completeUnderpass(playerId: string, permitId: string): Promise<BattleCompletionResult | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<BattleCompletionResult>('/api/battle/complete', {
+    // Completion is idempotent: the Worker returns the existing audited receipt if
+    // the first response was lost after settlement. Bound hangs, then retry once with
+    // the exact same permit request; the client never calculates or grants rewards.
+    const completionRequest: RequestInit = {
       method: 'POST',
       body: JSON.stringify({ playerId, permitId }),
-    });
+    };
+    const sendCompletion = () => this.requestWithTimeout<BattleCompletionResult>(
+      '/api/battle/complete', completionRequest, this.completionTimeoutMs,
+    );
+    try {
+      return await sendCompletion();
+    } catch (error) {
+      if (error instanceof GameApiError && error.status < 500) throw error;
+      return sendCompletion();
+    }
+  }
+
+  private async requestWithTimeout<T>(path: string, init: RequestInit, timeoutMs: number): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await this.request<T>(path, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   private async request<T = void>(path: string, init?: RequestInit): Promise<T> {
