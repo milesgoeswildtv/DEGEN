@@ -148,6 +148,49 @@ const clearPendingBattleStartRequestId = (playerId: string, cycleId: string): vo
   }
 };
 
+const ACTIVE_BATTLE_START_STORAGE_PREFIX = 'degen:active-battle-start:';
+type ActiveBattleStartKey = { cycleId: string; requestId: string };
+const activeBattleStartStorageKey = (playerId: string): string =>
+  `${ACTIVE_BATTLE_START_STORAGE_PREFIX}${encodeURIComponent(playerId)}`;
+
+const getActiveBattleStartKey = (playerId: string): ActiveBattleStartKey | undefined => {
+  try {
+    const raw = globalThis.localStorage.getItem(activeBattleStartStorageKey(playerId));
+    if (raw === null) return undefined;
+    const value = JSON.parse(raw) as Partial<ActiveBattleStartKey>;
+    if (typeof value.cycleId === 'string' && value.cycleId.trim()
+      && isBattleStartRequestId(value.requestId)) {
+      return { cycleId: value.cycleId, requestId: value.requestId };
+    }
+    globalThis.localStorage.removeItem(activeBattleStartStorageKey(playerId));
+  } catch {
+    // Storage can be unavailable in restricted browser contexts.
+  }
+  return undefined;
+};
+
+const saveActiveBattleStartKey = (playerId: string, cycleId: string, requestId: string): void => {
+  try {
+    globalThis.localStorage.setItem(activeBattleStartStorageKey(playerId), JSON.stringify({ cycleId, requestId }));
+  } catch {
+    // The permit remains Worker-owned; local storage only improves reload recovery.
+  }
+};
+
+const clearActiveBattleStartKey = (playerId: string, requestId: string): void => {
+  try {
+    const key = activeBattleStartStorageKey(playerId);
+    const current = globalThis.localStorage.getItem(key);
+    if (current === null) return;
+    const value = JSON.parse(current) as Partial<ActiveBattleStartKey>;
+    if (value.requestId === requestId) globalThis.localStorage.removeItem(key);
+  } catch {
+    // Best-effort cleanup only.
+  }
+};
+
+
+
 
 export class GameApi {
   readonly enabled: boolean;
@@ -189,13 +232,15 @@ export class GameApi {
 
   async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
-    // Reuse a persisted key if both attempts previously lost their response.
-    // A later call (even after reload) can recover the same Worker-owned permit.
-    const requestId = getPendingBattleStartRequestId(playerId, cycleId);
+    // Once a permit is accepted, retain only its ID and original cycle across
+    // reloads/Underpass rollover. The Worker replays that exact owner-scoped row.
+    const activeStart = getActiveBattleStartKey(playerId);
+    const requestCycleId = activeStart?.cycleId ?? cycleId;
+    const requestId = activeStart?.requestId ?? getPendingBattleStartRequestId(playerId, requestCycleId);
     const startRequest: RequestInit = {
       method: 'POST',
       body: JSON.stringify({
-        playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw',
+        playerId, eventKey: 'underpass', cycleId: requestCycleId, encounterKey: 'tunnel-maw',
         requestId,
       }),
     };
@@ -207,7 +252,8 @@ export class GameApi {
       permit = await sendStart();
     } catch (error) {
       if (error instanceof GameApiError && error.status < 500) {
-        clearPendingBattleStartRequestId(playerId, cycleId);
+        clearPendingBattleStartRequestId(playerId, requestCycleId);
+        if (activeStart) clearActiveBattleStartKey(playerId, requestId);
         throw error;
       }
       try {
@@ -216,47 +262,44 @@ export class GameApi {
         // A definitive Worker rejection proves this key cannot recover a live
         // start. Keep it only for uncertain timeout/transport/5xx outcomes.
         if (retryError instanceof GameApiError && retryError.status < 500) {
-          clearPendingBattleStartRequestId(playerId, cycleId);
+          clearPendingBattleStartRequestId(playerId, requestCycleId);
+          if (activeStart) clearActiveBattleStartKey(playerId, requestId);
         }
         throw retryError;
       }
     }
-    const resumedExisting = permit?.resumedExisting === true;
-    if (!permit
-      || (!resumedExisting && permit.permitId !== requestId)
-      || (resumedExisting && !isBattleStartRequestId(permit.permitId))
+    if (!permit || permit.permitId !== requestId
       || typeof permit.permitId !== 'string' || !permit.permitId.trim()
-      || permit.eventKey !== 'underpass'
-      || typeof permit.cycleId !== 'string' || !permit.cycleId.trim()
-      || (!resumedExisting && permit.cycleId !== cycleId)
+      || permit.eventKey !== 'underpass' || permit.cycleId !== requestCycleId
       || permit.encounterKey !== TUNNEL_MAW.id
       || typeof permit.expiresAt !== 'string' || !Number.isFinite(Date.parse(permit.expiresAt))
       || Date.parse(permit.expiresAt) <= Date.now()
-      || (resumedExisting && permit.initialState?.status !== 'active')
       || !isAuthoritativeBattleStartState(permit.initialState, permit.permitId)) {
       // Do not discard the key on a malformed 2xx response: the Worker may
       // have committed the permit, so a later retry must remain idempotent.
       throw new Error('Missing or malformed authoritative battle start state.');
     }
-    if (resumedExisting) {
-      // This request ID was not used to issue the returned permit. Clear the
-      // unused current-cycle key only after validating the Worker-owned snapshot.
-      clearPendingBattleStartRequestId(playerId, cycleId);
-    }
-    // For a newly issued permit, keep the key until AppController confirms it
-    // accepted the permit. A resumed permit remains recoverable by player ID.
+    // Keep a pending key until the controller accepts the permit. The active
+    // key is retained until authoritative reward completion or expiry.
     return permit;
   }
 
   acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void {
     const key = battleStartRequestStorageKey(playerId, cycleId);
     try {
+      const active = getActiveBattleStartKey(playerId);
+      if (active?.requestId === permitId && active.cycleId === cycleId) return;
       if (globalThis.localStorage.getItem(key) === permitId) {
+        saveActiveBattleStartKey(playerId, cycleId, permitId);
         clearPendingBattleStartRequestId(playerId, cycleId);
       }
     } catch {
       // Best-effort acknowledgement only.
     }
+  }
+
+  acknowledgeUnderpassCompletion(playerId: string, permitId: string): void {
+    clearActiveBattleStartKey(playerId, permitId);
   }
 
   async actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<BattleActionResult | undefined> {
