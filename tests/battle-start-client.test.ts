@@ -131,7 +131,7 @@ test('AppController retains the start key when the active player changes during 
   await enterUnderpass.call(controller);
   assert.equal(controller.battlePermit, undefined);
   assert.equal(controller.battlePermitOwnerId, undefined);
-  assert.deepEqual(events, [], 'a foreign player's response must not be attached or acknowledged');
+  assert.deepEqual(events, [], "a foreign player's response must not be attached or acknowledged");
 });
 
 test('battle start request sends no client-owned combat state', async () => {
