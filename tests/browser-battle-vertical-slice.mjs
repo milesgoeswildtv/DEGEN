@@ -153,6 +153,9 @@ try {
       // Simulate a response lost after the local Worker has committed the turn.
       // The app's already-bound fetcher must observe this wrapper before boot.
       const originalFetch = window.fetch.bind(window);
+      window.__degenSimulateLostStartResponse = false;
+      window.__degenLostStartResponses = 0;
+      window.__degenStartRequestIds = [];
       window.__degenSimulateLostActionResponse = false;
       window.__degenLostActionResponses = 0;
       window.__degenSimulateTimedOutActionResponse = false;
@@ -163,6 +166,18 @@ try {
         const response = await originalFetch(input, init);
         const requestUrl = input instanceof Request ? input.url : String(input);
         const requestPath = new URL(requestUrl, window.location.href).pathname;
+        if (requestPath === '/api/battle/start') {
+          try { window.__degenStartRequestIds.push(JSON.parse(String(init?.body ?? '{}')).requestId); }
+          catch { window.__degenStartRequestIds.push(undefined); }
+        }
+        if (window.__degenSimulateLostStartResponse && requestPath === '/api/battle/start') {
+          // The Worker has committed the permit, but this client never receives
+          // its response. A retry with the same requestId must replay one permit.
+          window.__degenSimulateLostStartResponse = false;
+          window.__degenLostStartResponses += 1;
+          await response.body?.cancel();
+          throw new TypeError('simulated lost response after Worker permit issue');
+        }
         if (window.__degenSimulateTimedOutActionResponse && requestPath === '/api/battle/action') {
           // The Worker has already committed this turn. Withhold its response until
           // GameApi's real AbortController timeout fires, then let the same-turn retry
@@ -230,6 +245,7 @@ try {
   await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
   await tap("[data-route=underpass]");
   await until('Worker-authorized Underpass entry', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
+  await cdp.evaluate('window.__degenSimulateLostStartResponse = true');
   await tap("[data-start-battle]");
   await until('Manifested Degen abilities', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
@@ -237,8 +253,17 @@ try {
     { exists: true, hidden: true, ariaLive: 'polite', display: 'none' },
     'the mobile battle screen must render an initially hidden, accessible action-status region');
   const activeRows = sql("SELECT id, player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1");
-  assert.equal(activeRows.length, 1, 'Worker battle start should issue one persisted active permit');
+  assert.equal(activeRows.length, 1, 'Worker battle start should return one persisted active permit');
+  assert.equal(await cdp.evaluate('window.__degenLostStartResponses'), 1,
+    'the browser should recover after the first Worker-issued permit response is lost');
+  const startRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
+  assert.equal(startRequestIds.length, 2, 'one initial start and one retry should reach the Worker');
+  assert.match(startRequestIds[0], /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(startRequestIds[0], startRequestIds[1], 'the retry must use the exact same request ID');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
+    'a lost start response must not create a duplicate permit');
   const permitId = activeRows[0].id;
+  assert.equal(permitId, startRequestIds[0], 'the recovered permit ID must match the request idempotency key');
   assert.equal(activeRows[0].player_hp, 120);
   assert.equal(activeRows[0].player_mana, 12);
   assert.equal(activeRows[0].enemy_hp, 92);
