@@ -40,6 +40,18 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 
+const isFurniturePlacementArray = (
+  value: unknown,
+): value is BattleCompletionResult['player']['housing']['placements'] =>
+  Array.isArray(value) && value.every((entry) =>
+    isRecord(entry)
+    && typeof entry.instanceId === 'string'
+    && entry.instanceId.length > 0
+    && typeof entry.furnitureId === 'string'
+    && entry.furnitureId.length > 0
+    && isBoundedSafeInteger(entry.x, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(entry.y, 0, Number.MAX_SAFE_INTEGER));
+
 // Completion responses are authoritative account/economy snapshots. Validate the
 // response envelope before AppController can replace a PlayerStore or clear a
 // pending receipt; never synthesize or repair reward values on the client.
@@ -65,7 +77,7 @@ const isAuthoritativeBattleCompletionResult = (
     && isStringArray(player.unlockedLocations)
     && isStringArray(player.defeatedBosses)
     && isStringArray(housing.inventory)
-    && Array.isArray(housing.placements)
+    && isFurniturePlacementArray(housing.placements)
     && isBoundedSafeInteger(reward.xp, 0, Number.MAX_SAFE_INTEGER)
     && isBoundedSafeInteger(reward.currency, 0, Number.MAX_SAFE_INTEGER)
     && isStringArray(reward.items)
