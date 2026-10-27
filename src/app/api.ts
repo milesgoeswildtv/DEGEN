@@ -150,13 +150,14 @@ export class GameApi {
 
   async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
-    // The same requestId is reused for one bounded retry. The Worker uses it as
-    // the permit key and replays only the matching, still-valid authoritative start.
+    // Bind the response to the idempotency key, so a stale or mismatched
+    // permit response can never be accepted as this start attempt.
+    const requestId = crypto.randomUUID();
     const startRequest: RequestInit = {
       method: 'POST',
       body: JSON.stringify({
         playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw',
-        requestId: crypto.randomUUID(),
+        requestId,
       }),
     };
     const sendStart = () => this.requestWithTimeout<BattlePermit>(
@@ -169,7 +170,8 @@ export class GameApi {
       if (error instanceof GameApiError && error.status < 500) throw error;
       permit = await sendStart();
     }
-    if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()
+    if (!permit || permit.permitId !== requestId
+      || typeof permit.permitId !== 'string' || !permit.permitId.trim()
       || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
       || permit.encounterKey !== TUNNEL_MAW.id
       || typeof permit.expiresAt !== 'string' || !Number.isFinite(Date.parse(permit.expiresAt))

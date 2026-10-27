@@ -45,9 +45,18 @@ const validPermit = (permitId = 'permit-1') => {
 async function apiReturning(value: unknown) {
   const api = new GameApi();
   const oldFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify(value), {
-    status: 200, headers: { 'content-type': 'application/json' },
-  });
+  globalThis.fetch = async (_input, init) => {
+    const requestId = (JSON.parse(String(init?.body)) as { requestId: string }).requestId;
+    const permit = value as any;
+    const originalPermitId = permit.permitId;
+    permit.permitId = requestId;
+    if (permit.initialState && permit.initialState.permitId === originalPermitId) {
+      permit.initialState.permitId = requestId;
+    }
+    return new Response(JSON.stringify(permit), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
   try { return await api.startUnderpass('player-1', 'cycle-1'); }
   finally { globalThis.fetch = oldFetch; }
 }
@@ -99,6 +108,48 @@ test('battle start retries a lost response with the identical request id and bod
   assert.equal(request.playerId, 'player-1');
   assert.equal((result as any).permitId, request.requestId,
     'the Worker permit identity must be the key used to recover a lost start response');
+});
+
+test('battle start retries a transient 5xx with the identical request ID and body', async () => {
+  const sent: string[] = [];
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    const body = String(init?.body);
+    sent.push(body);
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify({ error: 'temporary Worker failure' }), {
+        status: 503, headers: { 'content-type': 'application/json' },
+      });
+    }
+    const request = JSON.parse(body) as { requestId: string };
+    return new Response(JSON.stringify(validPermit(request.requestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  const result = await api.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+  const request = JSON.parse(sent[0]) as { requestId: string };
+
+  assert.equal(calls, 2);
+  assert.equal(sent[0], sent[1], 'a transient 5xx retry must reuse the exact start key and body');
+  assert.equal(result.permitId, request.requestId);
+});
+
+test('battle start rejects a valid-looking permit response bound to another request ID', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify(validPermit('other-permit')), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  await assert.rejects(
+    api.startUnderpass('player-1', 'cycle-1'),
+    /Missing or malformed authoritative battle start state/,
+  );
+  assert.equal(calls, 1, 'a mismatched successful response must fail closed, not be retried as a transport error');
 });
 
 test('battle start aborts and retries one timed-out request, then stops after two hangs', async () => {
