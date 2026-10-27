@@ -34,9 +34,9 @@ async function complete(permitId, playerId = 'integration-player', extraFields =
     '/api/battle/complete success and error responses must not be cached');
   return { status: r.status, data: await r.json() };
 }
-async function eventuallyComplete(id, extraFields = {}) {
+async function eventuallyComplete(id, extraFields = {}, playerId = 'integration-player') {
   for (let n = 0; n < 10; n++) {
-    const r = await complete(id, 'integration-player', extraFields);
+    const r = await complete(id, playerId, extraFields);
     if (r.status === 200) return r.data;
     if (r.status !== 409 && r.status !== 500) throw new Error(id + ': ' + JSON.stringify(r));
     await sleep(100 + 50 * n);
@@ -110,7 +110,9 @@ try {
       ('start-replay-player','Start Replay After Closure QA'),
       ('restart-after-victory-player','Restart After Victory QA'),
       ('event-closure-player','Event Closure QA'),
+      ('closure-active-player','Closure Active QA'),
       ('expired-after-cycle-player','Expired After Cycle QA'),
+      ('closed-cycle-entry-player','Closed Cycle Entry QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
       ('malformed-expiry-player','Malformed Expiry QA'),
@@ -136,7 +138,9 @@ try {
         ('start-replay-player',1,0,0,'test-degen'),
         ('restart-after-victory-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
+        ('closure-active-player',1,0,0,'test-degen'),
         ('expired-after-cycle-player',1,0,0,'test-degen'),
+        ('closed-cycle-entry-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
         ('malformed-expiry-player',1,0,0,'test-degen'),
@@ -1673,7 +1677,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'closure-active-player',
       eventKey: 'underpass',
       cycleId: 'closure-cycle',
       encounterKey: 'tunnel-maw',
@@ -1711,7 +1715,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'closed-cycle-entry-player',
       eventKey: 'underpass',
       cycleId: 'closure-cycle',
       encounterKey: 'tunnel-maw',
@@ -1752,7 +1756,7 @@ try {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        playerId: 'integration-player',
+        playerId: 'closure-active-player',
         permitId: closureStart.permitId,
         abilityId: 'crack',
         expectedTurnCount,
@@ -1769,7 +1773,7 @@ try {
   assert.equal(closureResult.playerHp, closureStart.initialState.playerHp - 20,
     'the two non-lethal enemy turns retaliate; the killing blow does not');
 
-  const closureCompletion = await eventuallyComplete(closureStart.permitId);
+  const closureCompletion = await eventuallyComplete(closureStart.permitId, {}, 'closure-active-player');
   assert.equal(closureCompletion.reward.tier, 'full');
   assert.equal(closureCompletion.reward.xp, 75);
   assert.equal(closureCompletion.reward.currency, 30);
