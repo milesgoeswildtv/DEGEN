@@ -2171,7 +2171,8 @@ try {
     FROM characters WHERE player_id = 'inventory-atomic-player'`);
   const atomicFailure = await complete('permit-inventory-atomic', 'inventory-atomic-player');
   assert.equal(atomicFailure.status, 500, JSON.stringify(atomicFailure.data));
-  assert.match(atomicFailure.data.error, /injected inventory settlement failure/i);
+  assert.equal(atomicFailure.data.error, 'Internal server error');
+  assert.doesNotMatch(JSON.stringify(atomicFailure.data), /injected inventory settlement failure/i);
   assert.deepEqual(queryRows(`SELECT level, xp, currency, last_reward_claim_token
     FROM characters WHERE player_id = 'inventory-atomic-player'`), atomicCharacterBefore,
     'inventory write failure must roll back character progression');
