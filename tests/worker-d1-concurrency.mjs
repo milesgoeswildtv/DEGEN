@@ -104,6 +104,7 @@ try {
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
       ('start-race-player','Concurrent Start QA'),
+      ('start-replay-player','Start Replay After Closure QA'),
       ('event-closure-player','Event Closure QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
@@ -124,6 +125,7 @@ try {
       VALUES
         ('integration-player',1,0,0,'test-degen'),
         ('start-race-player',1,0,0,'test-degen'),
+        ('start-replay-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
@@ -1047,6 +1049,70 @@ try {
     'the same start key must not create a second permit for the player');
   assertPersistedPermitState(concurrentStartRequestId, concurrentStarts[0].data.initialState);
 
+
+  // A lost start response may be retried after the valid permit has already
+  // advanced and the event cycle has closed. Replay the D1-owned snapshot rather
+  // than resetting HP/Mana/turn count or requiring the event to remain open.
+  const startReplayRequestId = '00000000-0000-4000-8000-000000000084';
+  const startReplaySeed = join(scratch, 'start-replay-cycle.sql');
+  writeFileSync(startReplaySeed, `
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+      VALUES('start-replay-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+3 hours'));
+  `);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + startReplaySeed]);
+  const startReplayBody = JSON.stringify({
+    playerId: 'start-replay-player',
+    eventKey: 'underpass',
+    cycleId: 'start-replay-cycle',
+    encounterKey: 'tunnel-maw',
+    requestId: startReplayRequestId,
+  });
+  const startReplayResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: startReplayBody,
+  });
+  const startReplay = await startReplayResponse.json();
+  assert.equal(startReplayResponse.status, 200, JSON.stringify(startReplay));
+  const progressedStartReplayResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'start-replay-player',
+      permitId: startReplayRequestId,
+      abilityId: 'crack',
+      expectedTurnCount: 0,
+    }),
+  });
+  const progressedStartReplay = await progressedStartReplayResponse.json();
+  assert.equal(progressedStartReplayResponse.status, 200, JSON.stringify(progressedStartReplay));
+  assert.deepEqual({
+    status: progressedStartReplay.status,
+    playerHp: progressedStartReplay.playerHp,
+    playerMana: progressedStartReplay.playerMana,
+    enemyHp: progressedStartReplay.enemyHp,
+    turnCount: progressedStartReplay.turnCount,
+  }, { status: 'active', playerHp: 110, playerMana: 8, enemyHp: 57, turnCount: 1 });
+  assertPersistedPermitState(startReplayRequestId, progressedStartReplay);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET started_at=datetime('now','-2 minutes'), expires_at=datetime('now','+18 minutes') WHERE id='" + startReplayRequestId + "'"]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='start-replay-cycle'"]);
+  const recoveredStartReplayResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: startReplayBody,
+  });
+  const recoveredStartReplay = await recoveredStartReplayResponse.json();
+  assert.equal(recoveredStartReplayResponse.status, 200, JSON.stringify(recoveredStartReplay));
+  assert.equal(recoveredStartReplay.permitId, startReplayRequestId);
+  assert.equal(recoveredStartReplay.expiresAt,
+    queryRows("SELECT expires_at FROM battle_permits WHERE id='" + startReplayRequestId + "'")[0]?.expires_at);
+  assert.deepEqual(recoveredStartReplay.initialState, progressedStartReplay,
+    'a closed-cycle start retry must return the persisted progressed snapshot, not reinitialize combat');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='" + startReplayRequestId + "' AND player_id='start-replay-player'"), 1,
+    'start recovery after closure must not issue a second permit');
+  assertPersistedPermitState(startReplayRequestId, recoveredStartReplay.initialState);
 
   const firstActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
