@@ -125,6 +125,7 @@ const AppController = runInNewContext(
 ) => {
   route: string;
   battlePermit?: { permitId: string };
+  battlePermitOwnerId?: string;
   battleEngine?: BattleEngineInstance;
   useBattleAbility(abilityId: string): Promise<void>;
   finishBattle(status: 'victory' | 'defeat'): Promise<void>;
@@ -439,4 +440,79 @@ test('a stale victory snapshot settles its original permit, not a newer encounte
   assert.equal(store.replaced, 1);
   assert.equal(store.localRewards, 0);
   assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), '[]');
+});
+
+
+test('late victory after an account switch settles under the issuing player without replacing the active account', async () => {
+  timers.length = 0;
+  storage.clear();
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const authoritativeVictory = {
+    permitId: 'permit-player-1',
+    status: 'victory' as const,
+    playerHp: 80,
+    playerMana: 4,
+    enemyHp: 0,
+    turnCount: 1,
+  };
+  let resolveAction!: (value: unknown) => void;
+  const actionResponse = new Promise<unknown>((resolve) => { resolveAction = resolve; });
+  let actionPlayerId = '';
+  let completionPlayerId = '';
+  let completionPermitId = '';
+  const api = {
+    enabled: true,
+    actUnderpass(playerId: string) {
+      actionPlayerId = playerId;
+      return actionResponse;
+    },
+    async completeUnderpass(playerId: string, permitId: string) {
+      completionPlayerId = playerId;
+      completionPermitId = permitId;
+      return { player: { id: 'player-1', level: 2 }, worldEvent: { cycleId: 'cycle-1' } };
+    },
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the detached engine must not apply or settle the action locally');
+  }, {
+    permitId: 'permit-player-1',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-player-1' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = engine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  controller.route = 'underpass';
+  controller.battleEngine = undefined;
+  store.snapshot.id = 'player-2';
+  resolveAction(authoritativeVictory);
+  await pendingAction;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(actionPlayerId, 'player-1', 'the in-flight action remains bound to the original player');
+  assert.equal(completionPlayerId, 'player-1', 'reward completion must use the permit owner, not the current account');
+  assert.equal(completionPermitId, 'permit-player-1');
+  assert.equal(store.snapshot.id, 'player-2');
+  assert.equal(store.replaced, 0, 'an old account completion must not overwrite the active player snapshot');
+  assert.equal(store.localRewards, 0, 'the client must never grant local rewards for a server-backed battle');
+  assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), '[]',
+    'the original player’s pending permit is cleared only after authoritative completion');
+  assert.equal(storage.get('degen.pending.reward-permits.v1:player-2'), undefined,
+    'the old permit must never be written into the new player’s retry queue');
+  assert.equal(controller.battlePermit, undefined);
 });
