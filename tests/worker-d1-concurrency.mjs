@@ -1112,6 +1112,29 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 1,
     'a sequential distinct-key request must not create a second unresolved permit');
 
+  // A terminal defeat is resolved combat, not an active encounter or reward claim.
+  await env.DB.prepare("UPDATE battle_permits SET battle_status='defeat' WHERE id=?")
+    .bind(distinctAcceptedId).run();
+  const afterDefeatRequestId = '00000000-0000-4000-8000-000000000089';
+  const afterDefeatResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'start-distinct-key-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId: afterDefeatRequestId,
+    }),
+  });
+  const afterDefeat = await afterDefeatResponse.json();
+  assert.equal(afterDefeatResponse.status, 200, JSON.stringify(afterDefeat));
+  assert.equal(afterDefeat.permitId, afterDefeatRequestId);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 2,
+    'a resolved defeat must allow a new encounter without granting a reward for the defeat');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player' AND completed_at IS NULL AND battle_status IN ('active','victory') AND julianday(expires_at) > julianday('now')"), 1,
+    'only the new active encounter remains unresolved for start-guard purposes');
+
   // A shared idempotency key must never let a concurrent caller recover another player's permit.
   const collisionRequestId = '00000000-0000-4000-8000-000000000085';
   const collisionPlayers = ['start-collision-a', 'start-collision-b'];
