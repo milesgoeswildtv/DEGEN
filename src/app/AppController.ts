@@ -127,7 +127,7 @@ export class AppController {
       this.battlePermitOwnerId = playerId;
       this.navigate('battle');
       if (this.api.enabled) {
-        this.api.acknowledgeUnderpassStart(playerId, event.cycleId, permit.permitId);
+        this.api.acknowledgeUnderpassStart(playerId, permit.cycleId, permit.permitId);
       }
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
@@ -329,7 +329,8 @@ export class AppController {
           this.store.replaceFromServer(result.player);
           this.underpassEvent = result.worldEvent;
         }
-        this.forgetPendingReward(permitId, playerId);
+        this.api.acknowledgeUnderpassCompletion?.(playerId, permitId);
+      this.forgetPendingReward(permitId, playerId);
         if (this.battlePermit?.permitId === permitId && this.battlePermitOwnerId === playerId) {
           this.battlePermit = undefined;
           this.battlePermitOwnerId = undefined;
