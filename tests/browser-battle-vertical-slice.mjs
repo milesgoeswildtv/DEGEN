@@ -154,6 +154,7 @@ try {
       // The app's already-bound fetcher must observe this wrapper before boot.
       const originalFetch = window.fetch.bind(window);
       window.__degenSimulateLostStartResponse = false;
+      window.__degenLostStartResponsesRemaining = 0;
       window.__degenLostStartResponses = 0;
       window.__degenStartRequestIds = [];
       window.__degenSimulateLostActionResponse = false;
@@ -170,10 +171,14 @@ try {
           try { window.__degenStartRequestIds.push(JSON.parse(String(init?.body ?? '{}')).requestId); }
           catch { window.__degenStartRequestIds.push(undefined); }
         }
-        if (window.__degenSimulateLostStartResponse && requestPath === '/api/battle/start') {
+        if ((window.__degenSimulateLostStartResponse || window.__degenLostStartResponsesRemaining > 0)
+          && requestPath === '/api/battle/start') {
           // The Worker has committed the permit, but this client never receives
-          // its response. A retry with the same requestId must replay one permit.
+          // its response. Repeated losses must preserve the same key across reload.
           window.__degenSimulateLostStartResponse = false;
+          if (window.__degenLostStartResponsesRemaining > 0) {
+            window.__degenLostStartResponsesRemaining -= 1;
+          }
           window.__degenLostStartResponses += 1;
           await response.body?.cancel();
           throw new TypeError('simulated lost response after Worker permit issue');
@@ -245,23 +250,50 @@ try {
   await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
   await tap("[data-route=underpass]");
   await until('Worker-authorized Underpass entry', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
-  await cdp.evaluate('window.__degenSimulateLostStartResponse = true');
+  await cdp.evaluate('window.__degenLostStartResponsesRemaining = 2');
   await tap("[data-start-battle]");
-  await until('Manifested Degen abilities', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
+  await until('both start responses lost and retry exhausted', () => cdp.evaluate(
+    'window.__degenLostStartResponses === 2 && !document.querySelector("[data-ability=crack]")',
+  ));
+  await sleep(300);
+  assert.equal(await cdp.evaluate('window.__degenLostStartResponses'), 2,
+    'both bounded start attempts should lose their response before reload');
+  const firstStartRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
+  assert.equal(firstStartRequestIds.length, 2, 'the first page should issue only the bounded initial request and retry');
+  assert.match(firstStartRequestIds[0], /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(firstStartRequestIds[0], firstStartRequestIds[1],
+    'both lost responses must use the same request ID');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
+    'both lost responses must still leave exactly one persisted permit');
+
+  // Reload the actual browser page. localStorage must retain the uncertain key,
+  // allowing a fresh GameApi instance to recover the already-issued permit.
+  await cdp.send('Page.reload');
+  await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
+  assert.equal(await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''"), playerId,
+    'the same test player must survive the reload');
+  await assertFitsMobile('Map after reload');
+  await tap("[data-route=underpass]");
+  await until('Underpass entry after reload', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
+  await tap("[data-start-battle]");
+  await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   assert.deepEqual(await cdp.evaluate("(() => { const status = document.querySelector('#battle-action-status'); return { exists: !!status, hidden: status?.hidden, ariaLive: status?.getAttribute('aria-live'), display: status ? getComputedStyle(status).display : null }; })()"),
     { exists: true, hidden: true, ariaLive: 'polite', display: 'none' },
     'the mobile battle screen must render an initially hidden, accessible action-status region');
   const activeRows = sql("SELECT id, player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1");
   assert.equal(activeRows.length, 1, 'Worker battle start should return one persisted active permit');
-  assert.equal(await cdp.evaluate('window.__degenLostStartResponses'), 1,
-    'the browser should recover after the first Worker-issued permit response is lost');
+  assert.equal(await cdp.evaluate('window.__degenLostStartResponses'), 0,
+    'the successful post-reload recovery should not lose another response');
   const startRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
-  assert.equal(startRequestIds.length, 2, 'one initial start and one retry should reach the Worker');
-  assert.match(startRequestIds[0], /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-  assert.equal(startRequestIds[0], startRequestIds[1], 'the retry must use the exact same request ID');
+  assert.equal(startRequestIds.length, 1, 'the reloaded page should issue one request to recover the permit');
+  assert.equal(startRequestIds[0], firstStartRequestIds[0],
+    'the reloaded page must reuse the persisted request ID from both failed attempts');
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
-    'a lost start response must not create a duplicate permit');
+    'recovery after reload must not create a duplicate permit');
+  const startStorageKey = 'degen:pending-battle-start:' + encodeURIComponent(playerId) + ':' + encodeURIComponent('browser-cycle');
+  assert.equal(await cdp.evaluate('localStorage.getItem(' + JSON.stringify(startStorageKey) + ')'), null,
+    'AppController clears the key only after accepting the recovered permit');
   const permitId = activeRows[0].id;
   assert.equal(permitId, startRequestIds[0], 'the recovered permit ID must match the request idempotency key');
   assert.equal(activeRows[0].player_hp, 120);
