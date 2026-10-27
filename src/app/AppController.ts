@@ -151,6 +151,7 @@ export class AppController {
     const engine = this.battleEngine;
     const permitId = this.battlePermit.permitId;
 
+    this.setBattleActionStatus();
     this.battleActionPending = true;
     this.setAbilityButtonsDisabled(true);
 
@@ -166,10 +167,33 @@ export class AppController {
         engine.useAbility(abilityId);
       }
     } catch (error) {
+      let synchronized = false;
       if (error instanceof GameApiError && error.status === 409 && error.payload && typeof error.payload === 'object') {
-        const battleState = (error.payload as { battleState?: unknown }).battleState;
+        const payload = error.payload as { battleState?: unknown; error?: unknown };
+        const battleState = payload.battleState;
         if (isAuthoritativeBattleActionState(battleState, permitId)) {
           engine.synchronizeAuthoritativeState(battleState);
+          synchronized = true;
+          if (battleState.status === 'active') {
+            const serverMessage = typeof payload.error === 'string' ? payload.error : '';
+            this.setBattleActionStatus(serverMessage && serverMessage !== 'Stale battle turn.'
+              ? serverMessage
+              : 'Battle state refreshed from the server. Choose your next move.');
+          } else {
+            this.setBattleActionStatus();
+          }
+        }
+      }
+      if (!synchronized) {
+        if (error instanceof GameApiError && error.status < 500) {
+          const payload = error.payload && typeof error.payload === 'object'
+            ? error.payload as { error?: unknown }
+            : undefined;
+          this.setBattleActionStatus(typeof payload?.error === 'string'
+            ? payload.error
+            : 'The server rejected that move.');
+        } else {
+          this.setBattleActionStatus('Connection interrupted. The move may have reached the server. Tap the same move again to safely retry; the server prevents duplicate turns.');
         }
       }
       console.warn('Battle action rejected by authoritative server.', error);
@@ -179,6 +203,13 @@ export class AppController {
         if (engine.snapshot.status === 'active') this.setAbilityButtonsDisabled(false);
       }
     }
+  }
+
+  private setBattleActionStatus(message?: string): void {
+    const status = this.root.querySelector<HTMLElement>('#battle-action-status');
+    if (!status) return;
+    status.textContent = message ?? '';
+    status.hidden = !message;
   }
 
   private setAbilityButtonsDisabled(disabled: boolean): void {
