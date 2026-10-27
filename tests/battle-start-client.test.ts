@@ -7,6 +7,8 @@ import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 
 const startRequestStorage = new Map<string, string>();
 const testLocalStorage = {
+  get length() { return startRequestStorage.size; },
+  key(index: number) { return [...startRequestStorage.keys()][index] ?? null; },
   getItem(key: string) { return startRequestStorage.get(key) ?? null; },
   setItem(key: string, value: string) { startRequestStorage.set(key, String(value)); },
   removeItem(key: string) { startRequestStorage.delete(key); },
@@ -295,13 +297,16 @@ test('battle start preserves an uncertain request ID across failed retries and a
   recoveredApi.acknowledgeUnderpassStart('player-1', 'cycle-1', 'wrong-permit');
   assert.equal(startRequestStorage.size, 1, 'a mismatched acknowledgement must not clear another permit key');
   recoveredApi.acknowledgeUnderpassStart('player-1', 'cycle-1', recovered.permitId);
-  assert.equal([...startRequestStorage.keys()].filter(key => key.startsWith('degen:pending-battle-start:')).length, 0,
-    'the matching acknowledgement clears the one-shot pending key');
-  assert.equal([...startRequestStorage.keys()].filter(key => key.startsWith('degen:active-battle-start:')).length, 1,
-    'the accepted permit ID and original cycle remain available for active-encounter recovery');
+  assert.equal(startRequestStorage.size, 1, 'the same per-player correlation record remains after acknowledgement');
+  const activeRecord = JSON.parse([...startRequestStorage.values()][0] ?? '{}') as {
+    requestId: string; cycleId: string; state: string;
+  };
+  assert.equal(activeRecord.requestId, recovered.permitId);
+  assert.equal(activeRecord.cycleId, 'cycle-1');
+  assert.equal(activeRecord.state, 'active', 'acknowledgement changes lifecycle state without duplicating storage');
 });
 
-test('accepted active permit ID survives reload and cycle rollover until reward completion', async () => {
+test('one per-player battle key survives reload and cycle rollover until reward completion', async () => {
   let originalRequestId = '';
   const firstFetcher: typeof fetch = async (_input, init) => {
     const body = JSON.parse(String(init?.body)) as { requestId: string; cycleId: string };
@@ -330,7 +335,29 @@ test('accepted active permit ID survives reload and cycle rollover until reward 
   assert.equal(recovered.permitId, firstPermit.permitId);
   reloadedApi.acknowledgeUnderpassCompletion('player-1', recovered.permitId);
   assert.equal(startRequestStorage.size, 0,
-    'only authoritative completion acknowledgement clears the active permit key');
+    'only authoritative completion acknowledgement clears the per-player correlation record');
+});
+
+test('legacy uncertain-start keys migrate into the single per-player record across cycle rollover', async () => {
+  const legacyId = '00000000-0000-4000-8000-000000000011';
+  const legacyKey = 'degen:pending-battle-start:player-1:previous-cycle';
+  startRequestStorage.set(legacyKey, legacyId);
+  let requestBody: { requestId: string; cycleId: string } | undefined;
+  const fetcher: typeof fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body)) as { requestId: string; cycleId: string };
+    const permit = validPermit(requestBody.requestId);
+    permit.cycleId = requestBody.cycleId;
+    return new Response(JSON.stringify(permit), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  const result = await api.startUnderpass('player-1', 'current-cycle') as ReturnType<typeof validPermit>;
+  assert.equal(requestBody?.requestId, legacyId);
+  assert.equal(requestBody?.cycleId, 'previous-cycle');
+  assert.equal(result.permitId, legacyId);
+  assert.equal(startRequestStorage.has(legacyKey), false, 'the legacy per-cycle key is migrated and removed');
+  assert.equal(startRequestStorage.size, 1, 'only one per-player correlation record remains');
 });
 
 test('battle start clears a persisted key after a definitive Worker rejection', async () => {
