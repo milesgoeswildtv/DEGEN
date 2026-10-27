@@ -272,6 +272,7 @@ test('AppController synchronizes terminal snapshots returned with expired action
         },
       },
       store: { snapshot: { id: 'player-1' } },
+      setBattleActionStatus() {},
       setAbilityButtonsDisabled(disabled: boolean) { disabledStates.push(disabled); },
     };
 
@@ -317,6 +318,7 @@ test('AppController ignores malformed terminal snapshots from battle conflicts',
         },
       },
       store: { snapshot: { id: 'player-1' } },
+      setBattleActionStatus() {},
       setAbilityButtonsDisabled(disabled: boolean) { disabledStates.push(disabled); },
     };
 
