@@ -232,8 +232,21 @@ export class GameApi {
       // have committed the permit, so a later retry must remain idempotent.
       throw new Error('Missing or malformed authoritative battle start state.');
     }
-    clearPendingBattleStartRequestId(playerId, cycleId);
+    // Keep the key until AppController confirms it accepted this permit. If
+    // the account changes while the request is in flight, a later return to the
+    // original account can still recover the committed permit.
     return permit;
+  }
+
+  acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void {
+    const key = battleStartRequestStorageKey(playerId, cycleId);
+    try {
+      if (globalThis.localStorage.getItem(key) === permitId) {
+        clearPendingBattleStartRequestId(playerId, cycleId);
+      }
+    } catch {
+      // Best-effort acknowledgement only.
+    }
   }
 
   async actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<BattleActionResult | undefined> {
