@@ -125,6 +125,19 @@ test('battle start ignores forged client combat state and returns exactly the De
 });
 
 
+test('battle start rejects malformed request IDs before issuing a permit', async () => {
+  const cycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const { env, inserts } = makeEnv(cycle);
+  const response = await handleStartBattle(request(cycle.id, { requestId: 'not-a-uuid' }), env);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Invalid battle start request id' });
+  assert.equal(inserts.length, 0);
+});
+
 test('battle start replays the same active permit after event closure without inserting another', async () => {
   const requestId = '00000000-0000-4000-8000-000000000002';
   const persistedExpiry = new Date(Date.now() + 5 * 60_000).toISOString();
