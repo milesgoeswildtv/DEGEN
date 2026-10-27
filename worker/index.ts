@@ -445,6 +445,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       SELECT 1 FROM battle_permits AS existing
       WHERE existing.player_id = ?
         AND existing.completed_at IS NULL
+        AND existing.battle_status <> 'defeat'
         AND julianday(existing.expires_at) > julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     )
     ON CONFLICT(id) DO NOTHING
