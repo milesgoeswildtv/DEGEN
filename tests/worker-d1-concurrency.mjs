@@ -103,6 +103,7 @@ try {
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
+      ('start-race-player','Concurrent Start QA'),
       ('event-closure-player','Event Closure QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
@@ -122,6 +123,7 @@ try {
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES
         ('integration-player',1,0,0,'test-degen'),
+        ('start-race-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
@@ -1005,6 +1007,46 @@ try {
       AND ABS((julianday(expires_at) - julianday(started_at)) * 1440 - 20) < 0.001`), 1,
     'D1 must issue a non-future start and an expiry exactly 20 minutes after that start');
   assertPersistedPermitState(started.permitId, started.initialState);
+
+  // Concurrent duplicate start attempts with the same idempotency key must converge
+  // on one D1 permit. This exercises the actual SQLite uniqueness/ON CONFLICT path,
+  // not only the Worker-handler fake used by the deterministic unit tests.
+  const concurrentStartRequestId = '00000000-0000-4000-8000-000000000083';
+  const concurrentStartBody = JSON.stringify({
+    playerId: 'start-race-player',
+    eventKey: 'underpass',
+    cycleId: 'integration-cycle',
+    encounterKey: 'tunnel-maw',
+    requestId: concurrentStartRequestId,
+  });
+  const concurrentStartResponses = await Promise.all([1, 2].map(() => fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: concurrentStartBody,
+    signal: AbortSignal.timeout(30_000),
+  })));
+  const concurrentStarts = await Promise.all(concurrentStartResponses.map(async response => ({
+    status: response.status,
+    data: await response.json(),
+  })));
+  for (const result of concurrentStarts) {
+    assert.equal(result.status, 200, 'same-key concurrent start must return the existing valid permit: ' + JSON.stringify(result.data));
+    assert.equal(result.data.permitId, concurrentStartRequestId);
+    assert.equal(result.data.initialState.permitId, concurrentStartRequestId);
+    assert.equal(result.data.initialState.status, 'active');
+    assert.equal(result.data.initialState.turnCount, 0);
+  }
+  assert.deepEqual(concurrentStarts[0].data, concurrentStarts[1].data,
+    'both concurrent callers must receive the same authoritative permit snapshot and expiry');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='${concurrentStartRequestId}' AND player_id='start-race-player'
+      AND event_key='underpass' AND cycle_id='integration-cycle'
+      AND encounter_key='tunnel-maw' AND completed_at IS NULL`), 1,
+    'concurrent retries must persist exactly one owner-scoped active permit');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-race-player'`), 1,
+    'the same start key must not create a second permit for the player');
+  assertPersistedPermitState(concurrentStartRequestId, concurrentStarts[0].data.initialState);
+
 
   const firstActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',
