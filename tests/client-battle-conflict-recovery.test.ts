@@ -186,6 +186,7 @@ test('lost action response followed by authoritative victory snapshot completes 
   controller = new AppController(root, store, api);
   controller.route = 'battle';
   controller.battlePermit = { permitId: 'permit-1' };
+  controller.battlePermitOwnerId = 'player-1';
   controller.battleEngine = engine;
 
   await controller.useBattleAbility('crack');
@@ -237,6 +238,7 @@ test('an unconfirmed action failure is visible and tells the player to safely re
   const controller = new AppController(root, store, api);
   controller.route = 'battle';
   controller.battlePermit = { permitId: 'permit-uncertain' };
+  controller.battlePermitOwnerId = 'player-1';
   controller.battleEngine = engine;
 
   await controller.useBattleAbility('crack');
@@ -294,6 +296,7 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
   const controller = new AppController(root, store, api);
   controller.route = 'battle';
   controller.battlePermit = { permitId: 'permit-1' };
+  controller.battlePermitOwnerId = 'player-1';
   controller.battleEngine = engine;
 
   await controller.useBattleAbility('crack');
@@ -358,6 +361,7 @@ test('a confirmed victory still settles if the player abandons before the action
   const controller = new AppController(root, store, api);
   controller.route = 'battle';
   controller.battlePermit = { permitId: 'permit-abandoned' };
+  controller.battlePermitOwnerId = 'player-1';
   controller.battleEngine = engine;
 
   const pendingAction = controller.useBattleAbility('crack');
@@ -425,11 +429,13 @@ test('a stale victory snapshot settles its original permit, not a newer encounte
   const controller = new AppController(root, store, api);
   controller.route = 'battle';
   controller.battlePermit = { permitId: 'permit-old' };
+  controller.battlePermitOwnerId = 'player-1';
   controller.battleEngine = oldEngine;
 
   const pendingAction = controller.useBattleAbility('crack');
   controller.route = 'underpass';
   controller.battlePermit = { permitId: 'permit-new' };
+  controller.battlePermitOwnerId = 'player-1';
   controller.battleEngine = undefined;
   await pendingAction;
   await new Promise((resolve) => setImmediate(resolve));
