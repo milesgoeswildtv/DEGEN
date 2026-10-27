@@ -45,11 +45,12 @@ const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
 export class GameApi {
   readonly enabled: boolean;
+  private readonly apiBase: string;
+  private readonly fetcher: typeof fetch;
 
-  constructor(
-    private readonly apiBase = API_BASE,
-    private readonly fetcher: typeof fetch = fetch,
-  ) {
+  constructor(apiBase: string = API_BASE, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
+    this.apiBase = apiBase.replace(/\\/$/, '');
+    this.fetcher = fetcher;
     this.enabled = this.apiBase.length > 0;
   }
 
