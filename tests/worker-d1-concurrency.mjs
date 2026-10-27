@@ -104,6 +104,8 @@ try {
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
       ('start-race-player','Concurrent Start QA'),
+      ('start-collision-a','Start ID Collision A'),
+      ('start-collision-b','Start ID Collision B'),
       ('start-replay-player','Start Replay After Closure QA'),
       ('event-closure-player','Event Closure QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
@@ -125,6 +127,8 @@ try {
       VALUES
         ('integration-player',1,0,0,'test-degen'),
         ('start-race-player',1,0,0,'test-degen'),
+        ('start-collision-a',1,0,0,'test-degen'),
+        ('start-collision-b',1,0,0,'test-degen'),
         ('start-replay-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
@@ -1048,6 +1052,50 @@ try {
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-race-player'`), 1,
     'the same start key must not create a second permit for the player');
   assertPersistedPermitState(concurrentStartRequestId, concurrentStarts[0].data.initialState);
+
+  // A shared idempotency key must never let a concurrent caller recover another player's permit.
+  const collisionRequestId = '00000000-0000-4000-8000-000000000085';
+  const collisionPlayers = ['start-collision-a', 'start-collision-b'];
+  const collisionResponses = await Promise.all(collisionPlayers.map(playerId => fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId,
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId: collisionRequestId,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  })));
+  const collisionResults = await Promise.all(collisionResponses.map(async response => ({
+    status: response.status,
+    data: await response.json(),
+  })));
+  assert.equal(collisionResults.filter(result => result.status === 200).length, 1,
+    'exactly one owner may win a concurrent start-key collision');
+  assert.equal(collisionResults.filter(result => result.status === 409).length, 1,
+    'the other owner must be rejected rather than replaying the winner permit');
+  const acceptedIndex = collisionResults.findIndex(result => result.status === 200);
+  const acceptedCollision = collisionResults[acceptedIndex];
+  const rejectedCollision = collisionResults[1 - acceptedIndex];
+  assert.equal(acceptedCollision.data.permitId, collisionRequestId);
+  assert.equal(acceptedCollision.data.initialState.permitId, collisionRequestId);
+  assert.deepEqual(rejectedCollision.data, { error: 'Battle start request is already used or invalid.' },
+    'the losing owner must not receive the other player\'s combat snapshot or permit details');
+  const collisionRows = queryRows(`SELECT player_id, event_key, cycle_id, encounter_key, completed_at,
+      battle_status, player_hp, player_mana, enemy_hp, turn_count
+    FROM battle_permits WHERE id='${collisionRequestId}'`);
+  assert.equal(collisionRows.length, 1, 'the collided idempotency key must persist one permit only');
+  assert.equal(collisionRows[0].player_id, collisionPlayers[acceptedIndex],
+    'the persisted permit owner must match the only request that received success');
+  assert.equal(collisionRows[0].event_key, 'underpass');
+  assert.equal(collisionRows[0].cycle_id, 'integration-cycle');
+  assert.equal(collisionRows[0].encounter_key, 'tunnel-maw');
+  assert.equal(collisionRows[0].completed_at, null);
+  assert.equal(collisionRows[0].battle_status, 'active');
+  assert.equal(collisionRows[0].turn_count, 0);
+  assertPersistedPermitState(collisionRequestId, acceptedCollision.data.initialState);
 
 
   // A lost start response may be retried after the valid permit has already
