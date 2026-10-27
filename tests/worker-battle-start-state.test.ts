@@ -172,7 +172,7 @@ test('battle start replays the same active permit after event closure without in
   assert.equal(inserts.length, 0, 'recovery must return the persisted snapshot without issuing a second permit');
 });
 
-test('battle start rejects a reused request id owned by another player or an expired permit', async () => {
+test('battle start rejects foreign, expired, terminal, or corrupt request ID reuse', async () => {
   const requestId = '00000000-0000-4000-8000-000000000003';
   const cycle = {
     id: 'open-cycle', event_key: 'underpass',
@@ -193,6 +193,10 @@ test('battle start rejects a reused request id owned by another player or an exp
     { ...base, player_id: 'player-1', permit_is_unexpired: 0 },
     { ...base, player_id: 'player-1', reward_state: 'claiming', reward_claim_token: 'stale-token', reward_claimed_at: '2026-10-27T00:00:00.000Z' },
     { ...base, player_id: 'player-1', battle_status: 'victory', enemy_hp: 0, turn_count: 1, completed_at: '2026-10-27T00:00:00.000Z' },
+    { ...base, player_id: 'player-1', player_mana: TEST_DEGEN.maxMana + 1 },
+    { ...base, player_id: 'player-1', player_hp: 0 },
+    { ...base, player_id: 'player-1', enemy_hp: 0 },
+    { ...base, player_id: 'player-1', turn_count: 0.5 },
   ]) {
     const { env, inserts } = makeEnv(cycle, true, existingPermit);
     const response = await handleStartBattle(request(cycle.id, { requestId }), env);
