@@ -47,7 +47,7 @@ const setup = (enabled: boolean, completeUnderpass?: () => Promise<unknown>) => 
   };
   const Controller = runInNewContext(compiled + '\nAppController;', scope) as new (
     root: unknown, store: unknown, api: unknown
-  ) => { route: string; battlePermit?: { permitId: string }; finishBattle(status: string): Promise<void>; start(): Promise<void> };
+  ) => { route: string; battlePermit?: { permitId: string }; battlePermitOwnerId?: string; finishBattle(status: string): Promise<void>; start(): Promise<void> };
   return { Controller, root, store, api, storage, timers };
 };
 
@@ -60,6 +60,7 @@ test('failed Worker completion retains the permit and persists retry across cont
   });
   const first = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   first.battlePermit = { permitId: 'permit-1' };
+  first.battlePermitOwnerId = 'test-player';
   await first.finishBattle('victory');
   assert.equal(first.battlePermit?.permitId, 'permit-1');
   assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '["permit-1"]');
@@ -80,6 +81,7 @@ test('successful Worker completion returns from victory only after authoritative
   const fixture = setup(true);
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   controller.battlePermit = { permitId: 'permit-2' };
+  controller.battlePermitOwnerId = 'test-player';
   controller.route = 'battle';
   await controller.finishBattle('victory');
   assert.equal(controller.battlePermit, undefined);
@@ -92,6 +94,7 @@ test('offline preview still applies its local non-economic reward', async () => 
   const fixture = setup(false);
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   controller.battlePermit = { permitId: 'preview' };
+  controller.battlePermitOwnerId = 'test-player';
   await controller.finishBattle('victory');
   assert.equal(fixture.store.localRewards, 1);
   assert.equal(fixture.store.replaced, 0);
