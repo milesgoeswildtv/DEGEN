@@ -411,6 +411,20 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     if (replay) return replay;
   }
 
+  // One player may have only one unresolved, unexpired Underpass permit at a
+  // time. Keep this check as a fast rejection, but also repeat it inside the
+  // INSERT statement below so two different request IDs cannot race past it.
+  const hasUnresolvedPermit = async () => Boolean(await env.DB.prepare(`SELECT id
+      FROM battle_permits
+      WHERE player_id = ?
+        AND completed_at IS NULL
+        AND julianday(expires_at) > julianday('now')
+      LIMIT 1`).bind(input.playerId).first<{ id: string }>());
+
+  if (await hasUnresolvedPermit()) {
+    return fail(request, env, 'A battle is already in progress.', 409);
+  }
+
   const cycle = await ensureUnderpassCycle(env.DB);
   if (cycle.id !== input.cycleId || phaseFor(cycle) !== 'open') return fail(request, env, 'The Underpass is sealed.', 409);
 
@@ -441,10 +455,16 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         AND julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) < julianday(closes_at)
         AND julianday(closes_at) > julianday('now')
     )
+    AND NOT EXISTS (
+      SELECT 1 FROM battle_permits AS existing
+      WHERE existing.player_id = ?
+        AND existing.completed_at IS NULL
+        AND julianday(existing.expires_at) > julianday('now')
+    )
     ON CONFLICT(id) DO NOTHING
     RETURNING id, expires_at`)
     .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id,
-      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id)
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id, input.playerId)
     .first<{ id: string; expires_at: string }>();
   if (!issuedPermit) {
     // Another request may have inserted this same idempotency key between the
@@ -453,6 +473,11 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     if (input.requestId !== undefined) {
       const replay = await replayExistingPermit();
       if (replay) return replay;
+    }
+    // The conditional INSERT is the concurrency authority: if a different
+    // request ID won the race, do not leak its permit ID or snapshot.
+    if (await hasUnresolvedPermit()) {
+      return fail(request, env, 'A battle is already in progress.', 409);
     }
     return fail(request, env, 'The Underpass is sealed.', 409);
   }
