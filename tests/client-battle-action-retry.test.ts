@@ -315,6 +315,13 @@ test('completion rejects malformed economy and preview-world payloads without no
       ...authoritativeCompletion,
       worldEvent: { ...authoritativeCompletion.worldEvent, source: 'preview' },
     },
+    {
+      ...authoritativeCompletion,
+      player: {
+        ...authoritativeCompletion.player,
+        housing: { inventory: [], placements: [{ instanceId: 'bed-1', furnitureId: 'starter-bed', x: 'bad', y: 0 }] },
+      },
+    },
   ];
   let calls = 0;
   const fetcher: typeof fetch = async () => {
@@ -330,5 +337,5 @@ test('completion rejects malformed economy and preview-world payloads without no
       /Malformed authoritative battle completion response/,
     );
   }
-  assert.equal(calls, 2, 'invalid response envelopes must not trigger another reward request');
+  assert.equal(calls, 3, 'invalid response envelopes must not trigger another reward request');
 });
