@@ -597,7 +597,7 @@ test('a stale active snapshot cannot synchronize a newer permit after battle tea
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(oldEngine.snapshot.turnCount, 0);
-  assert.equal(newEngine.snapshot.permitId, 'permit-new');
+  assert.equal(controller.battleEngine, newEngine);
   assert.equal(newEngine.snapshot.status, 'active');
   assert.equal(newEngine.snapshot.turnCount, 0);
   assert.equal(newEngine.snapshot.playerHp, 100);

@@ -1,3 +1,16 @@
+## Latest run — 2026-10-27 (correct the stale-snapshot test boundary)
+
+- **Authoritative main SHA:** `8e36e1c5f4f5f176657e5986d6bc19b41a7a5f59`; main CI [40450323151](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40450323151), Pages [40450323174](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40450323174), and latest Worker deployment [40448768229](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40448768229) are verified successful.
+- **PUSHED / PR #81 OPEN (DRAFT):** `automation/degen/client-action-retry-v01`. Test head `37d1f72b3fb4bbf34e6bdd913d4e4dff2b710a39` has CI [40485976646](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40485976646) in progress; that head's new stale-active-snapshot regression exposed a test-only assertion mistake during source review before claiming a pass.
+- **Correction / file:** `tests/client-battle-conflict-recovery.test.ts` now checks the mounted `BattleEngine` identity rather than `newEngine.snapshot.permitId`; the shared `BattleSnapshot` intentionally exposes combat presentation state but not permit IDs. Permit ownership is asserted separately through `controller.battlePermit`. No production runtime code changed.
+- **QA boundary:** the correction is not yet verified by CI. The new exact-head run must pass deterministic tests, Worker/D1 recovery/concurrency, build, Chromium vertical slice, and Wrangler dry-run before PR #81 can be marked ready. No local-shell or production verification is claimed.
+- **Mana:** COMPLETE / MERGED on main; Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost at zero, terminal outcomes, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql` remain intact.
+- **Battle authority / rewards:** Worker-owned state and rewards, CAS action application, permit owner/expiry/event/cycle/encounter guards, audited receipts, transient-D1 recovery, duplicate-completion protection, exactly-once progression/inventory/history, full/reduced tiers, and shared level-up math remain on main.
+- **D1 / blocker:** `wrangler.toml` remains authoritative for `DB` → `DEGEN`; deployment order is schema → migrations → Worker. Approved Discord/Telegram production credentials, live identity/session verification, and legacy identity-collision policy remain a Miles blocker for auth-dependent Shield/housing.
+- **One best next task:** verify the corrected stale-snapshot regression on exact-head CI; then mark PR #81 ready only if all checks are green.
+
+---
+
 ## Latest run — 2026-10-27 (isolate stale active battle snapshots by permit)
 
 - **Authoritative main SHA:** `8e36e1c5f4f5f176657e5986d6bc19b41a7a5f59`. Verified main CI [40450323151](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40450323151) and Pages deploy [40450323174](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40450323174) passed; latest Worker deploy [40448768229](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40448768229) passed D1 schema → tracked migrations → Worker.
