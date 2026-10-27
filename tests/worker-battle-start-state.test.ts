@@ -136,6 +136,9 @@ test('battle start replays the same active permit after event closure without in
   const existingPermit = {
     id: requestId, player_id: 'player-1', event_key: 'underpass', cycle_id: 'open-cycle',
     encounter_key: TUNNEL_MAW.id, expires_at: persistedExpiry, completed_at: null,
+    reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
+    reward_tier: null, reward_level: null, reward_remaining_xp: null,
+    reward_claim_token: null, reward_claimed_at: null,
     player_hp: 64, player_mana: 4, enemy_hp: 50, battle_status: 'active', turn_count: 2,
     cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
   };
@@ -166,12 +169,16 @@ test('battle start rejects a reused request id owned by another player or an exp
   const base = {
     id: requestId, event_key: 'underpass', cycle_id: cycle.id, encounter_key: TUNNEL_MAW.id,
     expires_at: new Date(Date.now() + 60_000).toISOString(), completed_at: null,
+    reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
+    reward_tier: null, reward_level: null, reward_remaining_xp: null,
+    reward_claim_token: null, reward_claimed_at: null,
     player_hp: 80, player_mana: 12, enemy_hp: 92, battle_status: 'active', turn_count: 0,
     cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
   };
   for (const existingPermit of [
     { ...base, player_id: 'different-player' },
     { ...base, player_id: 'player-1', permit_is_unexpired: 0 },
+    { ...base, player_id: 'player-1', reward_state: 'claiming', reward_claim_token: 'stale-token', reward_claimed_at: '2026-10-27T00:00:00.000Z' },
     { ...base, player_id: 'player-1', battle_status: 'victory', enemy_hp: 0, turn_count: 1, completed_at: '2026-10-27T00:00:00.000Z' },
   ]) {
     const { env, inserts } = makeEnv(cycle, true, existingPermit);
