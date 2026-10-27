@@ -104,6 +104,7 @@ try {
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
       ('start-race-player','Concurrent Start QA'),
+      ('start-distinct-key-player','Concurrent Distinct-Key Start QA'),
       ('start-collision-a','Start ID Collision A'),
       ('start-collision-b','Start ID Collision B'),
       ('start-replay-player','Start Replay After Closure QA'),
@@ -127,6 +128,7 @@ try {
       VALUES
         ('integration-player',1,0,0,'test-degen'),
         ('start-race-player',1,0,0,'test-degen'),
+        ('start-distinct-key-player',1,0,0,'test-degen'),
         ('start-collision-a',1,0,0,'test-degen'),
         ('start-collision-b',1,0,0,'test-degen'),
         ('start-replay-player',1,0,0,'test-degen'),
@@ -1052,6 +1054,63 @@ try {
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-race-player'`), 1,
     'the same start key must not create a second permit for the player');
   assertPersistedPermitState(concurrentStartRequestId, concurrentStarts[0].data.initialState);
+
+  // Distinct request IDs from the same player must not race into two simultaneous
+  // encounters. The conditional D1 INSERT is the authority, not this test's timing.
+  const distinctStartRequestIds = [
+    '00000000-0000-4000-8000-000000000086',
+    '00000000-0000-4000-8000-000000000087',
+  ];
+  const distinctStartResponses = await Promise.all(distinctStartRequestIds.map(requestId => fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'start-distinct-key-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  })));
+  const distinctStartResults = await Promise.all(distinctStartResponses.map(async response => ({
+    status: response.status,
+    data: await response.json(),
+  })));
+  assert.equal(distinctStartResults.filter(result => result.status === 200).length, 1,
+    'different keys racing for one player must issue exactly one permit');
+  assert.equal(distinctStartResults.filter(result => result.status === 409).length, 1,
+    'the losing distinct-key request must be rejected');
+  const distinctAcceptedIndex = distinctStartResults.findIndex(result => result.status === 200);
+  const distinctAccepted = distinctStartResults[distinctAcceptedIndex];
+  const distinctRejected = distinctStartResults[1 - distinctAcceptedIndex];
+  const distinctAcceptedId = distinctStartRequestIds[distinctAcceptedIndex];
+  assert.equal(distinctAccepted.data.permitId, distinctAcceptedId);
+  assert.equal(distinctAccepted.data.initialState.permitId, distinctAcceptedId);
+  assert.deepEqual(distinctRejected.data, { error: 'A battle is already in progress.' },
+    'the losing request must not receive the active permit ID or snapshot');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 1,
+    'different idempotency keys must still persist only one permit for the player');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player' AND completed_at IS NULL AND julianday(expires_at) > julianday('now')"), 1,
+    'exactly one unexpired unresolved permit may exist for the player');
+  assertPersistedPermitState(distinctAcceptedId, distinctAccepted.data.initialState);
+
+  // A later distinct key is also rejected while the first encounter remains unresolved.
+  const thirdDistinctResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'start-distinct-key-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId: '00000000-0000-4000-8000-000000000088',
+    }),
+  });
+  assert.equal(thirdDistinctResponse.status, 409);
+  assert.deepEqual(await thirdDistinctResponse.json(), { error: 'A battle is already in progress.' });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 1,
+    'a sequential different-key request must not create a second unresolved permit');
 
   // A shared idempotency key must never let a concurrent caller recover another player's permit.
   const collisionRequestId = '00000000-0000-4000-8000-000000000085';
