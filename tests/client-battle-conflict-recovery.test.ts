@@ -95,6 +95,7 @@ const AppController = runInNewContext(
   battlePermit?: { permitId: string };
   battleEngine?: BattleEngine;
   useBattleAbility(abilityId: string): Promise<void>;
+  finishBattle(status: 'victory' | 'defeat'): Promise<void>;
 };
 
 test('lost action response followed by authoritative victory snapshot completes rewards once', async () => {
@@ -139,7 +140,7 @@ test('lost action response followed by authoritative victory snapshot completes 
   let controller!: InstanceType<typeof AppController>;
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
     terminalCallbacks += 1;
-    void controller['finishBattle'](status);
+    void controller.finishBattle(status);
   }, {
     permitId: 'permit-1',
     status: 'active',
