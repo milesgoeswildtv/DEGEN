@@ -310,15 +310,90 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleStartBattle(request: Request, env: Env): Promise<Response> {
-  const input = await body<{ playerId?: string; eventKey?: string; cycleId?: string; encounterKey?: string }>(request);
+  const input = await body<{
+    playerId?: string; eventKey?: string; cycleId?: string; encounterKey?: string; requestId?: string;
+  }>(request);
   if (!input.playerId || input.eventKey !== 'underpass' || !input.cycleId || input.encounterKey !== TUNNEL_MAW.id) {
     return fail(request, env, 'Invalid battle start request');
+  }
+  if (input.requestId !== undefined
+    && (typeof input.requestId !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestId))) {
+    return fail(request, env, 'Invalid battle start request id');
+  }
+
+  // The client retries only the same start attempt with the same random requestId.
+  // Reusing that ID as the permit primary key avoids a schema migration while all
+  // combat state, expiry, and event eligibility remain Worker/D1-owned.
+  const permitId = input.requestId ?? crypto.randomUUID();
+  type ExistingStartPermit = BattlePermitStateRow & {
+    id: string;
+    player_id: string;
+    event_key: string;
+    cycle_event_key: string | null;
+    expires_at: string;
+    completed_at: string | null;
+    permit_started_in_cycle: number;
+    permit_is_unexpired: number;
+  };
+  const loadExistingPermit = async () => env.DB.prepare(`SELECT
+      permit.id, permit.player_id, permit.event_key, permit.cycle_id, permit.encounter_key,
+      permit.expires_at, permit.completed_at, permit.player_hp, permit.player_mana,
+      permit.enemy_hp, permit.battle_status, permit.turn_count,
+      cycle.event_key AS cycle_event_key,
+      CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)
+        THEN 1 ELSE 0 END AS permit_started_in_cycle,
+      CASE WHEN julianday(permit.expires_at) > julianday('now')
+        THEN 1 ELSE 0 END AS permit_is_unexpired
+    FROM battle_permits AS permit
+    LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+    WHERE permit.id = ?`).bind(permitId).first<ExistingStartPermit>();
+
+  const replayExistingPermit = async (): Promise<Response | undefined> => {
+    const existing = await loadExistingPermit();
+    if (!existing) return undefined;
+    // A colliding/reused ID never exposes another player's state or revives a
+    // terminal/expired permit. Event closure alone does not invalidate a legal,
+    // already-issued encounter while its permit remains valid.
+    if (existing.player_id !== input.playerId
+      || existing.event_key !== 'underpass'
+      || existing.cycle_event_key !== 'underpass'
+      || existing.cycle_id !== input.cycleId
+      || existing.encounter_key !== TUNNEL_MAW.id
+      || existing.completed_at !== null
+      || existing.permit_started_in_cycle !== 1
+      || existing.permit_is_unexpired !== 1
+      || existing.battle_status !== 'active'
+      || !isValidBattlePermitState(existing)) {
+      return fail(request, env, 'Battle start request is already used or invalid.', 409);
+    }
+    return json(request, env, {
+      permitId: existing.id,
+      eventKey: 'underpass',
+      cycleId: existing.cycle_id,
+      encounterKey: existing.encounter_key,
+      expiresAt: existing.expires_at,
+      initialState: {
+        permitId: existing.id,
+        status: existing.battle_status,
+        playerHp: existing.player_hp as number,
+        playerMana: playerManaForSnapshot(existing),
+        enemyHp: existing.enemy_hp as number,
+        turnCount: existing.turn_count,
+      },
+    });
+  };
+
+  if (input.requestId !== undefined) {
+    const replay = await replayExistingPermit();
+    if (replay) return replay;
   }
 
   const cycle = await ensureUnderpassCycle(env.DB);
   if (cycle.id !== input.cycleId || phaseFor(cycle) !== 'open') return fail(request, env, 'The Underpass is sealed.', 409);
 
-  const permitId = crypto.randomUUID();
   const initialState = {
     permitId,
     status: 'active' as const,
@@ -346,11 +421,21 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         AND julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) < julianday(closes_at)
         AND julianday(closes_at) > julianday('now')
     )
+    ON CONFLICT(id) DO NOTHING
     RETURNING id, expires_at`)
     .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id,
       initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id)
     .first<{ id: string; expires_at: string }>();
-  if (!issuedPermit) return fail(request, env, 'The Underpass is sealed.', 409);
+  if (!issuedPermit) {
+    // Another request may have inserted this same idempotency key between the
+    // initial lookup and the conditional insert. Recover only its valid owner-
+    // scoped active permit; a closed cycle with no matching permit still fails.
+    if (input.requestId !== undefined) {
+      const replay = await replayExistingPermit();
+      if (replay) return replay;
+    }
+    return fail(request, env, 'The Underpass is sealed.', 409);
+  }
 
   return json(request, env, {
     permitId,
