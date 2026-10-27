@@ -135,6 +135,7 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): 
 export const battleView = (player: PlayerState, degen: DegenDefinition): string => appShell(player, `
   <section class="battle-layout">
     <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
+    <div id="battle-accessible-hud" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     <div class="battle-controls">
       <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
       <p id="battle-action-status" class="battle-action-status" role="status" aria-live="polite" hidden></p>
@@ -147,13 +148,25 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
           </button>
         `).join('')}
       </div>
-      <div id="battle-log" class="battle-log" aria-live="polite"></div>
+      <div id="battle-log" class="battle-log" role="log" aria-label="Battle event log" aria-live="off" tabindex="0"></div>
       <button class="secondary-action" type="button" data-route="underpass">ABANDON FIGHT</button>
     </div>
   </section>
 `);
 
 export const updateBattleDom = (snapshot: BattleSnapshot): void => {
+  // Phaser renders to canvas, which does not expose changing combat values to
+  // assistive technology. Keep a compact DOM projection of the same snapshot.
+  const accessibleHud = document.querySelector<HTMLElement>('#battle-accessible-hud');
+  if (accessibleHud) {
+    const outcome = snapshot.status === 'active'
+      ? 'Choose an action.'
+      : snapshot.status === 'victory'
+        ? 'Victory. Verifying rewards.'
+        : 'Defeat. Returning to the Underpass.';
+    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, Mana ${snapshot.playerMana} of ${snapshot.playerMaxMana}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}. Turn ${snapshot.turnCount}. ${outcome}`;
+  }
+
   const log = document.querySelector<HTMLElement>('#battle-log');
   if (!log) return;
 
