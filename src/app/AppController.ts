@@ -195,7 +195,7 @@ export class AppController {
         if (isAuthoritativeBattleActionState(battleState, permitId)) {
           const samePermit = this.battlePermit?.permitId === permitId;
           const currentEngine = this.battleEngine;
-          if (samePermit && currentEngine && this.route === 'battle') {
+          if (samePermit && currentEngine) {
             // Never let a stale request settle a different permit through an old
             // engine's completion callback. Sync the currently mounted engine when
             // the same permit has been remounted.
