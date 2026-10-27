@@ -26,6 +26,7 @@ const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewCont
   GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number, startTimeoutMs?: number) => {
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
     acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void;
+    acknowledgeUnderpassCompletion(playerId: string, permitId: string): void;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
   };
   GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
@@ -225,32 +226,6 @@ test('battle start rejects a valid-looking permit response bound to another requ
   assert.equal(calls, 1, 'a mismatched successful response must fail closed, not be retried as a transport error');
 });
 
-test('battle start accepts a Worker-authoritative resumed permit from an earlier cycle', async () => {
-  let sentRequestId = '';
-  const existingPermitId = '00000000-0000-4000-8000-000000000009';
-  const resumedPermit = {
-    ...validPermit(existingPermitId),
-    cycleId: 'previous-cycle',
-    resumedExisting: true,
-  };
-  const fetcher: typeof fetch = async (_input, init) => {
-    sentRequestId = (JSON.parse(String(init?.body)) as { requestId: string }).requestId;
-    return new Response(JSON.stringify(resumedPermit), {
-      status: 200, headers: { 'content-type': 'application/json' },
-    });
-  };
-  const api = new GameApi('https://degen-api.example', fetcher);
-  const result = await api.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit> & {
-    resumedExisting: boolean;
-  };
-  assert.notEqual(sentRequestId, existingPermitId, 'the new-cycle request key must not impersonate the existing permit');
-  assert.equal(result.permitId, existingPermitId);
-  assert.equal(result.cycleId, 'previous-cycle');
-  assert.equal(result.resumedExisting, true);
-  assert.equal(startRequestStorage.size, 0,
-    'after validating a resumed snapshot, clear the unused current-cycle key to avoid a stale retry loop');
-});
-
 test('battle start aborts and retries one timed-out request, then stops after two hangs', async () => {
   let calls = 0;
   const fetcher: typeof fetch = async (_input, init) => {
@@ -320,7 +295,42 @@ test('battle start preserves an uncertain request ID across failed retries and a
   recoveredApi.acknowledgeUnderpassStart('player-1', 'cycle-1', 'wrong-permit');
   assert.equal(startRequestStorage.size, 1, 'a mismatched acknowledgement must not clear another permit key');
   recoveredApi.acknowledgeUnderpassStart('player-1', 'cycle-1', recovered.permitId);
-  assert.equal(startRequestStorage.size, 0, 'the matching accepted permit acknowledgement clears the pending key');
+  assert.equal([...startRequestStorage.keys()].filter(key => key.startsWith('degen:pending-battle-start:')).length, 0,
+    'the matching acknowledgement clears the one-shot pending key');
+  assert.equal([...startRequestStorage.keys()].filter(key => key.startsWith('degen:active-battle-start:')).length, 1,
+    'the accepted permit ID and original cycle remain available for active-encounter recovery');
+});
+
+test('accepted active permit ID survives reload and cycle rollover until reward completion', async () => {
+  let originalRequestId = '';
+  const firstFetcher: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as { requestId: string; cycleId: string };
+    originalRequestId = body.requestId;
+    return new Response(JSON.stringify(validPermit(body.requestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const firstApi = new GameApi('https://degen-api.example', firstFetcher);
+  const firstPermit = await firstApi.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+  firstApi.acknowledgeUnderpassStart('player-1', 'cycle-1', firstPermit.permitId);
+
+  let recoveryBody: { requestId: string; cycleId: string } | undefined;
+  const recoveryFetcher: typeof fetch = async (_input, init) => {
+    recoveryBody = JSON.parse(String(init?.body)) as { requestId: string; cycleId: string };
+    return new Response(JSON.stringify(validPermit(recoveryBody.requestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const reloadedApi = new GameApi('https://degen-api.example', recoveryFetcher);
+  const recovered = await reloadedApi.startUnderpass('player-1', 'cycle-2') as ReturnType<typeof validPermit>;
+  assert.equal(recoveryBody?.requestId, originalRequestId,
+    'a new GameApi instance must reuse the active permit ID rather than create a distinct key');
+  assert.equal(recoveryBody?.cycleId, 'cycle-1',
+    'cycle rollover must not invalidate the still-live permit or replace its original cycle');
+  assert.equal(recovered.permitId, firstPermit.permitId);
+  reloadedApi.acknowledgeUnderpassCompletion('player-1', recovered.permitId);
+  assert.equal(startRequestStorage.size, 0,
+    'only authoritative completion acknowledgement clears the active permit key');
 });
 
 test('battle start clears a persisted key after a definitive Worker rejection', async () => {
