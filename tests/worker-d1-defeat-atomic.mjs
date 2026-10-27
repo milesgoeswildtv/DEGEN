@@ -67,10 +67,10 @@ async function act(id, abilityId = 'slash') {
   return {status:r.status,body};
 }
 function seed(id) {
-  sql(`INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
+  sql(`INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
     battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES('${id}','qa-player','underpass','closed-cycle','tunnel-maw',
-    datetime('now','+20 minutes'),'active',1,12,92,0)`);
+    datetime('now','-3 hours'),datetime('now','+20 minutes'),'active',1,12,92,0)`);
 }
 try {
   cli(['d1','execute','DEGEN','--local',`--persist-to=${persist}`,'--file=db/schema.sql']);
