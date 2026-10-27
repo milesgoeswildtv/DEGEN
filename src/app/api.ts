@@ -41,7 +41,7 @@ export class GameApiError extends Error {
   }
 }
 
-const API_BASE = (import.meta.env?.VITE_API_BASE ?? '').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
 export class GameApi {
   readonly enabled: boolean;

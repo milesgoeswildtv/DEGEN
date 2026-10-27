@@ -1,11 +1,42 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
-import { GameApi, GameApiError } from '../src/app/api.ts';
+import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
+
+const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8')
+  .replace(/^import .*;\\r?\\n/gm, '')
+  .replace('import.meta.env.VITE_API_BASE', 'globalThis.__API_BASE')
+  .replace(/\\bexport class /g, 'class ')
+  .replace(/\\bexport const /g, 'const ');
+const { GameApi, GameApiError } = runInNewContext(
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ GameApi, GameApiError });',
+  {
+    __API_BASE: '',
+    TEST_DEGEN,
+    TUNNEL_MAW,
+    fetch: globalThis.fetch,
+    Response,
+    URL,
+    Date,
+    Number,
+    JSON,
+    Error,
+    encodeURIComponent,
+    console,
+  },
+) as {
+  GameApi: new (apiBase?: string, fetcher?: typeof fetch) => {
+    actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
+  };
+  GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
+};
 
 const authoritativeTurn = {
   permitId: 'permit-1',
-  status: 'active' as const,
+  status: 'active',
   playerHp: 110,
   playerMana: 8,
   enemyHp: 57,
