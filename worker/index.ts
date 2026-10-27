@@ -37,7 +37,25 @@ const json = (request: Request, env: Env, data: unknown, status = 200): Response
 const fail = (request: Request, env: Env, message: string, status = 400): Response =>
   json(request, env, { error: message }, status);
 
-const body = async <T>(request: Request): Promise<T> => request.json<T>();
+class RequestBodyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RequestBodyError';
+  }
+}
+
+const body = async <T>(request: Request): Promise<T> => {
+  let value: unknown;
+  try {
+    value = await request.json();
+  } catch {
+    throw new RequestBodyError('Request body must be valid JSON.');
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new RequestBodyError('Request body must be a JSON object.');
+  }
+  return value as T;
+};
 const iso = (value = Date.now()): string => new Date(value).toISOString();
 const randomInt = (min: number, max: number): number => {
   const bytes = new Uint32Array(1);
@@ -1039,9 +1057,10 @@ export default {
       if (request.method === 'POST' && url.pathname === '/api/battle/complete') return await handleCompleteBattle(request, env);
       return fail(request, env, 'Not found', 404);
     } catch (error) {
+      if (error instanceof RequestBodyError) return fail(request, env, error.message, 400);
       if (error instanceof InventoryIntegrityError) return fail(request, env, error.message, 409);
       console.error(error);
-      return fail(request, env, error instanceof Error ? error.message : 'Internal server error', 500);
+      return fail(request, env, 'Internal server error', 500);
     }
   },
 } satisfies ExportedHandler<Env>;
