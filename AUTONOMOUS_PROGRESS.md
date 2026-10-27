@@ -1,3 +1,18 @@
+## Latest run — 2026-10-27 (serialize distinct-key Underpass starts)
+
+- **Authoritative main SHA:** `d87dcbdba9f5559f84bbb7c768ddcbd57e1fa44b`, confirmed identical to `main` after PR #85 merged normally.
+- **PUSHED / feature branch:** `automation/degen/single-active-underpass-permit-v01`; implementation and isolated Worker/D1 regression are being delivered through a PR. No direct-main write.
+- **Task / files changed:** `worker/index.ts` now rejects a new Underpass start while the same player has an unexpired unresolved permit. The check is repeated inside the single conditional D1 INSERT so distinct request IDs cannot bypass a handler-level precheck race. A losing request gets HTTP 409 without the winner's permit ID or combat snapshot. Expired permits stop blocking new encounters; an already-issued permit remains usable through event closure until its existing expiry.
+- **Regression coverage:** `tests/worker-d1-concurrency.mjs` now races two different request IDs for one player, asserts exactly one 200 and one safe 409, verifies one persisted unresolved permit, and confirms a later distinct-key request cannot create a second permit. Existing same-key retry and cross-owner key-collision tests remain.
+- **QA boundary:** exact-head CI is pending. Required matrix remains deterministic tests, isolated Worker/D1 concurrency/reward recovery, cycle race/rollover, atomic defeat history, production build, Chromium mobile vertical slice, and Wrangler dry-run. No local-shell test claim, production D1 operation, or Worker deployment is made.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost use at zero, terminal coverage, cost-aware controls, migration `0006_backfill_active_battle_mana.sql`, no monster Mana, and no Mana-triggered reversion remain intact. The original sidekick Mana branch is stale/diverged (11 ahead / 79 behind) and contains no unfinished Mana slice to continue.
+- **Battle authority / reward idempotency:** server-owned state, action CAS, terminal resolution, persisted receipts, transient-failure recovery, exactly-once progression/history, full/reduced reward tiers, shared level-up math, and event-cycle guards remain unchanged. This task only serializes permit creation.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for binding `DB` → `DEGEN` and `db/migrations`; deployment order is base schema → tracked migrations → Worker. No schema migration or deployment-config change is needed. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` numbering conflict and the approved platform-auth/live-verification gate remain unresolved; no gated auth/Shield/housing work was merged or deployed.
+- **Post-merge boundary:** PR #85 merged as `d87dcbdba9f5559f84bbb7c768ddcbd57e1fa44b`; its continuity-head CI run `40570139106` completed successfully. Post-merge main CI and Worker deployment have not been independently verified.
+- **One best next task:** complete exact-head CI for the distinct-key permit race and verify that the loser cannot create or observe a second permit; then verify post-merge main CI/deployment separately.
+
+---
+
 ## Latest run — 2026-10-27 (verify persisted battle-start recovery end to end)
 
 - **Authoritative main SHA:** `26e078e7f8fbf9c5417fd0efc28f0bc00a9b0294`, after PR #83's normal merge. The PR #85 code/test head `aef5d272339bce6dd03a60c50118613670275e32` is pushed on `automation/degen/battle-start-key-persistence-v01`; PR #85 remains open and unmerged.
