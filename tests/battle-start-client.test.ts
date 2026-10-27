@@ -175,10 +175,25 @@ test('server-backed battle start rejects a snapshot for another permit or an out
   await assert.rejects(apiReturning(excessiveMana), /Missing or malformed authoritative battle start state/);
 });
 
-test('server-backed battle start rejects a non-initial turn count', async () => {
+test('server-backed battle start accepts a valid progressed snapshot when recovering a lost response', async () => {
   const permit = validPermit();
-  permit.initialState.turnCount = 1;
-  await assert.rejects(apiReturning(permit), /Missing or malformed authoritative battle start state/);
+  permit.initialState.playerHp = 64;
+  permit.initialState.playerMana = 4;
+  permit.initialState.enemyHp = 50;
+  permit.initialState.turnCount = 2;
+
+  const result = await apiReturning(permit) as typeof permit;
+  assert.deepEqual(result.initialState, permit.initialState);
+});
+
+test('server-backed battle start rejects active snapshots outside battle invariants', async () => {
+  const deadPlayer = validPermit();
+  deadPlayer.initialState.playerHp = 0;
+  await assert.rejects(apiReturning(deadPlayer), /Missing or malformed authoritative battle start state/);
+
+  const exhaustedTurnCounter = validPermit();
+  exhaustedTurnCounter.initialState.turnCount = Number.MAX_SAFE_INTEGER;
+  await assert.rejects(apiReturning(exhaustedTurnCounter), /Missing or malformed authoritative battle start state/);
 });
 
 
