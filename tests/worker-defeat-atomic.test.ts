@@ -25,10 +25,10 @@ function setup(hp = 1) {
   }
   db.exec("INSERT INTO players(id,display_name) VALUES ('p1','Player')");
   db.exec("INSERT INTO characters(player_id,degen_key,level) VALUES ('p1','test-degen',3)");
-  db.exec("INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES ('cycle','underpass',datetime('now','-4 hours'),datetime('now','-2 hours'))");
-  db.prepare(`INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,expires_at,
+  db.exec("INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES ('cycle','underpass',datetime('now','-10 minutes'),datetime('now','-1 minute'))");
+  db.prepare(`INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
     battle_status,player_hp,player_mana,enemy_hp,turn_count) VALUES
-    ('permit','p1','underpass','cycle','tunnel-maw',datetime('now','+20 minutes'),'active',?,12,92,0)`).run(hp);
+    ('permit','p1','underpass','cycle','tunnel-maw',datetime('now','-2 minutes'),datetime('now','+18 minutes'),'active',?,12,92,0)`).run(hp);
   let beforeBatch: (() => void) | undefined;
   let afterFirstBatchStatement: (() => void) | undefined;
   const adapter = {

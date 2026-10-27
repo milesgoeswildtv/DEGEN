@@ -57,6 +57,11 @@ type BattlePermitStateRow = {
   turn_count: number;
 };
 
+type BattleActionPermitRow = BattlePermitStateRow & {
+  event_key: string;
+  cycle_event_key: string | null;
+};
+
 const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
 
@@ -290,7 +295,6 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   if (cycle.id !== input.cycleId || phaseFor(cycle) !== 'open') return fail(request, env, 'The Underpass is sealed.', 409);
 
   const permitId = crypto.randomUUID();
-  const expiresAt = iso(Date.now() + 20 * 60_000);
   const initialState = {
     permitId,
     status: 'active' as const,
@@ -299,23 +303,29 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   };
-  // Recheck the cycle inside the permit-issuing statement. The earlier phase
-  // read is advisory: the cycle can close between that read and this write.
+  // Use D1's clock for both persisted timestamps. SQLite keeps every 'now'
+  // value in this statement stable, so Worker/D1 clock skew cannot issue a
+  // permit whose started_at is already in the future to later authority checks.
+  // Recheck the cycle in the same statement: the earlier phase read is advisory.
   const issuedPermit = await env.DB.prepare(`INSERT INTO battle_permits (
-      id, player_id, event_key, cycle_id, encounter_key, expires_at,
+      id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count
     )
-    SELECT ?, ?, 'underpass', ?, ?, ?, ?, ?, ?, 'active', 0
+    SELECT ?, ?, 'underpass', ?, ?,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+20 minutes'),
+      ?, ?, ?, 'active', 0
     WHERE EXISTS (
       SELECT 1 FROM world_event_cycles
       WHERE id = ? AND event_key = 'underpass'
-        AND julianday(opens_at) <= julianday('now')
+        AND julianday(opens_at) <= julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        AND julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) < julianday(closes_at)
         AND julianday(closes_at) > julianday('now')
     )
-    RETURNING id`)
-    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id, expiresAt,
+    RETURNING id, expires_at`)
+    .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id,
       initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id)
-    .first<{ id: string }>();
+    .first<{ id: string; expires_at: string }>();
   if (!issuedPermit) return fail(request, env, 'The Underpass is sealed.', 409);
 
   return json(request, env, {
@@ -323,7 +333,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     eventKey: 'underpass',
     cycleId: cycle.id,
     encounterKey: TUNNEL_MAW.id,
-    expiresAt,
+    expiresAt: issuedPermit.expires_at,
     initialState,
   });
 }
@@ -342,22 +352,39 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (!ability) return fail(request, env, 'Unknown ability.', 400);
 
   const permit = await env.DB.prepare(`SELECT
-      cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
-    FROM battle_permits
-    WHERE id = ? AND player_id = ? AND completed_at IS NULL AND julianday(expires_at) > julianday('now')`)
+      permit.event_key, cycle.event_key AS cycle_event_key,
+      permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
+      permit.enemy_hp, permit.battle_status, permit.turn_count
+    FROM battle_permits AS permit
+    LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+    WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NULL
+      AND julianday(expires_at) > julianday('now')
+      AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+      AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
     .bind(input.permitId, input.playerId)
-    .first<BattlePermitStateRow>();
+    .first<BattleActionPermitRow>();
 
   if (!permit) {
     // Preserve the existing awarded-receipt replay path for a delayed second tab.
     const completed = await env.DB.prepare(`SELECT
-        cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
-      FROM battle_permits
-      WHERE id = ? AND player_id = ? AND completed_at IS NOT NULL
-        AND reward_state = 'awarded' AND battle_status = 'victory'`)
+        permit.event_key, cycle.event_key AS cycle_event_key,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
+        permit.enemy_hp, permit.battle_status, permit.turn_count
+      FROM battle_permits AS permit
+      LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+      WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NOT NULL
+        AND permit.reward_state = 'awarded' AND permit.battle_status = 'victory'
+        AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
-      .first<BattlePermitStateRow>();
-    if (completed && completed.encounter_key === TUNNEL_MAW.id && isValidBattlePermitState(completed)) {
+      .first<BattleActionPermitRow>();
+    if (completed
+      && completed.event_key === 'underpass'
+      && completed.cycle_event_key === 'underpass'
+      && completed.encounter_key === TUNNEL_MAW.id
+      && isValidBattlePermitState(completed)) {
       return json(request, env, {
         error: 'Battle permit is already completed.',
         battleState: {
@@ -375,13 +402,19 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     // Recover only the owner-scoped, persisted terminal snapshot; this never reopens
     // the permit or authorizes another action. Active expired permits still fail closed.
     const terminal = await env.DB.prepare(`SELECT
-        cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count,
-        completed_at, reward_state
-      FROM battle_permits
-      WHERE id = ? AND player_id = ? AND completed_at IS NULL
-        AND battle_status IN ('victory', 'defeat')`)
+        permit.event_key, cycle.event_key AS cycle_event_key,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
+        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        permit.completed_at, permit.reward_state
+      FROM battle_permits AS permit
+      LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+      WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NULL
+        AND permit.battle_status IN ('victory', 'defeat')
+        AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
-      .first<BattlePermitStateRow & {
+      .first<BattleActionPermitRow & {
         completed_at: string | null;
         reward_state: 'pending' | 'claiming' | 'awarded';
       }>();
@@ -390,6 +423,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     const unresolvedDefeat = terminal?.battle_status === 'defeat'
       && terminal.reward_state === 'pending';
     if (terminal
+      && terminal.event_key === 'underpass'
+      && terminal.cycle_event_key === 'underpass'
       && terminal.encounter_key === TUNNEL_MAW.id
       && isValidBattlePermitState(terminal)
       && (pendingVictory || unresolvedDefeat)) {
@@ -408,6 +443,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       }, 409);
     }
     return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+  }
+  if (permit.event_key !== 'underpass' || permit.cycle_event_key !== 'underpass') {
+    return fail(request, env, 'Unsupported battle permit.', 409);
   }
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
   if (permit.player_hp === null || permit.enemy_hp === null
@@ -431,10 +469,20 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   // is still the authority that decides whether an action commits.
   const conflict = async (message: string): Promise<Response> => {
     const latest = await env.DB.prepare(`SELECT
-        cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
-      FROM battle_permits WHERE id = ? AND player_id = ?`)
+        permit.event_key, cycle.event_key AS cycle_event_key,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
+        permit.enemy_hp, permit.battle_status, permit.turn_count
+      FROM battle_permits AS permit
+      LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+      WHERE permit.id = ? AND permit.player_id = ?
+        AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
-      .first<BattlePermitStateRow>();
+      .first<BattleActionPermitRow>();
+    if (latest && (latest.event_key !== 'underpass' || latest.cycle_event_key !== 'underpass' || latest.encounter_key !== TUNNEL_MAW.id)) {
+      return fail(request, env, 'Unsupported battle permit.', 409);
+    }
     if (!latest || !isValidBattlePermitState(latest)) {
       return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
     }
@@ -481,9 +529,17 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
-      AND julianday(expires_at) > julianday('now') AND turn_count = ?
+      AND julianday(expires_at) > julianday('now')
+      AND event_key = 'underpass' AND encounter_key = ?
+      AND EXISTS (SELECT 1 FROM world_event_cycles
+        WHERE id = battle_permits.cycle_id AND event_key = 'underpass'
+          AND julianday(opens_at) <= julianday(battle_permits.started_at)
+          AND julianday(battle_permits.started_at) <= julianday('now')
+          AND julianday(battle_permits.started_at) < julianday(closes_at))
+      AND turn_count = ?
     RETURNING turn_count`)
-    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId, permit.turn_count);
+    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId,
+      TUNNEL_MAW.id, permit.turn_count);
 
   let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
@@ -511,10 +567,20 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   if (!updated) {
     // A competing action may have committed after the SELECT. Return only persisted state.
     const latest = await env.DB.prepare(`SELECT
-        cycle_id, encounter_key, player_hp, player_mana, enemy_hp, battle_status, turn_count
-      FROM battle_permits WHERE id = ? AND player_id = ?`)
+        permit.event_key, cycle.event_key AS cycle_event_key,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
+        permit.enemy_hp, permit.battle_status, permit.turn_count
+      FROM battle_permits AS permit
+      LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+      WHERE permit.id = ? AND permit.player_id = ?
+        AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
-      .first<BattlePermitStateRow>();
+      .first<BattleActionPermitRow>();
+    if (latest && (latest.event_key !== 'underpass' || latest.cycle_event_key !== 'underpass' || latest.encounter_key !== TUNNEL_MAW.id)) {
+      return fail(request, env, 'Unsupported battle permit.', 409);
+    }
     if (latest && isValidBattlePermitState(latest)) {
       return json(request, env, {
         error: 'Battle state changed; synchronized from the latest authoritative state.',
@@ -555,6 +621,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     permit_id: string;
     event_key: string;
     cycle_event_key: string | null;
+    permit_started_in_cycle: number;
     cycle_clear_count: number | null;
     duplicate_clear_count: number;
     reward_level: number | null;
@@ -575,6 +642,10 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       permit.reward_level, permit.reward_remaining_xp, permit.completed_at,
       permit.reward_claim_token, permit.reward_claimed_at,
       cycle.event_key AS cycle_event_key,
+      CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)
+        THEN 1 ELSE 0 END AS permit_started_in_cycle,
       clears.full_reward_clears AS cycle_clear_count,
       (SELECT COUNT(*) FROM battle_permits AS other
         WHERE other.player_id = permit.player_id
@@ -649,6 +720,11 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     || receipt.encounter_key !== TUNNEL_MAW.id) {
     return fail(request, env, 'Unsupported battle permit.', 409);
   }
+  // Permit chronology is part of authority and must gate every completion path,
+  // including idempotent replay of a previously awarded receipt.
+  if (receipt.permit_started_in_cycle !== 1) {
+    return fail(request, env, 'Battle permit was not issued during its event cycle.', 409);
+  }
 
   // Validate current inventory before replaying an awarded receipt or attempting
   // settlement. Legacy rows are rejected, never silently truncated or rewritten.
@@ -702,7 +778,10 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     WHERE id = ? AND player_id = ? AND event_key = 'underpass'
       AND encounter_key = ? AND completed_at IS NULL
       AND EXISTS (SELECT 1 FROM world_event_cycles
-        WHERE id = battle_permits.cycle_id AND event_key = 'underpass')
+        WHERE id = battle_permits.cycle_id AND event_key = 'underpass'
+          AND julianday(opens_at) <= julianday(battle_permits.started_at)
+          AND julianday(battle_permits.started_at) <= julianday('now')
+          AND julianday(battle_permits.started_at) < julianday(closes_at))
       AND battle_status = 'victory' AND (
       (reward_state = 'pending' AND completed_at IS NULL)
       OR (reward_state = 'claiming'
