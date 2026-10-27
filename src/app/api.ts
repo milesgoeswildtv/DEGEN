@@ -191,12 +191,17 @@ export class GameApi {
     const sendCompletion = () => this.requestWithTimeout<BattleCompletionResult>(
       '/api/battle/complete', completionRequest, this.completionTimeoutMs,
     );
+    let result: BattleCompletionResult;
     try {
-      return await sendCompletion();
+      result = await sendCompletion();
     } catch (error) {
       if (error instanceof GameApiError && error.status < 500) throw error;
-      return sendCompletion();
+      result = await sendCompletion();
     }
+    if (!isAuthoritativeBattleCompletionResult(result, playerId)) {
+      throw new Error('Malformed authoritative battle completion response.');
+    }
+    return result;
   }
 
   private async requestWithTimeout<T>(path: string, init: RequestInit, timeoutMs: number): Promise<T> {
