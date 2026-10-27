@@ -158,9 +158,30 @@ export class AppController {
     try {
       if (this.api.enabled) {
         const authoritative = await this.api.actUnderpass(this.store.snapshot.id, permitId, abilityId, engine.snapshot.turnCount);
-        if (this.battleEngine !== engine || this.battlePermit?.permitId !== permitId) return;
         if (!authoritative || authoritative.permitId !== permitId) {
           throw new Error('Missing or mismatched authoritative battle action response.');
+        }
+
+        // The player can abandon the battle while this request is in flight. A
+        // confirmed terminal result still belongs to the server permit even when
+        // its original view has been torn down; never strand a resolved victory.
+        if (this.battlePermit?.permitId !== permitId) {
+          if (authoritative.status === 'victory') {
+            this.rememberPendingReward(permitId);
+            void this.queueRewardCompletion(permitId);
+          }
+          return;
+        }
+        if (this.battleEngine !== engine) {
+          if (this.battleEngine && this.route === 'battle') {
+            this.battleEngine.synchronizeAuthoritativeState(authoritative);
+          } else if (authoritative.status === 'victory') {
+            this.rememberPendingReward(permitId);
+            void this.queueRewardCompletion(permitId);
+          } else if (authoritative.status === 'defeat') {
+            this.battlePermit = undefined;
+          }
+          return;
         }
         engine.applyAuthoritativeAction(abilityId, authoritative);
       } else {

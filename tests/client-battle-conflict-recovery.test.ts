@@ -305,3 +305,71 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
   assert.equal(store.localRewards, 0);
 });
 
+
+
+test('a confirmed victory still settles if the player abandons before the action response arrives', async () => {
+  timers.length = 0;
+  storage.clear();
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const authoritativeVictory = {
+    permitId: 'permit-abandoned',
+    status: 'victory' as const,
+    playerHp: 80,
+    playerMana: 4,
+    enemyHp: 0,
+    turnCount: 1,
+  };
+  let resolveAction!: (value: unknown) => void;
+  const actionResponse = new Promise<unknown>((resolve) => { resolveAction = resolve; });
+  let actionCalls = 0;
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    actUnderpass() {
+      actionCalls += 1;
+      return actionResponse;
+    },
+    async completeUnderpass(_playerId: string, permitId: string) {
+      completionCalls += 1;
+      assert.equal(permitId, 'permit-abandoned');
+      return { player: { id: 'player-1', level: 2 }, worldEvent: { cycleId: 'cycle-1' } };
+    },
+  };
+
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the torn-down engine should not resolve the action locally');
+  }, {
+    permitId: 'permit-abandoned',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-abandoned' };
+  controller.battleEngine = engine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  controller.route = 'underpass';
+  controller.battleEngine = undefined;
+  resolveAction(authoritativeVictory);
+  await pendingAction;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(actionCalls, 1);
+  assert.equal(completionCalls, 1, 'the confirmed victory is submitted to Worker completion exactly once');
+  assert.equal(store.replaced, 1, 'only the authoritative player snapshot is applied');
+  assert.equal(store.localRewards, 0, 'the client never grants a local reward');
+  assert.equal(controller.battlePermit, undefined);
+  assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), '[]');
+});
