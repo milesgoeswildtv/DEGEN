@@ -104,6 +104,7 @@ export class GameApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+const BATTLE_START_TIMEOUT_MS = 12_000;
 const BATTLE_ACTION_TIMEOUT_MS = 12_000;
 const BATTLE_COMPLETION_TIMEOUT_MS = 20_000;
 
@@ -117,6 +118,7 @@ export class GameApi {
     fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     private readonly actionTimeoutMs = BATTLE_ACTION_TIMEOUT_MS,
     private readonly completionTimeoutMs = BATTLE_COMPLETION_TIMEOUT_MS,
+    private readonly startTimeoutMs = BATTLE_START_TIMEOUT_MS,
   ) {
     this.apiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
     this.fetcher = fetcher;
@@ -146,10 +148,25 @@ export class GameApi {
 
   async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
-    const permit = await this.request<BattlePermit>('/api/battle/start', {
+    // The same requestId is reused for one bounded retry. The Worker uses it as
+    // the permit key and replays only the matching, still-valid authoritative start.
+    const startRequest: RequestInit = {
       method: 'POST',
-      body: JSON.stringify({ playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
-    });
+      body: JSON.stringify({
+        playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw',
+        requestId: crypto.randomUUID(),
+      }),
+    };
+    const sendStart = () => this.requestWithTimeout<BattlePermit>(
+      '/api/battle/start', startRequest, this.startTimeoutMs,
+    );
+    let permit: BattlePermit;
+    try {
+      permit = await sendStart();
+    } catch (error) {
+      if (error instanceof GameApiError && error.status < 500) throw error;
+      permit = await sendStart();
+    }
     if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()
       || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
       || permit.encounterKey !== TUNNEL_MAW.id
