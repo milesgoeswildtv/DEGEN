@@ -11,7 +11,7 @@ const controllerSource = readFileSync(new URL('../src/app/AppController.ts', imp
   .replace('export class AppController', 'class AppController');
 const compiled = stripTypeScriptTypes(controllerSource, { mode: 'transform' });
 
-const setup = (enabled: boolean, completeUnderpass?: () => Promise<unknown>) => {
+const setup = (enabled: boolean, completeUnderpass?: (playerId: string, permitId: string) => Promise<unknown>) => {
   const storage = new Map<string, string>();
   const timers: Array<{ callback: () => void; delay: number }> = [];
   const store = {
@@ -98,4 +98,39 @@ test('offline preview still applies its local non-economic reward', async () => 
   await controller.finishBattle('victory');
   assert.equal(fixture.store.localRewards, 1);
   assert.equal(fixture.store.replaced, 0);
+});
+
+
+test('a completion already in flight cannot replace a switched account', async () => {
+  let resolveCompletion!: (value: unknown) => void;
+  const completionResponse = new Promise<unknown>((resolve) => { resolveCompletion = resolve; });
+  let requestedPlayerId = '';
+  let requestedPermitId = '';
+  const fixture = setup(true, async (playerId, permitId) => {
+    requestedPlayerId = playerId;
+    requestedPermitId = permitId;
+    return completionResponse;
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-in-flight' };
+  controller.battlePermitOwnerId = 'test-player';
+  controller.route = 'battle';
+
+  const finishing = controller.finishBattle('victory');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requestedPlayerId, 'test-player');
+  assert.equal(requestedPermitId, 'permit-in-flight');
+
+  fixture.store.snapshot.id = 'new-player';
+  resolveCompletion({ player: { id: 'test-player', level: 2 }, worldEvent: { cycleId: 'cycle-1' } });
+  await finishing;
+
+  assert.equal(fixture.store.snapshot.id, 'new-player');
+  assert.equal(fixture.store.replaced, 0, 'a late completion must not overwrite the new account with the old player snapshot');
+  assert.equal(fixture.store.localRewards, 0, 'completion remains Worker-owned');
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '[]',
+    'the original account’s retry record is cleared after authoritative completion');
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:new-player'), undefined,
+    'the original permit never enters the new account’s retry queue');
+  assert.equal(controller.battlePermit, undefined, 'the completed old permit is cleared without changing the active account');
 });
