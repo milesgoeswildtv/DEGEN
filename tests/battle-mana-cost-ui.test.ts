@@ -28,16 +28,19 @@ test('battle controls expose each bespoke ability Mana cost', () => {
   assert.match(html, /NO MANA/);
   assert.match(html, /data-ability="crack" data-mana-cost="4"/);
   assert.match(html, /4 MANA/);
+  assert.match(html, /id="battle-accessible-hud" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"/);
+  assert.match(html, /role="log" aria-label="Battle event log" aria-live="off" tabindex="0"/);
 });
 
 test('battle controls keep zero-cost abilities enabled and gate paid abilities by current Mana', () => {
   const log = { innerHTML: '', append: (_node: unknown) => undefined };
+  const accessibleHud = { textContent: '' };
   const buttons = [
     { dataset: { manaCost: '0' }, disabled: true },
     { dataset: { manaCost: '4' }, disabled: false },
   ];
   const fakeDocument = {
-    querySelector: (_selector: string) => log,
+    querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
     querySelectorAll: (_selector: string) => buttons,
   };
 
@@ -47,16 +50,41 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
+      playerName: string;
+      playerHp: number;
+      playerMaxHp: number;
       playerMana: number;
+      playerMaxMana: number;
+      enemyName: string;
+      enemyHp: number;
+      enemyMaxHp: number;
+      turnCount: number;
       log: string[];
     }) => void;
   };
 
-  boundUi.updateBattleDom({ status: 'active', playerMana: 0, log: [] });
+  const snapshot = (playerMana: number) => ({
+    status: 'active' as const,
+    playerName: 'TEST_DEGEN',
+    playerHp: 73,
+    playerMaxHp: 120,
+    playerMana,
+    playerMaxMana: 12,
+    enemyName: 'Tunnel Maw',
+    enemyHp: 51,
+    enemyMaxHp: 92,
+    turnCount: 2,
+    log: [],
+  });
+
+  boundUi.updateBattleDom(snapshot(0));
   assert.equal(buttons[0]?.disabled, false);
   assert.equal(buttons[1]?.disabled, true);
+  assert.match(accessibleHud.textContent, /TEST_DEGEN: HP 73 of 120, Mana 0 of 12/);
+  assert.match(accessibleHud.textContent, /Tunnel Maw: HP 51 of 92\. Turn 2\. Choose an action\./);
 
-  boundUi.updateBattleDom({ status: 'active', playerMana: 4, log: [] });
+  boundUi.updateBattleDom(snapshot(4));
   assert.equal(buttons[0]?.disabled, false);
   assert.equal(buttons[1]?.disabled, false);
+  assert.match(accessibleHud.textContent, /Mana 4 of 12/);
 });
