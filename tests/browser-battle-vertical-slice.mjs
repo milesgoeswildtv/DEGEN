@@ -210,7 +210,7 @@ try {
   await assertFitsCompact('Battle');
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
-    if (turn === 1) await cdp.evaluate('window.__degenSimulateLostActionResponse = true');
+    if (turn === 1 || turn === 3) await cdp.evaluate('window.__degenSimulateLostActionResponse = true');
     await tap("[data-ability=crack]");
     if (turn === 1) {
       await until('Recovered authoritative state after lost response', () => cdp.evaluate(
@@ -218,6 +218,8 @@ try {
       assert.equal(await cdp.evaluate('document.querySelector("#battle-action-status")?.textContent'),
         'Battle state refreshed from the server. Choose your next move.',
         'the player should see that the committed turn was recovered from authoritative state');
+    } else if (turn === 3) {
+      await until('Recovered terminal victory after lost response', () => cdp.evaluate('window.__degenLostActionResponses === 2'));
     } else if (turn < 3) {
       await until('Authoritative action ' + turn, () => cdp.evaluate(
         '(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + (turn - 1)));
@@ -254,6 +256,11 @@ try {
   assert.equal(finalPermit?.player_mana, 0);
   assert.equal(finalPermit?.turn_count, 3);
   assert.ok(finalPermit?.completed_at, 'Worker should persist completion after awarding the victory receipt');
+  assert.equal(await cdp.evaluate('window.__degenLostActionResponses'), 2,
+    'both an active turn and the killing blow should recover after their committed responses are lost');
+  const victoryHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='" + playerId + "' AND encounter_key='tunnel-maw' AND result='victory'")[0];
+  assert.equal(victoryHistory?.count, 1,
+    'recovering the lost killing-blow response must settle exactly one victory-history row');
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
