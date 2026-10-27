@@ -22,8 +22,11 @@ const handleStartBattle = runInNewContext(handlerSource, {
 function makeEnv(
   cycle: { id: string; event_key: string; opens_at: string; closes_at: string },
   permitInsertAllowed = true,
+  existingPermit: Record<string, unknown> | null = null,
+  existingPermitAfterConflict: Record<string, unknown> | null = null,
 ) {
   const inserts: unknown[][] = [];
+  let replayLookupCount = 0;
   const persistedExpiry = new Date(Date.now() + 20 * 60_000).toISOString();
   const db = {
     prepare(sql: string) {
@@ -35,6 +38,10 @@ function makeEnv(
         bind(...params: unknown[]) {
           return {
             first: async () => {
+              if (sql.includes('FROM battle_permits AS permit')) {
+                replayLookupCount += 1;
+                return replayLookupCount === 1 ? existingPermit : (existingPermitAfterConflict ?? existingPermit);
+              }
               if (sql.includes('INSERT INTO battle_permits')) {
                 assert.match(sql, /WHERE EXISTS\s*\(\s*SELECT 1 FROM world_event_cycles/);
                 assert.match(sql, /strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)/);
@@ -42,6 +49,7 @@ function makeEnv(
                 assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)/);
                 assert.match(sql, /julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)\s*<\s*julianday\(closes_at\)/);
                 assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
+                assert.match(sql, /ON CONFLICT\(id\) DO NOTHING/);
                 assert.match(sql, /RETURNING id, expires_at/);
                 if (!permitInsertAllowed) return null;
                 inserts.push(params);
@@ -79,8 +87,10 @@ test('battle start ignores forged client combat state and returns exactly the De
     opens_at: new Date(Date.now() - 60_000).toISOString(),
     closes_at: new Date(Date.now() + 60_000).toISOString(),
   };
+  const requestId = '00000000-0000-4000-8000-000000000001';
   const { env, inserts, persistedExpiry } = makeEnv(cycle);
   const response = await handleStartBattle(request(cycle.id, {
+    requestId,
     playerHp: 1,
     playerMana: 0,
     enemyHp: 1,
@@ -97,7 +107,7 @@ test('battle start ignores forged client combat state and returns exactly the De
     };
   };
 
-  assert.ok(result.permitId);
+  assert.equal(result.permitId, requestId, 'the request key is used only as the permit identity; the Worker still owns all combat state');
   assert.deepEqual(result.initialState, {
     permitId: result.permitId,
     status: 'active',
@@ -119,6 +129,116 @@ test('battle start ignores forged client combat state and returns exactly the De
   );
 });
 
+
+test('battle start rejects malformed request IDs before issuing a permit', async () => {
+  const cycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const { env, inserts } = makeEnv(cycle);
+  const response = await handleStartBattle(request(cycle.id, { requestId: 'not-a-uuid' }), env);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Invalid battle start request id' });
+  assert.equal(inserts.length, 0);
+});
+
+test('battle start replays the same active permit after event closure without inserting another', async () => {
+  const requestId = '00000000-0000-4000-8000-000000000002';
+  const persistedExpiry = new Date(Date.now() + 5 * 60_000).toISOString();
+  const closedCycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+    closes_at: new Date(Date.now() - 60_000).toISOString(),
+  };
+  const existingPermit = {
+    id: requestId, player_id: 'player-1', event_key: 'underpass', cycle_id: 'open-cycle',
+    encounter_key: TUNNEL_MAW.id, expires_at: persistedExpiry, completed_at: null,
+    reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
+    reward_tier: null, reward_level: null, reward_remaining_xp: null,
+    reward_claim_token: null, reward_claimed_at: null,
+    player_hp: 64, player_mana: 4, enemy_hp: 50, battle_status: 'active', turn_count: 2,
+    cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
+  };
+  const { env, inserts } = makeEnv(closedCycle, true, existingPermit);
+  const response = await handleStartBattle(request('open-cycle', { requestId }), env);
+
+  assert.equal(response.status, 200, 'a lost start response can be recovered while the issued permit remains valid');
+  assert.deepEqual(await response.json(), {
+    permitId: requestId,
+    eventKey: 'underpass',
+    cycleId: 'open-cycle',
+    encounterKey: TUNNEL_MAW.id,
+    expiresAt: persistedExpiry,
+    initialState: {
+      permitId: requestId, status: 'active', playerHp: 64, playerMana: 4, enemyHp: 50, turnCount: 2,
+    },
+  });
+  assert.equal(inserts.length, 0, 'recovery must return the persisted snapshot without issuing a second permit');
+});
+
+test('battle start rejects foreign, expired, terminal, or corrupt request ID reuse', async () => {
+  const requestId = '00000000-0000-4000-8000-000000000003';
+  const cycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const base = {
+    id: requestId, event_key: 'underpass', cycle_id: cycle.id, encounter_key: TUNNEL_MAW.id,
+    expires_at: new Date(Date.now() + 60_000).toISOString(), completed_at: null,
+    reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
+    reward_tier: null, reward_level: null, reward_remaining_xp: null,
+    reward_claim_token: null, reward_claimed_at: null,
+    player_hp: 80, player_mana: 12, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+    cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
+  };
+  for (const existingPermit of [
+    { ...base, player_id: 'different-player' },
+    { ...base, player_id: 'player-1', permit_is_unexpired: 0 },
+    { ...base, player_id: 'player-1', reward_state: 'claiming', reward_claim_token: 'stale-token', reward_claimed_at: '2026-10-27T00:00:00.000Z' },
+    { ...base, player_id: 'player-1', battle_status: 'victory', enemy_hp: 0, turn_count: 1, completed_at: '2026-10-27T00:00:00.000Z' },
+    { ...base, player_id: 'player-1', player_mana: TEST_DEGEN.maxMana + 1 },
+    { ...base, player_id: 'player-1', player_hp: 0 },
+    { ...base, player_id: 'player-1', enemy_hp: 0 },
+    { ...base, player_id: 'player-1', turn_count: 0.5 },
+  ]) {
+    const { env, inserts } = makeEnv(cycle, true, existingPermit);
+    const response = await handleStartBattle(request(cycle.id, { requestId }), env);
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: 'Battle start request is already used or invalid.' });
+    assert.equal(inserts.length, 0, 'a reused, foreign, expired, or terminal request id must not create another permit');
+  }
+});
+
+test('battle start recovers a concurrent request-ID insert without issuing a duplicate permit', async () => {
+  const requestId = '00000000-0000-4000-8000-000000000004';
+  const cycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const persistedExpiry = new Date(Date.now() + 5 * 60_000).toISOString();
+  const racedPermit = {
+    id: requestId, player_id: 'player-1', event_key: 'underpass', cycle_id: cycle.id,
+    encounter_key: TUNNEL_MAW.id, expires_at: persistedExpiry, completed_at: null,
+    reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
+    reward_tier: null, reward_level: null, reward_remaining_xp: null,
+    reward_claim_token: null, reward_claimed_at: null,
+    player_hp: 72, player_mana: 0, enemy_hp: 41, battle_status: 'active', turn_count: 1,
+    cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
+  };
+  const { env, inserts } = makeEnv(cycle, false, null, racedPermit);
+  const response = await handleStartBattle(request(cycle.id, { requestId }), env);
+
+  assert.equal(response.status, 200);
+  const result = await response.json() as { permitId: string; initialState: Record<string, unknown> };
+  assert.equal(result.permitId, requestId);
+  assert.deepEqual(result.initialState, {
+    permitId: requestId, status: 'active', playerHp: 72, playerMana: 0, enemyHp: 41, turnCount: 1,
+  });
+  assert.equal(inserts.length, 0, 'a concurrent winner owns the one permit row; the retry must only replay it');
+});
 
 test('battle start rechecks the Underpass window atomically before issuing a permit', async () => {
   const cycle = {

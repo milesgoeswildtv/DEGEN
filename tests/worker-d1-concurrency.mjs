@@ -103,6 +103,10 @@ try {
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
+      ('start-race-player','Concurrent Start QA'),
+      ('start-collision-a','Start ID Collision A'),
+      ('start-collision-b','Start ID Collision B'),
+      ('start-replay-player','Start Replay After Closure QA'),
       ('event-closure-player','Event Closure QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
@@ -122,6 +126,10 @@ try {
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES
         ('integration-player',1,0,0,'test-degen'),
+        ('start-race-player',1,0,0,'test-degen'),
+        ('start-collision-a',1,0,0,'test-degen'),
+        ('start-collision-b',1,0,0,'test-degen'),
+        ('start-replay-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
@@ -1005,6 +1013,154 @@ try {
       AND ABS((julianday(expires_at) - julianday(started_at)) * 1440 - 20) < 0.001`), 1,
     'D1 must issue a non-future start and an expiry exactly 20 minutes after that start');
   assertPersistedPermitState(started.permitId, started.initialState);
+
+  // Concurrent duplicate start attempts with the same idempotency key must converge
+  // on one D1 permit. This exercises the actual SQLite uniqueness/ON CONFLICT path,
+  // not only the Worker-handler fake used by the deterministic unit tests.
+  const concurrentStartRequestId = '00000000-0000-4000-8000-000000000083';
+  const concurrentStartBody = JSON.stringify({
+    playerId: 'start-race-player',
+    eventKey: 'underpass',
+    cycleId: 'integration-cycle',
+    encounterKey: 'tunnel-maw',
+    requestId: concurrentStartRequestId,
+  });
+  const concurrentStartResponses = await Promise.all([1, 2].map(() => fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: concurrentStartBody,
+    signal: AbortSignal.timeout(30_000),
+  })));
+  const concurrentStarts = await Promise.all(concurrentStartResponses.map(async response => ({
+    status: response.status,
+    data: await response.json(),
+  })));
+  for (const result of concurrentStarts) {
+    assert.equal(result.status, 200, 'same-key concurrent start must return the existing valid permit: ' + JSON.stringify(result.data));
+    assert.equal(result.data.permitId, concurrentStartRequestId);
+    assert.equal(result.data.initialState.permitId, concurrentStartRequestId);
+    assert.equal(result.data.initialState.status, 'active');
+    assert.equal(result.data.initialState.turnCount, 0);
+  }
+  assert.deepEqual(concurrentStarts[0].data, concurrentStarts[1].data,
+    'both concurrent callers must receive the same authoritative permit snapshot and expiry');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id='${concurrentStartRequestId}' AND player_id='start-race-player'
+      AND event_key='underpass' AND cycle_id='integration-cycle'
+      AND encounter_key='tunnel-maw' AND completed_at IS NULL`), 1,
+    'concurrent retries must persist exactly one owner-scoped active permit');
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-race-player'`), 1,
+    'the same start key must not create a second permit for the player');
+  assertPersistedPermitState(concurrentStartRequestId, concurrentStarts[0].data.initialState);
+
+  // A shared idempotency key must never let a concurrent caller recover another player's permit.
+  const collisionRequestId = '00000000-0000-4000-8000-000000000085';
+  const collisionPlayers = ['start-collision-a', 'start-collision-b'];
+  const collisionResponses = await Promise.all(collisionPlayers.map(playerId => fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId,
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId: collisionRequestId,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  })));
+  const collisionResults = await Promise.all(collisionResponses.map(async response => ({
+    status: response.status,
+    data: await response.json(),
+  })));
+  assert.equal(collisionResults.filter(result => result.status === 200).length, 1,
+    'exactly one owner may win a concurrent start-key collision');
+  assert.equal(collisionResults.filter(result => result.status === 409).length, 1,
+    'the other owner must be rejected rather than replaying the winner permit');
+  const acceptedIndex = collisionResults.findIndex(result => result.status === 200);
+  const acceptedCollision = collisionResults[acceptedIndex];
+  const rejectedCollision = collisionResults[1 - acceptedIndex];
+  assert.equal(acceptedCollision.data.permitId, collisionRequestId);
+  assert.equal(acceptedCollision.data.initialState.permitId, collisionRequestId);
+  assert.deepEqual(rejectedCollision.data, { error: 'Battle start request is already used or invalid.' },
+    'the losing owner must not receive the other player\'s combat snapshot or permit details');
+  const collisionRows = queryRows(`SELECT player_id, event_key, cycle_id, encounter_key, completed_at,
+      battle_status, player_hp, player_mana, enemy_hp, turn_count
+    FROM battle_permits WHERE id='${collisionRequestId}'`);
+  assert.equal(collisionRows.length, 1, 'the collided idempotency key must persist one permit only');
+  assert.equal(collisionRows[0].player_id, collisionPlayers[acceptedIndex],
+    'the persisted permit owner must match the only request that received success');
+  assert.equal(collisionRows[0].event_key, 'underpass');
+  assert.equal(collisionRows[0].cycle_id, 'integration-cycle');
+  assert.equal(collisionRows[0].encounter_key, 'tunnel-maw');
+  assert.equal(collisionRows[0].completed_at, null);
+  assert.equal(collisionRows[0].battle_status, 'active');
+  assert.equal(collisionRows[0].turn_count, 0);
+  assertPersistedPermitState(collisionRequestId, acceptedCollision.data.initialState);
+
+
+  // A lost start response may be retried after the valid permit has already
+  // advanced and the event cycle has closed. Replay the D1-owned snapshot rather
+  // than resetting HP/Mana/turn count or requiring the event to remain open.
+  const startReplayRequestId = '00000000-0000-4000-8000-000000000084';
+  const startReplaySeed = join(scratch, 'start-replay-cycle.sql');
+  writeFileSync(startReplaySeed, `
+    INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
+      VALUES('start-replay-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+3 hours'));
+  `);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + startReplaySeed]);
+  const startReplayBody = JSON.stringify({
+    playerId: 'start-replay-player',
+    eventKey: 'underpass',
+    cycleId: 'start-replay-cycle',
+    encounterKey: 'tunnel-maw',
+    requestId: startReplayRequestId,
+  });
+  const startReplayResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: startReplayBody,
+  });
+  const startReplay = await startReplayResponse.json();
+  assert.equal(startReplayResponse.status, 200, JSON.stringify(startReplay));
+  const progressedStartReplayResponse = await fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'start-replay-player',
+      permitId: startReplayRequestId,
+      abilityId: 'crack',
+      expectedTurnCount: 0,
+    }),
+  });
+  const progressedStartReplay = await progressedStartReplayResponse.json();
+  assert.equal(progressedStartReplayResponse.status, 200, JSON.stringify(progressedStartReplay));
+  assert.deepEqual({
+    status: progressedStartReplay.status,
+    playerHp: progressedStartReplay.playerHp,
+    playerMana: progressedStartReplay.playerMana,
+    enemyHp: progressedStartReplay.enemyHp,
+    turnCount: progressedStartReplay.turnCount,
+  }, { status: 'active', playerHp: 110, playerMana: 8, enemyHp: 57, turnCount: 1 });
+  assertPersistedPermitState(startReplayRequestId, progressedStartReplay);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET started_at=datetime('now','-2 minutes'), expires_at=datetime('now','+18 minutes') WHERE id='" + startReplayRequestId + "'"]);
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='start-replay-cycle'"]);
+  const recoveredStartReplayResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: startReplayBody,
+  });
+  const recoveredStartReplay = await recoveredStartReplayResponse.json();
+  assert.equal(recoveredStartReplayResponse.status, 200, JSON.stringify(recoveredStartReplay));
+  assert.equal(recoveredStartReplay.permitId, startReplayRequestId);
+  assert.equal(recoveredStartReplay.expiresAt,
+    queryRows("SELECT expires_at FROM battle_permits WHERE id='" + startReplayRequestId + "'")[0]?.expires_at);
+  assert.deepEqual(recoveredStartReplay.initialState, progressedStartReplay,
+    'a closed-cycle start retry must return the persisted progressed snapshot, not reinitialize combat');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='" + startReplayRequestId + "' AND player_id='start-replay-player'"), 1,
+    'start recovery after closure must not issue a second permit');
+  assertPersistedPermitState(startReplayRequestId, recoveredStartReplay.initialState);
 
   const firstActionResponse = await fetch(base + '/api/battle/action', {
     method: 'POST',

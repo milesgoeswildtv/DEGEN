@@ -13,9 +13,9 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
 const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError, isAuthoritativeBattleActionState });', {
   __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW,
   fetch: (...args: any[]) => globalThis.fetch(...args), Response, URL, AbortController, setTimeout, clearTimeout,
-  Date, Number, JSON, Error, encodeURIComponent, console,
+  crypto: globalThis.crypto, Date, Number, JSON, Error, encodeURIComponent, console,
 }) as {
-  GameApi: new () => {
+  GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number, startTimeoutMs?: number) => {
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
   };
@@ -31,8 +31,7 @@ const useBattleAbility = runInNewContext(
   { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
 ) as (this: any, abilityId: string) => Promise<void>;
 
-const validPermit = () => {
-  const permitId = 'permit-1';
+const validPermit = (permitId = 'permit-1') => {
   return {
     permitId, eventKey: 'underpass', cycleId: 'cycle-1', encounterKey: TUNNEL_MAW.id,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -46,9 +45,18 @@ const validPermit = () => {
 async function apiReturning(value: unknown) {
   const api = new GameApi();
   const oldFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify(value), {
-    status: 200, headers: { 'content-type': 'application/json' },
-  });
+  globalThis.fetch = async (_input, init) => {
+    const requestId = (JSON.parse(String(init?.body)) as { requestId: string }).requestId;
+    const permit = value as any;
+    const originalPermitId = permit.permitId;
+    permit.permitId = requestId;
+    if (permit.initialState && permit.initialState.permitId === originalPermitId) {
+      permit.initialState.permitId = requestId;
+    }
+    return new Response(JSON.stringify(permit), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
   try { return await api.startUnderpass('player-1', 'cycle-1'); }
   finally { globalThis.fetch = oldFetch; }
 }
@@ -58,21 +66,142 @@ test('battle start request sends no client-owned combat state', async () => {
   let sent: Record<string, unknown> | undefined;
   globalThis.fetch = async (_input, init) => {
     sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    return new Response(JSON.stringify(validPermit()), {
+    return new Response(JSON.stringify(validPermit(String(sent.requestId))), {
       status: 200, headers: { 'content-type': 'application/json' },
     });
   };
   try {
-    await new GameApi().startUnderpass('player-1', 'cycle-1');
+    const result = await new GameApi().startUnderpass('player-1', 'cycle-1') as any;
+    assert.equal(result.permitId, sent?.requestId, 'the authoritative permit ID should match the start request key');
     assert.deepEqual(Object.keys(sent ?? {}).sort(), [
-      'cycleId', 'encounterKey', 'eventKey', 'playerId',
+      'cycleId', 'encounterKey', 'eventKey', 'playerId', 'requestId',
     ]);
+    assert.match(String(sent?.requestId), /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      'each start attempt needs an opaque random idempotency key');
     for (const key of ['playerHp', 'playerMana', 'enemyHp', 'turnCount', 'status']) {
       assert.equal(key in (sent ?? {}), false, `battle start must not submit ${key}`);
     }
   } finally {
     globalThis.fetch = oldFetch;
   }
+});
+
+test('battle start retries a lost response with the identical request id and body', async () => {
+  const sent: string[] = [];
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls += 1;
+    const body = String(init?.body);
+    sent.push(body);
+    if (calls === 1) throw new TypeError('simulated connection reset after Worker commit');
+    const payload = JSON.parse(body) as { requestId: string };
+    return new Response(JSON.stringify(validPermit(payload.requestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  const result = await api.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+
+  assert.equal(calls, 2);
+  assert.equal(sent[0], sent[1], 'retry must reuse the exact request body and idempotency key');
+  const request = JSON.parse(sent[0]) as { requestId: string; playerId: string };
+  assert.equal(request.playerId, 'player-1');
+  assert.equal((result as any).permitId, request.requestId,
+    'the Worker permit identity must be the key used to recover a lost start response');
+});
+
+test('battle start retries a transient 5xx with the identical request ID and body', async () => {
+  const sent: string[] = [];
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    const body = String(init?.body);
+    sent.push(body);
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify({ error: 'temporary Worker failure' }), {
+        status: 503, headers: { 'content-type': 'application/json' },
+      });
+    }
+    const request = JSON.parse(body) as { requestId: string };
+    return new Response(JSON.stringify(validPermit(request.requestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  const result = await api.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+  const request = JSON.parse(sent[0]) as { requestId: string };
+
+  assert.equal(calls, 2);
+  assert.equal(sent[0], sent[1], 'a transient 5xx retry must reuse the exact start key and body');
+  assert.equal(result.permitId, request.requestId);
+});
+
+test('battle start rejects a valid-looking permit response bound to another request ID', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify(validPermit('other-permit')), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  await assert.rejects(
+    api.startUnderpass('player-1', 'cycle-1'),
+    /Missing or malformed authoritative battle start state/,
+  );
+  assert.equal(calls, 1, 'a mismatched successful response must fail closed, not be retried as a transport error');
+});
+
+test('battle start aborts and retries one timed-out request, then stops after two hangs', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls += 1;
+    if (calls === 1) {
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) return reject(new Error('missing start AbortSignal'));
+        if (signal.aborted) return reject(new DOMException('aborted', 'AbortError'));
+        signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+      });
+    }
+    const body = JSON.parse(String(init?.body)) as { requestId: string };
+    return new Response(JSON.stringify(validPermit(body.requestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher, 12_000, 20_000, 0);
+  const result = await api.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+  assert.equal(calls, 2);
+  assert.equal((result as any).permitId, (result as any).initialState.permitId);
+
+  calls = 0;
+  const hungFetcher: typeof fetch = async (_input, init) => {
+    calls += 1;
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) return reject(new Error('missing start AbortSignal'));
+      if (signal.aborted) return reject(new DOMException('aborted', 'AbortError'));
+      signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+    });
+  };
+  const hungApi = new GameApi('https://degen-api.example', hungFetcher, 12_000, 20_000, 0);
+  await assert.rejects(hungApi.startUnderpass('player-1', 'cycle-1'));
+  assert.equal(calls, 2, 'a permanently stalled start must terminate after one retry');
+});
+
+test('battle start does not retry a Worker 4xx rejection', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ error: 'The Underpass is sealed.' }), {
+      status: 409, headers: { 'content-type': 'application/json' },
+    });
+  };
+  await assert.rejects(
+    new GameApi('https://degen-api.example', fetcher).startUnderpass('player-1', 'cycle-1'),
+    (error: unknown) => error instanceof GameApiError && error.status === 409,
+  );
+  assert.equal(calls, 1, 'authoritative 4xx rejection must not be retried');
 });
 
 test('server-backed battle start accepts a valid authoritative zero-Mana snapshot', async () => {
@@ -97,10 +226,25 @@ test('server-backed battle start rejects a snapshot for another permit or an out
   await assert.rejects(apiReturning(excessiveMana), /Missing or malformed authoritative battle start state/);
 });
 
-test('server-backed battle start rejects a non-initial turn count', async () => {
+test('server-backed battle start accepts a valid progressed snapshot when recovering a lost response', async () => {
   const permit = validPermit();
-  permit.initialState.turnCount = 1;
-  await assert.rejects(apiReturning(permit), /Missing or malformed authoritative battle start state/);
+  permit.initialState.playerHp = 64;
+  permit.initialState.playerMana = 4;
+  permit.initialState.enemyHp = 50;
+  permit.initialState.turnCount = 2;
+
+  const result = await apiReturning(permit) as typeof permit;
+  assert.deepEqual(result.initialState, permit.initialState);
+});
+
+test('server-backed battle start rejects active snapshots outside battle invariants', async () => {
+  const deadPlayer = validPermit();
+  deadPlayer.initialState.playerHp = 0;
+  await assert.rejects(apiReturning(deadPlayer), /Missing or malformed authoritative battle start state/);
+
+  const exhaustedTurnCounter = validPermit();
+  exhaustedTurnCounter.initialState.turnCount = Number.MAX_SAFE_INTEGER;
+  await assert.rejects(apiReturning(exhaustedTurnCounter), /Missing or malformed authoritative battle start state/);
 });
 
 

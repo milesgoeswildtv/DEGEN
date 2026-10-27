@@ -9,7 +9,9 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const state = value as Record<string, unknown>;
   return state.permitId === permitId
     && state.status === 'active'
-    && state.turnCount === 0
+    // An idempotent start retry may recover a battle that has already advanced
+    // while its original response was delayed. Accept only a valid active turn.
+    && isBoundedSafeInteger(state.turnCount, 0, Number.MAX_SAFE_INTEGER - 1)
     && isBoundedSafeInteger(state.playerHp, 1, TEST_DEGEN.maxHp)
     && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
@@ -104,6 +106,7 @@ export class GameApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+const BATTLE_START_TIMEOUT_MS = 12_000;
 const BATTLE_ACTION_TIMEOUT_MS = 12_000;
 const BATTLE_COMPLETION_TIMEOUT_MS = 20_000;
 
@@ -117,6 +120,7 @@ export class GameApi {
     fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     private readonly actionTimeoutMs = BATTLE_ACTION_TIMEOUT_MS,
     private readonly completionTimeoutMs = BATTLE_COMPLETION_TIMEOUT_MS,
+    private readonly startTimeoutMs = BATTLE_START_TIMEOUT_MS,
   ) {
     this.apiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
     this.fetcher = fetcher;
@@ -146,11 +150,28 @@ export class GameApi {
 
   async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
-    const permit = await this.request<BattlePermit>('/api/battle/start', {
+    // Bind the response to the idempotency key, so a stale or mismatched
+    // permit response can never be accepted as this start attempt.
+    const requestId = crypto.randomUUID();
+    const startRequest: RequestInit = {
       method: 'POST',
-      body: JSON.stringify({ playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw' }),
-    });
-    if (!permit || typeof permit.permitId !== 'string' || !permit.permitId.trim()
+      body: JSON.stringify({
+        playerId, eventKey: 'underpass', cycleId, encounterKey: 'tunnel-maw',
+        requestId,
+      }),
+    };
+    const sendStart = () => this.requestWithTimeout<BattlePermit>(
+      '/api/battle/start', startRequest, this.startTimeoutMs,
+    );
+    let permit: BattlePermit;
+    try {
+      permit = await sendStart();
+    } catch (error) {
+      if (error instanceof GameApiError && error.status < 500) throw error;
+      permit = await sendStart();
+    }
+    if (!permit || permit.permitId !== requestId
+      || typeof permit.permitId !== 'string' || !permit.permitId.trim()
       || permit.eventKey !== 'underpass' || permit.cycleId !== cycleId
       || permit.encounterKey !== TUNNEL_MAW.id
       || typeof permit.expiresAt !== 'string' || !Number.isFinite(Date.parse(permit.expiresAt))
