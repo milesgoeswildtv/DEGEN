@@ -24,6 +24,7 @@ function makeEnv(
   permitInsertAllowed = true,
   existingPermit: Record<string, unknown> | null = null,
   existingPermitAfterConflict: Record<string, unknown> | null = null,
+  existingUnresolvedPermit: Record<string, unknown> | null = null,
 ) {
   const inserts: unknown[][] = [];
   let replayLookupCount = 0;
@@ -38,9 +39,12 @@ function makeEnv(
         bind(...params: unknown[]) {
           return {
             first: async () => {
-              if (sql.includes('FROM battle_permits AS permit')) {
+              if (sql.includes('FROM battle_permits AS permit') && sql.includes('WHERE permit.id = ?')) {
                 replayLookupCount += 1;
                 return replayLookupCount === 1 ? existingPermit : (existingPermitAfterConflict ?? existingPermit);
+              }
+              if (sql.includes('FROM battle_permits AS permit') && sql.includes('WHERE permit.player_id = ?')) {
+                return existingUnresolvedPermit;
               }
               if (sql.includes('INSERT INTO battle_permits')) {
                 assert.match(sql, /WHERE EXISTS\s*\(\s*SELECT 1 FROM world_event_cycles/);
@@ -49,6 +53,8 @@ function makeEnv(
                 assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)/);
                 assert.match(sql, /julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)\s*<\s*julianday\(closes_at\)/);
                 assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
+                assert.match(sql, /AND NOT EXISTS\s*\(\s*SELECT 1 FROM battle_permits AS existing/);
+                assert.match(sql, /julianday\(existing\.expires_at\) > julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)/);
                 assert.match(sql, /ON CONFLICT\(id\) DO NOTHING/);
                 assert.match(sql, /RETURNING id, expires_at/);
                 if (!permitInsertAllowed) return null;
@@ -117,10 +123,11 @@ test('battle start ignores forged client combat state and returns exactly the De
     turnCount: 0,
   });
   assert.equal(inserts.length, 1);
-  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp, cycleGuardId] = inserts[0] as unknown[];
+  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp, cycleGuardId, activePlayerGuardId] = inserts[0] as unknown[];
   assert.equal(permitId, result.permitId);
   assert.equal(cycleGuardId, cycle.id);
-  assert.equal(inserts[0]?.length, 8, 'start and expiry timestamps must come from D1, not Worker-bound Date.now values');
+  assert.equal(activePlayerGuardId, 'player-1', 'the same-player active-permit guard must bind the current owner');
+  assert.equal(inserts[0]?.length, 9, 'start/expiry timestamps come from D1 and the atomic insert binds both cycle and player guards');
   assert.equal(result.expiresAt, persistedExpiry, 'the API must return the expiry returned from the persisted D1 row');
   assert.deepEqual(
     [playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp],
@@ -175,6 +182,41 @@ test('battle start replays the same active permit after event closure without in
     },
   });
   assert.equal(inserts.length, 0, 'recovery must return the persisted snapshot without issuing a second permit');
+});
+
+test('battle start resumes a valid active permit from an earlier cycle for the same player', async () => {
+  const currentCycle = {
+    id: 'current-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const existingPermitId = '00000000-0000-4000-8000-000000000009';
+  const existingPermit = {
+    id: existingPermitId, player_id: 'player-1', event_key: 'underpass', cycle_id: 'previous-cycle',
+    encounter_key: TUNNEL_MAW.id, expires_at: new Date(Date.now() + 5 * 60_000).toISOString(), completed_at: null,
+    reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
+    reward_tier: null, reward_level: null, reward_remaining_xp: null,
+    reward_claim_token: null, reward_claimed_at: null,
+    player_hp: 64, player_mana: 4, enemy_hp: 50, battle_status: 'active', turn_count: 2,
+    cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
+  };
+  const { env, inserts } = makeEnv(currentCycle, true, null, null, existingPermit);
+  const response = await handleStartBattle(request(currentCycle.id, {
+    requestId: '00000000-0000-4000-8000-000000000010',
+  }), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    permitId: existingPermitId,
+    eventKey: 'underpass',
+    cycleId: 'previous-cycle',
+    encounterKey: TUNNEL_MAW.id,
+    expiresAt: existingPermit.expires_at,
+    resumedExisting: true,
+    initialState: {
+      permitId: existingPermitId, status: 'active', playerHp: 64, playerMana: 4, enemyHp: 50, turnCount: 2,
+    },
+  });
+  assert.equal(inserts.length, 0, 'resuming a still-valid encounter must never insert a new permit');
 });
 
 test('battle start rejects foreign, expired, terminal, or corrupt request ID reuse', async () => {
