@@ -110,6 +110,45 @@ const BATTLE_START_TIMEOUT_MS = 12_000;
 const BATTLE_ACTION_TIMEOUT_MS = 12_000;
 const BATTLE_COMPLETION_TIMEOUT_MS = 20_000;
 
+const BATTLE_START_REQUEST_STORAGE_PREFIX = 'degen:pending-battle-start:';
+const isBattleStartRequestId = (value: unknown): value is string =>
+  typeof value === 'string'
+  && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+const battleStartRequestStorageKey = (playerId: string, cycleId: string): string =>
+  `${BATTLE_START_REQUEST_STORAGE_PREFIX}${encodeURIComponent(playerId)}:${encodeURIComponent(cycleId)}`;
+
+// Keep an uncertain start's idempotency key across retries, app reloads, and
+// new GameApi instances. The key is scoped to one player and Underpass cycle;
+// it contains no combat or reward authority.
+const getPendingBattleStartRequestId = (playerId: string, cycleId: string): string => {
+  const key = battleStartRequestStorageKey(playerId, cycleId);
+  try {
+    const saved = globalThis.localStorage.getItem(key);
+    if (isBattleStartRequestId(saved)) return saved;
+    if (saved !== null) globalThis.localStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in restricted browser contexts. Starting still
+    // works there, but durable recovery is limited to the current request pair.
+  }
+  const requestId = crypto.randomUUID();
+  try {
+    globalThis.localStorage.setItem(key, requestId);
+  } catch {
+    // Do not turn a storage-policy failure into a battle-start failure.
+  }
+  return requestId;
+};
+
+const clearPendingBattleStartRequestId = (playerId: string, cycleId: string): void => {
+  try {
+    globalThis.localStorage.removeItem(battleStartRequestStorageKey(playerId, cycleId));
+  } catch {
+    // Best-effort cleanup only; no game authority is stored in this key.
+  }
+};
+
+
 export class GameApi {
   readonly enabled: boolean;
   private readonly apiBase: string;
@@ -150,9 +189,9 @@ export class GameApi {
 
   async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
-    // Bind the response to the idempotency key, so a stale or mismatched
-    // permit response can never be accepted as this start attempt.
-    const requestId = crypto.randomUUID();
+    // Reuse a persisted key if both attempts previously lost their response.
+    // A later call (even after reload) can recover the same Worker-owned permit.
+    const requestId = getPendingBattleStartRequestId(playerId, cycleId);
     const startRequest: RequestInit = {
       method: 'POST',
       body: JSON.stringify({
@@ -167,8 +206,20 @@ export class GameApi {
     try {
       permit = await sendStart();
     } catch (error) {
-      if (error instanceof GameApiError && error.status < 500) throw error;
-      permit = await sendStart();
+      if (error instanceof GameApiError && error.status < 500) {
+        clearPendingBattleStartRequestId(playerId, cycleId);
+        throw error;
+      }
+      try {
+        permit = await sendStart();
+      } catch (retryError) {
+        // A definitive Worker rejection proves this key cannot recover a live
+        // start. Keep it only for uncertain timeout/transport/5xx outcomes.
+        if (retryError instanceof GameApiError && retryError.status < 500) {
+          clearPendingBattleStartRequestId(playerId, cycleId);
+        }
+        throw retryError;
+      }
     }
     if (!permit || permit.permitId !== requestId
       || typeof permit.permitId !== 'string' || !permit.permitId.trim()
@@ -177,8 +228,11 @@ export class GameApi {
       || typeof permit.expiresAt !== 'string' || !Number.isFinite(Date.parse(permit.expiresAt))
       || Date.parse(permit.expiresAt) <= Date.now()
       || !isAuthoritativeBattleStartState(permit.initialState, permit.permitId)) {
+      // Do not discard the key on a malformed 2xx response: the Worker may
+      // have committed the permit, so a later retry must remain idempotent.
       throw new Error('Missing or malformed authoritative battle start state.');
     }
+    clearPendingBattleStartRequestId(playerId, cycleId);
     return permit;
   }
 
