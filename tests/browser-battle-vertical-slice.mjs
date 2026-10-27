@@ -149,6 +149,23 @@ try {
         if (typeof text === 'string' && (text.startsWith('MANA ') || text === 'MANIFESTED')) rendered.push(text);
         return original.call(this, text, ...args);
       };
+
+      // Simulate a response lost after the local Worker has committed the turn.
+      // The app's already-bound fetcher must observe this wrapper before boot.
+      const originalFetch = window.fetch.bind(window);
+      window.__degenSimulateLostActionResponse = false;
+      window.__degenLostActionResponses = 0;
+      window.fetch = async (input, init) => {
+        const response = await originalFetch(input, init);
+        const requestUrl = input instanceof Request ? input.url : String(input);
+        if (window.__degenSimulateLostActionResponse
+          && new URL(requestUrl, window.location.href).pathname === '/api/battle/action') {
+          window.__degenSimulateLostActionResponse = false;
+          window.__degenLostActionResponses += 1;
+          throw new TypeError('simulated lost response after Worker commit');
+        }
+        return response;
+      };
     })();`,
   });
   // Exercise the entire Worker-backed slice in mobile portrait; not physical-device QA.
@@ -193,8 +210,18 @@ try {
   await assertFitsCompact('Battle');
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
+    if (turn === 1) await cdp.evaluate('window.__degenSimulateLostActionResponse = true');
     await tap("[data-ability=crack]");
-    if (turn < 3) await until('Authoritative action ' + turn, () => cdp.evaluate('(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + turn));
+    if (turn === 1) {
+      await until('Recovered authoritative state after lost response', () => cdp.evaluate(
+        '(document.querySelector("#battle-log")?.textContent || "").includes("Battle state synchronized with server.") && window.__degenLostActionResponses === 1'));
+      assert.equal(await cdp.evaluate('document.querySelector("#battle-action-status")?.textContent'),
+        'Battle state refreshed from the server. Choose your next move.',
+        'the player should see that the committed turn was recovered from authoritative state');
+    } else if (turn < 3) {
+      await until('Authoritative action ' + turn, () => cdp.evaluate(
+        '(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + (turn - 1)));
+    }
     const expected = {
       player_hp: turn === 3 ? 100 : 120 - turn * 10,
       player_mana: 12 - turn * 4,
