@@ -184,9 +184,29 @@ test('client validation/conflict responses are not retried', async () => {
 
 
 const authoritativeCompletion = {
-  player: { id: 'player-1', level: 2, xp: 10, currency: 40 },
+  player: {
+    id: 'player-1',
+    displayName: 'Player',
+    level: 2,
+    xp: 10,
+    currency: 40,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: [],
+    housing: { inventory: [], placements: [] },
+    defeatedBosses: [],
+  },
   reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
-  worldEvent: { eventKey: 'underpass', cycleId: 'cycle-1', phase: 'open', source: 'server' },
+  worldEvent: {
+    eventKey: 'underpass',
+    cycleId: 'cycle-1',
+    phase: 'open',
+    opensAt: '2026-10-27T00:00:00.000Z',
+    closesAt: '2026-10-27T02:00:00.000Z',
+    fullRewardClears: 1,
+    fullRewardLimit: 3,
+    source: 'server',
+  },
 };
 
 test('a hung completion request is aborted and retried once with the same permit receipt request', async () => {
@@ -263,4 +283,52 @@ test('a client or conflict completion 4xx is not retried', async () => {
     (error: unknown) => error instanceof GameApiError && error.status === 409,
   );
   assert.equal(calls, 1, '4xx responses remain under Worker retry/recovery policy');
+});
+
+
+test('completion rejects a snapshot for a different player without retrying or applying it', async () => {
+  let calls = 0;
+  const mismatchedCompletion = {
+    ...authoritativeCompletion,
+    player: { ...authoritativeCompletion.player, id: 'player-2' },
+  };
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return jsonResponse(mismatchedCompletion);
+  };
+  const api = new GameApi('https://degen-api.example', fetcher, 0, 0);
+
+  await assert.rejects(
+    api.completeUnderpass('player-1', 'permit-1'),
+    /Malformed authoritative battle completion response/,
+  );
+  assert.equal(calls, 1, 'a malformed successful response is rejected, not retried as a transport failure');
+});
+
+test('completion rejects malformed economy and preview-world payloads without normalizing them', async () => {
+  const invalidPayloads = [
+    {
+      ...authoritativeCompletion,
+      reward: { ...authoritativeCompletion.reward, currency: -1 },
+    },
+    {
+      ...authoritativeCompletion,
+      worldEvent: { ...authoritativeCompletion.worldEvent, source: 'preview' },
+    },
+  ];
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    const payload = invalidPayloads[calls];
+    calls += 1;
+    return jsonResponse(payload);
+  };
+  const api = new GameApi('https://degen-api.example', fetcher, 0, 0);
+
+  for (let index = 0; index < invalidPayloads.length; index += 1) {
+    await assert.rejects(
+      api.completeUnderpass('player-1', 'permit-1'),
+      /Malformed authoritative battle completion response/,
+    );
+  }
+  assert.equal(calls, 2, 'invalid response envelopes must not trigger another reward request');
 });
