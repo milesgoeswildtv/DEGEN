@@ -9,7 +9,9 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const state = value as Record<string, unknown>;
   return state.permitId === permitId
     && state.status === 'active'
-    && state.turnCount === 0
+    // An idempotent start retry may recover a battle that has already advanced
+    // while its original response was delayed. Accept only a valid active turn.
+    && isBoundedSafeInteger(state.turnCount, 0, Number.MAX_SAFE_INTEGER - 1)
     && isBoundedSafeInteger(state.playerHp, 1, TEST_DEGEN.maxHp)
     && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
