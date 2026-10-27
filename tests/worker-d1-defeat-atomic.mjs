@@ -70,7 +70,7 @@ function seed(id) {
   sql(`INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
     battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES('${id}','qa-player','underpass','closed-cycle','tunnel-maw',
-    datetime('now','-3 hours'),datetime('now','+20 minutes'),'active',1,12,92,0)`);
+    datetime('now','-2 minutes'),datetime('now','+18 minutes'),'active',1,12,92,0)`);
 }
 try {
   cli(['d1','execute','DEGEN','--local',`--persist-to=${persist}`,'--file=db/schema.sql']);
@@ -79,7 +79,7 @@ try {
   writeFileSync(seedFile,`INSERT INTO players(id,display_name) VALUES('qa-player','QA');
     INSERT INTO characters(player_id,degen_key,level) VALUES('qa-player','test-degen',3);
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
-    VALUES('closed-cycle','underpass',datetime('now','-4 hours'),datetime('now','-2 hours'));`);
+    VALUES('closed-cycle','underpass',datetime('now','-10 minutes'),datetime('now','-1 minute'));`);
   cli(['d1','execute','DEGEN','--local',`--persist-to=${persist}`,`--file=${seedFile}`]);
   seed('boundary');
   sql(`CREATE TRIGGER qa_expire_after_defeat AFTER UPDATE OF battle_status ON battle_permits
