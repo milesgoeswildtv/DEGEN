@@ -110,6 +110,7 @@ try {
       ('start-replay-player','Start Replay After Closure QA'),
       ('restart-after-victory-player','Restart After Victory QA'),
       ('event-closure-player','Event Closure QA'),
+      ('expired-after-cycle-player','Expired After Cycle QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
       ('malformed-expiry-player','Malformed Expiry QA'),
@@ -135,6 +136,7 @@ try {
         ('start-replay-player',1,0,0,'test-degen'),
         ('restart-after-victory-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
+        ('expired-after-cycle-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
         ('malformed-expiry-player',1,0,0,'test-degen'),
@@ -1663,7 +1665,7 @@ try {
   const closureSeed = join(scratch, 'closure-cycle.sql');
   writeFileSync(closureSeed, `
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
-      VALUES('closure-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+3 hours'));
+      VALUES('closure-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+4 hours'));
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + closureSeed]);
 
@@ -1682,11 +1684,13 @@ try {
   assert.equal(closureStart.initialState.status, 'active');
   assert.equal(closureStart.initialState.turnCount, 0);
 
+  // Each player may have only one unresolved active permit, so use a separate
+  // player for the expiry half of this event-closure scenario.
   const expiredClosureStartResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'expired-after-cycle-player',
       eventKey: 'underpass',
       cycleId: 'closure-cycle',
       encounterKey: 'tunnel-maw',
@@ -1725,7 +1729,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'expired-after-cycle-player',
       permitId: expiredClosureStart.permitId,
       abilityId: 'slash',
       expectedTurnCount: 0,
@@ -1735,6 +1739,7 @@ try {
   assert.equal(expiredAfterClosureResponse.status, 409, 'cycle closure does not extend a permit past its own expiry');
   assert.match(expiredAfterClosure.error, /invalid, expired, or already completed/i);
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${expiredClosureStart.permitId}'
+    AND player_id = 'expired-after-cycle-player'
     AND battle_status = 'active' AND turn_count = 0
     AND player_hp = ${expiredClosureStart.initialState.playerHp}
     AND player_mana = ${expiredClosureStart.initialState.playerMana}
