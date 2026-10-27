@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { BattleEngine } from '../src/game/combat/engine.ts';
+import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 class TestGameApiError extends Error {
   readonly status: number;
@@ -17,6 +17,31 @@ class TestGameApiError extends Error {
     this.payload = payload;
   }
 }
+
+const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import.meta.url), 'utf8')
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/\bexport class BattleEngine\b/g, 'class BattleEngine');
+const { BattleEngine } = runInNewContext(
+  stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
+  { canUseAbility, resolveCombatTurn },
+) as {
+  BattleEngine: new (
+    degen: typeof TEST_DEGEN,
+    enemy: typeof TUNNEL_MAW,
+    onComplete: (status: 'victory' | 'defeat') => void,
+    initialState: {
+      permitId: string; status: 'active'; playerHp: number; playerMana: number; enemyHp: number; turnCount: number;
+    },
+  ) => {
+    snapshot: { status: string; playerMana: number; enemyHp: number; turnCount: number };
+    synchronizeAuthoritativeState(result: {
+      permitId: string; status: 'active' | 'victory' | 'defeat';
+      playerHp: number; playerMana: number; enemyHp: number; turnCount: number;
+    }): void;
+  };
+};
+
+type BattleEngineInstance = InstanceType<typeof BattleEngine>;
 
 const source = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
@@ -98,7 +123,7 @@ const AppController = runInNewContext(
 ) => {
   route: string;
   battlePermit?: { permitId: string };
-  battleEngine?: BattleEngine;
+  battleEngine?: BattleEngineInstance;
   useBattleAbility(abilityId: string): Promise<void>;
   finishBattle(status: 'victory' | 'defeat'): Promise<void>;
 };
