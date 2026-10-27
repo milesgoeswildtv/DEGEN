@@ -42,13 +42,20 @@ export class GameApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+const BATTLE_ACTION_TIMEOUT_MS = 12_000;
+const BATTLE_COMPLETION_TIMEOUT_MS = 20_000;
 
 export class GameApi {
   readonly enabled: boolean;
   private readonly apiBase: string;
   private readonly fetcher: typeof fetch;
 
-  constructor(apiBase: string = API_BASE, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
+  constructor(
+    apiBase: string = API_BASE,
+    fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+    private readonly actionTimeoutMs = BATTLE_ACTION_TIMEOUT_MS,
+    private readonly completionTimeoutMs = BATTLE_COMPLETION_TIMEOUT_MS,
+  ) {
     this.apiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
     this.fetcher = fetcher;
     this.enabled = this.apiBase.length > 0;
@@ -104,12 +111,17 @@ export class GameApi {
       method: 'POST',
       body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
     };
+    const sendAction = () => this.requestWithTimeout<BattleActionResult>(
+      '/api/battle/action', actionRequest, this.actionTimeoutMs,
+    );
     let result: BattleActionResult;
     try {
-      result = await this.request<BattleActionResult>('/api/battle/action', actionRequest);
+      result = await sendAction();
     } catch (error) {
       if (error instanceof GameApiError && error.status < 500) throw error;
-      result = await this.request<BattleActionResult>('/api/battle/action', actionRequest);
+      // A bounded retry reuses the same compare-and-swap precondition. The Worker
+      // remains the only authority that can commit damage, Mana, or a turn.
+      result = await sendAction();
     }
     if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
       throw new Error('Malformed authoritative battle action response.');
@@ -119,10 +131,31 @@ export class GameApi {
 
   async completeUnderpass(playerId: string, permitId: string): Promise<BattleCompletionResult | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<BattleCompletionResult>('/api/battle/complete', {
+    const completionRequest: RequestInit = {
       method: 'POST',
       body: JSON.stringify({ playerId, permitId }),
-    });
+    };
+    const sendCompletion = () => this.requestWithTimeout<BattleCompletionResult>(
+      '/api/battle/complete', completionRequest, this.completionTimeoutMs,
+    );
+    try {
+      return await sendCompletion();
+    } catch (error) {
+      if (error instanceof GameApiError && error.status < 500) throw error;
+      // The Worker returns the existing audited receipt after an ambiguous commit;
+      // the client never calculates or grants a reward during recovery.
+      return sendCompletion();
+    }
+  }
+
+  private async requestWithTimeout<T>(path: string, init: RequestInit, timeoutMs: number): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await this.request<T>(path, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   private async request<T = void>(path: string, init?: RequestInit): Promise<T> {
