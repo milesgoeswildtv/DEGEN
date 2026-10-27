@@ -25,6 +25,7 @@ const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewCont
 }) as {
   GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number, startTimeoutMs?: number) => {
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
+    acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
   };
   GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
@@ -218,14 +219,18 @@ test('battle start preserves an uncertain request ID across failed retries and a
       status: 200, headers: { 'content-type': 'application/json' },
     });
   };
-  const recovered = await new GameApi('https://degen-api.example', recoveredFetcher)
-    .startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+  const recoveredApi = new GameApi('https://degen-api.example', recoveredFetcher);
+  const recovered = await recoveredApi.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
   const originalRequestId = (JSON.parse(failedBodies[0] ?? '{}') as { requestId: string }).requestId;
   assert.equal(recoveredBodies.length, 1);
   assert.equal((JSON.parse(recoveredBodies[0] ?? '{}') as { requestId: string }).requestId, originalRequestId,
     'a later GameApi instance must recover the same server permit after both prior responses were lost');
   assert.equal(recovered.permitId, originalRequestId);
-  assert.equal(startRequestStorage.size, 0, 'a validated authoritative response clears the pending key');
+  assert.equal(startRequestStorage.size, 1, 'keep the key until the controller confirms it accepted the permit');
+  recoveredApi.acknowledgeUnderpassStart('player-1', 'cycle-1', 'wrong-permit');
+  assert.equal(startRequestStorage.size, 1, 'a mismatched acknowledgement must not clear another permit key');
+  recoveredApi.acknowledgeUnderpassStart('player-1', 'cycle-1', recovered.permitId);
+  assert.equal(startRequestStorage.size, 0, 'the matching accepted permit acknowledgement clears the pending key');
 });
 
 test('battle start clears a persisted key after a definitive Worker rejection', async () => {
