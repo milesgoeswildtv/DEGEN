@@ -373,3 +373,70 @@ test('a confirmed victory still settles if the player abandons before the action
   assert.equal(controller.battlePermit, undefined);
   assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), '[]');
 });
+
+
+test('a stale victory snapshot settles its original permit, not a newer encounter', async () => {
+  timers.length = 0;
+  storage.clear();
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const oldVictory = {
+    permitId: 'permit-old',
+    status: 'victory' as const,
+    playerHp: 80,
+    playerMana: 4,
+    enemyHp: 0,
+    turnCount: 1,
+  };
+  let completionPermit = '';
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, {
+        error: 'Stale battle turn.',
+        battleState: oldVictory,
+      }, 'DEGEN API 409');
+    },
+    async completeUnderpass(_playerId: string, permitId: string) {
+      completionCalls += 1;
+      completionPermit = permitId;
+      return { player: { id: 'player-1', level: 2 }, worldEvent: { cycleId: 'cycle-1' } };
+    },
+  };
+  const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('a stale engine must not settle whichever permit is currently mounted');
+  }, {
+    permitId: 'permit-old',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-old' };
+  controller.battleEngine = oldEngine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  controller.route = 'underpass';
+  controller.battlePermit = { permitId: 'permit-new' };
+  controller.battleEngine = undefined;
+  await pendingAction;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(completionCalls, 1);
+  assert.equal(completionPermit, 'permit-old', 'the original server-resolved victory is the only completion requested');
+  assert.equal(controller.battlePermit?.permitId, 'permit-new', 'recovery must not clear or complete the newer permit');
+  assert.equal(store.replaced, 1);
+  assert.equal(store.localRewards, 0);
+  assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), '[]');
+});

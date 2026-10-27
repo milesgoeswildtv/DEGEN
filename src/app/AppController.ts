@@ -193,15 +193,30 @@ export class AppController {
         const payload = error.payload as { battleState?: unknown; error?: unknown };
         const battleState = payload.battleState;
         if (isAuthoritativeBattleActionState(battleState, permitId)) {
-          engine.synchronizeAuthoritativeState(battleState);
+          const samePermit = this.battlePermit?.permitId === permitId;
+          const currentEngine = this.battleEngine;
+          if (samePermit && currentEngine && this.route === 'battle') {
+            // Never let a stale request settle a different permit through an old
+            // engine's completion callback. Sync the currently mounted engine when
+            // the same permit has been remounted.
+            currentEngine.synchronizeAuthoritativeState(battleState);
+          } else if (battleState.status === 'victory') {
+            this.rememberPendingReward(permitId);
+            void this.queueRewardCompletion(permitId);
+          } else if (samePermit && battleState.status === 'defeat') {
+            this.battlePermit = undefined;
+          }
           synchronized = true;
-          if (battleState.status === 'active') {
-            const serverMessage = typeof payload.error === 'string' ? payload.error : '';
-            this.setBattleActionStatus(serverMessage && serverMessage !== 'Stale battle turn.'
-              ? serverMessage
-              : 'Battle state refreshed from the server. Choose your next move.');
-          } else {
-            this.setBattleActionStatus();
+
+          if (samePermit && this.route === 'battle' && this.battlePermit?.permitId === permitId) {
+            if (battleState.status === 'active') {
+              const serverMessage = typeof payload.error === 'string' ? payload.error : '';
+              this.setBattleActionStatus(serverMessage && serverMessage !== 'Stale battle turn.'
+                ? serverMessage
+                : 'Battle state refreshed from the server. Choose your next move.');
+            } else {
+              this.setBattleActionStatus();
+            }
           }
         }
       }
