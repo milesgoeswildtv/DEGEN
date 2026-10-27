@@ -103,6 +103,9 @@ export interface BattlePermit {
   cycleId: string;
   encounterKey: string;
   expiresAt: string;
+  // True only when the Worker resumes an existing active permit for this player
+  // instead of creating a permit for the current request ID.
+  resumedExisting?: boolean;
   // Server-backed entry returns the exact initial combat state persisted on the permit.
   // Offline preview permits omit this and use the local prototype initializer.
   initialState?: BattleActionResult;
