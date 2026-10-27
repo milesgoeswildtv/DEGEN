@@ -53,16 +53,17 @@ test('unexpected Worker exceptions return a generic 500 without exposing interna
 
 
 test('non-JSON content types are rejected before touching D1', async () => {
+  const jsonBody = JSON.stringify({ playerId: 'player-1' });
   const cases = [
-    { label: 'missing content type', headers: undefined },
-    { label: 'text/plain', headers: { 'content-type': 'text/plain' } },
-    { label: 'form encoded', headers: { 'content-type': 'application/x-www-form-urlencoded' } },
+    { label: 'missing content type', headers: undefined, body: new TextEncoder().encode(jsonBody) },
+    { label: 'text/plain', headers: { 'content-type': 'text/plain' }, body: jsonBody },
+    { label: 'form encoded', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: jsonBody },
   ];
   for (const scenario of cases) {
     const response = await worker.fetch(new Request('https://degen-api.example/api/battle/start', {
       method: 'POST',
       ...(scenario.headers ? { headers: scenario.headers } : {}),
-      body: JSON.stringify({ playerId: 'player-1' }),
+      body: scenario.body,
     }), {
       DB: { prepare() { throw new Error('D1 must not be touched for non-JSON content type'); } },
     });
