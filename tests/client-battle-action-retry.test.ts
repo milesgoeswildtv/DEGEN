@@ -103,6 +103,21 @@ test('a 5xx after a committed turn retries safely and preserves the Worker confl
     'a retry must keep the original expected turn so a committed action cannot apply twice');
 });
 
+test('a second 5xx ends the bounded retry instead of looping', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return jsonResponse({ error: 'temporarily unavailable' }, 503);
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+
+  await assert.rejects(
+    api.actUnderpass('player-1', 'permit-1', 'crack', 0),
+    (error: unknown) => error instanceof GameApiError && error.status === 503,
+  );
+  assert.equal(calls, 2, 'one original request plus one retry; never an unbounded retry loop');
+});
+
 test('client validation/conflict responses are not retried', async () => {
   let calls = 0;
   const fetcher: typeof fetch = async () => {
