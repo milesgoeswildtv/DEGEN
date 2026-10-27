@@ -1121,8 +1121,8 @@ try {
     'a sequential distinct-key request must not create a second unresolved permit');
 
   // A terminal defeat is resolved combat, not an active encounter or reward claim.
-  await env.DB.prepare("UPDATE battle_permits SET battle_status='defeat' WHERE id=?")
-    .bind(distinctAcceptedId).run();
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET battle_status='defeat' WHERE id='" + distinctAcceptedId + "'"]);
   const afterDefeatRequestId = '00000000-0000-4000-8000-000000000089';
   const afterDefeatResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
