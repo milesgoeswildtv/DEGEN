@@ -45,6 +45,12 @@ class RequestBodyError extends Error {
 }
 
 const body = async <T>(request: Request): Promise<T> => {
+  // Require the JSON media type, not merely JSON-looking bytes. This prevents
+  // browser-simple text/plain/form submissions from reaching state-changing routes.
+  const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+  if (contentType !== 'application/json') {
+    throw new RequestBodyError('Content-Type must be application/json.');
+  }
   let value: unknown;
   try {
     value = await request.json();
