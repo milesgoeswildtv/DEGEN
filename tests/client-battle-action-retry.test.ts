@@ -18,17 +18,21 @@ const { GameApi, GameApiError } = runInNewContext(
     TEST_DEGEN,
     TUNNEL_MAW,
     fetch: globalThis.fetch,
+    AbortController,
+    setTimeout: globalThis.setTimeout,
+    clearTimeout: globalThis.clearTimeout,
     Response,
     URL,
     Date,
     Number,
     JSON,
     Error,
+    DOMException,
     encodeURIComponent,
     console,
   },
 ) as {
-  GameApi: new (apiBase?: string, fetcher?: typeof fetch) => {
+  GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number) => {
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
   };
   GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
@@ -72,6 +76,50 @@ test('a transport failure retries the same compare-and-swap action once', async 
     abilityId: 'crack',
     expectedTurnCount: 0,
   });
+});
+
+test('a hung action request is aborted and safely retried once with the same turn precondition', async () => {
+  const calls: Array<{ body: string; signal?: AbortSignal }> = [];
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls.push({ body: actionBody(init), signal: init?.signal as AbortSignal | undefined });
+    if (calls.length === 1) {
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal;
+        const rejectOnAbort = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+        if (signal.aborted) rejectOnAbort();
+        else signal.addEventListener('abort', rejectOnAbort, { once: true });
+      });
+    }
+    return jsonResponse(authoritativeTurn);
+  };
+
+  const api = new GameApi('https://degen-api.example', fetcher, 0);
+  const result = await api.actUnderpass('player-1', 'permit-1', 'crack', 0);
+
+  assert.deepEqual(result, authoritativeTurn);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.signal?.aborted, true, 'the stalled request must be actively aborted');
+  assert.equal(calls[0]?.body, calls[1]?.body);
+});
+
+test('two hung action attempts terminate after the bounded retry', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls += 1;
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal as AbortSignal;
+      const rejectOnAbort = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+      if (signal.aborted) rejectOnAbort();
+      else signal.addEventListener('abort', rejectOnAbort, { once: true });
+    });
+  };
+
+  const api = new GameApi('https://degen-api.example', fetcher, 0);
+  await assert.rejects(
+    api.actUnderpass('player-1', 'permit-1', 'crack', 0),
+    (error: unknown) => error instanceof Error && error.name === 'AbortError',
+  );
+  assert.equal(calls, 2, 'the original request and one retry are the hard limit');
 });
 
 test('a 5xx after a committed turn retries safely and preserves the Worker conflict snapshot', async () => {
