@@ -18,6 +18,7 @@ export class AppController {
   private worldRefreshTimer?: number;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
+  private battlePermitOwnerId?: string;
   private battleActionPending = false;
   private rewardResolution: Promise<void> = Promise.resolve();
 
@@ -31,7 +32,8 @@ export class AppController {
     await this.refreshWorld();
     this.render();
     if (this.api.enabled) {
-      for (const permitId of this.pendingRewardPermits()) void this.queueRewardCompletion(permitId);
+      const playerId = this.store.snapshot.id;
+      for (const permitId of this.pendingRewardPermits(playerId)) void this.queueRewardCompletion(permitId, playerId);
     }
     this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
   }
@@ -113,11 +115,16 @@ export class AppController {
     if (!event || event.phase !== 'open') return;
 
     try {
-      this.battlePermit = this.api.enabled
-        ? await this.api.startUnderpass(this.store.snapshot.id, event.cycleId)
+      const playerId = this.store.snapshot.id;
+      const permit = this.api.enabled
+        ? await this.api.startUnderpass(playerId, event.cycleId)
         : createPreviewPermit(event.cycleId);
 
-      if (!this.battlePermit) throw new Error('No battle permit returned.');
+      if (!permit) throw new Error('No battle permit returned.');
+      // Do not attach a permit issued for a previous account to the currently active player.
+      if (this.store.snapshot.id !== playerId) return;
+      this.battlePermit = permit;
+      this.battlePermitOwnerId = playerId;
       this.navigate('battle');
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
@@ -150,6 +157,11 @@ export class AppController {
     if (!this.battleEngine || !this.battlePermit || this.battleActionPending) return;
     const engine = this.battleEngine;
     const permitId = this.battlePermit.permitId;
+    const playerId = this.battlePermitOwnerId ?? this.store.snapshot.id;
+    if (this.store.snapshot.id !== playerId) {
+      this.setBattleActionStatus('This battle belongs to a different player session. Return to the active player before continuing.');
+      return;
+    }
 
     this.setBattleActionStatus();
     this.battleActionPending = true;
@@ -157,7 +169,7 @@ export class AppController {
 
     try {
       if (this.api.enabled) {
-        const authoritative = await this.api.actUnderpass(this.store.snapshot.id, permitId, abilityId, engine.snapshot.turnCount);
+        const authoritative = await this.api.actUnderpass(playerId, permitId, abilityId, engine.snapshot.turnCount);
         if (!authoritative || authoritative.permitId !== permitId) {
           throw new Error('Missing or mismatched authoritative battle action response.');
         }
@@ -165,10 +177,15 @@ export class AppController {
         // The player can abandon the battle while this request is in flight. A
         // confirmed terminal result still belongs to the server permit even when
         // its original view has been torn down; never strand a resolved victory.
-        if (this.battlePermit?.permitId !== permitId) {
+        if (this.store.snapshot.id !== playerId || this.battlePermit?.permitId !== permitId) {
           if (authoritative.status === 'victory') {
-            this.rememberPendingReward(permitId);
-            void this.queueRewardCompletion(permitId);
+            this.rememberPendingReward(permitId, playerId);
+            void this.queueRewardCompletion(permitId, playerId);
+          } else if (this.store.snapshot.id !== playerId
+            && this.battlePermit?.permitId === permitId
+            && this.battlePermitOwnerId === playerId) {
+            this.battlePermit = undefined;
+            this.battlePermitOwnerId = undefined;
           }
           return;
         }
@@ -176,10 +193,11 @@ export class AppController {
           if (this.battleEngine && this.route === 'battle') {
             this.battleEngine.synchronizeAuthoritativeState(authoritative);
           } else if (authoritative.status === 'victory') {
-            this.rememberPendingReward(permitId);
-            void this.queueRewardCompletion(permitId);
+            this.rememberPendingReward(permitId, playerId);
+            void this.queueRewardCompletion(permitId, playerId);
           } else if (authoritative.status === 'defeat') {
             this.battlePermit = undefined;
+            this.battlePermitOwnerId = undefined;
           }
           return;
         }
@@ -193,7 +211,9 @@ export class AppController {
         const payload = error.payload as { battleState?: unknown; error?: unknown };
         const battleState = payload.battleState;
         if (isAuthoritativeBattleActionState(battleState, permitId)) {
-          const samePermit = this.battlePermit?.permitId === permitId;
+          const samePermit = this.battlePermit?.permitId === permitId
+            && this.battlePermitOwnerId === playerId
+            && this.store.snapshot.id === playerId;
           const currentEngine = this.battleEngine;
           if (samePermit && currentEngine) {
             // Never let a stale request settle a different permit through an old
@@ -201,10 +221,13 @@ export class AppController {
             // the same permit has been remounted.
             currentEngine.synchronizeAuthoritativeState(battleState);
           } else if (battleState.status === 'victory') {
-            this.rememberPendingReward(permitId);
-            void this.queueRewardCompletion(permitId);
-          } else if (samePermit && battleState.status === 'defeat') {
+            this.rememberPendingReward(permitId, playerId);
+            void this.queueRewardCompletion(permitId, playerId);
+          } else if (this.battlePermit?.permitId === permitId
+            && this.battlePermitOwnerId === playerId
+            && battleState.status === 'defeat') {
             this.battlePermit = undefined;
+            this.battlePermitOwnerId = undefined;
           }
           synchronized = true;
 
@@ -236,7 +259,7 @@ export class AppController {
     } finally {
       if (this.battleEngine === engine) {
         this.battleActionPending = false;
-        if (engine.snapshot.status === 'active') this.setAbilityButtonsDisabled(false);
+        if (engine.snapshot.status === 'active') this.setAbilityButtonsDisabled(this.store.snapshot.id !== playerId);
       }
     }
   }
@@ -259,60 +282,63 @@ export class AppController {
     status.hidden = !message;
   }
 
-  private pendingRewardKey(): string {
-    return `degen.pending.reward-permits.v1:${this.store.snapshot.id}`;
+  private pendingRewardKey(playerId: string): string {
+    return `degen.pending.reward-permits.v1:${playerId}`;
   }
 
   // Persist only permit identifiers for retry. Rewards and progression stay Worker-owned.
-  private pendingRewardPermits(): string[] {
+  private pendingRewardPermits(playerId: string): string[] {
     try {
-      const parsed: unknown = JSON.parse(localStorage.getItem(this.pendingRewardKey()) ?? '[]');
+      const parsed: unknown = JSON.parse(localStorage.getItem(this.pendingRewardKey(playerId)) ?? '[]');
       return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
     } catch {
       return [];
     }
   }
 
-  private rememberPendingReward(permitId: string): void {
+  private rememberPendingReward(permitId: string, playerId: string): void {
     try {
-      const ids = this.pendingRewardPermits();
-      if (!ids.includes(permitId)) localStorage.setItem(this.pendingRewardKey(), JSON.stringify([...ids, permitId]));
+      const ids = this.pendingRewardPermits(playerId);
+      if (!ids.includes(permitId)) localStorage.setItem(this.pendingRewardKey(playerId), JSON.stringify([...ids, permitId]));
     } catch (error) {
       console.warn('Unable to persist pending battle reward retry.', error);
     }
   }
 
-  private forgetPendingReward(permitId: string): void {
+  private forgetPendingReward(permitId: string, playerId: string): void {
     try {
-      localStorage.setItem(this.pendingRewardKey(), JSON.stringify(
-        this.pendingRewardPermits().filter((id) => id !== permitId),
+      localStorage.setItem(this.pendingRewardKey(playerId), JSON.stringify(
+        this.pendingRewardPermits(playerId).filter((id) => id !== permitId),
       ));
     } catch (error) {
       console.warn('Unable to clear completed battle reward retry.', error);
     }
   }
 
-  private queueRewardCompletion(permitId: string): Promise<void> {
-    const playerId = this.store.snapshot.id;
+  private queueRewardCompletion(permitId: string, playerId: string): Promise<void> {
     // Serialize pending completions so an older response cannot replace a newer player snapshot.
     this.rewardResolution = this.rewardResolution.then(async () => {
       try {
         const result = await this.api.completeUnderpass(playerId, permitId);
         if (!result) throw new Error('Missing authoritative battle completion response.');
-        this.store.replaceFromServer(result.player);
-        this.underpassEvent = result.worldEvent;
-        this.forgetPendingReward(permitId);
-        if (this.battlePermit?.permitId === permitId) {
+        const isCurrentPlayer = this.store.snapshot.id === playerId;
+        if (isCurrentPlayer) {
+          this.store.replaceFromServer(result.player);
+          this.underpassEvent = result.worldEvent;
+        }
+        this.forgetPendingReward(permitId, playerId);
+        if (this.battlePermit?.permitId === permitId && this.battlePermitOwnerId === playerId) {
           this.battlePermit = undefined;
-          if (this.route === 'battle') {
+          this.battlePermitOwnerId = undefined;
+          if (isCurrentPlayer && this.route === 'battle') {
             this.battleReturnTimer = window.setTimeout(() => this.navigate('underpass'), 1400);
           }
-        } else if (this.route !== 'battle') {
+        } else if (isCurrentPlayer && this.route !== 'battle') {
           this.render();
         }
       } catch (error) {
         console.warn('Server reward verification failed; retaining permit for retry.', error);
-        window.setTimeout(() => void this.queueRewardCompletion(permitId), 15_000);
+        window.setTimeout(() => void this.queueRewardCompletion(permitId, playerId), 15_000);
       }
     });
     return this.rewardResolution;
@@ -320,10 +346,11 @@ export class AppController {
 
   private async finishBattle(status: 'victory' | 'defeat'): Promise<void> {
     if (status === 'victory' && this.battlePermit) {
+      const permitId = this.battlePermit.permitId;
+      const playerId = this.battlePermitOwnerId ?? this.store.snapshot.id;
       if (this.api.enabled) {
-        const permitId = this.battlePermit.permitId;
-        this.rememberPendingReward(permitId);
-        await this.queueRewardCompletion(permitId);
+        this.rememberPendingReward(permitId, playerId);
+        await this.queueRewardCompletion(permitId, playerId);
         return;
       }
 
@@ -338,6 +365,7 @@ export class AppController {
     }
 
     this.battlePermit = undefined;
+    this.battlePermitOwnerId = undefined;
     this.battleReturnTimer = window.setTimeout(() => this.navigate('underpass'), 1400);
   }
 
