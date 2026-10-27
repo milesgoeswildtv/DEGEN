@@ -129,6 +129,7 @@ const AppController = runInNewContext(
   battleEngine?: BattleEngineInstance;
   useBattleAbility(abilityId: string): Promise<void>;
   finishBattle(status: 'victory' | 'defeat'): Promise<void>;
+  destroyBattle(): void;
 };
 
 test('lost action response followed by authoritative victory snapshot completes rewards once', async () => {
@@ -521,4 +522,89 @@ test('late victory after an account switch settles under the issuing player with
   assert.equal(storage.get('degen.pending.reward-permits.v1:player-2'), undefined,
     'the old permit must never be written into the new player’s retry queue');
   assert.equal(controller.battlePermit, undefined);
+});
+
+
+test('a stale active snapshot cannot synchronize a newer permit after battle teardown', async () => {
+  timers.length = 0;
+  storage.clear();
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const staleActive = {
+    permitId: 'permit-old',
+    status: 'active' as const,
+    playerHp: 72,
+    playerMana: 3,
+    enemyHp: 60,
+    turnCount: 2,
+  };
+  let rejectAction!: (error: unknown) => void;
+  const actionResponse = new Promise<unknown>((_resolve, reject) => { rejectAction = reject; });
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    actUnderpass() { return actionResponse; },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('an active stale snapshot must not request reward completion');
+    },
+  };
+  const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the old engine must not resolve a stale active snapshot');
+  }, {
+    permitId: 'permit-old',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-old' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = oldEngine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  controller.destroyBattle();
+  controller.route = 'battle';
+  const newEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the new engine must not resolve the old permit response');
+  }, {
+    permitId: 'permit-new',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  controller.battlePermit = { permitId: 'permit-new' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = newEngine;
+
+  rejectAction(new TestGameApiError(409, {
+    error: 'Stale battle turn.',
+    battleState: staleActive,
+  }, 'DEGEN API 409'));
+  await pendingAction;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(oldEngine.snapshot.turnCount, 0);
+  assert.equal(newEngine.snapshot.permitId, 'permit-new');
+  assert.equal(newEngine.snapshot.status, 'active');
+  assert.equal(newEngine.snapshot.turnCount, 0);
+  assert.equal(newEngine.snapshot.playerHp, 100);
+  assert.equal(newEngine.snapshot.playerMana, 8);
+  assert.equal(newEngine.snapshot.enemyHp, TUNNEL_MAW.maxHp);
+  assert.equal(controller.battlePermit?.permitId, 'permit-new');
+  assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+  assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), undefined);
 });
