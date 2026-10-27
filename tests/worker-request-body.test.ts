@@ -50,3 +50,23 @@ test('unexpected Worker exceptions return a generic 500 without exposing interna
   assert.deepEqual(payload, { error: 'Internal server error' });
   assert.doesNotMatch(JSON.stringify(payload), /private SQL text|internal binding details/i);
 });
+
+
+test('non-JSON content types are rejected before touching D1', async () => {
+  const cases = [
+    { label: 'missing content type', headers: undefined },
+    { label: 'text/plain', headers: { 'content-type': 'text/plain' } },
+    { label: 'form encoded', headers: { 'content-type': 'application/x-www-form-urlencoded' } },
+  ];
+  for (const scenario of cases) {
+    const response = await worker.fetch(new Request('https://degen-api.example/api/battle/start', {
+      method: 'POST',
+      ...(scenario.headers ? { headers: scenario.headers } : {}),
+      body: JSON.stringify({ playerId: 'player-1' }),
+    }), {
+      DB: { prepare() { throw new Error('D1 must not be touched for non-JSON content type'); } },
+    });
+    assert.equal(response.status, 400, scenario.label);
+    assert.deepEqual(await response.json(), { error: 'Content-Type must be application/json.' });
+  }
+});
