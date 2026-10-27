@@ -205,13 +205,6 @@ export class AppController {
     }
   }
 
-  private setBattleActionStatus(message?: string): void {
-    const status = this.root.querySelector<HTMLElement>('#battle-action-status');
-    if (!status) return;
-    status.textContent = message ?? '';
-    status.hidden = !message;
-  }
-
   private setAbilityButtonsDisabled(disabled: boolean): void {
     const snapshot = this.battleEngine?.snapshot;
     this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
@@ -221,6 +214,13 @@ export class AppController {
         || snapshot.status !== 'active'
         || manaCost > snapshot.playerMana;
     });
+  }
+
+  private setBattleActionStatus(message?: string): void {
+    const status = this.root.querySelector<HTMLElement>('#battle-action-status');
+    if (!status) return;
+    status.textContent = message ?? '';
+    status.hidden = !message;
   }
 
   private pendingRewardKey(): string {
