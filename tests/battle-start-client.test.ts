@@ -2,8 +2,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
+
+const startRequestStorage = new Map<string, string>();
+const testLocalStorage = {
+  getItem(key: string) { return startRequestStorage.get(key) ?? null; },
+  setItem(key: string, value: string) { startRequestStorage.set(key, String(value)); },
+  removeItem(key: string) { startRequestStorage.delete(key); },
+};
+beforeEach(() => startRequestStorage.clear());
 
 const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
@@ -13,10 +21,11 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
 const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError, isAuthoritativeBattleActionState });', {
   __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW,
   fetch: (...args: any[]) => globalThis.fetch(...args), Response, URL, AbortController, setTimeout, clearTimeout,
-  crypto: globalThis.crypto, Date, Number, JSON, Error, encodeURIComponent, console,
+  crypto: globalThis.crypto, localStorage: testLocalStorage, Date, Number, JSON, Error, encodeURIComponent, console,
 }) as {
   GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number, startTimeoutMs?: number) => {
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
+    acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
   };
   GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
@@ -30,6 +39,13 @@ const useBattleAbility = runInNewContext(
   stripTypeScriptTypes(`async function useBattleAbility(abilityId: string): Promise<void> {${controllerMethod[1]}\n}\nuseBattleAbility;`, { mode: 'transform' }),
   { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
 ) as (this: any, abilityId: string) => Promise<void>;
+
+const startControllerMethod = controllerSource.match(/private async enterUnderpass\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private mountBattle/);
+assert.ok(startControllerMethod, 'AppController start handler must remain available for the durable-key regression');
+const enterUnderpass = runInNewContext(
+  stripTypeScriptTypes(`async function enterUnderpass(): Promise<void> {${startControllerMethod[1]}\n}\nenterUnderpass;`, { mode: 'transform' }),
+  { console: { warn() {} }, Error },
+) as (this: any) => Promise<void>;
 
 const validPermit = (permitId = 'permit-1') => {
   return {
@@ -60,6 +76,63 @@ async function apiReturning(value: unknown) {
   try { return await api.startUnderpass('player-1', 'cycle-1'); }
   finally { globalThis.fetch = oldFetch; }
 }
+
+test('AppController acknowledges the start key only after attaching the permit for the active player', async () => {
+  const events: string[] = [];
+  const permit = validPermit('permit-accepted');
+  const controller: any = {
+    underpassEvent: { phase: 'open', cycleId: 'cycle-1' },
+    store: { snapshot: { id: 'player-1' } },
+    api: {
+      enabled: true,
+      async startUnderpass(playerId: string, cycleId: string) {
+        assert.equal(playerId, 'player-1');
+        assert.equal(cycleId, 'cycle-1');
+        return permit;
+      },
+      acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string) {
+        events.push(`ack:${playerId}:${cycleId}:${permitId}`);
+      },
+    },
+    navigate(route: string) { events.push(`navigate:${route}`); },
+    async refreshWorld() { events.push('refresh'); },
+    render() { events.push('render'); },
+    battlePermit: undefined,
+    battlePermitOwnerId: undefined,
+  };
+
+  await enterUnderpass.call(controller);
+  assert.equal(controller.battlePermit, permit);
+  assert.equal(controller.battlePermitOwnerId, 'player-1');
+  assert.deepEqual(events, ['navigate:battle', 'ack:player-1:cycle-1:permit-accepted']);
+});
+
+test('AppController retains the start key when the active player changes during the request', async () => {
+  const events: string[] = [];
+  const permit = validPermit('permit-player-1');
+  const controller: any = {
+    underpassEvent: { phase: 'open', cycleId: 'cycle-1' },
+    store: { snapshot: { id: 'player-1' } },
+    api: {
+      enabled: true,
+      async startUnderpass() {
+        controller.store.snapshot.id = 'player-2';
+        return permit;
+      },
+      acknowledgeUnderpassStart() { events.push('ack'); },
+    },
+    navigate(route: string) { events.push(`navigate:${route}`); },
+    async refreshWorld() { events.push('refresh'); },
+    render() { events.push('render'); },
+    battlePermit: undefined,
+    battlePermitOwnerId: undefined,
+  };
+
+  await enterUnderpass.call(controller);
+  assert.equal(controller.battlePermit, undefined);
+  assert.equal(controller.battlePermitOwnerId, undefined);
+  assert.deepEqual(events, [], "a foreign player's response must not be attached or acknowledged");
+});
 
 test('battle start request sends no client-owned combat state', async () => {
   const oldFetch = globalThis.fetch;
@@ -187,6 +260,64 @@ test('battle start aborts and retries one timed-out request, then stops after tw
   const hungApi = new GameApi('https://degen-api.example', hungFetcher, 12_000, 20_000, 0);
   await assert.rejects(hungApi.startUnderpass('player-1', 'cycle-1'));
   assert.equal(calls, 2, 'a permanently stalled start must terminate after one retry');
+});
+
+test('battle start preserves an uncertain request ID across failed retries and a new GameApi instance', async () => {
+  const failedBodies: string[] = [];
+  const failedFetcher: typeof fetch = async (_input, init) => {
+    failedBodies.push(String(init?.body));
+    throw new TypeError('simulated response loss after the Worker may have committed');
+  };
+  const failedApi = new GameApi('https://degen-api.example', failedFetcher, 12_000, 20_000, 0);
+  await assert.rejects(failedApi.startUnderpass('player-1', 'cycle-1'));
+  assert.equal(failedBodies.length, 2);
+  assert.equal(failedBodies[0], failedBodies[1], 'the bounded in-call retry must keep the same key and body');
+  assert.equal(startRequestStorage.size, 1, 'uncertain failure must retain the durable idempotency key');
+
+  const recoveredBodies: string[] = [];
+  const recoveredFetcher: typeof fetch = async (_input, init) => {
+    const body = String(init?.body);
+    recoveredBodies.push(body);
+    const request = JSON.parse(body) as { requestId: string };
+    return new Response(JSON.stringify(validPermit(request.requestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const recoveredApi = new GameApi('https://degen-api.example', recoveredFetcher);
+  const recovered = await recoveredApi.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+  const originalRequestId = (JSON.parse(failedBodies[0] ?? '{}') as { requestId: string }).requestId;
+  assert.equal(recoveredBodies.length, 1);
+  assert.equal((JSON.parse(recoveredBodies[0] ?? '{}') as { requestId: string }).requestId, originalRequestId,
+    'a later GameApi instance must recover the same server permit after both prior responses were lost');
+  assert.equal(recovered.permitId, originalRequestId);
+  assert.equal(startRequestStorage.size, 1, 'keep the key until the controller confirms it accepted the permit');
+  recoveredApi.acknowledgeUnderpassStart('player-1', 'cycle-1', 'wrong-permit');
+  assert.equal(startRequestStorage.size, 1, 'a mismatched acknowledgement must not clear another permit key');
+  recoveredApi.acknowledgeUnderpassStart('player-1', 'cycle-1', recovered.permitId);
+  assert.equal(startRequestStorage.size, 0, 'the matching accepted permit acknowledgement clears the pending key');
+});
+
+test('battle start clears a persisted key after a definitive Worker rejection', async () => {
+  let rejectedRequestId = '';
+  const rejectedFetcher: typeof fetch = async (_input, init) => {
+    rejectedRequestId = (JSON.parse(String(init?.body)) as { requestId: string }).requestId;
+    return new Response(JSON.stringify({ error: 'The Underpass is sealed.' }), {
+      status: 409, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const rejectedApi = new GameApi('https://degen-api.example', rejectedFetcher);
+  await assert.rejects(rejectedApi.startUnderpass('player-1', 'cycle-1'));
+  assert.equal(startRequestStorage.size, 0, 'a definitive 4xx proves the key cannot recover a valid start');
+
+  let nextRequestId = '';
+  const successFetcher: typeof fetch = async (_input, init) => {
+    nextRequestId = (JSON.parse(String(init?.body)) as { requestId: string }).requestId;
+    return new Response(JSON.stringify(validPermit(nextRequestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  await new GameApi('https://degen-api.example', successFetcher).startUnderpass('player-1', 'cycle-1');
+  assert.notEqual(nextRequestId, rejectedRequestId, 'a new start after a definitive rejection gets a fresh key');
 });
 
 test('battle start does not retry a Worker 4xx rejection', async () => {

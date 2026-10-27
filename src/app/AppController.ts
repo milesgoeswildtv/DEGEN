@@ -126,6 +126,9 @@ export class AppController {
       this.battlePermit = permit;
       this.battlePermitOwnerId = playerId;
       this.navigate('battle');
+      if (this.api.enabled) {
+        this.api.acknowledgeUnderpassStart(playerId, event.cycleId, permit.permitId);
+      }
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
       await this.refreshWorld();
