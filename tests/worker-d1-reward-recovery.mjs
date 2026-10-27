@@ -56,12 +56,31 @@ async function stop() {
   worker = undefined;
 }
 async function complete(permitId = 'permit-recovery') {
-  const response = await fetch(origin + '/api/battle/complete', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerId: 'qa-player', permitId }),
-    signal: AbortSignal.timeout(15_000),
-  });
+  let response;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      response = await fetch(origin + '/api/battle/complete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ playerId: 'qa-player', permitId }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      break;
+    } catch (error) {
+      // A local Wrangler socket can close while the Worker remains healthy.
+      // Completion is idempotent, so retry one transport failure only after
+      // confirming the same local Worker is still serving health checks.
+      if (attempt === 0 && worker?.exitCode === null) {
+        await sleep(100);
+        try {
+          const health = await fetch(origin + '/api/health', { signal: AbortSignal.timeout(2_000) });
+          if (health.ok && (await health.json()).ok) continue;
+        } catch {}
+      }
+      throw new Error(`POST /api/battle/complete failed for ${permitId}: ${error instanceof Error ? error.message : String(error)}\\nWorker exit code: ${worker?.exitCode ?? 'running'}\\nCaptured Worker logs:\\n${logs}`);
+    }
+  }
+  if (!response) throw new Error(`POST /api/battle/complete produced no response for ${permitId}\\nCaptured Worker logs:\\n${logs}`);
   const raw = await response.text();
   let body;
   try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
@@ -95,9 +114,16 @@ try {
         ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-reservation-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-cleanup-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
-        ('qa-action-race-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+        ('qa-action-race-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-poison-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-malformed-cleanup-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-completed-poison-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
     INSERT INTO world_event_clears(player_id, event_key, cycle_id, full_reward_clears)
-      VALUES ('qa-player', 'underpass', 'qa-legacy-cycle', 3);
+      VALUES
+        ('qa-player', 'underpass', 'qa-legacy-cycle', 3),
+        ('qa-player', 'underpass', 'qa-poison-cycle', 1),
+        ('qa-player', 'underpass', 'qa-malformed-cleanup-cycle', 1),
+        ('qa-player', 'underpass', 'qa-completed-poison-cycle', 1);
     INSERT INTO battle_permits(
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count,
@@ -146,6 +172,19 @@ try {
         'claiming', 'nonnormalized-time-token', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 minutes')
       ),
       (
+        'permit-completed-claim', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'completed-claim-token', datetime('now', '-2 minutes')
+      ),
+      (
+        'permit-completion-race', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-completion-after-reservation', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
         'permit-reservation-recovery', 'qa-player', 'underpass', 'qa-reservation-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       ),
@@ -156,7 +195,42 @@ try {
       (
         'permit-action-complete-race', 'qa-player', 'underpass', 'qa-action-race-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 12, 1, 'active', 0, 'pending', NULL, NULL
+      ),
+      (
+        'permit-poisoned-reservation', 'qa-player', 'underpass', 'qa-poison-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'poisoned-reservation-token', datetime('now', '-2 minutes')
+      ),
+      (
+        'permit-poison-recovery', 'qa-player', 'underpass', 'qa-poison-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-malformed-reservation', 'qa-player', 'underpass', 'qa-malformed-cleanup-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'malformed-reservation-token', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 minutes')
+      ),
+      (
+        'permit-malformed-reservation-recovery', 'qa-player', 'underpass', 'qa-malformed-cleanup-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-completed-poisoned-reservation', 'qa-player', 'underpass', 'qa-completed-poison-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1,
+        'claiming', 'completed-poison-token', datetime('now', '-2 minutes')
+      ),
+      (
+        'permit-completed-poison-recovery', 'qa-player', 'underpass', 'qa-completed-poison-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
+    UPDATE battle_permits SET completed_at = datetime('now', '-2 minutes')
+      WHERE id = 'permit-completed-claim';
+    UPDATE battle_permits SET reward_clear_number = 999999
+      WHERE id = 'permit-poisoned-reservation';
+    UPDATE battle_permits SET reward_clear_number = 999999
+      WHERE id = 'permit-malformed-reservation';
+    UPDATE battle_permits SET completed_at = datetime('now', '-2 minutes'), reward_clear_number = 999999
+      WHERE id = 'permit-completed-poisoned-reservation';
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
 
@@ -253,6 +327,127 @@ try {
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 1);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-live-claim:victory'`)[0]?.n, 0);
+
+  // An inconsistent claim with completed_at already set is not a recoverable lease.
+  // Completion timestamps are written atomically with reward_state='awarded'; accepting
+  // this row would let a malformed receipt bypass the awarded-receipt audit and settle.
+  const completedClaimPermitBefore = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-completed-claim'`);
+  const completedClaimCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const completedClaimInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const completedClaimClearsBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`);
+  const completedClaimHistoryBefore = sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completed-claim:victory'`);
+  const inconsistentClaim = await complete('permit-completed-claim');
+  assert.equal(inconsistentClaim.status, 409, JSON.stringify(inconsistentClaim.body));
+  assert.equal(inconsistentClaim.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal('reward' in (inconsistentClaim.body ?? {}), false);
+  assert.equal('player' in (inconsistentClaim.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-completed-claim'`), completedClaimPermitBefore,
+    'an inconsistent completed claim must not be reclaimed or rewritten');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), completedClaimCharacterBefore,
+    'an inconsistent completed claim must not award progression or currency');
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), completedClaimInventoryBefore,
+    'an inconsistent completed claim must not award inventory');
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), completedClaimClearsBefore,
+    'an inconsistent completed claim must not reserve another clear');
+  assert.deepEqual(sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completed-claim:victory'`), completedClaimHistoryBefore,
+    'an inconsistent completed claim must not create victory history');
+
+  // Simulate a completion timestamp appearing after the claim UPDATE has passed its
+  // initial NULL guard. The settlement and clear-allocation compare-and-swaps must
+  // recheck that guard, and failed cleanup must not rewrite the inconsistent row.
+  sql(`CREATE TRIGGER qa_complete_claim_after_acquire AFTER UPDATE OF reward_state ON battle_permits
+    WHEN NEW.id = 'permit-completion-race' AND NEW.reward_state = 'claiming'
+    BEGIN UPDATE battle_permits SET completed_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END`);
+  const claimTimestampRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const claimTimestampRaceInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const claimTimestampRaceClearsBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`);
+  const claimTimestampRaceHistoryBefore = sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completion-race:victory'`);
+  const claimTimestampRace = await complete('permit-completion-race');
+  assert.equal(claimTimestampRace.status, 409, JSON.stringify(claimTimestampRace.body));
+  assert.equal('reward' in (claimTimestampRace.body ?? {}), false);
+  assert.equal('player' in (claimTimestampRace.body ?? {}), false);
+  const claimTimestampRacePermitAfter = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-completion-race'`);
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_state, 'claiming');
+  assert.ok(claimTimestampRacePermitAfter[0]?.reward_claim_token);
+  assert.ok(claimTimestampRacePermitAfter[0]?.reward_claimed_at);
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_clear_number, null,
+    'a completed claim must not reserve a clear number');
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_xp, null);
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_currency, null);
+  assert.equal(claimTimestampRacePermitAfter[0]?.reward_tier, null);
+  assert.ok(claimTimestampRacePermitAfter[0]?.completed_at,
+    'the concurrent completion marker is retained for audit');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), claimTimestampRaceCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), claimTimestampRaceInventoryBefore);
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), claimTimestampRaceClearsBefore,
+    'a completion timestamp race must not advance the clear counter');
+  assert.deepEqual(sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completion-race:victory'`), claimTimestampRaceHistoryBefore);
+  sql('DROP TRIGGER qa_complete_claim_after_acquire');
+
+  // Completion can also become inconsistent after the clear-number UPDATE fires.
+  // The cycle counter must stay unchanged, and the unawarded reservation must be
+  // cleared without touching progression, inventory, or victory history.
+  sql(`CREATE TRIGGER qa_complete_after_clear_reservation AFTER UPDATE OF reward_clear_number ON battle_permits
+    WHEN NEW.id = 'permit-completion-after-reservation' AND NEW.reward_clear_number IS NOT NULL
+    BEGIN UPDATE battle_permits SET completed_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END`);
+  const postReservationCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const postReservationInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const postReservationClearsBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`);
+  const postReservationHistoryBefore = sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completion-after-reservation:victory'`);
+  const postReservation = await complete('permit-completion-after-reservation');
+  assert.equal(postReservation.status, 409, JSON.stringify(postReservation.body));
+  assert.equal('reward' in (postReservation.body ?? {}), false);
+  assert.equal('player' in (postReservation.body ?? {}), false);
+  const postReservationPermitAfter = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-completion-after-reservation'`);
+  assert.equal(postReservationPermitAfter[0]?.reward_state, 'claiming');
+  assert.ok(postReservationPermitAfter[0]?.reward_claim_token);
+  assert.ok(postReservationPermitAfter[0]?.reward_claimed_at);
+  assert.equal(postReservationPermitAfter[0]?.reward_clear_number, null,
+    'the inconsistent claim must not retain an unawarded clear reservation');
+  assert.equal(postReservationPermitAfter[0]?.reward_xp, null);
+  assert.equal(postReservationPermitAfter[0]?.reward_currency, null);
+  assert.equal(postReservationPermitAfter[0]?.reward_tier, null);
+  assert.equal(postReservationPermitAfter[0]?.reward_level, null);
+  assert.equal(postReservationPermitAfter[0]?.reward_remaining_xp, null);
+  assert.ok(postReservationPermitAfter[0]?.completed_at);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), postReservationCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), postReservationInventoryBefore);
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), postReservationClearsBefore,
+    'a completion marker after reservation must not consume a cycle clear');
+  assert.deepEqual(sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completion-after-reservation:victory'`), postReservationHistoryBefore);
+  sql('DROP TRIGGER qa_complete_after_clear_reservation');
 
   // A process that died while holding a claim must be recoverable after the 60-second lease.
   const staleClaim = await complete('permit-stale-claim');
@@ -549,6 +744,191 @@ try {
     beforeNonnormalizedLeaseClearCount);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
     WHERE id = 'permit-nonnormalized-claim-time:victory'`)[0]?.n ?? 0, 0);
+
+
+  // A completed reservation is audit evidence, even if its clear number is inconsistent.
+  // The recovery sweep must not erase it merely to unblock a different victory.
+  const completedPoisonBefore = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-completed-poisoned-reservation'`);
+  const completedPoisonCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const completedPoisonInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const completedPoisonClearBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-completed-poison-cycle'`);
+  const completedPoisonHistoryBefore = sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completed-poisoned-reservation:victory'`);
+  const blockedByCompletedPoison = await complete('permit-completed-poison-recovery');
+  assert.equal(blockedByCompletedPoison.status, 409, JSON.stringify(blockedByCompletedPoison.body));
+  assert.equal('reward' in (blockedByCompletedPoison.body ?? {}), false);
+  assert.equal('player' in (blockedByCompletedPoison.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-completed-poisoned-reservation'`), completedPoisonBefore,
+    'cleanup must preserve a completed reservation even when its clear number is ahead of the counter');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), completedPoisonCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), completedPoisonInventoryBefore);
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-completed-poison-cycle'`),
+    completedPoisonClearBefore, 'the blocked recovery must not advance the clear counter');
+  assert.deepEqual(sql(`SELECT id, result, xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-completed-poisoned-reservation:victory'`), completedPoisonHistoryBefore);
+  assert.deepEqual(sql(`SELECT reward_state, reward_clear_number, completed_at FROM battle_permits
+    WHERE id = 'permit-completed-poison-recovery'`), [{
+      reward_state: 'pending', reward_clear_number: null, completed_at: null,
+    }], 'the valid victory must remain retryable without claiming a false clear');
+
+  // A reservation above the committed counter is invalid. If its first cleanup
+  // fails transiently, the next valid victory must retry cleanup itself rather
+  // than remain blocked until someone separately retries the poisoned permit.
+  const poisonCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const poisonInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const poisonClearCountBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears;
+  assert.equal(poisonClearCountBefore, 1);
+  sql(`CREATE TRIGGER qa_fail_poison_reservation_cleanup
+    BEFORE UPDATE OF reward_clear_number ON battle_permits
+    WHEN OLD.id = 'permit-poisoned-reservation' AND NEW.reward_clear_number IS NULL
+    BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_POISON_RESERVATION_CLEANUP_FAILURE'); END`);
+
+  const poisonedReservation = await complete('permit-poisoned-reservation');
+  assert.equal(poisonedReservation.status, 409, JSON.stringify(poisonedReservation.body));
+  assert.equal('reward' in (poisonedReservation.body ?? {}), false);
+  assert.equal('player' in (poisonedReservation.body ?? {}), false);
+  const poisonedAfterFailedCleanup = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-poisoned-reservation'`)[0];
+  assert.equal(poisonedAfterFailedCleanup.reward_state, 'claiming');
+  assert.notEqual(poisonedAfterFailedCleanup.reward_claim_token, null);
+  assert.equal(poisonedAfterFailedCleanup.reward_clear_number, 999999,
+    'failed cleanup must not pretend the invalid reservation was released');
+  assert.equal(poisonedAfterFailedCleanup.reward_xp, null);
+  assert.equal(poisonedAfterFailedCleanup.reward_currency, null);
+  assert.equal(poisonedAfterFailedCleanup.reward_tier, null);
+  assert.equal(poisonedAfterFailedCleanup.completed_at, null);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), poisonCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), poisonInventoryBefore);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears,
+    poisonClearCountBefore, 'rejecting an invalid reservation must not advance the cycle counter');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('permit-poisoned-reservation:victory', 'permit-poison-recovery:victory')`)[0]?.n ?? 0, 0);
+
+  // Simulate the first failed request's lease becoming stale. The valid permit
+  // then tries to clean it but hits the same transient D1 failure.
+  sql(`UPDATE battle_permits SET reward_claimed_at = datetime('now', '-2 minutes')
+    WHERE id = 'permit-poisoned-reservation'`);
+  const blockedPoisonRecovery = await complete('permit-poison-recovery');
+  assert.equal(blockedPoisonRecovery.status, 500, JSON.stringify(blockedPoisonRecovery.body));
+  assert.equal('reward' in (blockedPoisonRecovery.body ?? {}), false);
+  assert.equal('player' in (blockedPoisonRecovery.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-poison-recovery'`), [{
+    reward_state: 'pending',
+    reward_claim_token: null,
+    reward_claimed_at: null,
+    reward_clear_number: null,
+    reward_xp: null,
+    reward_currency: null,
+    reward_tier: null,
+    reward_level: null,
+    reward_remaining_xp: null,
+    completed_at: null,
+  }], 'failed cleanup must release only the current valid claim and reserve no clear');
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears,
+    poisonClearCountBefore);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), poisonCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), poisonInventoryBefore);
+  sql('DROP TRIGGER qa_fail_poison_reservation_cleanup');
+
+  // Retrying the valid victory must clean the stale invalid reservation and
+  // allocate the next real sequence slot in one D1 batch.
+  const poisonRecovery = await complete('permit-poison-recovery');
+  assert.equal(poisonRecovery.status, 200, JSON.stringify(poisonRecovery.body));
+  assert.equal(poisonRecovery.body.reward.tier, 'full');
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-poisoned-reservation'`), [{
+    reward_state: 'pending',
+    reward_claim_token: null,
+    reward_claimed_at: null,
+    reward_clear_number: null,
+    reward_xp: null,
+    reward_currency: null,
+    reward_tier: null,
+    reward_level: null,
+    reward_remaining_xp: null,
+    completed_at: null,
+  }], 'valid recovery must release the stale unauditable reservation before allocating');
+  assert.deepEqual(sql(`SELECT reward_state, reward_clear_number, reward_xp, reward_currency,
+      reward_tier, completed_at FROM battle_permits WHERE id = 'permit-poison-recovery'`), [{
+    reward_state: 'awarded',
+    reward_clear_number: 2,
+    reward_xp: poisonRecovery.body.reward.xp,
+    reward_currency: poisonRecovery.body.reward.currency,
+    reward_tier: 'full',
+    completed_at: sql(`SELECT completed_at FROM battle_permits WHERE id = 'permit-poison-recovery'`)[0]?.completed_at,
+  }]);
+  assert.ok(sql(`SELECT completed_at FROM battle_permits WHERE id = 'permit-poison-recovery'`)[0]?.completed_at);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears, 2);
+  const poisonRecoveryCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const poisonRecoveryInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const poisonRecoveryReplay = await complete('permit-poison-recovery');
+  assert.equal(poisonRecoveryReplay.status, 200, JSON.stringify(poisonRecoveryReplay.body));
+  assert.deepEqual(poisonRecoveryReplay.body.reward, poisonRecovery.body.reward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), poisonRecoveryCharacter,
+    'retry after stale-reservation cleanup must not double-apply progression');
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), poisonRecoveryInventory,
+    'retry after stale-reservation cleanup must not double-apply inventory');
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears, 2);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id = 'permit-poison-recovery:victory'`)[0]?.n ?? 0, 1);
+
+  // The original victory remains recoverable, but its invalid old sequence is
+  // never reused. It receives the next audited slot only after the cleanup.
+  const poisonedVictoryRecovery = await complete('permit-poisoned-reservation');
+  assert.equal(poisonedVictoryRecovery.status, 200, JSON.stringify(poisonedVictoryRecovery.body));
+  assert.equal(sql(`SELECT reward_clear_number FROM battle_permits
+    WHERE id = 'permit-poisoned-reservation'`)[0]?.reward_clear_number, 3);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears, 3);
+  const poisonedVictoryCharacter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const poisonedVictoryInventory = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const poisonedVictoryReplay = await complete('permit-poisoned-reservation');
+  assert.equal(poisonedVictoryReplay.status, 200, JSON.stringify(poisonedVictoryReplay.body));
+  assert.deepEqual(poisonedVictoryReplay.body.reward, poisonedVictoryRecovery.body.reward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), poisonedVictoryCharacter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), poisonedVictoryInventory);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-poison-cycle'`)[0]?.full_reward_clears, 3);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('permit-poisoned-reservation:victory', 'permit-poison-recovery:victory')`)[0]?.n, 2);
 
   // Failure while reserving a clear slot must roll back that reservation batch,
   // release only this claim, and allow a retry without losing the valid victory.
@@ -869,6 +1249,117 @@ try {
     WHERE id = 'permit-action-complete-race:victory'`)[0]?.n, 1);
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-action-race-cycle'`)[0]?.full_reward_clears, 1);
+
+  // The reservation cleanup sweep must not reclaim an ahead-of-counter slot
+  // when its lease timestamp is malformed/noncanonical, even if it is parseable
+  // and old enough by SQLite's age predicate.
+  const malformedCleanupLease = sql(`SELECT reward_claimed_at,
+      julianday(reward_claimed_at) < julianday('now', '-60 seconds') AS appears_stale,
+      strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at AS is_normalized
+    FROM battle_permits WHERE id = 'permit-malformed-reservation'`)[0];
+  assert.equal(malformedCleanupLease?.appears_stale, 1);
+  assert.equal(malformedCleanupLease?.is_normalized, 0);
+  const malformedCleanupCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const malformedCleanupInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const malformedCleanupCounterBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-malformed-cleanup-cycle'`)[0]?.full_reward_clears;
+  const malformedCleanupBlocked = await complete('permit-malformed-reservation-recovery');
+  assert.equal(malformedCleanupBlocked.status, 409, JSON.stringify(malformedCleanupBlocked.body));
+  assert.equal('reward' in (malformedCleanupBlocked.body ?? {}), false);
+  assert.equal('player' in (malformedCleanupBlocked.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-malformed-reservation'`), [{
+    reward_state: 'claiming',
+    reward_claim_token: 'malformed-reservation-token',
+    reward_claimed_at: malformedCleanupLease.reward_claimed_at,
+    reward_clear_number: 999999,
+    reward_xp: null,
+    reward_currency: null,
+    reward_tier: null,
+    reward_level: null,
+    reward_remaining_xp: null,
+    completed_at: null,
+  }], 'malformed lease evidence must not be cleared by the recovery sweep');
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-malformed-reservation-recovery'`), [{
+    reward_state: 'pending',
+    reward_claim_token: null,
+    reward_claimed_at: null,
+    reward_clear_number: null,
+    reward_xp: null,
+    reward_currency: null,
+    reward_tier: null,
+    reward_level: null,
+    reward_remaining_xp: null,
+    completed_at: null,
+  }], 'the valid claim must release its own lease without reserving an unsafe sequence');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), malformedCleanupCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), malformedCleanupInventoryBefore);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-malformed-cleanup-cycle'`)[0]?.full_reward_clears,
+    malformedCleanupCounterBefore);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('permit-malformed-reservation:victory', 'permit-malformed-reservation-recovery:victory')`)[0]?.n ?? 0, 0);
+
+  // Once an operator/data repair restores the canonical stale-lease timestamp,
+  // the same valid victory can recover sequence 2 without duplicating rewards.
+  sql(`UPDATE battle_permits SET reward_claimed_at = datetime('now', '-2 minutes')
+    WHERE id = 'permit-malformed-reservation'`);
+  const malformedCleanupRecovered = await complete('permit-malformed-reservation-recovery');
+  assert.equal(malformedCleanupRecovered.status, 200, JSON.stringify(malformedCleanupRecovered.body));
+  const malformedCleanupReward = malformedCleanupRecovered.body.reward;
+  assert.equal(malformedCleanupReward.tier, 'full');
+  const malformedCleanupCharacterAfter = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const malformedCleanupInventoryAfter = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number,
+      reward_xp, reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-malformed-reservation'`), [{
+    reward_state: 'pending',
+    reward_claim_token: null,
+    reward_claimed_at: null,
+    reward_clear_number: null,
+    reward_xp: null,
+    reward_currency: null,
+    reward_tier: null,
+    reward_level: null,
+    reward_remaining_xp: null,
+    completed_at: null,
+  }]);
+  const malformedCleanupAwardedPermit = sql(`SELECT reward_state, reward_clear_number, reward_xp,
+      reward_currency, reward_tier, reward_level, reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-malformed-reservation-recovery'`)[0];
+  assert.equal(malformedCleanupAwardedPermit?.reward_state, 'awarded');
+  assert.equal(malformedCleanupAwardedPermit?.reward_clear_number, 2);
+  assert.equal(malformedCleanupAwardedPermit?.reward_xp, malformedCleanupReward.xp);
+  assert.equal(malformedCleanupAwardedPermit?.reward_currency, malformedCleanupReward.currency);
+  assert.equal(malformedCleanupAwardedPermit?.reward_tier, 'full');
+  assert.equal(malformedCleanupAwardedPermit?.reward_level, malformedCleanupCharacterAfter[0]?.level);
+  assert.equal(malformedCleanupAwardedPermit?.reward_remaining_xp, malformedCleanupCharacterAfter[0]?.xp);
+  assert.ok(malformedCleanupAwardedPermit?.completed_at);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-malformed-cleanup-cycle'`)[0]?.full_reward_clears, 2);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('permit-malformed-reservation:victory', 'permit-malformed-reservation-recovery:victory')`)[0]?.n ?? 0, 1);
+  const malformedCleanupReplay = await complete('permit-malformed-reservation-recovery');
+  assert.equal(malformedCleanupReplay.status, 200, JSON.stringify(malformedCleanupReplay.body));
+  assert.deepEqual(malformedCleanupReplay.body.reward, malformedCleanupReward);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), malformedCleanupCharacterAfter);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), malformedCleanupInventoryAfter);
+  assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-malformed-cleanup-cycle'`)[0]?.full_reward_clears, 2);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history
+    WHERE id IN ('permit-malformed-reservation:victory', 'permit-malformed-reservation-recovery:victory')`)[0]?.n ?? 0, 1);
+
   await stop();
 
   console.log('PASS local Worker/D1 reward recovery, stale/fresh claim races, premature completion rejection, action/completion concurrency, terminal action replay rejection, and exactly-once rewards');
