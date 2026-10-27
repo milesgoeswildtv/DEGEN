@@ -329,8 +329,8 @@ export class AppController {
           this.store.replaceFromServer(result.player);
           this.underpassEvent = result.worldEvent;
         }
-        this.api.acknowledgeUnderpassCompletion?.(playerId, permitId);
-      this.forgetPendingReward(permitId, playerId);
+        this.api.acknowledgeUnderpassCompletion(playerId, permitId);
+        this.forgetPendingReward(permitId, playerId);
         if (this.battlePermit?.permitId === permitId && this.battlePermitOwnerId === playerId) {
           this.battlePermit = undefined;
           this.battlePermitOwnerId = undefined;
