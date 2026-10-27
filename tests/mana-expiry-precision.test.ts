@@ -181,3 +181,90 @@ test('new clear allocation fails closed when the persisted counter trails a rese
   assert.match(owned, /isSafeIntegerBetween\(owned\.duplicate_clear_count, 0, 0\)/,
     'both newly assigned and previously reserved sequence numbers must be audited before progression writes');
 });
+
+test('completion timestamps are rechecked during reward clear reservation and failed-claim cleanup', () => {
+  const releaseStart = worker.indexOf('const releaseClaim = async');
+  const releaseEnd = worker.indexOf('};', releaseStart);
+  assert.ok(releaseStart >= 0 && releaseEnd > releaseStart, 'token-scoped claim cleanup must exist');
+  assert.match(
+    worker.slice(releaseStart, releaseEnd),
+    /reward_state = 'claiming' AND reward_claim_token = \?[\s\S]*AND completed_at IS NULL/,
+    'cleanup must not rewrite a claim whose completion marker appeared after acquisition',
+  );
+
+  const allocationStart = worker.indexOf('UPDATE battle_permits SET reward_clear_number = (');
+  const allocationEnd = worker.indexOf('UPDATE world_event_clears SET full_reward_clears =', allocationStart);
+  assert.ok(allocationStart >= 0 && allocationEnd > allocationStart, 'clear allocation must exist');
+  assert.match(
+    worker.slice(allocationStart, allocationEnd),
+    /reward_claim_token = \? AND reward_clear_number IS NULL AND completed_at IS NULL/,
+    'a completion marker appearing after claim acquisition must block clear reservation',
+  );
+
+  const reservationBatch = worker.slice(
+    allocationStart,
+    worker.indexOf('const owned = await env.DB.prepare', allocationStart),
+  );
+  const counterStart = reservationBatch.indexOf('UPDATE world_event_clears SET full_reward_clears =');
+  assert.ok(counterStart >= 0, 'the cycle clear counter update must exist in the reservation batch');
+  assert.match(
+    reservationBatch.slice(counterStart),
+    /reward_state = 'claiming' AND reward_claim_token = \? AND completed_at IS NULL/,
+    'the cycle counter may advance only while the same incomplete claim still owns the reservation',
+  );
+  assert.match(
+    reservationBatch,
+    /UPDATE battle_permits SET reward_clear_number = NULL[\s\S]*completed_at IS NOT NULL[\s\S]*reward_tier IS NULL/,
+    'a completion marker appearing after assignment must release the unawarded clear number',
+  );
+
+  const ownsStart = worker.indexOf('const owns =');
+  const ownsEnd = worker.indexOf(';', ownsStart);
+  assert.ok(ownsStart >= 0 && ownsEnd > ownsStart, 'settlement ownership guard must exist');
+  assert.match(
+    worker.slice(ownsStart, ownsEnd),
+    /reward_state = 'claiming' AND reward_claim_token = \? AND completed_at IS NULL/,
+    'settlement must recheck the same completion marker before any reward write',
+  );
+});
+
+test('an invalid pre-reserved clear number is released so it cannot block later valid claims', () => {
+  const ownedStart = worker.indexOf('const owned = await env.DB.prepare');
+  const rewardStart = worker.indexOf('const reward = underpassRewardForClear', ownedStart);
+  assert.ok(ownedStart >= 0 && rewardStart > ownedStart, 'the audited reservation check must exist');
+  const auditFailure = worker.slice(ownedStart, rewardStart);
+  assert.match(auditFailure, /if \(!owned\?\.reward_clear_number[\s\S]*await releaseClaim\(typeof owned\?\.reward_clear_number === 'number'\)/,
+    'any numeric reservation that fails its authoritative audit must be cleared while releasing the unawarded claim');
+  assert.doesNotMatch(auditFailure, /hadReservedClearNumber/,
+    'whether the reservation pre-existed the current attempt must not preserve an unauditable sequence number');
+});
+
+test('a valid claim repairs stale unawarded reservations above the committed clear counter before allocation', () => {
+  const batchStart = worker.indexOf('if (claim.reward_clear_number === null) {');
+  const batchEnd = worker.indexOf('const owned = await env.DB.prepare', batchStart);
+  assert.ok(batchStart >= 0 && batchEnd > batchStart, 'clear reservation must use an ordered D1 batch');
+  const batch = worker.slice(batchStart, batchEnd);
+  const cleanupStart = batch.indexOf("UPDATE battle_permits SET reward_state = 'pending'");
+  const allocationStart = batch.indexOf('UPDATE battle_permits SET reward_clear_number = (');
+  assert.ok(cleanupStart >= 0 && allocationStart > cleanupStart,
+    'stale invalid reservations must be cleaned before a new sequence is allocated');
+  const cleanup = batch.slice(cleanupStart, allocationStart);
+  assert.match(cleanup, /reward_clear_number > \(SELECT full_reward_clears FROM world_event_clears/,
+    'cleanup is limited to reservations above the committed cycle counter');
+  assert.match(cleanup, /typeof\(\(SELECT full_reward_clears FROM world_event_clears[\s\S]*\) = 'integer'/,
+    'corrupt counters must fail closed without triggering reservation cleanup');
+  assert.ok(cleanup.includes("BETWEEN 0 AND ${Number.MAX_SAFE_INTEGER}"),
+    'counter cleanup must preserve the same safe-integer bounds as sequence allocation');
+  assert.match(cleanup, /battle_status = 'victory'[\s\S]*NOT EXISTS \(SELECT 1 FROM battle_history/,
+    'only unresolved victory permits with no victory history can be reset');
+  assert.match(cleanup, /NOT EXISTS \(SELECT 1 FROM characters[\s\S]*last_reward_claim_token = battle_permits\.reward_claim_token/,
+    'a reservation tied to an already-applied progression token must not be cleared');
+  assert.match(cleanup, /reward_xp IS NULL AND reward_currency IS NULL[\s\S]*reward_tier IS NULL AND reward_level IS NULL AND reward_remaining_xp IS NULL/,
+    'cleanup must not erase any reservation with a partial or completed reward receipt');
+  assert.match(cleanup, /reward_state = 'pending' OR \(reward_state = 'claiming'[\s\S]*strftime\('%Y-%m-%d %H:%M:%S', reward_claimed_at\) = reward_claimed_at[\s\S]*julianday\(reward_claimed_at\) < julianday\('now', '-60 seconds'\)/,
+    'only pending reservations or normalized stale leases may be reset');
+  assert.match(cleanup, /id <> \?/,
+    'the current claim must not invalidate its own reservation');
+  assert.ok(cleanup.includes(".bind(input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId)"),
+    'cleanup statement bindings must exactly match its four scoped placeholders');
+});
