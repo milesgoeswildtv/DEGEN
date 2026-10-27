@@ -40,7 +40,7 @@ const useBattleAbility = runInNewContext(
   { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
 ) as (this: any, abilityId: string) => Promise<void>;
 
-const startControllerMethod = controllerSource.match(/private async enterUnderpass\(\): Promise<void> \{([\\s\\S]*?)\n  \}\n\n  private mountBattle/);
+const startControllerMethod = controllerSource.match(/private async enterUnderpass\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private mountBattle/);
 assert.ok(startControllerMethod, 'AppController start handler must remain available for the durable-key regression');
 const enterUnderpass = runInNewContext(
   stripTypeScriptTypes(`async function enterUnderpass(): Promise<void> {${startControllerMethod[1]}\n}\nenterUnderpass;`, { mode: 'transform' }),
