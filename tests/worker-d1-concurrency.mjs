@@ -296,7 +296,8 @@ try {
       VALUES ('permit-awarded-start-after-close:victory','out-of-cycle-award-player',
         'tunnel-maw','victory',2,75,30);
     -- Model the permit as issued two minutes before the cycle closes.
-    UPDATE battle_permits SET started_at=datetime('now','-2 minutes')
+    UPDATE battle_permits SET started_at=datetime('now','-2 minutes'),
+      expires_at=datetime('now','+18 minutes')
       WHERE id='permit-survives-event-closure';
     INSERT INTO world_event_clears(player_id,event_key,cycle_id,full_reward_clears)
       VALUES
