@@ -1055,8 +1055,8 @@ try {
     'the same start key must not create a second permit for the player');
   assertPersistedPermitState(concurrentStartRequestId, concurrentStarts[0].data.initialState);
 
-  // Distinct request IDs from the same player must not race into two simultaneous
-  // encounters. The conditional D1 INSERT is the authority, not this test's timing.
+  // Distinct request IDs from the same player must converge on one active
+  // permit. The losing request resumes the winner's authoritative snapshot.
   const distinctStartRequestIds = [
     '00000000-0000-4000-8000-000000000086',
     '00000000-0000-4000-8000-000000000087',
@@ -1077,25 +1077,25 @@ try {
     status: response.status,
     data: await response.json(),
   })));
-  assert.equal(distinctStartResults.filter(result => result.status === 200).length, 1,
-    'different keys racing for one player must issue exactly one permit');
-  assert.equal(distinctStartResults.filter(result => result.status === 409).length, 1,
-    'the losing distinct-key request must be rejected');
-  const distinctAcceptedIndex = distinctStartResults.findIndex(result => result.status === 200);
-  const distinctAccepted = distinctStartResults[distinctAcceptedIndex];
-  const distinctRejected = distinctStartResults[1 - distinctAcceptedIndex];
-  const distinctAcceptedId = distinctStartRequestIds[distinctAcceptedIndex];
-  assert.equal(distinctAccepted.data.permitId, distinctAcceptedId);
-  assert.equal(distinctAccepted.data.initialState.permitId, distinctAcceptedId);
-  assert.deepEqual(distinctRejected.data, { error: 'A battle is already in progress.' },
-    'the losing request must not receive the active permit ID or snapshot');
+  assert.equal(distinctStartResults.filter(result => result.status === 200).length, 2,
+    'both same-player callers should converge on the one valid active permit');
+  assert.equal(distinctStartResults.filter(result => result.data.resumedExisting === true).length, 1,
+    'exactly one different-key caller must be marked as resuming the concurrently issued permit');
+  const distinctPermitId = distinctStartResults[0].data.permitId;
+  assert.ok(distinctStartRequestIds.includes(distinctPermitId),
+    'the returned permit ID must be the single winning request ID, not a client-invented ID');
+  assert.equal(distinctStartResults[1].data.permitId, distinctPermitId);
+  assert.equal(distinctStartResults[0].data.initialState.permitId, distinctPermitId);
+  assert.deepEqual(distinctStartResults[0].data.initialState, distinctStartResults[1].data.initialState,
+    'both callers must receive the same server-owned combat snapshot');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 1,
     'different idempotency keys must still persist only one permit for the player');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player' AND completed_at IS NULL AND julianday(expires_at) > julianday('now')"), 1,
     'exactly one unexpired unresolved permit may exist for the player');
-  assertPersistedPermitState(distinctAcceptedId, distinctAccepted.data.initialState);
+  assertPersistedPermitState(distinctPermitId, distinctStartResults[0].data.initialState);
 
-  // A later distinct key is also rejected while the first encounter remains unresolved.
+  // A later distinct key resumes the existing encounter instead of locking the
+  // player out after reload or issuing another permit.
   const thirdDistinctResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -1107,10 +1107,13 @@ try {
       requestId: '00000000-0000-4000-8000-000000000088',
     }),
   });
-  assert.equal(thirdDistinctResponse.status, 409);
-  assert.deepEqual(await thirdDistinctResponse.json(), { error: 'A battle is already in progress.' });
+  const thirdDistinct = await thirdDistinctResponse.json();
+  assert.equal(thirdDistinctResponse.status, 200, JSON.stringify(thirdDistinct));
+  assert.equal(thirdDistinct.resumedExisting, true);
+  assert.equal(thirdDistinct.permitId, distinctPermitId);
+  assertPersistedPermitState(distinctPermitId, thirdDistinct.initialState);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 1,
-    'a sequential different-key request must not create a second unresolved permit');
+    'a sequential distinct-key request must resume the same permit without a second row');
 
   // A shared idempotency key must never let a concurrent caller recover another player's permit.
   const collisionRequestId = '00000000-0000-4000-8000-000000000085';
