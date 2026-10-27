@@ -11,19 +11,6 @@
 - **One best next task:** after the progress-only refresh is checked, merge PR #76 through the normal PR path if its exact code/test head remains green; then re-evaluate PR #75 against the new main and require a combined exact-head CI pass.
 
 ---
-## Latest run — 2026-10-26 (reconcile permit chronology after reward-recovery merge)
-
-- **Authoritative main SHA at start:** `53241888ab9065ebfbffebd16cdd4673b8f52168`; PR #76 is now merged through the normal PR path. Its exact code/test head `446c3bb8830d5966e2be20205d08929c1be2b672` passed all 13 steps in [CI run 40427776978](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40427776978). This merge does not establish production deployment success; no deployment receipt was available in this run.
-- **PUSHED / PR #75 OPEN:** continuing `automation/degen/action-permit-event-guard-v02`, current code/test head `5bb6b2ece36f5ce56def3fcf27bea1f332086abb`. Its pre-PR76 exact-head CI passed all 13 steps in [run 40385740522](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40385740522). It now needs validation against current main because PR #76 and PR #75 both change `worker/index.ts`.
-- **Task / files from PR #75:** D1 now supplies both `started_at` and `expires_at` for issued permits from the same statement-stable clock; Worker action and completion authority validate that a permit's start lies within its own Underpass cycle, while preserving a legitimate entered fight across later event closure. The test suite covers malformed timestamps, unsupported event/cycle/encounter, open-boundary equality, future start rejection, action/completion races, and persisted-state no-mutation guarantees.
-- **Mana:** COMPLETE / MERGED on main. PR #71's paid-`crack` action race regression merged in `3cbf6ff5bb418e553cb5a51368f3fe582b86dd1c`; exact code/test CI passed all 13 steps in [run 40263244515](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40263244515). No monster Mana or zero-Mana reversion; migration 0006 remains tracked.
-- **Battle authority / reward idempotency:** PR #76's completed-at guards and stale-reservation cleanup are merged; reward completion still requires a server-resolved victory and token-guarded atomic settlement. PR #75 must now pass a combined exact-head CI with current main before merge; do not assume its earlier green run covers PR #76's merged Worker changes.
-- **D1 / deployment:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; deploy workflow order is base schema → tracked migrations → Worker. No production D1 operation, remote migration, secret change, or deployment was performed by this run.
-- **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
-- **One best next task:** verify the combined current-main + PR #75 merge-ref CI; if it passes, merge PR #75 normally and then verify any resulting Worker deployment receipt before claiming it is live.
-
----
-
 
 ## Latest run — 2026-10-26 (malformed lease cannot be reclaimed by reservation cleanup)
 
