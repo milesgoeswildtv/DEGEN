@@ -49,7 +49,7 @@ export class GameApi {
   private readonly fetcher: typeof fetch;
 
   constructor(apiBase: string = API_BASE, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
-    this.apiBase = apiBase.replace(/\\/$/, '');
+    this.apiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
     this.fetcher = fetcher;
     this.enabled = this.apiBase.length > 0;
   }
