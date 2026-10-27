@@ -345,7 +345,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     permit_started_in_cycle: number;
     permit_is_unexpired: number;
   };
-  const startPermitSelect = `SELECT
+  const loadExistingPermit = async () => env.DB.prepare(`SELECT
       permit.id, permit.player_id, permit.event_key, permit.cycle_id, permit.encounter_key,
       permit.expires_at, permit.completed_at, permit.reward_state, permit.reward_clear_number,
       permit.reward_xp, permit.reward_currency, permit.reward_tier, permit.reward_level,
@@ -359,45 +359,42 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       CASE WHEN julianday(permit.expires_at) > julianday('now')
         THEN 1 ELSE 0 END AS permit_is_unexpired
     FROM battle_permits AS permit
-    LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id`;
-  const loadExistingPermit = async () => env.DB.prepare(`${startPermitSelect}
+    LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
     WHERE permit.id = ?`).bind(permitId).first<ExistingStartPermit>();
-  const loadUnresolvedPermit = async () => env.DB.prepare(`${startPermitSelect}
-    WHERE permit.player_id = ?
-      AND permit.completed_at IS NULL
-      AND julianday(permit.expires_at) > julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-    ORDER BY permit.started_at DESC
-    LIMIT 1`).bind(input.playerId).first<ExistingStartPermit>();
 
-  const isReusablePermit = (existing: ExistingStartPermit, requireRequestedCycle: boolean): boolean =>
-    existing.player_id === input.playerId
-    && existing.event_key === 'underpass'
-    && existing.cycle_event_key === 'underpass'
-    && (!requireRequestedCycle || existing.cycle_id === input.cycleId)
-    && existing.encounter_key === TUNNEL_MAW.id
-    && existing.completed_at === null
-    && existing.reward_state === 'pending'
-    && existing.reward_clear_number === null
-    && existing.reward_xp === null
-    && existing.reward_currency === null
-    && existing.reward_tier === null
-    && existing.reward_level === null
-    && existing.reward_remaining_xp === null
-    && existing.reward_claim_token === null
-    && existing.reward_claimed_at === null
-    && existing.permit_started_in_cycle === 1
-    && existing.permit_is_unexpired === 1
-    && existing.battle_status === 'active'
-    && isValidBattlePermitState(existing);
-
-  const respondWithPermit = (existing: ExistingStartPermit, resumedExisting = false): Response =>
-    json(request, env, {
+  const replayExistingPermit = async (): Promise<Response | undefined> => {
+    const existing = await loadExistingPermit();
+    if (!existing) return undefined;
+    // A colliding/reused ID never exposes another player's state or revives a
+    // terminal/expired permit. Event closure alone does not invalidate a legal,
+    // already-issued encounter while its permit remains valid.
+    if (existing.player_id !== input.playerId
+      || existing.event_key !== 'underpass'
+      || existing.cycle_event_key !== 'underpass'
+      || existing.cycle_id !== input.cycleId
+      || existing.encounter_key !== TUNNEL_MAW.id
+      || existing.completed_at !== null
+      || existing.reward_state !== 'pending'
+      || existing.reward_clear_number !== null
+      || existing.reward_xp !== null
+      || existing.reward_currency !== null
+      || existing.reward_tier !== null
+      || existing.reward_level !== null
+      || existing.reward_remaining_xp !== null
+      || existing.reward_claim_token !== null
+      || existing.reward_claimed_at !== null
+      || existing.permit_started_in_cycle !== 1
+      || existing.permit_is_unexpired !== 1
+      || existing.battle_status !== 'active'
+      || !isValidBattlePermitState(existing)) {
+      return fail(request, env, 'Battle start request is already used or invalid.', 409);
+    }
+    return json(request, env, {
       permitId: existing.id,
       eventKey: 'underpass',
       cycleId: existing.cycle_id,
       encounterKey: existing.encounter_key,
       expiresAt: existing.expires_at,
-      ...(resumedExisting ? { resumedExisting: true } : {}),
       initialState: {
         permitId: existing.id,
         status: existing.battle_status,
@@ -407,40 +404,12 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         turnCount: existing.turn_count,
       },
     });
-
-  const replayExistingPermit = async (): Promise<Response | undefined> => {
-    const existing = await loadExistingPermit();
-    if (!existing) return undefined;
-    // A colliding/reused ID never exposes another player's state or revives a
-    // terminal/expired permit. Event closure alone does not invalidate a legal,
-    // already-issued encounter while its permit remains valid.
-    if (!isReusablePermit(existing, true)) {
-      return fail(request, env, 'Battle start request is already used or invalid.', 409);
-    }
-    return respondWithPermit(existing);
-  };
-
-  const resumeUnresolvedPermit = async (): Promise<Response | undefined> => {
-    const existing = await loadUnresolvedPermit();
-    if (!existing) return undefined;
-    // A different request key (including one created after a reload or cycle
-    // rollover) resumes the same Worker-owned encounter instead of creating a
-    // second permit or trapping the player behind a generic conflict.
-    if (!isReusablePermit(existing, false)) {
-      return fail(request, env, 'An unresolved battle already exists.', 409);
-    }
-    return respondWithPermit(existing, true);
   };
 
   if (input.requestId !== undefined) {
     const replay = await replayExistingPermit();
     if (replay) return replay;
   }
-
-  // Recover a still-valid encounter before consulting the current event window.
-  // A permit issued inside its original cycle remains valid through closure.
-  const resumedPermit = await resumeUnresolvedPermit();
-  if (resumedPermit) return resumedPermit;
 
   const cycle = await ensureUnderpassCycle(env.DB);
   if (cycle.id !== input.cycleId || phaseFor(cycle) !== 'open') return fail(request, env, 'The Underpass is sealed.', 409);
@@ -491,10 +460,6 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       const replay = await replayExistingPermit();
       if (replay) return replay;
     }
-    // If a different request ID won the same-player race, return that valid
-    // owner-scoped snapshot with an explicit resume marker; never create a second row.
-    const resumed = await resumeUnresolvedPermit();
-    if (resumed) return resumed;
     return fail(request, env, 'The Underpass is sealed.', 409);
   }
 
