@@ -337,9 +337,9 @@ try {
     };
     await until('accessible DOM HUD after authoritative turn ' + turn, () => cdp.evaluate(`(() => {
       const text = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
-      return text.includes(${JSON.stringify(`Mana ${'${expected.player_mana}'} of 12`)})
-        && text.includes(${JSON.stringify(`Turn ${'${turn}'}.`)})
-        && text.includes(${JSON.stringify('${turn === 3 ? \'Victory. Verifying rewards.\' : \'Choose an action.\'}')});
+      return text.includes(${JSON.stringify(`Mana ${expected.player_mana} of 12`)})
+        && text.includes(${JSON.stringify(`Turn ${turn}.`)})
+        && text.includes(${JSON.stringify(turn === 3 ? 'Victory. Verifying rewards.' : 'Choose an action.')});
     })()`));
     const accessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
     assert.ok(accessibleHud.includes(`Mana ${expected.player_mana} of 12`),
