@@ -278,6 +278,10 @@ try {
   await tap("[data-start-battle]");
   await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
+  const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
+  assert.equal(initialAccessibleHud,
+    'TEST_DEGEN: HP 120 of 120, Mana 12 of 12. Tunnel Maw: HP 92 of 92. Turn 0. Choose an action.',
+    'the live DOM status must expose the initial Worker-backed battle snapshot outside the Phaser canvas');
   assert.deepEqual(await cdp.evaluate("(() => { const status = document.querySelector('#battle-action-status'); return { exists: !!status, hidden: status?.hidden, ariaLive: status?.getAttribute('aria-live'), display: status ? getComputedStyle(status).display : null }; })()"),
     { exists: true, hidden: true, ariaLive: 'polite', display: 'none' },
     'the mobile battle screen must render an initially hidden, accessible action-status region');
@@ -346,6 +350,13 @@ try {
     assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
     assert.ok(hudOrder.manifested > hudOrder.mana,
       'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
+    const accessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
+    assert.ok(accessibleHud.includes(`Mana ${expected.player_mana} of 12`),
+      'accessible HUD Mana must follow the persisted Worker result for turn ' + turn);
+    assert.ok(accessibleHud.includes(`Turn ${turn}.`),
+      'accessible HUD turn count must follow the persisted Worker result for turn ' + turn);
+    assert.ok(accessibleHud.includes(turn === 3 ? 'Victory. Verifying rewards.' : 'Choose an action.'),
+      'accessible HUD outcome must follow the authoritative battle state for turn ' + turn);
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
