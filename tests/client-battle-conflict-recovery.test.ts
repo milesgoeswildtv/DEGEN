@@ -8,8 +8,13 @@ import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { BattleEngine } from '../src/game/combat/engine.ts';
 
 class TestGameApiError extends Error {
-  constructor(readonly status: number, readonly payload: unknown, message: string) {
+  readonly status: number;
+  readonly payload: unknown;
+
+  constructor(status: number, payload: unknown, message: string) {
     super(message);
+    this.status = status;
+    this.payload = payload;
   }
 }
 
