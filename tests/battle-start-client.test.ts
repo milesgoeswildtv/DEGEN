@@ -263,6 +263,7 @@ test('AppController synchronizes terminal snapshots returned with expired action
     const controller = {
       battleEngine: engine,
       battlePermit: { permitId: 'permit-1' },
+      battlePermitOwnerId: 'player-1',
       battleActionPending: false,
       api: {
         enabled: true,
@@ -272,6 +273,7 @@ test('AppController synchronizes terminal snapshots returned with expired action
         },
       },
       store: { snapshot: { id: 'player-1' } },
+      setBattleActionStatus() {},
       setAbilityButtonsDisabled(disabled: boolean) { disabledStates.push(disabled); },
     };
 
@@ -309,6 +311,7 @@ test('AppController ignores malformed terminal snapshots from battle conflicts',
     const controller = {
       battleEngine: engine,
       battlePermit: { permitId: 'permit-1' },
+      battlePermitOwnerId: 'player-1',
       battleActionPending: false,
       api: {
         enabled: true,
@@ -317,6 +320,7 @@ test('AppController ignores malformed terminal snapshots from battle conflicts',
         },
       },
       store: { snapshot: { id: 'player-1' } },
+      setBattleActionStatus() {},
       setAbilityButtonsDisabled(disabled: boolean) { disabledStates.push(disabled); },
     };
 

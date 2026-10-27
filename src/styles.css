@@ -49,6 +49,8 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 .battle-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr); gap: 16px; align-items: start; }
 .battle-canvas { min-height: 320px; border: 1px solid #2c2c35; border-radius: 14px; overflow: hidden; background: #0a0a0e; }
 .battle-controls { display: grid; gap: 12px; }
+.battle-action-status { margin: 0; padding: 10px 12px; border: 1px solid #5a4930; border-radius: 8px; background: #1b1710; color: #f0d7a6; font-size: 13px; line-height: 1.45; }
+.battle-action-status[hidden] { display: none; }
 .ability-grid { display: grid; gap: 8px; }
 .ability-grid button { min-height: 72px; text-align: left; border: 1px solid #34343e; border-radius: 10px; background: #15151c; color: #f4f4f5; padding: 12px; cursor: pointer; display: grid; gap: 4px; }
 .ability-grid button span { color: #a1a1aa; font-size: 13px; }

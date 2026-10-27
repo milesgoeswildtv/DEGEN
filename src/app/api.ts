@@ -44,7 +44,15 @@ export class GameApiError extends Error {
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
 export class GameApi {
-  readonly enabled = API_BASE.length > 0;
+  readonly enabled: boolean;
+  private readonly apiBase: string;
+  private readonly fetcher: typeof fetch;
+
+  constructor(apiBase: string = API_BASE, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
+    this.apiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
+    this.fetcher = fetcher;
+    this.enabled = this.apiBase.length > 0;
+  }
 
   async bootstrap(playerId: string, identity: PlatformIdentity): Promise<PlayerState | undefined> {
     if (!this.enabled) return undefined;
@@ -89,10 +97,20 @@ export class GameApi {
     if (!Number.isSafeInteger(expectedTurnCount) || expectedTurnCount < 0 || expectedTurnCount >= Number.MAX_SAFE_INTEGER) {
       throw new Error('Invalid expected turn count.');
     }
-    const result = await this.request<BattleActionResult>('/api/battle/action', {
+    // The Worker action is compare-and-swap guarded by expectedTurnCount. Retrying
+    // once after a transport/5xx failure can recover a lost response without applying
+    // damage or Mana twice: an already-committed first attempt returns the latest 409 snapshot.
+    const actionRequest: RequestInit = {
       method: 'POST',
       body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
-    });
+    };
+    let result: BattleActionResult;
+    try {
+      result = await this.request<BattleActionResult>('/api/battle/action', actionRequest);
+    } catch (error) {
+      if (error instanceof GameApiError && error.status < 500) throw error;
+      result = await this.request<BattleActionResult>('/api/battle/action', actionRequest);
+    }
     if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
       throw new Error('Malformed authoritative battle action response.');
     }
@@ -108,7 +126,7 @@ export class GameApi {
   }
 
   private async request<T = void>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await this.fetcher(`${this.apiBase}${path}`, {
       ...init,
       headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
     });

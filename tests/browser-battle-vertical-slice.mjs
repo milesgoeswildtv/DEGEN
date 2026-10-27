@@ -149,6 +149,23 @@ try {
         if (typeof text === 'string' && (text.startsWith('MANA ') || text === 'MANIFESTED')) rendered.push(text);
         return original.call(this, text, ...args);
       };
+
+      // Simulate a response lost after the local Worker has committed the turn.
+      // The app's already-bound fetcher must observe this wrapper before boot.
+      const originalFetch = window.fetch.bind(window);
+      window.__degenSimulateLostActionResponse = false;
+      window.__degenLostActionResponses = 0;
+      window.fetch = async (input, init) => {
+        const response = await originalFetch(input, init);
+        const requestUrl = input instanceof Request ? input.url : String(input);
+        if (window.__degenSimulateLostActionResponse
+          && new URL(requestUrl, window.location.href).pathname === '/api/battle/action') {
+          window.__degenSimulateLostActionResponse = false;
+          window.__degenLostActionResponses += 1;
+          throw new TypeError('simulated lost response after Worker commit');
+        }
+        return response;
+      };
     })();`,
   });
   // Exercise the entire Worker-backed slice in mobile portrait; not physical-device QA.
@@ -175,6 +192,9 @@ try {
   await tap("[data-start-battle]");
   await until('Manifested Degen abilities', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
+  assert.deepEqual(await cdp.evaluate("(() => { const status = document.querySelector('#battle-action-status'); return { exists: !!status, hidden: status?.hidden, ariaLive: status?.getAttribute('aria-live'), display: status ? getComputedStyle(status).display : null }; })()"),
+    { exists: true, hidden: true, ariaLive: 'polite', display: 'none' },
+    'the mobile battle screen must render an initially hidden, accessible action-status region');
   const activeRows = sql("SELECT id, player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1");
   assert.equal(activeRows.length, 1, 'Worker battle start should issue one persisted active permit');
   const permitId = activeRows[0].id;
@@ -190,8 +210,20 @@ try {
   await assertFitsCompact('Battle');
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
+    if (turn === 1 || turn === 3) await cdp.evaluate('window.__degenSimulateLostActionResponse = true');
     await tap("[data-ability=crack]");
-    if (turn < 3) await until('Authoritative action ' + turn, () => cdp.evaluate('(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + turn));
+    if (turn === 1) {
+      await until('Recovered authoritative state after lost response', () => cdp.evaluate(
+        '(document.querySelector("#battle-log")?.textContent || "").includes("Battle state synchronized with server.") && window.__degenLostActionResponses === 1'));
+      assert.equal(await cdp.evaluate('document.querySelector("#battle-action-status")?.textContent'),
+        'Battle state refreshed from the server. Choose your next move.',
+        'the player should see that the committed turn was recovered from authoritative state');
+    } else if (turn === 3) {
+      await until('Recovered terminal victory after lost response', () => cdp.evaluate('window.__degenLostActionResponses === 2'));
+    } else if (turn < 3) {
+      await until('Authoritative action ' + turn, () => cdp.evaluate(
+        '(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + (turn - 1)));
+    }
     const expected = {
       player_hp: turn === 3 ? 100 : 120 - turn * 10,
       player_mana: 12 - turn * 4,
@@ -224,6 +256,11 @@ try {
   assert.equal(finalPermit?.player_mana, 0);
   assert.equal(finalPermit?.turn_count, 3);
   assert.ok(finalPermit?.completed_at, 'Worker should persist completion after awarding the victory receipt');
+  assert.equal(await cdp.evaluate('window.__degenLostActionResponses'), 2,
+    'both an active turn and the killing blow should recover after their committed responses are lost');
+  const victoryHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='" + playerId + "' AND encounter_key='tunnel-maw' AND result='victory'")[0];
+  assert.equal(victoryHistory?.count, 1,
+    'recovering the lost killing-blow response must settle exactly one victory-history row');
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);

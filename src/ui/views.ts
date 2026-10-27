@@ -137,6 +137,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
     <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
     <div class="battle-controls">
       <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
+      <p id="battle-action-status" class="battle-action-status" role="status" aria-live="polite" hidden></p>
       <div class="ability-grid">
         ${degen.abilities.map((ability) => `
           <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
