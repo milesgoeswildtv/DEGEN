@@ -88,7 +88,7 @@ const AppController = runInNewContext(
   api: {
     enabled: boolean;
     actUnderpass(...args: unknown[]): Promise<unknown>;
-    completeUnderpass(permitId: string): Promise<{ player: unknown; worldEvent: unknown }>;
+    completeUnderpass(playerId: string, permitId: string): Promise<{ player: unknown; worldEvent: unknown }>;
   },
 ) => {
   route: string;
