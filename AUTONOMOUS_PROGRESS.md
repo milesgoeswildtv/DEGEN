@@ -1,3 +1,18 @@
+## Latest run — 2026-10-26 (paid-Mana concurrency regression reconciled to current main)
+
+- **Authoritative main SHA at start:** `e0df3ae1b7a91ea5b7366af2cb674de1cb4f64a7` (PR #73 reward-lease hardening is merged; main's progress header has not yet caught up). No direct-main write.
+- **Mana continuation inspected first:** `sidekick/degen-mana-foundation-v01` and the named Mana successor branches were compared with current main. Their runtime work is stale/diverged and already represented on main; the coherent unique Mana follow-up is the existing paid-action race regression in PR #71, not a duplicate runtime branch.
+- **PUSHED / PR #71 OPEN:** `automation/degen/paid-action-concurrency-v01`. Before this progress refresh, head `88ccda21b2d6eaae083affd42e7dd16a005df8c5`; branch was 7 commits ahead and 1 behind current main, with GitHub reporting it mergeable.
+- **Exact-head CI PASS before this docs refresh:** [run 40263244515](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40263244515) passed all 13 workflow steps on the prior PR head: deterministic tests, Worker/D1 reward concurrency, transient-D1 recovery, Underpass cycle and rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Worker validation.
+- **Implementation / files:** `tests/worker-d1-concurrency.mjs` adds a same-turn race using the paid bespoke `crack` ability. Exactly one request commits, Mana deducts once from 4 to 0, damage/retaliation apply once, turn count advances once, and the losing response reflects the same persisted HP/Mana/enemy HP. This is test-only; no combat/runtime/economy change.
+- **Mana status:** COMPLETE / MERGED on main. `DegenDefinition.maxMana`, bespoke `AbilityDefinition.manaCost`, authoritative persisted player Mana, reject-without-mutation, exact deduction, zero-cost-at-zero, killing-blow/defeat handling, cost-aware UI, no monster Mana, no zero-Mana reversion, and migration `0006_backfill_active_battle_mana.sql` remain intact. Prototype Mana values remain scaffolding.
+- **Battle authority / reward idempotency:** Worker-resolved victory only, action CAS, permit ownership/expiry/event/cycle/encounter checks, audited receipts, stale-lease recovery, transient-D1 retry, distinct clear sequencing, exactly-once progression/inventory/history, full/reduced tiers, and shared level-up math. PR #75's permit chronology work has exact-head CI PASS [run 40380791237](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40380791237). PR #76 remains open for completed-at reward-claim guards and recovery cleanup; its new test head `446c3bb8830d5966e2be20205d08929c1be2b672` is awaiting full CI [run 40427776978](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40427776978).
+- **D1 / deployment:** `wrangler.toml` is authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order is base schema → tracked migrations → Worker. Main includes migration 0006. This run performed no production D1 operation, migration, secret change, or deployment; current-main deployment status was not independently confirmed here.
+- **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
+- **One best next task:** verify the exact-head CI for PR #76, then reconcile PR #75 and #76's overlapping Worker settlement guards under normal review; keep all work on feature branches and do not claim a deployment without its receipt.
+
+---
+
 # DEGEN — AUTONOMOUS PROGRESS
 
 ## Latest run — 2026-10-25 (paid Mana action race exact-head verification)
