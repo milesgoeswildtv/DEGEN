@@ -180,6 +180,7 @@ try {
       ('permit-killing-blow','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,30,0),
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
+      ('permit-paid-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,92,0),
       ('permit-e','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,1,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
@@ -775,6 +776,40 @@ try {
   assert.equal(rejectedRace.battleState.playerMana, acceptedRace.playerMana);
   assert.equal(rejectedRace.battleState.enemyHp, acceptedRace.enemyHp);
   assertPersistedPermitState('permit-turn-race', acceptedRace);
+
+  // A same-turn race with a paid bespoke ability must spend Mana and apply
+  // damage/retaliation once, not once per concurrent request.
+  const paidRaceRequest = () => fetch(base + '/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'integration-player', permitId: 'permit-paid-turn-race',
+      abilityId: 'crack', expectedTurnCount: 0,
+    }),
+  });
+  const paidRaceResponses = await Promise.all([paidRaceRequest(), paidRaceRequest()]);
+  const paidRaceResults = await Promise.all(paidRaceResponses.map(async response => ({
+    status: response.status, data: await response.json(),
+  })));
+  assert.equal(paidRaceResults.filter(result => result.status === 200).length, 1,
+    'exactly one paid action for the same observed turn may commit');
+  assert.equal(paidRaceResults.filter(result => result.status === 409).length, 1,
+    'the losing paid action must receive a conflict');
+  const acceptedPaidRace = paidRaceResults.find(result => result.status === 200).data;
+  const rejectedPaidRace = paidRaceResults.find(result => result.status === 409).data;
+  assert.equal(acceptedPaidRace.turnCount, 1);
+  assert.equal(acceptedPaidRace.playerMana, 0,
+    'the accepted paid action deducts its four Mana exactly once');
+  assert.equal(acceptedPaidRace.playerHp, 70,
+    'only one accepted action may trigger retaliation');
+  assert.equal(acceptedPaidRace.enemyHp, 57,
+    'only one accepted action may damage the enemy');
+  assert.equal(rejectedPaidRace.battleState.turnCount, 1);
+  assert.equal(rejectedPaidRace.battleState.playerMana, 0);
+  assert.equal(rejectedPaidRace.battleState.playerHp, acceptedPaidRace.playerHp);
+  assert.equal(rejectedPaidRace.battleState.enemyHp, acceptedPaidRace.enemyHp);
+  assertPersistedPermitState('permit-paid-turn-race', acceptedPaidRace);
+
 
   assert.equal((await complete('expired')).status, 409);
   const wrongOwnerCompletion = await complete('permit-a', 'wrong-player', {
