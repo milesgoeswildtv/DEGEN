@@ -333,13 +333,24 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     cycle_event_key: string | null;
     expires_at: string;
     completed_at: string | null;
+    reward_state: 'pending' | 'claiming' | 'awarded';
+    reward_clear_number: number | null;
+    reward_xp: number | null;
+    reward_currency: number | null;
+    reward_tier: 'full' | 'reduced' | null;
+    reward_level: number | null;
+    reward_remaining_xp: number | null;
+    reward_claim_token: string | null;
+    reward_claimed_at: string | null;
     permit_started_in_cycle: number;
     permit_is_unexpired: number;
   };
   const loadExistingPermit = async () => env.DB.prepare(`SELECT
       permit.id, permit.player_id, permit.event_key, permit.cycle_id, permit.encounter_key,
-      permit.expires_at, permit.completed_at, permit.player_hp, permit.player_mana,
-      permit.enemy_hp, permit.battle_status, permit.turn_count,
+      permit.expires_at, permit.completed_at, permit.reward_state, permit.reward_clear_number,
+      permit.reward_xp, permit.reward_currency, permit.reward_tier, permit.reward_level,
+      permit.reward_remaining_xp, permit.reward_claim_token, permit.reward_claimed_at,
+      permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
       cycle.event_key AS cycle_event_key,
       CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
         AND julianday(permit.started_at) <= julianday('now')
@@ -363,6 +374,15 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       || existing.cycle_id !== input.cycleId
       || existing.encounter_key !== TUNNEL_MAW.id
       || existing.completed_at !== null
+      || existing.reward_state !== 'pending'
+      || existing.reward_clear_number !== null
+      || existing.reward_xp !== null
+      || existing.reward_currency !== null
+      || existing.reward_tier !== null
+      || existing.reward_level !== null
+      || existing.reward_remaining_xp !== null
+      || existing.reward_claim_token !== null
+      || existing.reward_claimed_at !== null
       || existing.permit_started_in_cycle !== 1
       || existing.permit_is_unexpired !== 1
       || existing.battle_status !== 'active'
