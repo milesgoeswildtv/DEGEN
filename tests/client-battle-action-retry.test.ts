@@ -32,8 +32,9 @@ const { GameApi, GameApiError } = runInNewContext(
     console,
   },
 ) as {
-  GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number) => {
+  GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number) => {
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
+    completeUnderpass(playerId: string, permitId: string): Promise<unknown>;
   };
   GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
 };
@@ -179,4 +180,87 @@ test('client validation/conflict responses are not retried', async () => {
     (error: unknown) => error instanceof GameApiError && error.status === 409,
   );
   assert.equal(calls, 1);
+});
+
+
+const authoritativeCompletion = {
+  player: { id: 'player-1', level: 2, xp: 10, currency: 40 },
+  reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
+  worldEvent: { eventKey: 'underpass', cycleId: 'cycle-1', phase: 'open', source: 'server' },
+};
+
+test('a hung completion request is aborted and retried once with the same permit receipt request', async () => {
+  const calls: Array<{ body: string; signal?: AbortSignal }> = [];
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls.push({ body: actionBody(init), signal: init?.signal as AbortSignal | undefined });
+    if (calls.length === 1) {
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal;
+        const rejectOnAbort = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+        if (signal.aborted) rejectOnAbort();
+        else signal.addEventListener('abort', rejectOnAbort, { once: true });
+      });
+    }
+    return jsonResponse(authoritativeCompletion);
+  };
+
+  const api = new GameApi('https://degen-api.example', fetcher, 0, 0);
+  const result = await api.completeUnderpass('player-1', 'permit-1');
+
+  assert.deepEqual(result, authoritativeCompletion);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.signal?.aborted, true, 'the hung completion request must be aborted');
+  assert.equal(calls[0]?.body, calls[1]?.body, 'completion retry must reuse the same permit request');
+  assert.deepEqual(JSON.parse(calls[0]?.body ?? ''), { playerId: 'player-1', permitId: 'permit-1' });
+});
+
+test('two hung completion attempts terminate after the bounded retry', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls += 1;
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal as AbortSignal;
+      const rejectOnAbort = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+      if (signal.aborted) rejectOnAbort();
+      else signal.addEventListener('abort', rejectOnAbort, { once: true });
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher, 0, 0);
+
+  await assert.rejects(
+    api.completeUnderpass('player-1', 'permit-1'),
+    (error: unknown) => error instanceof Error && error.name === 'AbortError',
+  );
+  assert.equal(calls, 2, 'one completion attempt plus one retry is the hard limit');
+});
+
+test('a transient completion 5xx retries the same idempotent receipt request', async () => {
+  const calls: Array<{ body: string }> = [];
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls.push({ body: actionBody(init) });
+    return calls.length === 1
+      ? jsonResponse({ error: 'temporary settlement failure' }, 503)
+      : jsonResponse(authoritativeCompletion);
+  };
+  const api = new GameApi('https://degen-api.example', fetcher, 0, 1_000);
+
+  const result = await api.completeUnderpass('player-1', 'permit-1');
+  assert.deepEqual(result, authoritativeCompletion);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.body, calls[1]?.body);
+});
+
+test('a client or conflict completion 4xx is not retried', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return jsonResponse({ error: 'Battle reward is already being claimed.' }, 409);
+  };
+  const api = new GameApi('https://degen-api.example', fetcher, 0, 1_000);
+
+  await assert.rejects(
+    api.completeUnderpass('player-1', 'permit-1'),
+    (error: unknown) => error instanceof GameApiError && error.status === 409,
+  );
+  assert.equal(calls, 1, '4xx responses remain under Worker retry/recovery policy');
 });
