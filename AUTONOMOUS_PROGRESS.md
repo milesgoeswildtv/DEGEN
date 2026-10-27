@@ -1,3 +1,16 @@
+## Latest run — 2026-10-27 (exercise concurrent idempotent battle starts against real Worker/D1)
+
+- **Authoritative main SHA:** `83cffd11233fc80265bdb175468f7226631f938c`. PR [#83](https://github.com/milesgoeswildtv/DEGEN/pull/83) remains open and unmerged on `automation/degen/battle-start-retry-recovery-v01`. No protected-main write.
+- **PUSHED / code-test commit:** `16eaf11e743a7f05c703f20ebea395f543f3c2d0` adds a local Worker/D1 concurrency regression to `tests/worker-d1-concurrency.mjs`. Two simultaneous `POST /api/battle/start` requests use the same request ID, player, cycle, and encounter; both must receive the same authoritative active snapshot and D1 must contain exactly one permit row. The test uses a dedicated player and does not alter combat rules, rewards, schema, migration order, or deployment configuration.
+- **QA status:** Exact-head CI for code-test commit `16eaf11e743a7f05c703f20ebea395f543f3c2d0` has not yet been verified. This automation run has not run a local checkout; do not represent tests as passing until CI completes. Earlier exact-head CI for `05baeb037a56a10907f0e47dfb0084f5ebb33a5e` passed all workflow stages in [run 40543597042](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40543597042).
+- **Mana:** COMPLETE / MERGED on main: Degen-only max Mana/costs, persisted authoritative `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, terminal tests, cost-aware UI, no monster Mana, no Mana-triggered reversion, and tracked migration `0006_backfill_active_battle_mana.sql`. The old sidekick and automation Mana branches are stale/diverged and do not replace current main authority fixes.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit issuance, HP/Mana/enemy HP/turn count, action CAS, terminal resolution, reward receipt, and progression. The new test covers only same-key concurrent start recovery; it adds no client-side authority.
+- **D1 / release boundary:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. PR #83 adds no migration. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` numbering conflict and platform-auth requirements remain unresolved. No production D1 operation or Worker deployment occurred.
+- **Miles blocker:** Approved production Discord/Telegram credentials, controlled live identity/session verification, and a Miles-approved legacy identity-collision policy remain blockers for auth-dependent work. Do not bypass these gates for Shield or housing.
+- **One best next task:** verify exact-head CI for the concurrent-start regression, then update PR #83 review evidence without merging or deploying automatically.
+
+---
+
 ## Latest run — 2026-10-27 (bind battle-start recovery to its idempotency key)
 
 - **Authoritative main SHA:** `83cffd11233fc80265bdb175468f7226631f938c`. Feature branch `automation/degen/battle-start-retry-recovery-v01`, current code/test head `05baeb037a56a10907f0e47dfb0084f5ebb33a5e`; PR [#83](https://github.com/milesgoeswildtv/DEGEN/pull/83) remains open and unmerged pending exact-head CI. No protected-main write.
