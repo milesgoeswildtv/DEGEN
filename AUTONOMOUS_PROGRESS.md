@@ -13,7 +13,7 @@
 
 ---
 
-# Latest run — 2026-10-27 (reject cross-owner concurrent start-key collisions)
+## Latest run — 2026-10-27 (reject cross-owner concurrent start-key collisions)
 
 - **Authoritative main SHA:** `83cffd11233fc80265bdb175468f7226631f938c`. Continued the existing feature branch `automation/degen/battle-start-retry-recovery-v01` and PR [#83](https://github.com/milesgoeswildtv/DEGEN/pull/83); no direct-main write.
 - **PUSHED / code-test commit:** `b8545c2ae609511050cdff61bbf9c4ec713a15b7` updates `tests/worker-d1-concurrency.mjs`. Two simultaneous Worker requests reuse one request ID but submit different player owners. The regression requires exactly one 200, one 409, no permit/snapshot details in the losing response, and exactly one D1 permit owned by the request that received success. Seed fixtures use separate players; no runtime, schema, migration, reward, or deployment configuration changed.
