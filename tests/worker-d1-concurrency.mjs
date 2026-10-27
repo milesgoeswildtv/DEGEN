@@ -1256,7 +1256,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'restart-after-victory-player',
       permitId: started.permitId,
       abilityId: 'crack',
       expectedTurnCount: started.initialState.turnCount,
@@ -1283,7 +1283,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'restart-after-victory-player',
       permitId: started.permitId,
       abilityId: 'crack',
       expectedTurnCount: started.initialState.turnCount,
@@ -1307,7 +1307,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'restart-after-victory-player',
       permitId: started.permitId,
       abilityId: 'slash',
       expectedTurnCount: firstAction.turnCount,
