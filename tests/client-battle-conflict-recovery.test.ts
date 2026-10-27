@@ -67,8 +67,10 @@ const isAuthoritativeBattleActionState = (value: unknown, permitId: string): val
 
 const timers: Array<{ callback: () => void; delay: number }> = [];
 const storage = new Map<string, string>();
+const actionStatus = { textContent: '', hidden: true };
 const root = {
   innerHTML: '',
+  querySelector: (selector: string) => selector === '#battle-action-status' ? actionStatus : null,
   querySelectorAll: (_selector: string) => [] as Array<{ dataset: Record<string, string>; disabled: boolean }>,
 };
 const scope = {
@@ -200,3 +202,106 @@ test('lost action response followed by authoritative victory snapshot completes 
   assert.equal(controller.battlePermit, undefined);
   assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), '[]');
 });
+
+
+test('an unconfirmed action failure is visible and tells the player to safely retry the same move', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const api = {
+    enabled: true,
+    async actUnderpass() { throw new TypeError('simulated final transport failure'); },
+    async completeUnderpass() { throw new Error('completion must not run for an unconfirmed action'); },
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('an unconfirmed response must not resolve a local turn');
+  }, {
+    permitId: 'permit-uncertain',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-uncertain' };
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('crack');
+
+  assert.equal(actionStatus.hidden, false);
+  assert.match(actionStatus.textContent, /move may have reached the server/i);
+  assert.match(actionStatus.textContent, /same move again/i);
+  assert.equal(engine.snapshot.turnCount, 0, 'the client must not apply a turn without an authoritative result');
+  assert.equal(engine.snapshot.playerMana, 8, 'the client must not spend Mana locally on an uncertain response');
+  assert.equal(store.localRewards, 0, 'an uncertain action must never grant local rewards');
+});
+
+test('an insufficient-Mana conflict shows the server error and synchronizes the latest state', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const latest = {
+    permitId: 'permit-1',
+    status: 'active' as const,
+    playerHp: 70,
+    playerMana: 0,
+    enemyHp: 63,
+    turnCount: 1,
+  };
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, {
+        error: 'Not enough Mana for that ability.',
+        battleState: latest,
+      }, 'DEGEN API 409');
+    },
+    async completeUnderpass() { throw new Error('completion must not run for an active battle'); },
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('an active authoritative snapshot must not resolve the encounter');
+  }, {
+    permitId: 'permit-1',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-1' };
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('crack');
+
+  assert.equal(actionStatus.hidden, false);
+  assert.equal(actionStatus.textContent, 'Not enough Mana for that ability.');
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.enemyHp, 63);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(store.localRewards, 0);
+});
+
