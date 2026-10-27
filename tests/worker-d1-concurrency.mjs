@@ -34,9 +34,9 @@ async function complete(permitId, playerId = 'integration-player', extraFields =
     '/api/battle/complete success and error responses must not be cached');
   return { status: r.status, data: await r.json() };
 }
-async function eventuallyComplete(id, extraFields = {}) {
+async function eventuallyComplete(id, extraFields = {}, playerId = 'integration-player') {
   for (let n = 0; n < 10; n++) {
-    const r = await complete(id, 'integration-player', extraFields);
+    const r = await complete(id, playerId, extraFields);
     if (r.status === 200) return r.data;
     if (r.status !== 409 && r.status !== 500) throw new Error(id + ': ' + JSON.stringify(r));
     await sleep(100 + 50 * n);
@@ -104,10 +104,15 @@ try {
     INSERT INTO players(id,display_name) VALUES
       ('integration-player','Integration'),
       ('start-race-player','Concurrent Start QA'),
+      ('start-distinct-key-player','Concurrent Distinct-Key Start QA'),
       ('start-collision-a','Start ID Collision A'),
       ('start-collision-b','Start ID Collision B'),
       ('start-replay-player','Start Replay After Closure QA'),
+      ('restart-after-victory-player','Restart After Victory QA'),
       ('event-closure-player','Event Closure QA'),
+      ('closure-active-player','Closure Active QA'),
+      ('expired-after-cycle-player','Expired After Cycle QA'),
+      ('closed-cycle-entry-player','Closed Cycle Entry QA'),
       ('out-of-cycle-award-player','Out-of-cycle award QA'),
       ('malformed-start-player','Malformed Start QA'),
       ('malformed-expiry-player','Malformed Expiry QA'),
@@ -127,10 +132,15 @@ try {
       VALUES
         ('integration-player',1,0,0,'test-degen'),
         ('start-race-player',1,0,0,'test-degen'),
+        ('start-distinct-key-player',1,0,0,'test-degen'),
         ('start-collision-a',1,0,0,'test-degen'),
         ('start-collision-b',1,0,0,'test-degen'),
         ('start-replay-player',1,0,0,'test-degen'),
+        ('restart-after-victory-player',1,0,0,'test-degen'),
         ('event-closure-player',1,0,0,'test-degen'),
+        ('closure-active-player',1,0,0,'test-degen'),
+        ('expired-after-cycle-player',1,0,0,'test-degen'),
+        ('closed-cycle-entry-player',1,0,0,'test-degen'),
         ('out-of-cycle-award-player',1,0,0,'test-degen'),
         ('malformed-start-player',1,0,0,'test-degen'),
         ('malformed-expiry-player',1,0,0,'test-degen'),
@@ -184,6 +194,7 @@ try {
       battle_status,player_hp,player_mana,enemy_hp,turn_count)
     VALUES
       ('permit-a','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
+      ('permit-restart-after-victory','restart-after-victory-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-b','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-c','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
       ('permit-d','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'victory',70,0,0,3),
@@ -972,11 +983,16 @@ try {
     status: 'victory', playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
   });
 
+  // This player has one terminal victory and no unrelated active/corrupt fixture permits.
+  // Other integration-player rows intentionally include active/corrupt permits, which
+  // correctly block a new start under the single-active-per-player invariant.
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='restart-after-victory-player' AND battle_status='active' AND completed_at IS NULL AND julianday(expires_at) > julianday('now')"), 0);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-restart-after-victory' AND player_id='restart-after-victory-player' AND battle_status='victory' AND completed_at IS NULL"), 1, 'the restart fixture must contain a server-resolved terminal victory');
   const startResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'restart-after-victory-player',
       eventKey: 'underpass',
       cycleId: 'integration-cycle',
       encounterKey: 'tunnel-maw',
@@ -1052,6 +1068,86 @@ try {
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-race-player'`), 1,
     'the same start key must not create a second permit for the player');
   assertPersistedPermitState(concurrentStartRequestId, concurrentStarts[0].data.initialState);
+
+  // Distinct request IDs from the same player must not create simultaneous
+  // encounters. A losing key is rejected without exposing the active permit.
+  const distinctStartRequestIds = [
+    '00000000-0000-4000-8000-000000000086',
+    '00000000-0000-4000-8000-000000000087',
+  ];
+  const distinctStartResponses = await Promise.all(distinctStartRequestIds.map(requestId => fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'start-distinct-key-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  })));
+  const distinctStartResults = await Promise.all(distinctStartResponses.map(async response => ({
+    status: response.status,
+    data: await response.json(),
+  })));
+  assert.equal(distinctStartResults.filter(result => result.status === 200).length, 1,
+    'different keys racing for one player must issue exactly one permit');
+  assert.equal(distinctStartResults.filter(result => result.status === 409).length, 1,
+    'the losing distinct-key request must be rejected');
+  const distinctAcceptedIndex = distinctStartResults.findIndex(result => result.status === 200);
+  const distinctAccepted = distinctStartResults[distinctAcceptedIndex];
+  const distinctRejected = distinctStartResults[1 - distinctAcceptedIndex];
+  const distinctAcceptedId = distinctStartRequestIds[distinctAcceptedIndex];
+  assert.equal(distinctAccepted.data.permitId, distinctAcceptedId);
+  assert.equal(distinctAccepted.data.initialState.permitId, distinctAcceptedId);
+  assert.deepEqual(distinctRejected.data, { error: 'The Underpass is sealed.' },
+    'the losing request must not receive the active permit ID or combat snapshot');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 1,
+    'different idempotency keys must persist only one permit for the player');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player' AND completed_at IS NULL AND julianday(expires_at) > julianday('now')"), 1,
+    'only one unexpired unresolved permit may exist for the player');
+  assertPersistedPermitState(distinctAcceptedId, distinctAccepted.data.initialState);
+
+  // A later distinct key is rejected until the current encounter is settled or expires.
+  const thirdDistinctResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'start-distinct-key-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId: '00000000-0000-4000-8000-000000000088',
+    }),
+  });
+  assert.equal(thirdDistinctResponse.status, 409);
+  assert.deepEqual(await thirdDistinctResponse.json(), { error: 'The Underpass is sealed.' });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 1,
+    'a sequential distinct-key request must not create a second unresolved permit');
+
+  // A terminal defeat is resolved combat, not an active encounter or reward claim.
+  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    "--command=UPDATE battle_permits SET battle_status='defeat' WHERE id='" + distinctAcceptedId + "'"]);
+  const afterDefeatRequestId = '00000000-0000-4000-8000-000000000089';
+  const afterDefeatResponse = await fetch(base + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'start-distinct-key-player',
+      eventKey: 'underpass',
+      cycleId: 'integration-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId: afterDefeatRequestId,
+    }),
+  });
+  const afterDefeat = await afterDefeatResponse.json();
+  assert.equal(afterDefeatResponse.status, 200, JSON.stringify(afterDefeat));
+  assert.equal(afterDefeat.permitId, afterDefeatRequestId);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player'"), 2,
+    'a resolved defeat must allow a new encounter without granting a reward for the defeat');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE player_id='start-distinct-key-player' AND completed_at IS NULL AND battle_status IN ('active','victory') AND julianday(expires_at) > julianday('now')"), 1,
+    'only the new active encounter remains unresolved for start-guard purposes');
 
   // A shared idempotency key must never let a concurrent caller recover another player's permit.
   const collisionRequestId = '00000000-0000-4000-8000-000000000085';
@@ -1166,7 +1262,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'restart-after-victory-player',
       permitId: started.permitId,
       abilityId: 'crack',
       expectedTurnCount: started.initialState.turnCount,
@@ -1193,7 +1289,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'restart-after-victory-player',
       permitId: started.permitId,
       abilityId: 'crack',
       expectedTurnCount: started.initialState.turnCount,
@@ -1217,7 +1313,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'restart-after-victory-player',
       permitId: started.permitId,
       abilityId: 'slash',
       expectedTurnCount: firstAction.turnCount,
@@ -1573,7 +1669,7 @@ try {
   const closureSeed = join(scratch, 'closure-cycle.sql');
   writeFileSync(closureSeed, `
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
-      VALUES('closure-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+3 hours'));
+      VALUES('closure-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+4 hours'));
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + closureSeed]);
 
@@ -1581,7 +1677,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'closure-active-player',
       eventKey: 'underpass',
       cycleId: 'closure-cycle',
       encounterKey: 'tunnel-maw',
@@ -1592,11 +1688,13 @@ try {
   assert.equal(closureStart.initialState.status, 'active');
   assert.equal(closureStart.initialState.turnCount, 0);
 
+  // Each player may have only one unresolved active permit, so use a separate
+  // player for the expiry half of this event-closure scenario.
   const expiredClosureStartResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'expired-after-cycle-player',
       eventKey: 'underpass',
       cycleId: 'closure-cycle',
       encounterKey: 'tunnel-maw',
@@ -1617,7 +1715,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'closed-cycle-entry-player',
       eventKey: 'underpass',
       cycleId: 'closure-cycle',
       encounterKey: 'tunnel-maw',
@@ -1635,7 +1733,7 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'integration-player',
+      playerId: 'expired-after-cycle-player',
       permitId: expiredClosureStart.permitId,
       abilityId: 'slash',
       expectedTurnCount: 0,
@@ -1645,6 +1743,7 @@ try {
   assert.equal(expiredAfterClosureResponse.status, 409, 'cycle closure does not extend a permit past its own expiry');
   assert.match(expiredAfterClosure.error, /invalid, expired, or already completed/i);
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${expiredClosureStart.permitId}'
+    AND player_id = 'expired-after-cycle-player'
     AND battle_status = 'active' AND turn_count = 0
     AND player_hp = ${expiredClosureStart.initialState.playerHp}
     AND player_mana = ${expiredClosureStart.initialState.playerMana}
@@ -1657,7 +1756,7 @@ try {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        playerId: 'integration-player',
+        playerId: 'closure-active-player',
         permitId: closureStart.permitId,
         abilityId: 'crack',
         expectedTurnCount,
@@ -1674,7 +1773,7 @@ try {
   assert.equal(closureResult.playerHp, closureStart.initialState.playerHp - 20,
     'the two non-lethal enemy turns retaliate; the killing blow does not');
 
-  const closureCompletion = await eventuallyComplete(closureStart.permitId);
+  const closureCompletion = await eventuallyComplete(closureStart.permitId, {}, 'closure-active-player');
   assert.equal(closureCompletion.reward.tier, 'full');
   assert.equal(closureCompletion.reward.xp, 75);
   assert.equal(closureCompletion.reward.currency, 30);

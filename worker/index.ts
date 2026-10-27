@@ -441,10 +441,18 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         AND julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) < julianday(closes_at)
         AND julianday(closes_at) > julianday('now')
     )
+    AND NOT EXISTS (
+      SELECT 1 FROM battle_permits AS existing
+      WHERE existing.player_id = ?
+        AND existing.event_key = 'underpass'
+        AND existing.completed_at IS NULL
+        AND existing.battle_status = 'active'
+        AND julianday(existing.expires_at) > julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )
     ON CONFLICT(id) DO NOTHING
     RETURNING id, expires_at`)
     .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id,
-      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id)
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id, input.playerId)
     .first<{ id: string; expires_at: string }>();
   if (!issuedPermit) {
     // Another request may have inserted this same idempotency key between the

@@ -49,6 +49,10 @@ function makeEnv(
                 assert.match(sql, /julianday\(opens_at\)\s*<=\s*julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)/);
                 assert.match(sql, /julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)\s*<\s*julianday\(closes_at\)/);
                 assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
+                assert.match(sql, /AND NOT EXISTS\s*\(\s*SELECT 1 FROM battle_permits AS existing/);
+                assert.match(sql, /AND existing\.event_key = 'underpass'/);
+                assert.match(sql, /AND existing\.battle_status = 'active'/);
+                assert.match(sql, /julianday\(existing\.expires_at\) > julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)/);
                 assert.match(sql, /ON CONFLICT\(id\) DO NOTHING/);
                 assert.match(sql, /RETURNING id, expires_at/);
                 if (!permitInsertAllowed) return null;
@@ -117,10 +121,11 @@ test('battle start ignores forged client combat state and returns exactly the De
     turnCount: 0,
   });
   assert.equal(inserts.length, 1);
-  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp, cycleGuardId] = inserts[0] as unknown[];
+  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp, cycleGuardId, activePlayerGuardId] = inserts[0] as unknown[];
   assert.equal(permitId, result.permitId);
   assert.equal(cycleGuardId, cycle.id);
-  assert.equal(inserts[0]?.length, 8, 'start and expiry timestamps must come from D1, not Worker-bound Date.now values');
+  assert.equal(activePlayerGuardId, 'player-1', 'the same-player active-permit guard must bind the current owner');
+  assert.equal(inserts[0]?.length, 9, 'start/expiry timestamps come from D1 and the atomic insert binds both cycle and player guards');
   assert.equal(result.expiresAt, persistedExpiry, 'the API must return the expiry returned from the persisted D1 row');
   assert.deepEqual(
     [playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp],

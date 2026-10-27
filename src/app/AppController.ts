@@ -127,7 +127,7 @@ export class AppController {
       this.battlePermitOwnerId = playerId;
       this.navigate('battle');
       if (this.api.enabled) {
-        this.api.acknowledgeUnderpassStart(playerId, event.cycleId, permit.permitId);
+        this.api.acknowledgeUnderpassStart(playerId, permit.cycleId, permit.permitId);
       }
     } catch (error) {
       console.warn('Underpass entry rejected.', error);
@@ -329,6 +329,7 @@ export class AppController {
           this.store.replaceFromServer(result.player);
           this.underpassEvent = result.worldEvent;
         }
+        this.api.acknowledgeUnderpassCompletion?.(playerId, permitId);
         this.forgetPendingReward(permitId, playerId);
         if (this.battlePermit?.permitId === permitId && this.battlePermitOwnerId === playerId) {
           this.battlePermit = undefined;
@@ -365,6 +366,14 @@ export class AppController {
       this.store.applyReward(previewReward);
       this.store.markBossDefeated(TUNNEL_MAW.id);
       this.underpassEvent = getPreviewUnderpass();
+    }
+
+    if (status === 'defeat' && this.api.enabled && this.battlePermit) {
+      const permitId = this.battlePermit.permitId;
+      const playerId = this.battlePermitOwnerId ?? this.store.snapshot.id;
+      // The Worker action already resolved defeat; no reward completion is
+      // claimed, but the local request key must not pin the next encounter.
+      this.api.acknowledgeUnderpassCompletion?.(playerId, permitId);
     }
 
     this.battlePermit = undefined;
