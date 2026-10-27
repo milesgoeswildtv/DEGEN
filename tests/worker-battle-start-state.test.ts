@@ -50,6 +50,7 @@ function makeEnv(
                 assert.match(sql, /julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)\s*<\s*julianday\(closes_at\)/);
                 assert.match(sql, /julianday\(closes_at\)\s*>\s*julianday\('now'\)/);
                 assert.match(sql, /AND NOT EXISTS\s*\(\s*SELECT 1 FROM battle_permits AS existing/);
+                assert.match(sql, /AND existing\.battle_status <> 'defeat'/);
                 assert.match(sql, /julianday\(existing\.expires_at\) > julianday\(strftime\('%Y-%m-%dT%H:%M:%fZ', 'now'\)\)/);
                 assert.match(sql, /ON CONFLICT\(id\) DO NOTHING/);
                 assert.match(sql, /RETURNING id, expires_at/);
