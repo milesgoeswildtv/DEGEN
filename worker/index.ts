@@ -386,10 +386,6 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       || existing.permit_started_in_cycle !== 1
       || existing.permit_is_unexpired !== 1
       || existing.battle_status !== 'active'
-      || existing.player_hp !== TEST_DEGEN.maxHp
-      || existing.player_mana !== TEST_DEGEN.maxMana
-      || existing.enemy_hp !== TUNNEL_MAW.maxHp
-      || existing.turn_count !== 0
       || !isValidBattlePermitState(existing)) {
       return fail(request, env, 'Battle start request is already used or invalid.', 409);
     }
