@@ -40,6 +40,13 @@ const useBattleAbility = runInNewContext(
   { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
 ) as (this: any, abilityId: string) => Promise<void>;
 
+const startControllerMethod = controllerSource.match(/private async enterUnderpass\(\): Promise<void> \{([\\s\\S]*?)\n  \}\n\n  private mountBattle/);
+assert.ok(startControllerMethod, 'AppController start handler must remain available for the durable-key regression');
+const enterUnderpass = runInNewContext(
+  stripTypeScriptTypes(`async function enterUnderpass(): Promise<void> {${startControllerMethod[1]}\n}\nenterUnderpass;`, { mode: 'transform' }),
+  { console: { warn() {} }, Error },
+) as (this: any) => Promise<void>;
+
 const validPermit = (permitId = 'permit-1') => {
   return {
     permitId, eventKey: 'underpass', cycleId: 'cycle-1', encounterKey: TUNNEL_MAW.id,
@@ -69,6 +76,63 @@ async function apiReturning(value: unknown) {
   try { return await api.startUnderpass('player-1', 'cycle-1'); }
   finally { globalThis.fetch = oldFetch; }
 }
+
+test('AppController acknowledges the start key only after attaching the permit for the active player', async () => {
+  const events: string[] = [];
+  const permit = validPermit('permit-accepted');
+  const controller: any = {
+    underpassEvent: { phase: 'open', cycleId: 'cycle-1' },
+    store: { snapshot: { id: 'player-1' } },
+    api: {
+      enabled: true,
+      async startUnderpass(playerId: string, cycleId: string) {
+        assert.equal(playerId, 'player-1');
+        assert.equal(cycleId, 'cycle-1');
+        return permit;
+      },
+      acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string) {
+        events.push(`ack:${playerId}:${cycleId}:${permitId}`);
+      },
+    },
+    navigate(route: string) { events.push(`navigate:${route}`); },
+    async refreshWorld() { events.push('refresh'); },
+    render() { events.push('render'); },
+    battlePermit: undefined,
+    battlePermitOwnerId: undefined,
+  };
+
+  await enterUnderpass.call(controller);
+  assert.equal(controller.battlePermit, permit);
+  assert.equal(controller.battlePermitOwnerId, 'player-1');
+  assert.deepEqual(events, ['navigate:battle', 'ack:player-1:cycle-1:permit-accepted']);
+});
+
+test('AppController retains the start key when the active player changes during the request', async () => {
+  const events: string[] = [];
+  const permit = validPermit('permit-player-1');
+  const controller: any = {
+    underpassEvent: { phase: 'open', cycleId: 'cycle-1' },
+    store: { snapshot: { id: 'player-1' } },
+    api: {
+      enabled: true,
+      async startUnderpass() {
+        controller.store.snapshot.id = 'player-2';
+        return permit;
+      },
+      acknowledgeUnderpassStart() { events.push('ack'); },
+    },
+    navigate(route: string) { events.push(`navigate:${route}`); },
+    async refreshWorld() { events.push('refresh'); },
+    render() { events.push('render'); },
+    battlePermit: undefined,
+    battlePermitOwnerId: undefined,
+  };
+
+  await enterUnderpass.call(controller);
+  assert.equal(controller.battlePermit, undefined);
+  assert.equal(controller.battlePermitOwnerId, undefined);
+  assert.deepEqual(events, [], 'a foreign player's response must not be attached or acknowledged');
+});
 
 test('battle start request sends no client-owned combat state', async () => {
   const oldFetch = globalThis.fetch;
