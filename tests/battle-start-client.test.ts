@@ -57,12 +57,13 @@ test('battle start request sends no client-owned combat state', async () => {
   let sent: Record<string, unknown> | undefined;
   globalThis.fetch = async (_input, init) => {
     sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    return new Response(JSON.stringify(validPermit()), {
+    return new Response(JSON.stringify(validPermit(String(sent.requestId))), {
       status: 200, headers: { 'content-type': 'application/json' },
     });
   };
   try {
-    await new GameApi().startUnderpass('player-1', 'cycle-1');
+    const result = await new GameApi().startUnderpass('player-1', 'cycle-1') as any;
+    assert.equal(result.permitId, sent?.requestId, 'the authoritative permit ID should match the start request key');
     assert.deepEqual(Object.keys(sent ?? {}).sort(), [
       'cycleId', 'encounterKey', 'eventKey', 'playerId', 'requestId',
     ]);
