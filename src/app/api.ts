@@ -34,6 +34,68 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   return turnCount > 0 && playerHp === 0 && enemyHp > 0;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+
+const isFurniturePlacementArray = (
+  value: unknown,
+): value is BattleCompletionResult['player']['housing']['placements'] =>
+  Array.isArray(value) && value.every((entry) =>
+    isRecord(entry)
+    && typeof entry.instanceId === 'string'
+    && entry.instanceId.length > 0
+    && typeof entry.furnitureId === 'string'
+    && entry.furnitureId.length > 0
+    && isBoundedSafeInteger(entry.x, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(entry.y, 0, Number.MAX_SAFE_INTEGER));
+
+// Completion responses are authoritative account/economy snapshots. Validate the
+// response envelope before AppController can replace a PlayerStore or clear a
+// pending receipt; never synthesize or repair reward values on the client.
+const isAuthoritativeBattleCompletionResult = (
+  value: unknown,
+  playerId: string,
+): value is BattleCompletionResult => {
+  if (!isRecord(value)) return false;
+  const player = value.player;
+  const reward = value.reward;
+  const worldEvent = value.worldEvent;
+  if (!isRecord(player) || !isRecord(reward) || !isRecord(worldEvent)) return false;
+  const housing = player.housing;
+  if (!isRecord(housing)) return false;
+
+  return player.id === playerId
+    && typeof player.displayName === 'string'
+    && isBoundedSafeInteger(player.level, 1, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(player.xp, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(player.currency, 0, Number.MAX_SAFE_INTEGER)
+    && typeof player.degenId === 'string'
+    && isStringArray(player.inventory)
+    && isStringArray(player.unlockedLocations)
+    && isStringArray(player.defeatedBosses)
+    && isStringArray(housing.inventory)
+    && isFurniturePlacementArray(housing.placements)
+    && isBoundedSafeInteger(reward.xp, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(reward.currency, 0, Number.MAX_SAFE_INTEGER)
+    && isStringArray(reward.items)
+    && isStringArray(reward.furniture)
+    && (reward.tier === 'full' || reward.tier === 'reduced')
+    && worldEvent.eventKey === 'underpass'
+    && typeof worldEvent.cycleId === 'string'
+    && worldEvent.cycleId.trim().length > 0
+    && (worldEvent.phase === 'sealed' || worldEvent.phase === 'warning' || worldEvent.phase === 'open')
+    && typeof worldEvent.opensAt === 'string'
+    && Number.isFinite(Date.parse(worldEvent.opensAt))
+    && typeof worldEvent.closesAt === 'string'
+    && Number.isFinite(Date.parse(worldEvent.closesAt))
+    && isBoundedSafeInteger(worldEvent.fullRewardClears, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(worldEvent.fullRewardLimit, 1, Number.MAX_SAFE_INTEGER)
+    && worldEvent.source === 'server';
+};
+
 export class GameApiError extends Error {
   constructor(readonly status: number, readonly payload: unknown, message: string) {
     super(message);
@@ -42,13 +104,20 @@ export class GameApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+const BATTLE_ACTION_TIMEOUT_MS = 12_000;
+const BATTLE_COMPLETION_TIMEOUT_MS = 20_000;
 
 export class GameApi {
   readonly enabled: boolean;
   private readonly apiBase: string;
   private readonly fetcher: typeof fetch;
 
-  constructor(apiBase: string = API_BASE, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
+  constructor(
+    apiBase: string = API_BASE,
+    fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+    private readonly actionTimeoutMs = BATTLE_ACTION_TIMEOUT_MS,
+    private readonly completionTimeoutMs = BATTLE_COMPLETION_TIMEOUT_MS,
+  ) {
     this.apiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
     this.fetcher = fetcher;
     this.enabled = this.apiBase.length > 0;
@@ -104,12 +173,17 @@ export class GameApi {
       method: 'POST',
       body: JSON.stringify({ playerId, permitId, abilityId, expectedTurnCount }),
     };
+    const sendAction = () => this.requestWithTimeout<BattleActionResult>(
+      '/api/battle/action', actionRequest, this.actionTimeoutMs,
+    );
     let result: BattleActionResult;
     try {
-      result = await this.request<BattleActionResult>('/api/battle/action', actionRequest);
+      result = await sendAction();
     } catch (error) {
       if (error instanceof GameApiError && error.status < 500) throw error;
-      result = await this.request<BattleActionResult>('/api/battle/action', actionRequest);
+      // Includes timeout/transport failures. Reuse the same turn precondition once;
+      // the Worker compare-and-swap makes a committed-but-unanswered action safe.
+      result = await sendAction();
     }
     if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
       throw new Error('Malformed authoritative battle action response.');
@@ -119,10 +193,37 @@ export class GameApi {
 
   async completeUnderpass(playerId: string, permitId: string): Promise<BattleCompletionResult | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<BattleCompletionResult>('/api/battle/complete', {
+    // Completion is idempotent: the Worker returns the existing audited receipt if
+    // the first response was lost after settlement. Bound hangs, then retry once with
+    // the exact same permit request; the client never calculates or grants rewards.
+    const completionRequest: RequestInit = {
       method: 'POST',
       body: JSON.stringify({ playerId, permitId }),
-    });
+    };
+    const sendCompletion = () => this.requestWithTimeout<BattleCompletionResult>(
+      '/api/battle/complete', completionRequest, this.completionTimeoutMs,
+    );
+    let result: BattleCompletionResult;
+    try {
+      result = await sendCompletion();
+    } catch (error) {
+      if (error instanceof GameApiError && error.status < 500) throw error;
+      result = await sendCompletion();
+    }
+    if (!isAuthoritativeBattleCompletionResult(result, playerId)) {
+      throw new Error('Malformed authoritative battle completion response.');
+    }
+    return result;
+  }
+
+  private async requestWithTimeout<T>(path: string, init: RequestInit, timeoutMs: number): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await this.request<T>(path, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   private async request<T = void>(path: string, init?: RequestInit): Promise<T> {

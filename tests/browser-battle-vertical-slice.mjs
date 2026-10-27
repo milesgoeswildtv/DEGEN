@@ -155,11 +155,52 @@ try {
       const originalFetch = window.fetch.bind(window);
       window.__degenSimulateLostActionResponse = false;
       window.__degenLostActionResponses = 0;
+      window.__degenSimulateTimedOutActionResponse = false;
+      window.__degenTimedOutActionResponses = 0;
+      window.__degenSimulateTimedOutCompletionResponse = false;
+      window.__degenTimedOutCompletionResponses = 0;
       window.fetch = async (input, init) => {
         const response = await originalFetch(input, init);
         const requestUrl = input instanceof Request ? input.url : String(input);
-        if (window.__degenSimulateLostActionResponse
-          && new URL(requestUrl, window.location.href).pathname === '/api/battle/action') {
+        const requestPath = new URL(requestUrl, window.location.href).pathname;
+        if (window.__degenSimulateTimedOutActionResponse && requestPath === '/api/battle/action') {
+          // The Worker has already committed this turn. Withhold its response until
+          // GameApi's real AbortController timeout fires, then let the same-turn retry
+          // reconcile the Worker CAS conflict instead of applying damage/Mana twice.
+          window.__degenSimulateTimedOutActionResponse = false;
+          window.__degenTimedOutActionResponses += 1;
+          return new Promise((_resolve, reject) => {
+            const signal = init?.signal;
+            const abort = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+            if (!signal) {
+              reject(new Error('Timed-out action test requires an AbortSignal.'));
+            } else if (signal.aborted) {
+              abort();
+            } else {
+              signal.addEventListener('abort', abort, { once: true });
+            }
+          });
+        }
+        if (window.__degenSimulateTimedOutCompletionResponse && requestPath === '/api/battle/complete') {
+          // The Worker has already settled the reward receipt. Withhold the successful
+          // response until GameApi's completion timeout fires; the identical retry must
+          // replay that receipt without awarding progression or inventory twice.
+          window.__degenSimulateTimedOutCompletionResponse = false;
+          window.__degenTimedOutCompletionResponses += 1;
+          await response.body?.cancel();
+          return new Promise((_resolve, reject) => {
+            const signal = init?.signal;
+            const abort = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+            if (!signal) {
+              reject(new Error('Timed-out completion test requires an AbortSignal.'));
+            } else if (signal.aborted) {
+              abort();
+            } else {
+              signal.addEventListener('abort', abort, { once: true });
+            }
+          });
+        }
+        if (window.__degenSimulateLostActionResponse && requestPath === '/api/battle/action') {
           window.__degenSimulateLostActionResponse = false;
           window.__degenLostActionResponses += 1;
           throw new TypeError('simulated lost response after Worker commit');
@@ -211,6 +252,8 @@ try {
   for (let turn = 1; turn <= 3; turn++) {
     await until('Crack ready ' + turn, () => cdp.evaluate('document.querySelector("[data-ability=crack]")?.disabled === false'));
     if (turn === 1 || turn === 3) await cdp.evaluate('window.__degenSimulateLostActionResponse = true');
+    if (turn === 2) await cdp.evaluate('window.__degenSimulateTimedOutActionResponse = true');
+    if (turn === 3) await cdp.evaluate('window.__degenSimulateTimedOutCompletionResponse = true');
     await tap("[data-ability=crack]");
     if (turn === 1) {
       await until('Recovered authoritative state after lost response', () => cdp.evaluate(
@@ -218,11 +261,11 @@ try {
       assert.equal(await cdp.evaluate('document.querySelector("#battle-action-status")?.textContent'),
         'Battle state refreshed from the server. Choose your next move.',
         'the player should see that the committed turn was recovered from authoritative state');
+    } else if (turn === 2) {
+      await until('Recovered authoritative state after timed-out response', () => cdp.evaluate(
+        'window.__degenTimedOutActionResponses === 1 && document.querySelector("#battle-action-status")?.textContent === "Battle state refreshed from the server. Choose your next move."'));
     } else if (turn === 3) {
       await until('Recovered terminal victory after lost response', () => cdp.evaluate('window.__degenLostActionResponses === 2'));
-    } else if (turn < 3) {
-      await until('Authoritative action ' + turn, () => cdp.evaluate(
-        '(document.querySelector("#battle-log")?.textContent?.match(/uses Crack/g) || []).length >= ' + (turn - 1)));
     }
     const expected = {
       player_hp: turn === 3 ? 100 : 120 - turn * 10,
@@ -257,10 +300,21 @@ try {
   assert.equal(finalPermit?.turn_count, 3);
   assert.ok(finalPermit?.completed_at, 'Worker should persist completion after awarding the victory receipt');
   assert.equal(await cdp.evaluate('window.__degenLostActionResponses'), 2,
-    'both an active turn and the killing blow should recover after their committed responses are lost');
+    'both the first active turn and the killing blow should recover after their committed responses are lost');
+  assert.equal(await cdp.evaluate('window.__degenTimedOutActionResponses'), 1,
+    'a committed turn whose response times out must reconcile through the same-turn CAS retry');
+  assert.equal(await cdp.evaluate('window.__degenTimedOutCompletionResponses'), 1,
+    'a settled reward whose response times out must recover through the identical completion retry');
+  const awardedCharacter = sql("SELECT xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
+  assert.equal(awardedCharacter?.xp, 75, 'the recovered completion must award XP exactly once');
+  assert.equal(awardedCharacter?.currency, 30, 'the recovered completion must award currency exactly once');
+  const awardedScrap = sql("SELECT quantity FROM player_inventory WHERE player_id='" + playerId + "' AND item_key='underpass-scrap' AND item_type='item'")[0];
+  assert.equal(awardedScrap?.quantity, 1, 'the recovered completion must add one scrap, not duplicate inventory');
+  const awardedTrophy = sql("SELECT COUNT(*) AS count FROM player_inventory WHERE player_id='" + playerId + "' AND item_key='tunnel-trophy' AND item_type='furniture'")[0];
+  assert.equal(awardedTrophy?.count, 1, 'the recovered completion must grant one trophy');
   const victoryHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='" + playerId + "' AND encounter_key='tunnel-maw' AND result='victory'")[0];
   assert.equal(victoryHistory?.count, 1,
-    'recovering the lost killing-blow response must settle exactly one victory-history row');
+    'recovering the lost killing-blow and reward responses must settle exactly one victory-history row');
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
