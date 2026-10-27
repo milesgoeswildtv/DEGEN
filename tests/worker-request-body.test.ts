@@ -70,3 +70,16 @@ test('non-JSON content types are rejected before touching D1', async () => {
     assert.deepEqual(await response.json(), { error: 'Content-Type must be application/json.' });
   }
 });
+
+
+test('application/json with a charset parameter is accepted as JSON media type', async () => {
+  const response = await worker.fetch(new Request('https://degen-api.example/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+    body: '{',
+  }), {
+    DB: { prepare() { throw new Error('malformed JSON must fail before D1'); } },
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Request body must be valid JSON.' });
+});
