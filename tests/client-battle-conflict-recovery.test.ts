@@ -129,7 +129,7 @@ test('lost action response followed by authoritative victory snapshot completes 
         battleState: authoritativeVictory,
       }, 'DEGEN API 409');
     },
-    async completeUnderpass(permitId: string) {
+    async completeUnderpass(_playerId: string, permitId: string) {
       completionCalls += 1;
       assert.equal(permitId, 'permit-1');
       return { player: { id: 'player-1', level: 2 }, worldEvent: { cycleId: 'cycle-1' } };
