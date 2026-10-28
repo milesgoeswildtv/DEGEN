@@ -213,9 +213,10 @@ export class AppController {
       if (error instanceof GameApiError && error.status === 409 && error.payload && typeof error.payload === 'object') {
         const payload = error.payload as { battleState?: unknown; error?: unknown };
         const battleState = payload.battleState;
-        const invalidPermitWithoutSnapshot = payload.error === 'Battle permit is invalid, expired, or already completed.'
-          && !isAuthoritativeBattleActionState(battleState, permitId);
-        if (invalidPermitWithoutSnapshot) {
+        // A 409 without a valid server-owned snapshot cannot safely advance this local encounter.
+        // Fail closed even when the Worker reports corrupt/unavailable persisted state rather than expiry.
+        const unrecoverableConflictWithoutSnapshot = !isAuthoritativeBattleActionState(battleState, permitId);
+        if (unrecoverableConflictWithoutSnapshot) {
           const samePermit = this.battlePermit?.permitId === permitId
             && this.battlePermitOwnerId === playerId
             && this.store.snapshot.id === playerId;
