@@ -16,10 +16,11 @@ function makeStore(
   warnings: string[] = [],
   values = new Map<string, string>(),
   bootstrap: (id: string, identity: any) => Promise<any> = async () => undefined,
+  writeStorage: (key: string, value: string) => void = (key, value) => { values.set(key, value); },
 ) {
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => { values.set(key, value); },
+    setItem: (key: string, value: string) => { writeStorage(key, value); },
   };
   const Store = runInNewContext(compiled + '\nPlayerStore;', {
     localStorage: storage, structuredClone, crypto: webcrypto,
@@ -28,12 +29,34 @@ function makeStore(
   }) as new (api: unknown) => {
     placeFurniture(item: string, x: number, y: number): void;
     removeFurnitureAt(x: number, y: number): void;
+    subscribe(listener: (player: any) => void): () => void;
     readonly snapshot: any;
     replaceFromServer(player: any): void;
     initialize(identity: any): Promise<void>;
   };
   return new Store({ enabled: true, saveHousing, bootstrap });
 }
+
+test('localStorage write failures do not block server-backed housing saves or UI updates', async () => {
+  const warnings: string[] = [];
+  const saved: any[] = [];
+  const store = makeStore(async (_playerId, housing) => {
+    saved.push(structuredClone(housing));
+  }, warnings, new Map(), async () => undefined, () => {
+    throw new Error('storage quota exceeded');
+  });
+  let notifications = 0;
+  store.subscribe(() => { notifications += 1; });
+
+  assert.doesNotThrow(() => store.placeFurniture('starter-chair', 2, 2));
+  await flush();
+
+  assert.equal(saved.length, 1, 'housing persistence must still reach the Worker');
+  assert.ok(saved[0]!.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 2 && placement.y === 2));
+  assert.ok(notifications >= 2, 'the UI must receive both the local edit and save-settlement snapshots');
+  assert.ok(warnings.some((warning) => warning.includes('Local player storage unavailable')));
+});
 
 test('rapid edits save immutable housing snapshots in edit order', async () => {
   const calls: Array<{ housing: any; resolve: () => void }> = [];
