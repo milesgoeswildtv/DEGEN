@@ -39,6 +39,26 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+// A 200 response is not authority unless it matches the Worker-owned world
+// snapshot contract. In particular, a malformed "open" payload must not enable
+// a client-side start attempt or be mistaken for an offline preview cycle.
+const isAuthoritativeWorldEventSnapshot = (value: unknown): value is WorldEventSnapshot => {
+  if (!isRecord(value)) return false;
+  const opensAt = typeof value.opensAt === 'string' ? Date.parse(value.opensAt) : Number.NaN;
+  const closesAt = typeof value.closesAt === 'string' ? Date.parse(value.closesAt) : Number.NaN;
+
+  return value.eventKey === 'underpass'
+    && typeof value.cycleId === 'string'
+    && value.cycleId.trim().length > 0
+    && (value.phase === 'sealed' || value.phase === 'warning' || value.phase === 'open')
+    && Number.isFinite(opensAt)
+    && Number.isFinite(closesAt)
+    && opensAt < closesAt
+    && isBoundedSafeInteger(value.fullRewardClears, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(value.fullRewardLimit, 1, Number.MAX_SAFE_INTEGER)
+    && value.source === 'server';
+};
+
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 
@@ -85,17 +105,7 @@ const isAuthoritativeBattleCompletionResult = (
     && isStringArray(reward.items)
     && isStringArray(reward.furniture)
     && (reward.tier === 'full' || reward.tier === 'reduced')
-    && worldEvent.eventKey === 'underpass'
-    && typeof worldEvent.cycleId === 'string'
-    && worldEvent.cycleId.trim().length > 0
-    && (worldEvent.phase === 'sealed' || worldEvent.phase === 'warning' || worldEvent.phase === 'open')
-    && typeof worldEvent.opensAt === 'string'
-    && Number.isFinite(Date.parse(worldEvent.opensAt))
-    && typeof worldEvent.closesAt === 'string'
-    && Number.isFinite(Date.parse(worldEvent.closesAt))
-    && isBoundedSafeInteger(worldEvent.fullRewardClears, 0, Number.MAX_SAFE_INTEGER)
-    && isBoundedSafeInteger(worldEvent.fullRewardLimit, 1, Number.MAX_SAFE_INTEGER)
-    && worldEvent.source === 'server';
+    && isAuthoritativeWorldEventSnapshot(worldEvent);
 };
 
 export class GameApiError extends Error {
@@ -265,7 +275,13 @@ export class GameApi {
 
   async getUnderpass(playerId: string): Promise<WorldEventSnapshot | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<WorldEventSnapshot>(`/api/world/underpass?playerId=${encodeURIComponent(playerId)}`);
+    const snapshot = await this.request<unknown>(
+      `/api/world/underpass?playerId=${encodeURIComponent(playerId)}`,
+    );
+    if (!isAuthoritativeWorldEventSnapshot(snapshot)) {
+      throw new Error('Malformed authoritative Underpass snapshot.');
+    }
+    return snapshot;
   }
 
   async startUnderpass(playerId: string, cycleId: string, requestIdOverride?: string): Promise<BattlePermit | undefined> {
