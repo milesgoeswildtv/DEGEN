@@ -685,13 +685,14 @@ test('a late expired-permit rejection cannot clear a newer encounter', async () 
   };
   let rejectAction!: (error: unknown) => void;
   const actionResponse = new Promise<unknown>((_resolve, reject) => { rejectAction = reject; });
+  let completionCalls = 0;
   const api = {
     enabled: true,
     actUnderpass() { return actionResponse; },
     async getUnderpass() { return undefined; },
     async completeUnderpass() {
-      assert.fail('a rejected expired permit must not request reward completion');
-      return { player: {}, worldEvent: {} };
+      completionCalls += 1;
+      throw new Error('a rejected expired permit must not request reward completion');
     },
   };
   const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
@@ -738,9 +739,7 @@ test('a late expired-permit rejection cannot clear a newer encounter', async () 
   assert.equal(newEngine.snapshot.status, 'active');
   assert.equal(newEngine.snapshot.turnCount, 0);
   assert.equal(newEngine.snapshot.playerMana, 8);
-  assert.equal(completionCallsForNoop(), 0);
+  assert.equal(completionCalls, 0);
   assert.equal(store.localRewards, 0);
-
-  function completionCallsForNoop() { return 0; }
 });
 
