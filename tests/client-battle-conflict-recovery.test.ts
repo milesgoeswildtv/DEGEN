@@ -1054,7 +1054,7 @@ test('an unrecoverable resumed permit clears only its matching persisted start k
     async startUnderpass(playerId: string, cycleId: string, requestIdOverride?: string) {
       assert.deepEqual([playerId, cycleId, requestIdOverride], ['player-1', 'cycle-persisted', 'permit-expired']);
       throw new TestGameApiError(409, {
-        error: 'Battle permit is invalid, expired, or already completed.',
+        error: 'Battle start request is already used or invalid.',
       }, 'DEGEN API 409');
     },
     discardUnrecoverableUnderpassStart(playerId: string, permitId: string) {
@@ -1117,7 +1117,7 @@ test('an expired in-memory permit rerenders the sealed Underpass after cleanup',
     async startUnderpass(_playerId: string, _cycleId: string, requestIdOverride?: string) {
       assert.equal(requestIdOverride, expiredPermit.permitId);
       throw new TestGameApiError(409, {
-        error: 'Battle permit is invalid, expired, or already completed.',
+        error: 'Battle start request is already used or invalid.',
       }, 'DEGEN API 409');
     },
     discardUnrecoverableUnderpassStart(_playerId: string, permitId: string) {
