@@ -35,8 +35,25 @@ const { BattleEngine } = runInNewContext(
       playerMana: number;
       enemyHp: number;
       turnCount: number;
+      log: string[];
     };
     useAbility(abilityId: string): void;
+    synchronizeAuthoritativeState(result: {
+      permitId: string;
+      status: 'active' | 'victory' | 'defeat';
+      playerHp: number;
+      playerMana: number;
+      enemyHp: number;
+      turnCount: number;
+    }): void;
+    applyAuthoritativeAction(abilityId: string, result: {
+      permitId: string;
+      status: 'active' | 'victory' | 'defeat';
+      playerHp: number;
+      playerMana: number;
+      enemyHp: number;
+      turnCount: number;
+    }): void;
   };
 };
 
@@ -110,4 +127,122 @@ test('Mana validation rejects negative, fractional, non-finite, and unsafe value
       enemy: TUNNEL_MAW,
     }), /Invalid player Mana/);
   }
+});
+
+
+test('an out-of-order stale Worker snapshot cannot roll back newer HP, Mana, enemy HP, or turn count', () => {
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+    permitId: 'permit-stale-snapshot',
+    status: 'active',
+    playerHp: 72,
+    playerMana: 4,
+    enemyHp: 51,
+    turnCount: 2,
+  });
+
+  engine.synchronizeAuthoritativeState({
+    permitId: 'permit-stale-snapshot',
+    status: 'active',
+    playerHp: 94,
+    playerMana: 8,
+    enemyHp: 28,
+    turnCount: 1,
+  });
+
+  assert.deepEqual(
+    {
+      status: engine.snapshot.status,
+      playerHp: engine.snapshot.playerHp,
+      playerMana: engine.snapshot.playerMana,
+      enemyHp: engine.snapshot.enemyHp,
+      turnCount: engine.snapshot.turnCount,
+    },
+    {
+      status: 'active',
+      playerHp: 72,
+      playerMana: 4,
+      enemyHp: 51,
+      turnCount: 2,
+    },
+  );
+});
+
+test('replaying the same authoritative action result does not deduct Mana or append action logs twice', () => {
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+    permitId: 'permit-replay',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const result = {
+    permitId: 'permit-replay',
+    status: 'active' as const,
+    playerHp: 85,
+    playerMana: 5,
+    enemyHp: 60,
+    turnCount: 1,
+  };
+
+  engine.applyAuthoritativeAction('crack', result);
+  const firstLog = [...engine.snapshot.log];
+  engine.applyAuthoritativeAction('crack', result);
+
+  assert.equal(engine.snapshot.playerMana, 5);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(engine.snapshot.enemyHp, 60);
+  assert.equal(engine.snapshot.log.filter((entry) => entry.includes('uses')).length, 1);
+  assert.equal(engine.snapshot.log.filter((entry) => entry.startsWith('Mana -')).length, 1);
+  assert.deepEqual(Array.from(engine.snapshot.log), firstLog);
+});
+
+
+test('a terminal authoritative result cannot be reopened by a later active snapshot', () => {
+  let completions = 0;
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+    assert.equal(status, 'victory');
+    completions += 1;
+  }, {
+    permitId: 'permit-terminal',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+
+  engine.applyAuthoritativeAction('crack', {
+    permitId: 'permit-terminal',
+    status: 'victory',
+    playerHp: 80,
+    playerMana: 5,
+    enemyHp: 0,
+    turnCount: 1,
+  });
+  const terminal = {
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+  };
+
+  engine.synchronizeAuthoritativeState({
+    permitId: 'permit-terminal',
+    status: 'active',
+    playerHp: 99,
+    playerMana: 8,
+    enemyHp: 30,
+    turnCount: 2,
+  });
+
+  assert.deepEqual({
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+  }, terminal);
+  assert.equal(completions, 1, 'terminal completion must be emitted exactly once');
 });
