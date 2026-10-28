@@ -1976,3 +1976,39 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Battle authority / reward idempotency:** Worker/D1 remains authoritative for actions, turn CAS, terminal outcomes, permits, reward receipts, and exactly-once settlement/recovery. This PR validates client presentation of server-owned world snapshots only.
 - **D1 / release gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007` migration-number collision and production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain unresolved. No production D1 operation or deployment was performed.
 - **One best next task:** verify exact-head CI and Cloudflare Pages for the synchronized PR #94 head; make it review-ready only after all required checks pass, and do not bypass the platform-auth release gate.
+
+---
+
+## Latest run — 2026-10-28 (paid Mana killing-blow / reward-completion race)
+
+- **Authoritative main SHA at start:** `eff6abdce2aa330c16fea28cd028e0b893a5fa9d`, normal squash merge of PR #100. PR #100's exact current head `6bd6c464b654f2bcb6fef2a6dcc4ef66f5eec80e` passed all 14 CI steps in [run 40760930349](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40760930349): deterministic tests, Worker/D1 reward concurrency and recovery, Underpass cycle/rollover concurrency, defeat-history atomicity, production build, Chromium mobile battle vertical slice, and Wrangler validation. Post-merge main CI/Worker deployment for `eff6abd` is not yet confirmed; no production D1 operation or deployment was performed by PR #100.
+
+- **PUSHED / PR #101 OPEN (draft):** `automation/degen/paid-mana-killing-blow-race-v01`, created from exact main SHA above. Code/test head before this continuity update: `e591dc22a73a5092c62ab3711aa64bbafbef234a`. Exact-head CI is required for the refreshed branch head; do not treat code inspection as a test pass. No direct-main write.
+
+- **Task / files changed:** `tests/worker-d1-concurrency.mjs` adds an isolated local Worker/D1 race between a paid `crack` killing blow and `/api/battle/complete`. The test asserts that the Worker commits one turn, spends the final Mana exactly once, leaves player HP unchanged on the killing blow, persists enemy HP at zero and player Mana at zero, and returns one canonical reduced-reward receipt across concurrent completion retries. It also asserts one victory history row and one currency application. Existing free-action race coverage remains unchanged. No runtime, reward math, schema/migration, deployment config, or content canon changed.
+
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` and bespoke `manaCost`, authoritative battle-start/action snapshots, persisted `player_mana`, rejection without mutation, exact deduction, zero-cost use at zero, terminal behavior, cost-aware controls, no monster Mana, and no Mana-triggered reversion remain implemented. Migration `0006_backfill_active_battle_mana.sql` is tracked.
+
+- **Battle authority / reward idempotency:** Worker/D1 owns combat state, turn compare-and-swap, terminal outcome, audited receipts, retry recovery, and exactly-once progression/history/inventory/currency. The new scenario is test-only and does not change reward authority or economy.
+
+- **D1 assumptions / unresolved gates:** `wrangler.toml` remains authoritative for binding `DB` → `DEGEN` and `db/migrations`; verified deployment workflow order remains base schema → tracked migrations → Worker on previously verified runs. The `0007_player_inventory_quantity_guards.sql` versus draft PR #14 `0007_player_sessions.sql` numbering conflict remains unresolved. Production Discord/Telegram credentials, controlled identity/session verification, and an approved legacy identity-collision policy remain blockers for platform-auth release work. No migration, production D1 operation, secret/configuration change, or deployment was performed in this run.
+
+- **Miles blocker:** none for this test-only race. Existing platform-auth and migration-sequencing gates remain.
+
+- **One best next task:** verify exact-head CI for PR #101; if all stages pass and mergeability is clean, deliver through the normal PR path, then independently verify post-merge main CI before taking up the gated Shield slice.
+
+---
+
+## Follow-up — 2026-10-28 (isolate paid-Mana race integration fixture after CI regression)
+
+- **Authoritative main SHA:** `eff6abdce2aa330c16fea28cd028e0b893a5fa9d`. PR #100 remains merged; its exact-head CI passed before merge. Post-merge main CI/Worker deployment is still not confirmed here.
+
+- **PUSHED / PR #101 OPEN (draft):** `automation/degen/paid-mana-killing-blow-race-v01`. The first continuity head `8ac4d66118cfe2914485147aedf3be490f969c17` failed exact-head CI [run 40765075442](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40765075442) in the isolated Worker/D1 concurrency script at the later assertion `invalid receipt replay must not reserve another event clear` (expected one existing counter row, observed zero). The new race had reused `integration-player` and `integration-cycle`, altering shared fixture progression before that assertion.
+
+- **Evidence-backed correction:** the paid killing-blow race now uses a dedicated `paid-killing-race-player` and `paid-killing-race-cycle`, with its own character and permit. It no longer changes the existing integration player's clear sequence. The isolated scenario expects its own first full reward. Current code/test commit: `ff35dcf8bcd2ed125344b12afc587d2a9bfa7cab`; this progress update creates a newer head, so exact-head CI must be checked again before review readiness. No Worker runtime or reward logic changed.
+
+- **Scope:** `tests/worker-d1-concurrency.mjs` only. The test still races a paid final-Mana killing blow against completion, verifies persisted Mana 0 / enemy HP 0 / turn 1 / no retaliation, and verifies concurrent completion retries return one receipt and apply currency once.
+
+- **Mana / authority / D1:** Mana remains COMPLETE / MERGED on main with tracked migration `0006_backfill_active_battle_mana.sql`; no monster Mana and no zero-Mana reversion. Worker/D1 remains authoritative for combat, terminal outcomes, and reward settlement. `wrangler.toml` remains the source for `DB` → `DEGEN` and `db/migrations`; the `0007` migration-number conflict and platform-auth credentials/identity-policy gates remain unresolved. No production D1 operation or deployment.
+
+- **One best next task:** verify exact-head CI for refreshed PR #101; if the isolated D1 suite and all remaining stages pass, mark it ready and use the normal PR merge path. Otherwise fix only the newly evidenced failure.
