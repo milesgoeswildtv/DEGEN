@@ -160,7 +160,8 @@ export class AppController {
     }
 
     const cycleId = existingPermit?.cycleId ?? this.api.recoverableUnderpassCycleId?.(playerId);
-    if (!cycleId || !this.api.startUnderpass) {
+    const permitId = existingPermit?.permitId ?? this.api.recoverableUnderpassPermitId?.(playerId);
+    if (!cycleId || !permitId || !this.api.startUnderpass) {
       this.setUnderpassActionStatus('No recoverable encounter is recorded for this player.');
       return;
     }
@@ -170,8 +171,8 @@ export class AppController {
     this.setUnderpassResumeDisabled(true);
     this.setUnderpassActionStatus('Recovering the existing encounter from the server…');
     try {
-      const permit = await this.api.startUnderpass(playerId, cycleId, existingPermit?.permitId);
-      if (!permit || (existingPermit && permit.permitId !== existingPermit.permitId)) {
+      const permit = await this.api.startUnderpass(playerId, cycleId, permitId);
+      if (!permit || permit.permitId !== permitId) {
         throw new Error('Missing or mismatched resumed battle permit.');
       }
       if (this.battleResumeAttempt !== attempt
@@ -190,6 +191,8 @@ export class AppController {
         || this.battlePermit !== existingPermit) return;
 
       if (error instanceof GameApiError && error.status < 500) {
+        // Remove only this exact rejected key; a newer encounter must survive a late response.
+        this.api.discardUnrecoverableUnderpassStart?.(playerId, permitId);
         if (existingPermit && this.battlePermit === existingPermit && this.battlePermitOwnerId === playerId) {
           this.battlePermit = undefined;
           this.battlePermitOwnerId = undefined;
