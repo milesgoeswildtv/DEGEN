@@ -27,6 +27,7 @@ const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewCont
 }) as {
   GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number, startTimeoutMs?: number) => {
     getUnderpass(playerId: string): Promise<unknown>;
+    completeUnderpass(playerId: string, permitId: string): Promise<unknown>;
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
     acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void;
     acknowledgeUnderpassCompletion(playerId: string, permitId: string): void;
@@ -725,6 +726,56 @@ test('getUnderpass rejects malformed or non-server world snapshots even on HTTP 
       api.getUnderpass('player-1'),
       /Malformed authoritative Underpass snapshot/,
       'invalid server snapshots must fail closed',
+    );
+  }
+});
+
+const validCompletionResult = (worldEvent = validWorldSnapshot()) => ({
+  player: {
+    id: 'player-1',
+    displayName: 'Player',
+    level: 1,
+    xp: 0,
+    currency: 0,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: [],
+    defeatedBosses: [],
+    housing: { inventory: [], placements: [] },
+  },
+  reward: { xp: 0, currency: 0, items: [], furniture: [], tier: 'full' },
+  worldEvent,
+});
+
+test('battle completion accepts a valid authoritative receipt and world snapshot', async () => {
+  const receipt = validCompletionResult();
+  const api = new GameApi('https://degen-api.example', async () => new Response(JSON.stringify(receipt), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  }));
+
+  assert.deepEqual(await api.completeUnderpass('player-1', 'permit-1'), receipt);
+});
+
+test('battle completion rejects malformed world chronology before accepting an authoritative receipt', async () => {
+  const valid = validWorldSnapshot();
+  const malformedWorldEvents = [
+    { ...valid, opensAt: '2026-10-29T00:00:00.000Z', closesAt: '2026-10-28T00:00:00.000Z' },
+    { ...valid, opensAt: '2026-10-28T00:00:00.000Z', closesAt: '2026-10-28T00:00:00.000Z' },
+    { ...valid, source: 'preview' },
+  ];
+
+  for (const worldEvent of malformedWorldEvents) {
+    const receipt = validCompletionResult(worldEvent);
+    const api = new GameApi('https://degen-api.example', async () => new Response(JSON.stringify(receipt), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    await assert.rejects(
+      api.completeUnderpass('player-1', 'permit-1'),
+      /Malformed authoritative battle completion response/,
+      JSON.stringify(worldEvent),
     );
   }
 });
