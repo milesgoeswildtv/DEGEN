@@ -1912,3 +1912,16 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 / release gates:** `wrangler.toml` remains the source for `DB` → `DEGEN` and `db/migrations`; schema → tracked migrations → Worker is the deployment order. The `0007` migration-number conflict and production Discord/Telegram credential/live-verification/legacy-collision policy remain unresolved; Shield PR #20 stays gated.
 - **One best next task:** run exact-head CI on the merge-synced PR #96 branch; if green, refresh PR #96's QA summary and merge only through the normal PR path.
 
+---
+
+## Latest run — 2026-10-28 (verify the real player-scoped start key)
+
+- **Authoritative main SHA:** `9e59a6275fdd52d1d2b2ea3b38728a7fdbcf9cc7`. PR #93 is merged; main CI remains in progress.
+- **Feature branch / PR:** `automation/degen/expired-permit-client-exit-v01`, PR #96, currently draft. The merge-synced head is being updated with a second evidence-based browser assertion correction.
+- **Task / file:** `tests/browser-battle-vertical-slice.mjs` previously checked the legacy player+cycle storage key, which had already been migrated away, and expected it to be null. The current code intentionally stores one player-scoped key with `state: 'active'` until the authoritative reward receipt is accepted. The browser test now asserts the actual key contains the same cycle/request ID in active state after resume, then asserts it is removed only after completion succeeds. This closes a false-positive assertion and directly verifies idempotency-key lifecycle across reload, active battle, and reward settlement.
+- **CI evidence:** prior head `0ce6f0b83d16b733c5455593d4c7beb3f542e210` passed deterministic and Worker/D1 stages plus build, but Chromium failed waiting for the stale `[data-start-battle]` selector. Commit `88011d930e61edf6f8b38aaa860dfdc910d5c2e9` corrected the selector to resume; the current test commit adds the player-scoped key assertions. Fresh exact-head CI is required after this change; do not claim the vertical slice green yet.
+- **Mana:** COMPLETE / MERGED on main: authoritative Degen-only Mana, persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost at zero, terminal coverage, cost-aware UI, no monster Mana, and no zero-Mana reversion. Migration `0006_backfill_active_battle_mana.sql` remains tracked; the divergent legacy sidekick branch and its obsolete `0003` migration remain retired.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, action CAS, terminal outcome, and reward receipt. Existing isolated CI covers concurrent action/completion, duplicate completion, transient D1 recovery, invalid/expired permits, full/reduced clear selection, cycle races, defeat history, and level-up math. This test change does not change runtime or economy code.
+- **D1 / release gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and migrations; schema → tracked migrations → Worker. The `0007` numbering collision and platform-auth credential/live-verification/legacy-collision policy remain unresolved; Shield PR #20 stays gated.
+- **One best next task:** run exact-head CI for the active-key lifecycle test; merge PR #96 only after all deterministic, Worker/D1, Chromium, build, and Wrangler stages pass.
+

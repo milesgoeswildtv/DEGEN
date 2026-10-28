@@ -297,9 +297,13 @@ try {
     'the reloaded page must reuse the persisted request ID from both failed attempts');
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
     'recovery after reload must not create a duplicate permit');
-  const startStorageKey = 'degen:pending-battle-start:' + encodeURIComponent(playerId) + ':' + encodeURIComponent('browser-cycle');
-  assert.equal(await cdp.evaluate('localStorage.getItem(' + JSON.stringify(startStorageKey) + ')'), null,
-    'AppController clears the key only after accepting the recovered permit');
+  const startStorageKey = 'degen:pending-battle-start:' + encodeURIComponent(playerId);
+  const activeStartKey = await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(startStorageKey) + ') || "null")');
+  assert.deepEqual(activeStartKey, {
+    cycleId: 'browser-cycle',
+    requestId: firstStartRequestIds[0],
+    state: 'active',
+  }, 'recovery must retain the player-scoped active key until authoritative reward completion');
   const permitId = activeRows[0].id;
   assert.equal(permitId, startRequestIds[0], 'the recovered permit ID must match the request idempotency key');
   assert.equal(activeRows[0].player_hp, 120);
@@ -403,6 +407,8 @@ try {
   assert.equal(finalPermit?.player_mana, 0);
   assert.equal(finalPermit?.turn_count, 3);
   assert.ok(finalPermit?.completed_at, 'Worker should persist completion after awarding the victory receipt');
+  assert.equal(await cdp.evaluate('localStorage.getItem(' + JSON.stringify(startStorageKey) + ')'), null,
+    'only the accepted authoritative reward receipt clears the active start key');
   assert.equal(await cdp.evaluate('window.__degenLostActionResponses'), 2,
     'both the first active turn and the killing blow should recover after their committed responses are lost');
   assert.equal(await cdp.evaluate('window.__degenTimedOutActionResponses'), 1,
