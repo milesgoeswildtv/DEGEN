@@ -222,7 +222,13 @@ try {
       (
         'permit-completed-poison-recovery', 'qa-player', 'underpass', 'qa-completed-poison-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-history-conflict', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
+    INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+      VALUES ('permit-history-conflict:victory', 'qa-player', 'tunnel-maw', 'defeat', 1, 0, 0);
     UPDATE battle_permits SET completed_at = datetime('now', '-2 minutes')
       WHERE id = 'permit-completed-claim';
     UPDATE battle_permits SET reward_clear_number = 999999
@@ -241,6 +247,41 @@ try {
     WHEN NEW.id = 'permit-recovery:victory'
     BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_REWARD_FAILURE'); END`);
   await start();
+
+  // A pre-existing deterministic victory key is not a valid pending receipt.
+  // Reject it before clear reservation or progression/inventory mutation.
+  const conflictPermitBefore = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-history-conflict'`);
+  const conflictHistoryBefore = sql(`SELECT id, player_id, encounter_key, result, player_level,
+      xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-history-conflict:victory'`);
+  const conflictCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const conflictInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const conflictClearsBefore = sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`);
+  const historyConflict = await complete('permit-history-conflict');
+  assert.equal(historyConflict.status, 409, JSON.stringify(historyConflict.body));
+  assert.equal(historyConflict.body?.error, 'Battle victory history marker conflicts with pending reward.');
+  assert.equal('reward' in (historyConflict.body ?? {}), false);
+  assert.equal('player' in (historyConflict.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-history-conflict'`), conflictPermitBefore);
+  assert.deepEqual(sql(`SELECT id, player_id, encounter_key, result, player_level,
+      xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-history-conflict:victory'`), conflictHistoryBefore);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), conflictCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), conflictInventoryBefore);
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), conflictClearsBefore);
+
   const failed = await complete();
   assert.equal(failed.status, 500, 'injected reward transaction failure must be surfaced');
   await stop();
@@ -1362,7 +1403,7 @@ try {
 
   await stop();
 
-  console.log('PASS local Worker/D1 reward recovery, stale/fresh claim races, premature completion rejection, action/completion concurrency, terminal action replay rejection, and exactly-once rewards');
+  console.log('PASS local Worker/D1 reward recovery, conflicting victory history marker rejection, stale/fresh claim races, premature completion rejection, action/completion concurrency, terminal action replay rejection, and exactly-once rewards');
 } finally {
   await stop();
   rmSync(scratch, { recursive: true, force: true });
