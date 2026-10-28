@@ -227,10 +227,15 @@ export class AppController {
             synchronized = true;
             if (this.route === 'battle') {
               await this.refreshWorld();
-              this.navigate('underpass');
+              // A delayed world refresh must not navigate away from a newer route or permit.
+              if (this.route === 'battle' && !this.battlePermit) {
+                this.navigate('underpass');
+              } else if (this.route === 'underpass') {
+                this.render();
+              }
             } else if (this.route === 'underpass') {
               await this.refreshWorld();
-              this.render();
+              if (this.route === 'underpass') this.render();
             }
           }
         }
