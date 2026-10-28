@@ -196,3 +196,53 @@ test('replaying the same authoritative action result does not deduct Mana or app
   assert.equal(engine.snapshot.log.filter((entry) => entry.startsWith('Mana -')).length, 1);
   assert.deepEqual(Array.from(engine.snapshot.log), firstLog);
 });
+
+
+test('a terminal authoritative result cannot be reopened by a later active snapshot', () => {
+  let completions = 0;
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+    assert.equal(status, 'victory');
+    completions += 1;
+  }, {
+    permitId: 'permit-terminal',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+
+  engine.applyAuthoritativeAction('crack', {
+    permitId: 'permit-terminal',
+    status: 'victory',
+    playerHp: 80,
+    playerMana: 5,
+    enemyHp: 0,
+    turnCount: 1,
+  });
+  const terminal = {
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+  };
+
+  engine.synchronizeAuthoritativeState({
+    permitId: 'permit-terminal',
+    status: 'active',
+    playerHp: 99,
+    playerMana: 8,
+    enemyHp: 30,
+    turnCount: 2,
+  });
+
+  assert.deepEqual({
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+  }, terminal);
+  assert.equal(completions, 1, 'terminal completion must be emitted exactly once');
+});
