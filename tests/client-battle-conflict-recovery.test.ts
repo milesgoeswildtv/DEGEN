@@ -610,64 +610,69 @@ test('a stale active snapshot cannot synchronize a newer permit after battle tea
 });
 
 
-test('an expired permit without a terminal snapshot exits the stale battle without awarding rewards', async () => {
-  timers.length = 0;
-  storage.clear();
-  actionStatus.textContent = '';
-  actionStatus.hidden = true;
-  root.innerHTML = '';
+test('an unrecoverable 409 without an authoritative snapshot exits stale battle without rewards', async () => {
+  for (const errorMessage of [
+    'Battle permit is invalid, expired, or already completed.',
+    'Battle state is unavailable.',
+  ]) {
+    timers.length = 0;
+    storage.clear();
+    actionStatus.textContent = '';
+    actionStatus.hidden = true;
+    root.innerHTML = '';
 
-  const store = {
-    snapshot: { id: 'player-1' },
-    replaced: 0,
-    localRewards: 0,
-    replaceFromServer(_player: unknown) { this.replaced += 1; },
-    applyReward(_reward: unknown) { this.localRewards += 1; },
-    markBossDefeated(_bossId: string) {},
-  };
-  let completionCalls = 0;
-  const api = {
-    enabled: true,
-    async actUnderpass() {
-      throw new TestGameApiError(409, {
-        error: 'Battle permit is invalid, expired, or already completed.',
-      }, 'DEGEN API 409');
-    },
-    async getUnderpass() { return undefined; },
-    async completeUnderpass() {
-      completionCalls += 1;
-      throw new Error('an expired active permit must not request rewards');
-    },
-  };
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
-    assert.fail('an expired permit rejection must not resolve a local turn');
-  }, {
-    permitId: 'permit-expired',
-    status: 'active',
-    playerHp: 80,
-    playerMana: 0,
-    enemyHp: 60,
-    turnCount: 2,
-  });
-  const controller = new AppController(root, store, api);
-  controller.route = 'battle';
-  controller.battlePermit = { permitId: 'permit-expired' };
-  controller.battlePermitOwnerId = 'player-1';
-  controller.battleEngine = engine;
+    const permitId = errorMessage.includes('expired') ? 'permit-expired' : 'permit-corrupt';
+    const store = {
+      snapshot: { id: 'player-1' },
+      replaced: 0,
+      localRewards: 0,
+      replaceFromServer(_player: unknown) { this.replaced += 1; },
+      applyReward(_reward: unknown) { this.localRewards += 1; },
+      markBossDefeated(_bossId: string) {},
+    };
+    let completionCalls = 0;
+    const api = {
+      enabled: true,
+      async actUnderpass() {
+        throw new TestGameApiError(409, { error: errorMessage }, 'DEGEN API 409');
+      },
+      async getUnderpass() { return undefined; },
+      async completeUnderpass() {
+        completionCalls += 1;
+        throw new Error('an unrecoverable 409 must not request rewards');
+      },
+    };
+    const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+      assert.fail('a conflict without a valid snapshot must not resolve a local turn');
+    }, {
+      permitId,
+      status: 'active',
+      playerHp: 80,
+      playerMana: 0,
+      enemyHp: 60,
+      turnCount: 2,
+    });
+    const controller = new AppController(root, store, api);
+    controller.route = 'battle';
+    controller.battlePermit = { permitId };
+    controller.battlePermitOwnerId = 'player-1';
+    controller.battleEngine = engine;
 
-  await controller.useBattleAbility('crack');
+    await controller.useBattleAbility('crack');
 
-  assert.equal(controller.route, 'underpass', 'an unusable permit must not leave the battle screen actionable');
-  assert.equal(controller.battlePermit, undefined);
-  assert.equal(controller.battlePermitOwnerId, undefined);
-  assert.equal(controller.battleEngine, undefined);
-  assert.equal(engine.snapshot.status, 'active', 'the client must not invent a defeat or victory');
-  assert.equal(engine.snapshot.playerMana, 0, 'zero Mana itself is not the reason for leaving combat');
-  assert.equal(engine.snapshot.turnCount, 2, 'the rejected request must not advance local combat');
-  assert.equal(completionCalls, 0, 'permit possession alone never grants or requests a reward');
-  assert.equal(store.replaced, 0);
-  assert.equal(store.localRewards, 0);
+    assert.equal(controller.route, 'underpass', errorMessage);
+    assert.equal(controller.battlePermit, undefined, errorMessage);
+    assert.equal(controller.battlePermitOwnerId, undefined, errorMessage);
+    assert.equal(controller.battleEngine, undefined, errorMessage);
+    assert.equal(engine.snapshot.status, 'active', 'the client must not invent a defeat or victory');
+    assert.equal(engine.snapshot.playerMana, 0, 'zero Mana itself is not the reason for leaving combat');
+    assert.equal(engine.snapshot.turnCount, 2, 'the rejected request must not advance local combat');
+    assert.equal(completionCalls, 0, 'permit possession alone never grants or requests a reward');
+    assert.equal(store.replaced, 0);
+    assert.equal(store.localRewards, 0);
+  }
 });
+
 
 test('a late expired-permit rejection cannot clear a newer encounter', async () => {
   timers.length = 0;
