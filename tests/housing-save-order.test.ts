@@ -11,8 +11,12 @@ const source = readFileSync(new URL('../src/app/state.ts', import.meta.url), 'ut
 const compiled = stripTypeScriptTypes(source, { mode: 'transform' });
 const flush = async () => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); };
 
-function makeStore(saveHousing: (id: string, housing: unknown) => Promise<void>, warnings: string[] = []) {
-  const values = new Map<string, string>();
+function makeStore(
+  saveHousing: (id: string, housing: unknown) => Promise<void>,
+  warnings: string[] = [],
+  values = new Map<string, string>(),
+  bootstrap: (id: string, identity: any) => Promise<any> = async () => undefined,
+) {
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => { values.set(key, value); },
@@ -26,8 +30,9 @@ function makeStore(saveHousing: (id: string, housing: unknown) => Promise<void>,
     removeFurnitureAt(x: number, y: number): void;
     readonly snapshot: any;
     replaceFromServer(player: any): void;
+    initialize(identity: any): Promise<void>;
   };
-  return new Store({ enabled: true, saveHousing });
+  return new Store({ enabled: true, saveHousing, bootstrap });
 }
 
 test('rapid edits save immutable housing snapshots in edit order', async () => {
@@ -346,4 +351,63 @@ test('reactivation during an in-flight housing save retries once if that save fa
   calls[1]!.reject(new Error('retry also failed'));
   await flush();
   assert.equal(calls.length, 2, 'a repeated outage must not spin in a tight retry loop');
+});
+
+
+test('failed housing outbox survives reload and retries after server bootstrap', async () => {
+  const values = new Map<string, string>();
+  const warnings: string[] = [];
+  const calls: Array<{ playerId: string; housing: any }> = [];
+  let rejectFirst!: (error: Error) => void;
+  const first = makeStore((playerId, housing) => new Promise<void>((resolve, reject) => {
+    calls.push({ playerId, housing: structuredClone(housing) });
+    rejectFirst = reject;
+  }), warnings, values);
+  const playerId = first.snapshot.id;
+
+  first.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(calls.length, 1);
+  const inFlightStorage = JSON.parse(values.get('degen.prototype.player.v2')!);
+  assert.ok(inFlightStorage.__housingOutbox[playerId].placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 2 && placement.y === 2),
+  'outbox must remain durable while the network request is in flight');
+
+  rejectFirst(new Error('page lost connection'));
+  await flush();
+  const failedStorage = JSON.parse(values.get('degen.prototype.player.v2')!);
+  assert.ok(failedStorage.__housingOutbox[playerId],
+    'failed layout must remain in local storage for reload recovery');
+
+  const serverPlayer = {
+    id: playerId,
+    displayName: 'Player',
+    level: 1,
+    xp: 0,
+    currency: 0,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: ['home', 'downtown', 'underpass'],
+    housing: {
+      inventory: ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'],
+      placements: [],
+    },
+    defeatedBosses: [],
+  };
+  const restored = makeStore(async (id, housing) => {
+    calls.push({ playerId: id, housing: structuredClone(housing) });
+  }, warnings, values, async (id) => ({ ...serverPlayer, id }));
+  await restored.initialize({ displayName: 'Player' });
+  await flush();
+
+  assert.ok(restored.snapshot.housing.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 2 && placement.y === 2),
+  'bootstrap must preserve the locally queued layout rather than overwrite it with the older server snapshot');
+  assert.equal(calls.length, 2, 'the queued layout should be retried after bootstrap');
+  assert.equal(calls[1]!.playerId, playerId);
+  assert.ok(calls[1]!.housing.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 2 && placement.y === 2));
+  const settledStorage = JSON.parse(values.get('degen.prototype.player.v2')!);
+  assert.deepEqual(settledStorage.__housingOutbox, {},
+    'outbox entry should clear only after the server confirms the save');
 });

@@ -38,6 +38,7 @@ export class PlayerStore {
 
   constructor(private readonly api: GameApi) {
     this.state = this.load();
+    this.pendingHousingSaves = this.loadHousingOutbox();
   }
 
   get snapshot(): PlayerState {
@@ -58,10 +59,7 @@ export class PlayerStore {
 
     try {
       const remote = await this.api.bootstrap(this.state.id, identity);
-      if (remote) {
-        this.state = remote;
-        this.commitLocal();
-      }
+      if (remote) this.replaceFromServer(remote);
     } catch (error) {
       console.warn('DEGEN backend unavailable; retaining local preview state.', error);
     }
@@ -98,8 +96,8 @@ export class PlayerStore {
 
     // Retry a queued layout on reactivation. If only an in-flight snapshot exists,
     // remember the reactivation so a later failure can get one bounded retry.
-    if (pending) void this.persistHousing();
-    else if (inFlight && !wasActive) this.reactivatedHousingPlayers.add(player.id);
+    if (pending) void this.drainHousingSaves();
+    if (inFlight && !wasActive) this.reactivatedHousingPlayers.add(player.id);
   }
 
   applyReward(reward: BattleReward): void {
@@ -143,54 +141,57 @@ export class PlayerStore {
     };
 
     this.state.housing.placements.push(placement);
-    this.commitLocal();
-    void this.persistHousing();
+    this.queueHousingSave();
   }
 
   removeFurnitureAt(x: number, y: number): void {
     this.state.housing.placements = this.state.housing.placements.filter(
       (item) => item.x !== x || item.y !== y,
     );
-    this.commitLocal();
-    void this.persistHousing();
+    this.queueHousingSave();
   }
 
-  private async persistHousing(): Promise<void> {
-    // Serialize requests to prevent an older response from overwriting a newer layout.
-    // Coalesce intermediate edits while retaining the latest immutable snapshot.
+  private queueHousingSave(): void {
     this.pendingHousingSaves.set(this.state.id, structuredClone(this.state.housing));
+    // Persist the outbox before starting network I/O so a failed/in-flight save
+    // can be recovered after reload without replacing the server-owned player data.
+    this.commitLocal();
+    void this.drainHousingSaves();
+  }
+
+  private async drainHousingSaves(): Promise<void> {
     if (this.housingSaveInFlight) return;
     this.housingSaveInFlight = true;
     const failedSnapshots = new Map<string, PlayerState['housing']>();
     try {
       while (this.pendingHousingSaves.size > 0) {
-        // A failed latest snapshot stays queued for the next edit, but is attempted
-        // only once in this drain so a persistent outage cannot spin forever or
-        // block queued saves for other accounts. A newer snapshot for the same
-        // player remains eligible even if an earlier snapshot failed.
         const activePlayerId = this.state.id;
         const next = [...this.pendingHousingSaves.entries()]
           .find(([playerId, housing]) =>
             playerId === activePlayerId && failedSnapshots.get(playerId) !== housing);
         if (!next) break;
         const [playerId, housing] = next;
-        this.pendingHousingSaves.delete(playerId);
+        // Keep the immutable snapshot in the durable outbox until the server
+        // confirms it. Removing it before await would lose recovery on page exit.
         this.housingSavePlayerId = playerId;
         this.housingSaveSnapshot = structuredClone(housing);
         try {
           await this.api.saveHousing(playerId, housing);
+          if (this.pendingHousingSaves.get(playerId) === housing) {
+            this.pendingHousingSaves.delete(playerId);
+            this.commitLocal();
+          }
           this.reactivatedHousingPlayers.delete(playerId);
         } catch (error) {
           const retryAfterReactivation = this.reactivatedHousingPlayers.delete(playerId)
             && this.state.id === playerId;
-          if (!this.pendingHousingSaves.has(playerId)) {
-            this.pendingHousingSaves.set(playerId, housing);
+          if (this.pendingHousingSaves.get(playerId) === housing) {
             failedSnapshots.set(playerId, housing);
           }
-          // Permit exactly one retry when the account was reactivated mid-flight;
-          // a second failure remains queued for a later edit/reactivation.
+          // Permit one retry when the same account was reactivated mid-flight;
+          // otherwise leave the latest snapshot queued for the next edit/reload.
           if (retryAfterReactivation) failedSnapshots.delete(playerId);
-          console.warn('Housing save failed; local copy retained for retry on the next edit.', error);
+          console.warn('Housing save failed; latest layout remains queued for retry.', error);
         } finally {
           this.housingSavePlayerId = undefined;
           this.housingSaveSnapshot = undefined;
@@ -201,20 +202,64 @@ export class PlayerStore {
     }
   }
 
+  private loadHousingOutbox(): Map<string, PlayerState['housing']> {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return new Map();
+      const parsed = JSON.parse(raw) as { __housingOutbox?: unknown };
+      const value = parsed.__housingOutbox;
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return new Map();
+      const outbox = new Map<string, PlayerState['housing']>();
+      for (const [playerId, housing] of Object.entries(value)) {
+        if (playerId && this.isValidHousingSnapshot(housing)) {
+          outbox.set(playerId, structuredClone(housing));
+        }
+      }
+      return outbox;
+    } catch {
+      return new Map();
+    }
+  }
+
+  private isValidHousingSnapshot(value: unknown): value is PlayerState['housing'] {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const housing = value as Record<string, unknown>;
+    if (!Array.isArray(housing.inventory)
+      || !housing.inventory.every((item) => typeof item === 'string')
+      || !Array.isArray(housing.placements)) return false;
+    return housing.placements.every((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+      const placement = entry as Record<string, unknown>;
+      return typeof placement.instanceId === 'string' && placement.instanceId.length > 0
+        && typeof placement.furnitureId === 'string' && placement.furnitureId.length > 0
+        && typeof placement.x === 'number' && Number.isSafeInteger(placement.x)
+        && placement.x >= 0 && placement.x <= 7
+        && typeof placement.y === 'number' && Number.isSafeInteger(placement.y)
+        && placement.y >= 0 && placement.y <= 5
+        && (placement.rotation === undefined
+          || (typeof placement.rotation === 'number' && Number.isSafeInteger(placement.rotation)));
+    });
+  }
+
   private load(): PlayerState {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return createDefaultPlayer();
-      const parsed = JSON.parse(raw) as PlayerState;
-      const id = parsed.id && parsed.id !== 'local-player' ? parsed.id : newPlayerId();
-      return { ...createDefaultPlayer(id), ...parsed, id };
+      const parsed = JSON.parse(raw) as PlayerState & { __housingOutbox?: unknown };
+      const { __housingOutbox: _outbox, ...player } = parsed;
+      void _outbox;
+      const id = player.id && player.id !== 'local-player' ? player.id : newPlayerId();
+      return { ...createDefaultPlayer(id), ...player, id };
     } catch {
       return createDefaultPlayer();
     }
   }
 
   private commitLocal(): void {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      ...this.state,
+      __housingOutbox: Object.fromEntries(this.pendingHousingSaves),
+    }));
     const snapshot = this.snapshot;
     for (const listener of this.listeners) listener(snapshot);
   }
