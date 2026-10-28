@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
+import { validateHousingPlacements } from '../worker/housingQuantityGuard.ts';
 
 const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
 const allowlist = /^ALLOWED_ORIGINS = "([^"]+)"$/m.exec(config)?.[1]?.split(',').map((s) => s.trim());
@@ -32,7 +33,7 @@ const workerSource = readFileSync(new URL('../worker/index.ts', import.meta.url)
   .replace(/^import .*;\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
 const worker = runInNewContext(stripTypeScriptTypes(workerSource, { mode: 'transform' }) + '\nworker;', {
-  Request, Response, URL, crypto, console, Uint32Array,
+  Request, Response, URL, crypto, console, Uint32Array, validateHousingPlacements,
 }) as { fetch(request: Request, env: { ALLOWED_ORIGINS: string; DB?: unknown }): Promise<Response> };
 
 async function preflight(origin: string): Promise<Response> {

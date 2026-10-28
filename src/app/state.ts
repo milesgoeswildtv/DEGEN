@@ -27,6 +27,14 @@ const createDefaultPlayer = (id = newPlayerId()): PlayerState => ({
 export class PlayerStore {
   private state: PlayerState;
   private listeners = new Set<(state: PlayerState) => void>();
+  private housingSaveInFlight = false;
+  private housingSavePlayerId?: string;
+  private housingSaveSnapshot?: PlayerState['housing'];
+  // Coalesce per player, not globally: a pending save for one account must not
+  // be discarded when another account edits housing before the first resolves.
+  private pendingHousingSaves = new Map<string, PlayerState['housing']>();
+  // Accounts reactivated during an in-flight save get one retry if that save fails.
+  private reactivatedHousingPlayers = new Set<string>();
 
   constructor(private readonly api: GameApi) {
     this.state = this.load();
@@ -73,8 +81,25 @@ export class PlayerStore {
   }
 
   replaceFromServer(player: PlayerState): void {
-    this.state = player;
+    // Preserve unsaved placement edits for this account even if another account
+    // was active while the save was queued or in flight. Inventory and progression
+    // always come from the server response.
+    const wasActive = this.state.id === player.id;
+    const pending = this.pendingHousingSaves.get(player.id);
+    const inFlight = this.housingSavePlayerId === player.id ? this.housingSaveSnapshot : undefined;
+    const unsavedHousing = pending ?? inFlight;
+    const placements = unsavedHousing
+      ? structuredClone(wasActive
+        ? this.state.housing.placements
+        : unsavedHousing.placements)
+      : undefined;
+    this.state = placements ? { ...player, housing: { ...player.housing, placements } } : player;
     this.commitLocal();
+
+    // Retry a queued layout on reactivation. If only an in-flight snapshot exists,
+    // remember the reactivation so a later failure can get one bounded retry.
+    if (pending) void this.persistHousing();
+    else if (inFlight && !wasActive) this.reactivatedHousingPlayers.add(player.id);
   }
 
   applyReward(reward: BattleReward): void {
@@ -131,10 +156,48 @@ export class PlayerStore {
   }
 
   private async persistHousing(): Promise<void> {
+    // Serialize requests to prevent an older response from overwriting a newer layout.
+    // Coalesce intermediate edits while retaining the latest immutable snapshot.
+    this.pendingHousingSaves.set(this.state.id, structuredClone(this.state.housing));
+    if (this.housingSaveInFlight) return;
+    this.housingSaveInFlight = true;
+    const failedSnapshots = new Map<string, PlayerState['housing']>();
     try {
-      await this.api.saveHousing(this.state.id, this.state.housing);
-    } catch (error) {
-      console.warn('Housing save failed; local copy retained.', error);
+      while (this.pendingHousingSaves.size > 0) {
+        // A failed latest snapshot stays queued for the next edit, but is attempted
+        // only once in this drain so a persistent outage cannot spin forever or
+        // block queued saves for other accounts. A newer snapshot for the same
+        // player remains eligible even if an earlier snapshot failed.
+        const activePlayerId = this.state.id;
+        const next = [...this.pendingHousingSaves.entries()]
+          .find(([playerId, housing]) =>
+            playerId === activePlayerId && failedSnapshots.get(playerId) !== housing);
+        if (!next) break;
+        const [playerId, housing] = next;
+        this.pendingHousingSaves.delete(playerId);
+        this.housingSavePlayerId = playerId;
+        this.housingSaveSnapshot = structuredClone(housing);
+        try {
+          await this.api.saveHousing(playerId, housing);
+          this.reactivatedHousingPlayers.delete(playerId);
+        } catch (error) {
+          const retryAfterReactivation = this.reactivatedHousingPlayers.delete(playerId)
+            && this.state.id === playerId;
+          if (!this.pendingHousingSaves.has(playerId)) {
+            this.pendingHousingSaves.set(playerId, housing);
+            failedSnapshots.set(playerId, housing);
+          }
+          // Permit exactly one retry when the account was reactivated mid-flight;
+          // a second failure remains queued for a later edit/reactivation.
+          if (retryAfterReactivation) failedSnapshots.delete(playerId);
+          console.warn('Housing save failed; local copy retained for retry on the next edit.', error);
+        } finally {
+          this.housingSavePlayerId = undefined;
+          this.housingSaveSnapshot = undefined;
+        }
+      }
+    } finally {
+      this.housingSaveInFlight = false;
     }
   }
 
