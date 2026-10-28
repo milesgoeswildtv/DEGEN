@@ -1147,3 +1147,56 @@ test('an expired in-memory permit rerenders the sealed Underpass after cleanup',
     scope.underpassView = originalUnderpassView;
   }
 });
+
+
+test('unknown or authentication resume errors retain the permit and saved key', async () => {
+  for (const error of [
+    new TestGameApiError(409, { error: 'Unexpected conflict response.' }, 'DEGEN API 409'),
+    new TestGameApiError(401, { error: 'Unauthorized.' }, 'DEGEN API 401'),
+  ]) {
+    timers.length = 0;
+    storage.clear();
+    actionStatus.textContent = '';
+    actionStatus.hidden = true;
+    root.innerHTML = '';
+
+    const existingPermit = {
+      permitId: 'permit-retryable',
+      cycleId: 'cycle-original',
+      eventKey: 'underpass',
+      encounterKey: 'tunnel-maw',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const discarded: string[] = [];
+    let refreshCalls = 0;
+    const store = {
+      snapshot: { id: 'player-1' },
+      replaced: 0,
+      localRewards: 0,
+      replaceFromServer(_player: unknown) { this.replaced += 1; },
+      applyReward(_reward: unknown) { this.localRewards += 1; },
+      markBossDefeated(_bossId: string) {},
+    };
+    const api = {
+      enabled: true,
+      async startUnderpass() { throw error; },
+      discardUnrecoverableUnderpassStart(_playerId: string, permitId: string) { discarded.push(permitId); },
+      async getUnderpass() { refreshCalls += 1; return undefined; },
+      async completeUnderpass() { assert.fail('an unverified conflict cannot request rewards'); },
+    };
+    const controller = new AppController(root, store, api);
+    controller.route = 'underpass';
+    controller.underpassEvent = { phase: 'sealed', cycleId: 'cycle-current' };
+    controller.battlePermit = existingPermit;
+    controller.battlePermitOwnerId = 'player-1';
+
+    await controller.resumeUnderpass();
+
+    assert.equal(controller.battlePermit, existingPermit, 'unknown/auth errors must retain the in-memory permit');
+    assert.equal(controller.battlePermitOwnerId, 'player-1');
+    assert.deepEqual(discarded, [], 'unknown/auth errors must not discard the saved request key');
+    assert.equal(refreshCalls, 0, 'only known unrecoverable Worker responses trigger a refresh');
+    assert.equal(controller.route, 'underpass');
+    assert.equal(store.localRewards, 0);
+  }
+});
