@@ -1996,3 +1996,19 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blocker:** none for this test-only race. Existing platform-auth and migration-sequencing gates remain.
 
 - **One best next task:** verify exact-head CI for PR #101; if all stages pass and mergeability is clean, deliver through the normal PR path, then independently verify post-merge main CI before taking up the gated Shield slice.
+
+---
+
+## Follow-up — 2026-10-28 (isolate paid-Mana race integration fixture after CI regression)
+
+- **Authoritative main SHA:** `eff6abdce2aa330c16fea28cd028e0b893a5fa9d`. PR #100 remains merged; its exact-head CI passed before merge. Post-merge main CI/Worker deployment is still not confirmed here.
+
+- **PUSHED / PR #101 OPEN (draft):** `automation/degen/paid-mana-killing-blow-race-v01`. The first continuity head `8ac4d66118cfe2914485147aedf3be490f969c17` failed exact-head CI [run 40765075442](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40765075442) in the isolated Worker/D1 concurrency script at the later assertion `invalid receipt replay must not reserve another event clear` (expected one existing counter row, observed zero). The new race had reused `integration-player` and `integration-cycle`, altering shared fixture progression before that assertion.
+
+- **Evidence-backed correction:** the paid killing-blow race now uses a dedicated `paid-killing-race-player` and `paid-killing-race-cycle`, with its own character and permit. It no longer changes the existing integration player's clear sequence. The isolated scenario expects its own first full reward. Current code/test commit: `ff35dcf8bcd2ed125344b12afc587d2a9bfa7cab`; this progress update creates a newer head, so exact-head CI must be checked again before review readiness. No Worker runtime or reward logic changed.
+
+- **Scope:** `tests/worker-d1-concurrency.mjs` only. The test still races a paid final-Mana killing blow against completion, verifies persisted Mana 0 / enemy HP 0 / turn 1 / no retaliation, and verifies concurrent completion retries return one receipt and apply currency once.
+
+- **Mana / authority / D1:** Mana remains COMPLETE / MERGED on main with tracked migration `0006_backfill_active_battle_mana.sql`; no monster Mana and no zero-Mana reversion. Worker/D1 remains authoritative for combat, terminal outcomes, and reward settlement. `wrangler.toml` remains the source for `DB` → `DEGEN` and `db/migrations`; the `0007` migration-number conflict and platform-auth credentials/identity-policy gates remain unresolved. No production D1 operation or deployment.
+
+- **One best next task:** verify exact-head CI for refreshed PR #101; if the isolated D1 suite and all remaining stages pass, mark it ready and use the normal PR merge path. Otherwise fix only the newly evidenced failure.
