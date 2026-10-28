@@ -210,14 +210,24 @@ export class AppController {
       }
     } catch (error) {
       let synchronized = false;
-      if (error instanceof GameApiError && error.status === 409) {
-        const payload = error.payload && typeof error.payload === 'object'
-          ? error.payload as { battleState?: unknown; error?: unknown }
-          : {};
+      if (error instanceof GameApiError && error.status === 409 && error.payload && typeof error.payload === 'object') {
+        const payload = error.payload as { battleState?: unknown; error?: unknown };
         const battleState = payload.battleState;
-        // A 409 without a valid server-owned snapshot cannot safely advance this local encounter.
-        // Fail closed even when the Worker reports corrupt/unavailable persisted state rather than expiry.
-        const unrecoverableConflictWithoutSnapshot = !isAuthoritativeBattleActionState(battleState, permitId);
+        const unrecoverableConflictErrors = new Set([
+          'Battle permit is invalid, expired, or already completed.',
+          'Battle state is unavailable.',
+          'Battle state is invalid.',
+          'Battle state changed; authoritative snapshot unavailable.',
+          'Battle state changed; retry from the latest authoritative state.',
+          'Unsupported battle permit.',
+          'Unsupported encounter.',
+        ]);
+        // Exit only when the Worker explicitly says the permit/state is unusable and
+        // cannot provide a valid snapshot. Unknown/malformed conflicts retain the permit
+        // so a retry can recover a lost terminal response instead of stranding a victory.
+        const unrecoverableConflictWithoutSnapshot = typeof payload.error === 'string'
+          && unrecoverableConflictErrors.has(payload.error)
+          && !isAuthoritativeBattleActionState(battleState, permitId);
         if (unrecoverableConflictWithoutSnapshot) {
           const samePermit = this.battlePermit?.permitId === permitId
             && this.battlePermitOwnerId === playerId
