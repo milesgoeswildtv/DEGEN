@@ -620,7 +620,6 @@ test('an unrecoverable 409 without an authoritative snapshot exits stale battle 
       errorMessage: 'Battle state is unavailable.',
       payload: { error: 'Battle state is unavailable.' },
     },
-    { errorMessage: 'Malformed 409 response.', payload: undefined },
   ]) {
     timers.length = 0;
     storage.clear();
@@ -678,6 +677,65 @@ test('an unrecoverable 409 without an authoritative snapshot exits stale battle 
     assert.equal(store.replaced, 0);
     assert.equal(store.localRewards, 0);
   }
+});
+
+
+test('a malformed 409 payload preserves the permit for safe server retry without local combat', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, undefined, 'DEGEN API 409');
+    },
+    async getUnderpass() { return undefined; },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('an unverified conflict must not request rewards');
+    },
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('a malformed conflict must not resolve local combat');
+  }, {
+    permitId: 'permit-retryable-conflict',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 0,
+    enemyHp: 60,
+    turnCount: 2,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-retryable-conflict' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('crack');
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(controller.battlePermit?.permitId, 'permit-retryable-conflict',
+    'unknown conflict responses must retain the permit for a later authoritative retry');
+  assert.equal(controller.battleEngine, engine);
+  assert.equal(engine.snapshot.status, 'active');
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.turnCount, 2);
+  assert.equal(completionCalls, 0);
+  assert.equal(store.replaced, 0);
+  assert.equal(store.localRewards, 0);
+  assert.equal(actionStatus.textContent, 'The server rejected that move.');
 });
 
 
