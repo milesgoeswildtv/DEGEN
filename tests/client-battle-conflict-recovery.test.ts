@@ -743,3 +743,83 @@ test('a late expired-permit rejection cannot clear a newer encounter', async () 
   assert.equal(store.localRewards, 0);
 });
 
+
+
+test('a delayed expired-permit refresh cannot navigate away from a newer encounter', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  let resolveWorld!: (value: undefined) => void;
+  const worldRefresh = new Promise<undefined>((resolve) => { resolveWorld = resolve; });
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, {
+        error: 'Battle permit is invalid, expired, or already completed.',
+      }, 'DEGEN API 409');
+    },
+    getUnderpass() { return worldRefresh; },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('expired-permit recovery must not request rewards');
+    },
+  };
+  const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('an expired action must not resolve locally');
+  }, {
+    permitId: 'permit-old-expired',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 0,
+    enemyHp: 60,
+    turnCount: 2,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-old-expired' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = oldEngine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.battlePermit, undefined, 'the expired permit is cleared before the refresh resolves');
+
+  const newEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the new encounter must not be completed by old cleanup');
+  }, {
+    permitId: 'permit-new-after-refresh',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-new-after-refresh' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = newEngine;
+
+  resolveWorld(undefined);
+  await pendingAction;
+
+  assert.equal(controller.route, 'battle', 'late cleanup must not navigate away from a newer encounter');
+  assert.equal(controller.battlePermit?.permitId, 'permit-new-after-refresh');
+  assert.equal(controller.battleEngine, newEngine);
+  assert.equal(newEngine.snapshot.status, 'active');
+  assert.equal(newEngine.snapshot.turnCount, 0);
+  assert.equal(newEngine.snapshot.playerMana, 8);
+  assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+});
