@@ -1,3 +1,16 @@
+## Latest run — 2026-10-28 (reconcile housing branch with authoritative Underpass snapshots)
+
+- **Authoritative main SHA:** `5cb1dd95b3aa26c6cde7ab4bf03f37485432756f`. Main now contains the normal merge of the Underpass snapshot validator; post-merge main CI/deployment for this exact SHA is not independently confirmed here.
+- **PUSHED / PR #97 OPEN:** continued the existing `automation/degen/housing-reliability-current-main-v01` branch; no competing housing branch and no direct-main write. Code/test commit: `b225c8df324483577e90f908f5156d8150680f47`. PR remains unmerged.
+- **Task / files changed:** `src/app/api.ts` now uses the same strict Worker-owned Underpass snapshot validator for both the world endpoint and battle-completion receipt, including valid phase/counters, server source, parseable timestamps, and `opensAt < closesAt`. `tests/battle-start-client.test.ts` restores deterministic coverage for valid snapshots, malformed HTTP-200 responses, and reversed/equal chronology or preview-source completion receipts. Existing housing save recovery and battle-start recovery code was retained.
+- **QA:** prior housing code/test head `7d3cb68fa87cc3b7e24c6d8d5b8833da3721545f` passed all 14 CI workflow steps in [run 40743931728](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40743931728), but that result does **not** cover these new changes. This code/test commit requires fresh exact-head CI. No local-shell run is claimed; no production D1 operation or deployment was performed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, terminal behavior, cost-aware controls, no monster Mana, no zero-Mana reversion, and tracked `0006_backfill_active_battle_mana.sql`. No Mana/runtime rules were changed.
+- **Battle authority / reward idempotency:** Worker/D1 still owns permit state, action compare-and-swap, terminal outcomes, audit history, reward receipts, XP/currency/inventory, and exactly-once settlement. PR #98's conflicting history-marker guard is merged; no reward or economy code changed in this slice.
+- **D1 assumptions / blockers:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. No schema/migration changes. The existing `0007` migration-number collision with draft PR #14 remains unresolved. Platform-auth PR #21, production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling remain release gates; do not merge/deploy housing around that gate.
+- **One best next task:** verify exact-head CI and mergeability for PR #97; resolve any remaining merge conflict without force-push, then keep the platform-auth release gate in force.
+
+---
+
 ## Latest run — 2026-10-28 (keep housing saves resilient to local-storage failures)
 
 - **Authoritative main SHA:** `fabe9b91e3a241a124129a61538918ea707246b7`. Main CI [40715549470](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40715549470) and Deploy Preview [40715549546](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40715549546) are now verified successful.
