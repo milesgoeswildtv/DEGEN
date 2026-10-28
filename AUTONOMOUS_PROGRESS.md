@@ -1,3 +1,23 @@
+## Latest run — 2026-10-28 (continue expired-battle client recovery after reward-history merge)
+
+- **Authoritative main SHA:** `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`, created by normal squash merge of PR #98. PR #98 exact-head CI run [40681212482](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40681212482) passed all 13 stages: deterministic tests, isolated Worker/D1 reward concurrency and transient-failure recovery, Underpass cycle/rollover races, atomic defeat history, production build, Chromium mobile battle vertical slice, and Wrangler validation. **Post-merge main CI and a new Worker deployment are not yet verified.**
+
+- **PUSHED / PR #96 OPEN:** continue `automation/degen/expired-permit-client-exit-v01`. Code/test head `b05d6953b40fead127faad6c5dd446f6a3054ced` passed exact-head CI [40669336969](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40669336969). The branch is now one commit behind main because PR #98 merged after that run. This continuity commit updates only `AUTONOMOUS_PROGRESS.md`; it does not change the already-tested client implementation. The new head must pass exact-head CI before merge.
+
+- **Task / existing PR files:** `src/app/AppController.ts`, `src/app/api.ts`, `src/ui/views.ts`, `tests/battle-start-client.test.ts`, `tests/browser-battle-vertical-slice.mjs`, `tests/client-battle-conflict-recovery.test.ts`, and `tests/underpass-resume-ui.test.ts`. For Worker 409s that prove an expired/invalid permit or unavailable/invalid persisted state and provide no usable authoritative snapshot, the client clears only the matching stale permit, refreshes Underpass state, and exits the unusable battle view. Unknown/malformed conflicts preserve the permit for safe retry. Route/permit rechecks prevent delayed refresh from overriding navigation or ejecting a newer encounter. The client never invents defeat/victory, local damage, or rewards.
+
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` and bespoke `manaCost`, authoritative battle start/action state, persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, killing-blow/defeat behavior, client/Worker parity, cost-aware controls, no monster Mana, no zero-Mana reversion, and tracked migration `0006_backfill_active_battle_mana.sql`.
+
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit validity, HP/Mana/enemy HP/turn count, action compare-and-swap, terminal outcomes, audited reward receipts, transient-D1 recovery, and exactly-once settlement. PR #96 changes client recovery/presentation only; no reward or economy trust moves to the client.
+
+- **D1 / release gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order is base schema → tracked migrations → Worker. The main `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` numbering conflict remains unresolved. Production Discord/Telegram credentials, controlled live identity/session verification, and an approved legacy identity-collision policy still block auth-dependent release work. No production D1 operation, deployment, secret change, or platform-auth bypass occurred.
+
+- **Miles blocker:** none for this client recovery slice; platform-auth and migration sequencing gates remain unchanged.
+
+- **One best next task:** verify exact-head CI for the refreshed PR #96 branch; if every required stage passes, merge via the normal PR path and verify post-merge main status separately. Then inspect PR #94's current-main compatibility and exact-head checks. Keep Shield/housing behind their existing gates.
+
+---
+
 ## Latest run — 2026-10-28 (stale/replayed battle snapshot regression coverage)
 
 - **Authoritative main SHA at branch start:** `f9aee40b1bd4e39eb24f37c8c38c671d502530c3`, after PR #91 merged normally. On its base SHA `b0ed0c1924e38dfee66d1dc516444a356f492dec`, main CI [40611435937](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40611435937) and Deploy Preview [40611435940](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40611435940) both passed. PR #91 exact-head CI [40611513575](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40611513575) and its Cloudflare Pages check passed; squash merge SHA is `f9aee40b1bd4e39eb24f37c8c38c671d502530c3`. Post-merge main checks for this new SHA must be verified separately.
