@@ -121,6 +121,8 @@ const AppController = runInNewContext(
     enabled: boolean;
     hasRecoverableUnderpassStart?(playerId: string): boolean;
     recoverableUnderpassCycleId?(playerId: string): string | undefined;
+    recoverableUnderpassPermitId?(playerId: string): string | undefined;
+    discardUnrecoverableUnderpassStart?(playerId: string, permitId: string): void;
     startUnderpass?(playerId: string, cycleId: string, requestIdOverride?: string): Promise<{
       permitId: string; cycleId: string; initialState: unknown;
     } | undefined>;
@@ -1004,6 +1006,7 @@ test('a reload can recover an active encounter from the player-scoped saved star
     enabled: true,
     hasRecoverableUnderpassStart: () => true,
     recoverableUnderpassCycleId: () => 'cycle-persisted',
+    recoverableUnderpassPermitId: () => 'permit-reload-resume',
     async startUnderpass(...args: [string, string, string?]) {
       startCalls.push(args);
       return resumedPermit;
@@ -1020,7 +1023,57 @@ test('a reload can recover an active encounter from the player-scoped saved star
   assert.equal(controller.route, 'battle');
   assert.equal(controller.battlePermit?.permitId, 'permit-reload-resume');
   assert.deepEqual(controller.battlePermit?.initialState, resumedPermit.initialState);
-  assert.deepEqual(startCalls, [['player-1', 'cycle-persisted', undefined]],
+  assert.deepEqual(startCalls, [['player-1', 'cycle-persisted', 'permit-reload-resume']],
     'a fresh controller must retry the saved request key and recover the persisted permit');
+  assert.equal(store.localRewards, 0);
+});
+
+
+test('an unrecoverable resumed permit clears only its matching persisted start key', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  let recoverable = true;
+  const discarded: string[] = [];
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const api = {
+    enabled: true,
+    hasRecoverableUnderpassStart: () => recoverable,
+    recoverableUnderpassCycleId: () => recoverable ? 'cycle-persisted' : undefined,
+    recoverableUnderpassPermitId: () => recoverable ? 'permit-expired' : undefined,
+    async startUnderpass(playerId: string, cycleId: string, requestIdOverride?: string) {
+      assert.deepEqual([playerId, cycleId, requestIdOverride], ['player-1', 'cycle-persisted', 'permit-expired']);
+      throw new TestGameApiError(409, {
+        error: 'Battle permit is invalid, expired, or already completed.',
+      }, 'DEGEN API 409');
+    },
+    discardUnrecoverableUnderpassStart(playerId: string, permitId: string) {
+      assert.equal(playerId, 'player-1');
+      discarded.push(permitId);
+      if (permitId === 'permit-expired') recoverable = false;
+    },
+    async getUnderpass() { return undefined; },
+    async completeUnderpass() { assert.fail('an invalid permit cannot request rewards'); },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'underpass';
+  controller.underpassEvent = { phase: 'sealed', cycleId: 'new-cycle' };
+
+  await controller.resumeUnderpass();
+
+  assert.deepEqual(discarded, ['permit-expired']);
+  assert.equal(recoverable, false, 'a definitive rejection removes the stale player-scoped key');
+  assert.equal(controller.route, 'underpass');
+  assert.equal(controller.battlePermit, undefined);
   assert.equal(store.localRewards, 0);
 });
