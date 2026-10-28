@@ -156,7 +156,7 @@ try {
     const response = await fetch('http://127.0.0.1:9222/json/list', { signal: AbortSignal.timeout(800) });
     if (!response.ok) return null;
     return (await response.json()).find(item => item.type === 'page' && item.webSocketDebuggerUrl);
-  });
+  }, 60_000);
 
   cdp = cdpClient(target.webSocketDebuggerUrl);
   await cdp.send('Page.enable');
