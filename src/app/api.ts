@@ -140,6 +140,14 @@ const parseBattleStartRequestKey = (raw: string | null): BattleStartRequestKey |
   return undefined;
 };
 
+const readBattleStartRequestKey = (playerId: string): BattleStartRequestKey | undefined => {
+  try {
+    return parseBattleStartRequestKey(globalThis.localStorage.getItem(battleStartRequestStorageKey(playerId)));
+  } catch {
+    return undefined;
+  }
+};
+
 const saveBattleStartRequestKey = (playerId: string, value: BattleStartRequestKey): void => {
   try {
     globalThis.localStorage.setItem(battleStartRequestStorageKey(playerId), JSON.stringify(value));
@@ -260,11 +268,28 @@ export class GameApi {
     return this.request<WorldEventSnapshot>(`/api/world/underpass?playerId=${encodeURIComponent(playerId)}`);
   }
 
-  async startUnderpass(playerId: string, cycleId: string): Promise<BattlePermit | undefined> {
+  async startUnderpass(playerId: string, cycleId: string, requestIdOverride?: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
     // Keep one player-scoped correlation record through pending and active
     // states. It stores only the request ID and original cycle, never combat data.
-    const startKey = getBattleStartRequestKey(playerId, cycleId);
+    // Resume passes the already-issued permit ID so it can recover even if
+    // browser storage was unavailable after the original start response.
+    let startKey: BattleStartRequestKey;
+    if (requestIdOverride !== undefined) {
+      if (!isBattleStartRequestId(requestIdOverride)) throw new Error('Invalid battle permit ID for resume.');
+      const saved = readBattleStartRequestKey(playerId);
+      if (saved && saved.requestId !== requestIdOverride) {
+        throw new Error('A different battle start is already recorded for this player.');
+      }
+      startKey = {
+        cycleId: saved?.requestId === requestIdOverride ? saved.cycleId : cycleId,
+        requestId: requestIdOverride,
+        state: 'active',
+      };
+      saveBattleStartRequestKey(playerId, startKey);
+    } else {
+      startKey = getBattleStartRequestKey(playerId, cycleId);
+    }
     const requestCycleId = startKey.cycleId;
     const requestId = startKey.requestId;
     const startRequest: RequestInit = {
@@ -310,6 +335,14 @@ export class GameApi {
     // Keep the one correlation record through the encounter; the controller
     // marks it active and clears it only after authoritative reward completion.
     return permit;
+  }
+
+  hasRecoverableUnderpassStart(playerId: string): boolean {
+    return readBattleStartRequestKey(playerId) !== undefined;
+  }
+
+  recoverableUnderpassCycleId(playerId: string): string | undefined {
+    return readBattleStartRequestKey(playerId)?.cycleId;
   }
 
   acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void {

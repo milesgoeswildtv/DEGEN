@@ -20,6 +20,8 @@ export class AppController {
   private battlePermit?: BattlePermit;
   private battlePermitOwnerId?: string;
   private battleActionPending = false;
+  private battleResumePending = false;
+  private battleResumeAttempt = 0;
   private rewardResolution: Promise<void> = Promise.resolve();
 
   constructor(
@@ -39,6 +41,10 @@ export class AppController {
   }
 
   private navigate(route: RouteKey): void {
+    if (this.route === 'underpass' && route !== 'underpass') {
+      this.battleResumeAttempt += 1;
+      this.battleResumePending = false;
+    }
     if (route !== 'battle') this.destroyBattle();
     this.route = route;
     this.render();
@@ -51,9 +57,14 @@ export class AppController {
       case 'home':
         this.root.innerHTML = homeView(player, this.selectedFurniture);
         break;
-      case 'underpass':
-        this.root.innerHTML = underpassView(player, this.underpassEvent);
+      case 'underpass': {
+        const hasRecoverableEncounter = this.api.enabled && (
+          (this.battlePermit !== undefined && this.battlePermitOwnerId === player.id)
+          || (this.api.hasRecoverableUnderpassStart?.(player.id) ?? false)
+        );
+        this.root.innerHTML = underpassView(player, this.underpassEvent, hasRecoverableEncounter);
         break;
+      }
       case 'battle':
         this.root.innerHTML = battleView(player, TEST_DEGEN);
         break;
@@ -108,6 +119,9 @@ export class AppController {
     this.root.querySelector<HTMLButtonElement>('[data-start-battle]')?.addEventListener('click', () => {
       void this.enterUnderpass();
     });
+    this.root.querySelector<HTMLButtonElement>('[data-resume-battle]')?.addEventListener('click', () => {
+      void this.resumeUnderpass();
+    });
   }
 
   private async enterUnderpass(): Promise<void> {
@@ -133,6 +147,68 @@ export class AppController {
       console.warn('Underpass entry rejected.', error);
       await this.refreshWorld();
       this.render();
+    }
+  }
+
+  private async resumeUnderpass(): Promise<void> {
+    if (!this.api.enabled || this.battleResumePending) return;
+    const playerId = this.store.snapshot.id;
+    const existingPermit = this.battlePermit;
+    if (existingPermit && this.battlePermitOwnerId !== playerId) {
+      this.setUnderpassActionStatus('This encounter belongs to a different player session.');
+      return;
+    }
+
+    const cycleId = existingPermit?.cycleId ?? this.api.recoverableUnderpassCycleId?.(playerId);
+    if (!cycleId || !this.api.startUnderpass) {
+      this.setUnderpassActionStatus('No recoverable encounter is recorded for this player.');
+      return;
+    }
+
+    const attempt = ++this.battleResumeAttempt;
+    this.battleResumePending = true;
+    this.setUnderpassResumeDisabled(true);
+    this.setUnderpassActionStatus('Recovering the existing encounter from the server…');
+    try {
+      const permit = await this.api.startUnderpass(playerId, cycleId, existingPermit?.permitId);
+      if (!permit || (existingPermit && permit.permitId !== existingPermit.permitId)) {
+        throw new Error('Missing or mismatched resumed battle permit.');
+      }
+      if (this.battleResumeAttempt !== attempt
+        || this.store.snapshot.id !== playerId
+        || this.route !== 'underpass'
+        || this.battlePermit !== existingPermit) return;
+
+      this.battlePermit = permit;
+      this.battlePermitOwnerId = playerId;
+      this.api.acknowledgeUnderpassStart?.(playerId, permit.cycleId, permit.permitId);
+      this.navigate('battle');
+    } catch (error) {
+      if (this.battleResumeAttempt !== attempt
+        || this.store.snapshot.id !== playerId
+        || this.route !== 'underpass'
+        || this.battlePermit !== existingPermit) return;
+
+      if (error instanceof GameApiError && error.status < 500) {
+        if (existingPermit && this.battlePermit === existingPermit && this.battlePermitOwnerId === playerId) {
+          this.battlePermit = undefined;
+          this.battlePermitOwnerId = undefined;
+        }
+        await this.refreshWorld();
+        if (this.battleResumeAttempt !== attempt
+          || this.store.snapshot.id !== playerId
+          || this.route !== 'underpass'
+          || this.battlePermit !== existingPermit) return;
+        this.render();
+        this.setUnderpassActionStatus('That encounter is no longer recoverable. Underpass state has been refreshed.');
+      } else {
+        this.setUnderpassActionStatus('Could not reconnect. The existing permit is retained; try again.');
+      }
+    } finally {
+      if (this.battleResumeAttempt === attempt) {
+        this.battleResumePending = false;
+        if (this.route === 'underpass') this.setUnderpassResumeDisabled(false);
+      }
     }
   }
 
@@ -323,6 +399,18 @@ export class AppController {
     if (!status) return;
     status.textContent = message ?? '';
     status.hidden = !message;
+  }
+
+  private setUnderpassActionStatus(message?: string): void {
+    const status = this.root.querySelector<HTMLElement>('#underpass-action-status');
+    if (!status) return;
+    status.textContent = message ?? '';
+    status.hidden = !message;
+  }
+
+  private setUnderpassResumeDisabled(disabled: boolean): void {
+    const button = this.root.querySelector<HTMLButtonElement>('[data-resume-battle]');
+    if (button) button.disabled = disabled;
   }
 
   private pendingRewardKey(playerId: string): string {

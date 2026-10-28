@@ -119,15 +119,23 @@ const AppController = runInNewContext(
   },
   api: {
     enabled: boolean;
+    hasRecoverableUnderpassStart?(playerId: string): boolean;
+    recoverableUnderpassCycleId?(playerId: string): string | undefined;
+    startUnderpass?(playerId: string, cycleId: string, requestIdOverride?: string): Promise<{
+      permitId: string; cycleId: string; initialState: unknown;
+    } | undefined>;
+    acknowledgeUnderpassStart?(playerId: string, cycleId: string, permitId: string): void;
     actUnderpass(...args: unknown[]): Promise<unknown>;
     completeUnderpass(playerId: string, permitId: string): Promise<{ player: unknown; worldEvent: unknown }>;
   },
 ) => {
   route: string;
-  battlePermit?: { permitId: string };
+  battlePermit?: { permitId: string; cycleId?: string; initialState?: unknown };
   battlePermitOwnerId?: string;
   battleEngine?: BattleEngineInstance;
+  underpassEvent?: { phase: string; cycleId: string };
   useBattleAbility(abilityId: string): Promise<void>;
+  resumeUnderpass(): Promise<void>;
   finishBattle(status: 'victory' | 'defeat'): Promise<void>;
   destroyBattle(): void;
 };
@@ -891,5 +899,128 @@ test('a delayed expired-permit refresh cannot navigate away from a newer encount
   assert.equal(newEngine.snapshot.turnCount, 0);
   assert.equal(newEngine.snapshot.playerMana, 8);
   assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+});
+
+
+test('an active encounter can be resumed from a sealed Underpass with fresh Worker state', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const existingPermit = {
+    permitId: 'permit-resume-closed',
+    cycleId: 'cycle-that-closed',
+    eventKey: 'underpass',
+    encounterKey: 'tunnel-maw',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    initialState: {
+      permitId: 'permit-resume-closed', status: 'active' as const,
+      playerHp: 120, playerMana: 12, enemyHp: 92, turnCount: 0,
+    },
+  };
+  const resumedPermit = {
+    ...existingPermit,
+    initialState: {
+      permitId: 'permit-resume-closed', status: 'active' as const,
+      playerHp: 110, playerMana: 8, enemyHp: 57, turnCount: 1,
+    },
+  };
+  const startCalls: unknown[][] = [];
+  const acknowledgements: unknown[][] = [];
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    hasRecoverableUnderpassStart: () => true,
+    recoverableUnderpassCycleId: () => 'cycle-that-closed',
+    async startUnderpass(...args: [string, string, string?]) {
+      startCalls.push(args);
+      return resumedPermit;
+    },
+    acknowledgeUnderpassStart(...args: [string, string, string]) { acknowledgements.push(args); },
+    async actUnderpass() { assert.fail('resume must not apply a combat action'); },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('resume must not request rewards');
+    },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'underpass';
+  controller.underpassEvent = { phase: 'sealed', cycleId: 'new-cycle' };
+  controller.battlePermit = existingPermit;
+  controller.battlePermitOwnerId = 'player-1';
+
+  await controller.resumeUnderpass();
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(controller.battlePermit?.permitId, 'permit-resume-closed');
+  assert.deepEqual(controller.battlePermit?.initialState, {
+    permitId: 'permit-resume-closed', status: 'active',
+    playerHp: 110, playerMana: 8, enemyHp: 57, turnCount: 1,
+  });
+  assert.deepEqual(startCalls, [['player-1', 'cycle-that-closed', 'permit-resume-closed']],
+    'resume must reuse the issued permit ID and original cycle rather than minting a new encounter');
+  assert.deepEqual(acknowledgements, [['player-1', 'cycle-that-closed', 'permit-resume-closed']]);
+  assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+});
+
+test('a reload can recover an active encounter from the player-scoped saved start key', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const resumedPermit = {
+    permitId: 'permit-reload-resume',
+    cycleId: 'cycle-persisted',
+    eventKey: 'underpass',
+    encounterKey: 'tunnel-maw',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    initialState: {
+      permitId: 'permit-reload-resume', status: 'active' as const,
+      playerHp: 95, playerMana: 4, enemyHp: 22, turnCount: 2,
+    },
+  };
+  const startCalls: unknown[][] = [];
+  const api = {
+    enabled: true,
+    hasRecoverableUnderpassStart: () => true,
+    recoverableUnderpassCycleId: () => 'cycle-persisted',
+    async startUnderpass(...args: [string, string, string?]) {
+      startCalls.push(args);
+      return resumedPermit;
+    },
+    acknowledgeUnderpassStart() {},
+    async actUnderpass() { assert.fail('reload recovery must not apply an action'); },
+    async completeUnderpass() { assert.fail('reload recovery must not claim a reward'); },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'underpass';
+
+  await controller.resumeUnderpass();
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(controller.battlePermit?.permitId, 'permit-reload-resume');
+  assert.deepEqual(controller.battlePermit?.initialState, resumedPermit.initialState);
+  assert.deepEqual(startCalls, [['player-1', 'cycle-persisted', undefined]],
+    'a fresh controller must retry the saved request key and recover the persisted permit');
   assert.equal(store.localRewards, 0);
 });

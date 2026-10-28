@@ -363,6 +363,34 @@ try {
     assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
     assert.ok(hudOrder.manifested > hudOrder.mana,
       'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
+
+    if (turn === 1) {
+      const activeCycleId = sql("SELECT cycle_id FROM battle_permits WHERE id='" + permitId + "'")[0]?.cycle_id;
+      assert.ok(activeCycleId, 'the active permit must retain its issuing cycle');
+      // Preserve started_at < closes_at, then let that issuing cycle close naturally.
+      sql("UPDATE world_event_cycles SET closes_at = datetime('now', '+1 second') WHERE id='" + activeCycleId + "'");
+      await sleep(1500);
+      const closedWorld = await (await fetch(
+        'http://127.0.0.1:8789/api/world/underpass?playerId=' + encodeURIComponent(playerId),
+      )).json();
+      assert.equal(closedWorld.phase, 'sealed', 'the current Underpass must be closed before resume');
+      assert.notEqual(closedWorld.cycleId, activeCycleId, 'the current world cycle must advance after closure');
+
+      await tap("[data-route=underpass]");
+      await until('resume action after the issuing cycle closes', () => cdp.evaluate(
+        '!!document.querySelector("[data-resume-battle]") && !document.querySelector("[data-start-battle]")',
+      ));
+      await tap("[data-resume-battle]");
+      await until('persisted active encounter resumed after cycle closure', () => cdp.evaluate(
+        '(() => { const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? ""; return !!document.querySelector("[data-ability=crack]") && hud.includes("HP 110 of 120, Mana 8 of 12") && hud.includes("Tunnel Maw: HP 57 of 92. Turn 1."); })()',
+      ));
+      const resumedState = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
+      assert.deepEqual(resumedState, {
+        player_hp: 110, player_mana: 8, enemy_hp: 57, battle_status: 'active', turn_count: 1,
+      }, 'resume must remount from the persisted Worker snapshot without applying another turn');
+      await assertFitsMobile('Resumed battle after Underpass closure');
+      await assertFitsCompact('Resumed battle after Underpass closure');
+    }
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");

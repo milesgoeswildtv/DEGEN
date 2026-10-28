@@ -111,10 +111,13 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
   `);
 };
 
-export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): string => {
+export const underpassView = (player: PlayerState, event?: WorldEventSnapshot, hasRecoverableEncounter = false): string => {
   const status = underpassStatus(event);
   const isOpen = event?.phase === 'open';
   const clears = event ? `${Math.min(event.fullRewardClears, event.fullRewardLimit)}/${event.fullRewardLimit}` : '—';
+  const actionButton = hasRecoverableEncounter
+    ? '<button class="primary-action" type="button" data-resume-battle>RESUME ACTIVE ENCOUNTER</button>'
+    : `<button class="primary-action" type="button" data-start-battle ${isOpen ? '' : 'disabled'}>${isOpen ? 'ENTER UNDERPASS' : 'UNDERPASS SEALED'}</button>`;
   return appShell(player, `
     <section class="hero-block danger underpass-hero ${status.className}">
       <span class="eyebrow">CENTRAL // WORLD EVENT</span>
@@ -126,7 +129,8 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot): 
         <span>Closed 2–4h // Open 60–90m</span>
       </div>
       <p>When combat begins, you manifest as your Degen immediately. The entrance cannot be farmed while sealed.</p>
-      <button class="primary-action" type="button" data-start-battle ${isOpen ? '' : 'disabled'}>${isOpen ? 'ENTER UNDERPASS' : 'UNDERPASS SEALED'}</button>
+      <p id="underpass-action-status" class="battle-action-status" role="status" aria-live="polite" hidden></p>
+      ${actionButton}
       ${event?.source === 'preview' ? '<small class="preview-note">Local preview cycle — production timing will be server-authoritative.</small>' : ''}
     </section>
   `);
