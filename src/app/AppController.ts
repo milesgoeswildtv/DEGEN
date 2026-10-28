@@ -193,15 +193,17 @@ export class AppController {
       if (error instanceof GameApiError && error.status < 500) {
         // Remove only this exact rejected key; a newer encounter must survive a late response.
         this.api.discardUnrecoverableUnderpassStart?.(playerId, permitId);
+        let expectedPermitAfterRefresh = existingPermit;
         if (existingPermit && this.battlePermit === existingPermit && this.battlePermitOwnerId === playerId) {
           this.battlePermit = undefined;
           this.battlePermitOwnerId = undefined;
+          expectedPermitAfterRefresh = undefined;
         }
         await this.refreshWorld();
         if (this.battleResumeAttempt !== attempt
           || this.store.snapshot.id !== playerId
           || this.route !== 'underpass'
-          || this.battlePermit !== existingPermit) return;
+          || this.battlePermit !== expectedPermitAfterRefresh) return;
         this.render();
         this.setUnderpassActionStatus('That encounter is no longer recoverable. Underpass state has been refreshed.');
       } else {
