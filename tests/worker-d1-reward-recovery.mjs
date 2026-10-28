@@ -105,7 +105,9 @@ try {
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, `
     PRAGMA foreign_keys = ON;
-    INSERT INTO players(id, display_name) VALUES ('qa-player', 'Reward Recovery QA');
+    INSERT INTO players(id, display_name) VALUES
+      ('qa-player', 'Reward Recovery QA'),
+      ('qa-marker-owner', 'Conflicting History Marker Owner');
     INSERT INTO characters(player_id, level, xp, currency, degen_key)
       VALUES ('qa-player', 1, 0, 0, 'test-degen');
     INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at)
@@ -228,7 +230,7 @@ try {
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
     INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
-      VALUES ('permit-history-conflict:victory', 'qa-player', 'tunnel-maw', 'defeat', 1, 0, 0);
+      VALUES ('permit-history-conflict:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
     UPDATE battle_permits SET completed_at = datetime('now', '-2 minutes')
       WHERE id = 'permit-completed-claim';
     UPDATE battle_permits SET reward_clear_number = 999999
@@ -272,6 +274,7 @@ try {
       reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
       reward_remaining_xp, completed_at
     FROM battle_permits WHERE id = 'permit-history-conflict'`), conflictPermitBefore);
+  assert.equal(conflictHistoryBefore[0]?.player_id, 'qa-marker-owner', 'regression must cover a key owned by another player');
   assert.deepEqual(sql(`SELECT id, player_id, encounter_key, result, player_level,
       xp_awarded, currency_awarded FROM battle_history
     WHERE id = 'permit-history-conflict:victory'`), conflictHistoryBefore);
