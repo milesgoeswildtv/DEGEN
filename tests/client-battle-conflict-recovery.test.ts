@@ -611,9 +611,16 @@ test('a stale active snapshot cannot synchronize a newer permit after battle tea
 
 
 test('an unrecoverable 409 without an authoritative snapshot exits stale battle without rewards', async () => {
-  for (const errorMessage of [
-    'Battle permit is invalid, expired, or already completed.',
-    'Battle state is unavailable.',
+  for (const { errorMessage, payload } of [
+    {
+      errorMessage: 'Battle permit is invalid, expired, or already completed.',
+      payload: { error: 'Battle permit is invalid, expired, or already completed.' },
+    },
+    {
+      errorMessage: 'Battle state is unavailable.',
+      payload: { error: 'Battle state is unavailable.' },
+    },
+    { errorMessage: 'Malformed 409 response.', payload: undefined },
   ]) {
     timers.length = 0;
     storage.clear();
@@ -634,7 +641,7 @@ test('an unrecoverable 409 without an authoritative snapshot exits stale battle 
     const api = {
       enabled: true,
       async actUnderpass() {
-        throw new TestGameApiError(409, { error: errorMessage }, 'DEGEN API 409');
+        throw new TestGameApiError(409, payload, 'DEGEN API 409');
       },
       async getUnderpass() { return undefined; },
       async completeUnderpass() {
