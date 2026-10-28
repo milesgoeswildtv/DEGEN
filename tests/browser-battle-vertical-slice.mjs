@@ -425,7 +425,60 @@ try {
   const victoryHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='" + playerId + "' AND encounter_key='tunnel-maw' AND result='victory'")[0];
   assert.equal(victoryHistory?.count, 1,
     'recovering the lost killing-blow and reward responses must settle exactly one victory-history row');
-  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy');
+
+  // Exercise the actual running UI with an authoritative active snapshot at zero
+  // Mana. The local D1 fixture models Mana depletion from an approved future
+  // interaction without inventing a monster resource or combat rule.
+  sql("UPDATE world_event_cycles SET opens_at = datetime('now','-10 minutes'), closes_at = datetime('now','+90 minutes') WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)");
+  await tap("[data-route=map]");
+  await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
+  await tap("[data-route=underpass]");
+  await until('Open Underpass for Mana affordability check', () => cdp.evaluate('(() => { const button = document.querySelector("[data-start-battle]"); return !!button && !button.disabled; })()'));
+  await tap("[data-start-battle]");
+  await until('second manifested battle for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]") && document.querySelector("#battle-accessible-hud")?.textContent.includes("Mana 12 of 12")'));
+
+  const affordabilityPermit = sql("SELECT id FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL AND battle_status='active' ORDER BY started_at DESC LIMIT 1")[0];
+  assert.ok(affordabilityPermit?.id, 'the affordability scenario must use a real Worker-issued local permit');
+  assert.notEqual(affordabilityPermit.id, permitId, 'the affordability scenario must not reuse the awarded permit');
+  // Seed a valid later authoritative snapshot to model another tab having spent
+  // the remaining resource before this tab refreshes its state.
+  sql("UPDATE battle_permits SET player_hp=110, player_mana=0, enemy_hp=57, battle_status='active', turn_count=1 WHERE id='" + affordabilityPermit.id + "' AND player_id='" + playerId + "' AND completed_at IS NULL");
+  await tap("[data-ability=crack]");
+  await until('disabled paid move explains its Mana shortfall', () => cdp.evaluate(`(() => {
+    const paid = document.querySelector("[data-ability=crack]");
+    const free = document.querySelector("[data-ability=slash]");
+    const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
+    const status = document.querySelector("#battle-action-status")?.textContent ?? "";
+    return paid?.disabled === true
+      && paid.querySelector("small")?.textContent === "NEED 4 MANA"
+      && free?.disabled === false
+      && free.querySelector("small")?.textContent === "NO MANA"
+      && hud.includes("Mana 0 of 12") && hud.includes("Turn 1.")
+      && status === "Battle state refreshed from the server. Choose your next move.";
+  })()`));
+  await assertFitsMobile('Mana-starved battle');
+  await assertFitsCompact('Mana-starved battle');
+
+  await tap("[data-ability=slash]");
+  await until('zero-Mana free action remains usable in the running app', () => cdp.evaluate(`(() => {
+    const paid = document.querySelector("[data-ability=crack]");
+    const free = document.querySelector("[data-ability=slash]");
+    const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
+    return paid?.disabled === true && paid.querySelector("small")?.textContent === "NEED 4 MANA"
+      && free?.disabled === false && free.querySelector("small")?.textContent === "NO MANA"
+      && hud.includes("Mana 0 of 12") && hud.includes("Turn 2.");
+  })()`));
+  const zeroManaActive = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + affordabilityPermit.id + "'")[0];
+  assert.deepEqual(zeroManaActive, {
+    player_hp: 100, player_mana: 0, enemy_hp: 28, battle_status: 'active', turn_count: 2,
+  }, 'the free action advances the real Worker-backed battle while Mana remains zero');
+  await until('Phaser keeps the Degen manifested at zero Mana in the running app', () => cdp.evaluate(`(() => {
+    const rendered = window.__degenRenderedBattleText || [];
+    const mana = rendered.lastIndexOf("MANA 0/12");
+    return mana >= 0 && rendered.lastIndexOf("MANIFESTED") > mana;
+  })()`));
+
+  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy, plus zero-Mana affordability feedback and free-action continuation');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
   for (const [name, output] of logs) console.error(name + ' logs:\n' + output);
