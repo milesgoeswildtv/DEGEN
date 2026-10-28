@@ -5,10 +5,10 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
-  .replace(/\\bexport const /g, 'const ');
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/\bexport const /g, 'const ');
 const ui = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ underpassView });',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ underpassView });',
   {},
 ) as {
   underpassView: (
