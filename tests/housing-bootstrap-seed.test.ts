@@ -108,6 +108,7 @@ test('Worker PUT clearing the room survives subsequent bootstrap', async () => {
   await ensurePlayer(adapter, 'player-housing', 'Housing');
   const request = new Request('https://degen-api.example/api/player/housing', {
     method: 'PUT',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ playerId: 'player-housing', housing: { inventory: [], placements: [] } }),
   });
   const response = await handleHousing(request, { DB: adapter });
@@ -121,6 +122,7 @@ test('Worker PUT clearing the room survives subsequent bootstrap', async () => {
 function housingRequest(playerId: string, placements: Array<{ instanceId: string; furnitureId: string; x: number; y: number }>) {
   return new Request('https://degen-api.example/api/player/housing', {
     method: 'PUT',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ playerId, housing: { inventory: [], placements } }),
   });
 }
