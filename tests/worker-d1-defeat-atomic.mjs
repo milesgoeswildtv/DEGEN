@@ -127,7 +127,23 @@ try {
     [{player_hp:0,player_mana:8,turn_count:1,battle_status:'defeat'}]);
   assert.equal(sql("SELECT id FROM battle_history WHERE id='paid-rollback:defeat'").length,1);
   assert.deepEqual(sql("SELECT xp,currency FROM characters WHERE player_id='qa-player'"),[{xp:0,currency:0}]);
-  console.log('PASS local Worker/D1 defeat expiry, free and paid rollback, retry and no rewards');
+
+  // A pre-existing mismatched audit row must not be treated as proof that this
+  // permit's defeat history was committed. The combat state must remain untouched.
+  seed('poisoned-marker');
+  sql(`INSERT INTO battle_history (
+    id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
+  ) VALUES ('poisoned-marker:defeat','qa-player','different-encounter','victory',99,999,999)`);
+  await start();
+  const poisoned = await act('poisoned-marker');
+  assert.equal(poisoned.status,409,JSON.stringify(poisoned.body));
+  await stop();
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='poisoned-marker'"),
+    [{player_hp:1,player_mana:12,enemy_hp:92,turn_count:0,battle_status:'active'}]);
+  assert.deepEqual(sql("SELECT id,player_id,encounter_key,result,player_level,xp_awarded,currency_awarded FROM battle_history WHERE id='poisoned-marker:defeat'"),
+    [{id:'poisoned-marker:defeat',player_id:'qa-player',encounter_key:'different-encounter',result:'victory',player_level:99,xp_awarded:999,currency_awarded:999}]);
+  assert.deepEqual(sql("SELECT xp,currency FROM characters WHERE player_id='qa-player'"),[{xp:0,currency:0}]);
+  console.log('PASS local Worker/D1 defeat expiry, free and paid rollback, retry, conflicting history marker, and no rewards');
 } finally {
   await stop();
   rmSync(scratch,{recursive:true,force:true});
