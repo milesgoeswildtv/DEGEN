@@ -9,12 +9,13 @@ import { validateHousingPlacements } from '../worker/housingQuantityGuard.ts';
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
-const { ensurePlayer, handleHousing } = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ ensurePlayer, handleHousing });',
+const { ensurePlayer, handleHousing, worker } = runInNewContext(
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ ensurePlayer, handleHousing, worker });',
   { crypto, console, Request, Response, URL, Uint32Array, validateHousingPlacements },
 ) as {
   ensurePlayer: (db: unknown, playerId: string, displayName: string) => Promise<void>;
   handleHousing: (request: Request, env: unknown) => Promise<Response>;
+  worker: { fetch(request: Request, env: { DB: unknown; ALLOWED_ORIGINS?: string }): Promise<Response> };
 };
 
 function makeDb() {
@@ -165,5 +166,35 @@ test('server rejects duplicate cell and placement identifiers without replacing 
   assert.equal(response.status, 400);
   const saved = db.prepare("SELECT id FROM housing_placements WHERE player_id='duplicates' ORDER BY id").all();
   assert.deepEqual(saved.map(row => row.id), ['duplicates:starter-bed-placed']);
+  db.close();
+});
+
+
+test('cross-player placement ID collision rolls back replacement and preserves both rooms', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'owner-a', 'Owner A');
+  await ensurePlayer(adapter, 'owner-b', 'Owner B');
+
+  const save = (playerId: string, placement: { instanceId: string; furnitureId: string; x: number; y: number }) =>
+    worker.fetch(new Request('https://degen-api.example/api/player/housing', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId, housing: { inventory: [], placements: [placement] } }),
+    }), { DB: adapter });
+
+  const shared = { instanceId: 'globally-shared-placement', furnitureId: 'starter-bed', x: 2, y: 2 };
+  assert.equal((await save('owner-b', shared)).status, 204);
+
+  const collision = await save('owner-a', { ...shared, x: 4, y: 3 });
+  assert.equal(collision.status, 500, 'global primary-key collision must fail the atomic replacement');
+
+  const ownerA = db.prepare("SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='owner-a'").all();
+  const ownerB = db.prepare("SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='owner-b'").all();
+  assert.deepEqual(ownerA.map(row => [row.id, row.grid_x, row.grid_y]), [
+    ['owner-a:starter-bed-placed', 1, 1],
+  ], 'failed replacement must roll back its delete and retain the original room');
+  assert.deepEqual(ownerB.map(row => [row.id, row.grid_x, row.grid_y]), [
+    ['globally-shared-placement', 2, 2],
+  ], 'the other owner’s placement must remain unchanged');
   db.close();
 });
