@@ -345,6 +345,14 @@ export class GameApi {
     return readBattleStartRequestKey(playerId)?.cycleId;
   }
 
+  recoverableUnderpassPermitId(playerId: string): string | undefined {
+    return readBattleStartRequestKey(playerId)?.requestId;
+  }
+
+  discardUnrecoverableUnderpassStart(playerId: string, permitId: string): void {
+    clearBattleStartRequestKey(playerId, permitId);
+  }
+
   acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void {
     markBattleStartActive(playerId, cycleId, permitId);
   }
