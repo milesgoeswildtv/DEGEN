@@ -62,9 +62,18 @@ test('ability controls visibly disclose zero and paid Mana costs', () => {
 
 test('ability controls disable only unaffordable abilities and preserve free actions at zero Mana', () => {
   const log = { innerHTML: '', append: () => undefined };
+  const buttonWithCostLabel = (manaCost: string, label: string) => {
+    const costLabel = { textContent: label };
+    return {
+      dataset: { manaCost },
+      disabled: false,
+      costLabel,
+      querySelector: (selector: string) => selector === 'small' ? costLabel : null,
+    };
+  };
   const buttons = [
-    { dataset: { manaCost: '0' }, disabled: false },
-    { dataset: { manaCost: '4' }, disabled: false },
+    buttonWithCostLabel('0', 'NO MANA'),
+    buttonWithCostLabel('4', '4 MANA'),
   ];
   viewContext.document = {
     querySelector: () => log,
@@ -75,10 +84,13 @@ test('ability controls disable only unaffordable abilities and preserve free act
     updateBattleDom(snapshot(0));
     assert.equal(buttons[0].disabled, false, 'zero-cost action remains usable at zero Mana');
     assert.equal(buttons[1].disabled, true, 'paid action is unavailable when unaffordable');
+    assert.equal(buttons[0].costLabel.textContent, 'NO MANA');
+    assert.equal(buttons[1].costLabel.textContent, 'NEED 4 MANA');
 
     updateBattleDom(snapshot(4));
     assert.equal(buttons[0].disabled, false);
     assert.equal(buttons[1].disabled, false, 'paid action becomes available once affordable');
+    assert.equal(buttons[1].costLabel.textContent, '4 MANA');
   } finally {
     Reflect.deleteProperty(viewContext, 'document');
   }
