@@ -194,5 +194,5 @@ test('replaying the same authoritative action result does not deduct Mana or app
   assert.equal(engine.snapshot.enemyHp, 60);
   assert.equal(engine.snapshot.log.filter((entry) => entry.includes('uses')).length, 1);
   assert.equal(engine.snapshot.log.filter((entry) => entry.startsWith('Mana -')).length, 1);
-  assert.deepEqual(engine.snapshot.log, firstLog);
+  assert.deepEqual(Array.from(engine.snapshot.log), firstLog);
 });
