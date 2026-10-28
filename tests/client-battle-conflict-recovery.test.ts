@@ -1077,3 +1077,73 @@ test('an unrecoverable resumed permit clears only its matching persisted start k
   assert.equal(controller.battlePermit, undefined);
   assert.equal(store.localRewards, 0);
 });
+
+
+test('an expired in-memory permit rerenders the sealed Underpass after cleanup', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  let recoverable = true;
+  const discarded: string[] = [];
+  const rendered: unknown[][] = [];
+  const originalUnderpassView = scope.underpassView;
+  scope.underpassView = (...args: any[]) => {
+    rendered.push(args);
+    return '';
+  };
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const expiredPermit = {
+    permitId: 'permit-expired-memory',
+    cycleId: 'cycle-old',
+    eventKey: 'underpass',
+    encounterKey: 'tunnel-maw',
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+  };
+  const api = {
+    enabled: true,
+    hasRecoverableUnderpassStart: () => recoverable,
+    recoverableUnderpassCycleId: () => recoverable ? 'cycle-old' : undefined,
+    recoverableUnderpassPermitId: () => recoverable ? expiredPermit.permitId : undefined,
+    async startUnderpass(_playerId: string, _cycleId: string, requestIdOverride?: string) {
+      assert.equal(requestIdOverride, expiredPermit.permitId);
+      throw new TestGameApiError(409, {
+        error: 'Battle permit is invalid, expired, or already completed.',
+      }, 'DEGEN API 409');
+    },
+    discardUnrecoverableUnderpassStart(_playerId: string, permitId: string) {
+      discarded.push(permitId);
+      if (permitId === expiredPermit.permitId) recoverable = false;
+    },
+    async getUnderpass() { return undefined; },
+    async completeUnderpass() { assert.fail('an expired permit cannot request rewards'); },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'underpass';
+  controller.underpassEvent = { phase: 'sealed', cycleId: 'new-cycle' };
+  controller.battlePermit = expiredPermit;
+  controller.battlePermitOwnerId = 'player-1';
+
+  try {
+    await controller.resumeUnderpass();
+    assert.deepEqual(discarded, [expiredPermit.permitId]);
+    assert.equal(recoverable, false);
+    assert.equal(controller.battlePermit, undefined);
+    assert.equal(controller.battlePermitOwnerId, undefined);
+    assert.equal(controller.route, 'underpass');
+    assert.equal(rendered.length, 1, 'cleanup must render after clearing the old permit');
+    assert.equal(rendered[0]?.[2], false, 'the sealed view must stop advertising a stale resume key');
+    assert.equal(store.localRewards, 0);
+  } finally {
+    scope.underpassView = originalUnderpassView;
+  }
+});
