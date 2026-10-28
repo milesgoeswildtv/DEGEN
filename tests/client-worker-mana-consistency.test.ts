@@ -204,6 +204,45 @@ test('a conflicting snapshot at the same turn count cannot rewrite authoritative
   }, before, 'same-turn snapshots must be identical; conflicting state is ignored');
 });
 
+test('a same-turn status-only conflict cannot forge a terminal outcome', () => {
+  let completions = 0;
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => { completions += 1; }, {
+    permitId: 'permit-same-turn-status-conflict',
+    status: 'active',
+    playerHp: 72,
+    playerMana: 4,
+    enemyHp: 51,
+    turnCount: 2,
+  });
+  const before = {
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+    log: Array.from(engine.snapshot.log),
+  };
+
+  engine.synchronizeAuthoritativeState({
+    permitId: 'permit-same-turn-status-conflict',
+    status: 'victory',
+    playerHp: 72,
+    playerMana: 4,
+    enemyHp: 51,
+    turnCount: 2,
+  });
+
+  assert.deepEqual({
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+    log: Array.from(engine.snapshot.log),
+  }, before, 'status alone cannot change an immutable same-turn snapshot');
+  assert.equal(completions, 0, 'a conflicting same-turn status cannot emit reward completion');
+});
+
 test('replaying the same authoritative action result does not deduct Mana or append action logs twice', () => {
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
     permitId: 'permit-replay',
