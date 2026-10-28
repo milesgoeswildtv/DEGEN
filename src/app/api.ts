@@ -105,17 +105,7 @@ const isAuthoritativeBattleCompletionResult = (
     && isStringArray(reward.items)
     && isStringArray(reward.furniture)
     && (reward.tier === 'full' || reward.tier === 'reduced')
-    && worldEvent.eventKey === 'underpass'
-    && typeof worldEvent.cycleId === 'string'
-    && worldEvent.cycleId.trim().length > 0
-    && (worldEvent.phase === 'sealed' || worldEvent.phase === 'warning' || worldEvent.phase === 'open')
-    && typeof worldEvent.opensAt === 'string'
-    && Number.isFinite(Date.parse(worldEvent.opensAt))
-    && typeof worldEvent.closesAt === 'string'
-    && Number.isFinite(Date.parse(worldEvent.closesAt))
-    && isBoundedSafeInteger(worldEvent.fullRewardClears, 0, Number.MAX_SAFE_INTEGER)
-    && isBoundedSafeInteger(worldEvent.fullRewardLimit, 1, Number.MAX_SAFE_INTEGER)
-    && worldEvent.source === 'server';
+    && isAuthoritativeWorldEventSnapshot(worldEvent);
 };
 
 export class GameApiError extends Error {
