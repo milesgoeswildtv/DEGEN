@@ -905,6 +905,70 @@ test('a delayed expired-permit refresh cannot navigate away from a newer encount
 });
 
 
+test('a delayed expired-permit refresh cannot navigate after the active account changes', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  let resolveWorld!: (value: undefined) => void;
+  const worldRefresh = new Promise<undefined>((resolve) => { resolveWorld = resolve; });
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, {
+        error: 'Battle permit is invalid, expired, or already completed.',
+      }, 'DEGEN API 409');
+    },
+    getUnderpass() { return worldRefresh; },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('expired-permit cleanup must not request rewards');
+    },
+  };
+  const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('an expired action must not resolve locally');
+  }, {
+    permitId: 'permit-account-switch-expired',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 0,
+    enemyHp: 60,
+    turnCount: 2,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-account-switch-expired' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = oldEngine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.battlePermit, undefined, 'the unusable permit is cleared before refresh finishes');
+
+  // Simulate the active account changing while the old encounter's world refresh is pending.
+  store.snapshot.id = 'player-2';
+  resolveWorld(undefined);
+  await pendingAction;
+
+  assert.equal(controller.route, 'battle', 'old cleanup must not navigate the newly active account');
+  assert.equal(controller.battlePermit, undefined);
+  assert.equal(controller.battleEngine, oldEngine, 'the stale request must not mutate another account’s encounter');
+  assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+});
+
+
 test('an active encounter can be resumed from a sealed Underpass with fresh Worker state', async () => {
   timers.length = 0;
   storage.clear();
