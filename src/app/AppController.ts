@@ -241,9 +241,10 @@ export class AppController {
             if (this.route === 'battle') {
               await this.refreshWorld();
               // A delayed world refresh must not navigate away from a newer route or permit.
-              if (this.route === 'battle' && !this.battlePermit) {
+              const routeAfterRefresh = this.route as RouteKey;
+              if (routeAfterRefresh === 'battle' && !this.battlePermit) {
                 this.navigate('underpass');
-              } else if (this.route === 'underpass') {
+              } else if (routeAfterRefresh === 'underpass') {
                 this.render();
               }
             } else if (this.route === 'underpass') {
