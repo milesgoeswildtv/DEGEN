@@ -1,3 +1,17 @@
+## Latest run — 2026-10-28 (deterministic Mana rejection atomicity)
+
+- **Authoritative main SHA:** `5cb1dd95b3aa26c6cde7ab4bf03f37485432756f`.
+- **PUSHED / PR #100 OPEN (draft, not merged):** `automation/degen/engine-insufficient-mana-atomicity-v01`, code/test head `d70c9c3df6fc2af310404db87ae87d93cd6398bd`. No direct-main write.
+- **Task / files changed:** `tests/combat-progression.test.ts` now exercises the deterministic BattleEngine path: a paid ability spends its final Mana exactly once, advances one turn, and keeps the Degen manifested at zero; a subsequent unaffordable retry leaves HP, Mana, enemy HP, turn count, status, and completion callbacks unchanged. Test-only Mana values remain scaffolding, not balance canon.
+- **QA:** no local shell is available here. Exact-head CI is required; do not claim `npm test`, build, Worker/D1 integration, Chromium, or `check:worker` passed until the run for the final head completes. No production D1 operation or deployment.
+- **Mana:** COMPLETE / MERGED on main; this is additional deterministic regression coverage, not a new runtime implementation. Worker/D1 already rejects unaffordable abilities without persisting damage/turn changes; successful Mana deduction and zero-cost use remain server-authoritative.
+- **Battle authority / reward idempotency:** unchanged. Worker/D1 owns permit state, action CAS, terminal outcomes, history, receipts, XP/currency/inventory, and exactly-once reward settlement/recovery.
+- **D1 / migration assumptions:** unchanged; `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`, deployed schema → migrations → Worker. The `0007` inventory-guard / player-session numbering conflict remains unresolved; no migration or deployment configuration changed.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling still gate auth-dependent release work. Shield remains blocked behind migration/auth coordination. The canonical Monster Log v0.11 is not present in the accessible Library search (only older Monster Log revisions were found), so no monster content was invented.
+- **One best next task:** verify PR #100 exact-head CI; then continue the next non-blocked persistence/gameplay reliability slice without bypassing the auth/migration gates.
+
+---
+
 ## Latest run — 2026-10-28 (reject conflicting victory history markers before reward settlement)
 
 - **Authoritative main SHA:** `9e59a6275fdd52d1d2b2ea3b38728a7fdbcf9cc7`. Main CI [40665337908](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40665337908) and Deploy Preview [40665337980](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40665337980) passed on this SHA.
