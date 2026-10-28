@@ -7,7 +7,7 @@
 - **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, terminal outcomes, cost-aware controls, no monster Mana, no Mana-triggered reversion, and tracked `0006_backfill_active_battle_mana.sql`. The stale `sidekick/degen-mana-foundation-v01` remains retired; its `0003_degen_mana.sql` is obsolete.
 - **Battle authority / rewards:** Worker/D1 remains authoritative for permit state, action compare-and-swap, terminal outcomes, audited victory/defeat markers, recoverable reward claims, and exactly-once XP/currency/inventory settlement. This housing change does not alter combat or economy.
 - **D1 / release gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order is schema → tracked migrations → Worker. The unresolved main `0007_player_inventory_quantity_guards.sql` vs draft PR #14 `0007_player_sessions.sql` collision remains untouched. No migration/config change, production D1 operation, or deployment. Production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling remain blockers for auth-dependent release work.
-- **One best next task:** verify exact-head CI for the new localStorage-failure regression; if green, review/merge PR #97 through the normal protected PR path, then reconcile stale duplicate housing PR #49.
+- **One best next task:** finish and inspect the exact-head CI for the localStorage-failure regression. PR #97 must remain unmerged and undeployed until the platform-auth release gate in PR #21 is explicitly cleared; after that gate, reconcile stale duplicate housing PR #49.
 
 ---
 
