@@ -167,6 +167,43 @@ test('an out-of-order stale Worker snapshot cannot roll back newer HP, Mana, ene
   );
 });
 
+test('a conflicting snapshot at the same turn count cannot rewrite authoritative combat state', () => {
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+    permitId: 'permit-same-turn-conflict',
+    status: 'active',
+    playerHp: 72,
+    playerMana: 4,
+    enemyHp: 51,
+    turnCount: 2,
+  });
+  const before = {
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+    log: Array.from(engine.snapshot.log),
+  };
+
+  engine.synchronizeAuthoritativeState({
+    permitId: 'permit-same-turn-conflict',
+    status: 'active',
+    playerHp: 94,
+    playerMana: 8,
+    enemyHp: 28,
+    turnCount: 2,
+  });
+
+  assert.deepEqual({
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+    log: Array.from(engine.snapshot.log),
+  }, before, 'same-turn snapshots must be identical; conflicting state is ignored');
+});
+
 test('replaying the same authoritative action result does not deduct Mana or append action logs twice', () => {
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
     permitId: 'permit-replay',
