@@ -1,3 +1,5 @@
+# DEGEN — AUTONOMOUS PROGRESS
+
 ## Latest run — 2026-10-28 (shared validation for battle-completion world snapshots)
 
 - **Authoritative main SHA:** `f5ba43b21e297208b9105f118157d67058a9e6f6` (PR #92 merged normally). The older progress entry below was written before the merge and is now historical; do not treat its “CI has not run yet” line as current-main status.
