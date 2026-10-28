@@ -88,3 +88,67 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
   assert.equal(buttons[1]?.disabled, false);
   assert.match(accessibleHud.textContent, /Mana 4 of 12/);
 });
+
+test('battle terminal outcomes announce defeat/victory and disable every ability', () => {
+  const appended: Array<{ className: string; textContent: string }> = [];
+  const log = {
+    innerHTML: '',
+    append: (node: { className: string; textContent: string }) => { appended.push(node); },
+  };
+  const accessibleHud = { textContent: '' };
+  const buttons = [
+    { dataset: { manaCost: '0' }, disabled: false },
+    { dataset: { manaCost: '4' }, disabled: false },
+  ];
+  const fakeDocument = {
+    querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
+    querySelectorAll: (_selector: string) => buttons,
+    createElement: (_tag: string) => ({ className: '', textContent: '' }),
+  };
+  const boundUi = runInNewContext(
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
+    { document: fakeDocument },
+  ) as {
+    updateBattleDom: (snapshot: {
+      status: 'active' | 'victory' | 'defeat';
+      playerName: string;
+      playerHp: number;
+      playerMaxHp: number;
+      playerMana: number;
+      playerMaxMana: number;
+      enemyName: string;
+      enemyHp: number;
+      enemyMaxHp: number;
+      turnCount: number;
+      log: string[];
+    }) => void;
+  };
+
+  const base = {
+    playerName: 'TEST_DEGEN',
+    playerHp: 0,
+    playerMaxHp: 120,
+    playerMana: 0,
+    playerMaxMana: 12,
+    enemyName: 'Tunnel Maw',
+    enemyHp: 51,
+    enemyMaxHp: 92,
+    turnCount: 3,
+    log: [],
+  };
+
+  for (const status of ['defeat', 'victory'] as const) {
+    buttons.forEach((button) => { button.disabled = false; });
+    appended.length = 0;
+    boundUi.updateBattleDom({ ...base, status });
+
+    assert.ok(buttons.every((button) => button.disabled), status + ' must disable free and paid abilities');
+    assert.match(accessibleHud.textContent, status === 'defeat'
+      ? /Defeat\. Returning to the Underpass\./
+      : /Victory\. Verifying rewards\./);
+    assert.equal(appended.at(-1)?.className, 'battle-result ' + status);
+    assert.equal(appended.at(-1)?.textContent, status === 'defeat'
+      ? 'DEFEAT — returning to the Underpass.'
+      : 'VICTORY — verifying rewards.');
+  }
+});
