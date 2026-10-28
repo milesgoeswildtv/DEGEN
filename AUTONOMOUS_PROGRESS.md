@@ -1,3 +1,17 @@
+## Latest run — 2026-10-28 (deterministic Mana rejection atomicity)
+
+- **Authoritative main SHA:** `5cb1dd95b3aa26c6cde7ab4bf03f37485432756f`.
+- **PUSHED / PR #100 OPEN (draft, not merged):** `automation/degen/engine-insufficient-mana-atomicity-v01`, code/test head `d70c9c3df6fc2af310404db87ae87d93cd6398bd`. No direct-main write.
+- **Task / files changed:** `tests/combat-progression.test.ts` now exercises the deterministic BattleEngine path: a paid ability spends its final Mana exactly once, advances one turn, and keeps the Degen manifested at zero; a subsequent unaffordable retry leaves HP, Mana, enemy HP, turn count, status, and completion callbacks unchanged. Test-only Mana values remain scaffolding, not balance canon.
+- **QA:** no local shell is available here. Exact-head CI is required; do not claim `npm test`, build, Worker/D1 integration, Chromium, or `check:worker` passed until the run for the final head completes. No production D1 operation or deployment.
+- **Mana:** COMPLETE / MERGED on main; this is additional deterministic regression coverage, not a new runtime implementation. Worker/D1 already rejects unaffordable abilities without persisting damage/turn changes; successful Mana deduction and zero-cost use remain server-authoritative.
+- **Battle authority / reward idempotency:** unchanged. Worker/D1 owns permit state, action CAS, terminal outcomes, history, receipts, XP/currency/inventory, and exactly-once reward settlement/recovery.
+- **D1 / migration assumptions:** unchanged; `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`, deployed schema → migrations → Worker. The `0007` inventory-guard / player-session numbering conflict remains unresolved; no migration or deployment configuration changed.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling still gate auth-dependent release work. Shield remains blocked behind migration/auth coordination. The canonical Monster Log v0.11 is not present in the accessible Library search (only older Monster Log revisions were found), so no monster content was invented.
+- **One best next task:** verify PR #100 exact-head CI; then continue the next non-blocked persistence/gameplay reliability slice without bypassing the auth/migration gates.
+
+---
+
 ## Latest run — 2026-10-28 (reconcile housing branch with authoritative Underpass snapshots)
 
 - **Authoritative main SHA:** `5cb1dd95b3aa26c6cde7ab4bf03f37485432756f`. Main now contains the normal merge of the Underpass snapshot validator; post-merge main CI/deployment for this exact SHA is not independently confirmed here.
@@ -2045,3 +2059,66 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Battle authority / reward idempotency:** Worker/D1 remains authoritative for actions, turn CAS, terminal outcomes, permits, reward receipts, and exactly-once settlement/recovery. This PR validates client presentation of server-owned world snapshots only.
 - **D1 / release gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007` migration-number collision and production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain unresolved. No production D1 operation or deployment was performed.
 - **One best next task:** verify exact-head CI and Cloudflare Pages for the synchronized PR #94 head; make it review-ready only after all required checks pass, and do not bypass the platform-auth release gate.
+
+---
+
+## Latest run — 2026-10-28 (paid Mana killing-blow / reward-completion race)
+
+- **Authoritative main SHA at start:** `eff6abdce2aa330c16fea28cd028e0b893a5fa9d`, normal squash merge of PR #100. PR #100's exact current head `6bd6c464b654f2bcb6fef2a6dcc4ef66f5eec80e` passed all 14 CI steps in [run 40760930349](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40760930349): deterministic tests, Worker/D1 reward concurrency and recovery, Underpass cycle/rollover concurrency, defeat-history atomicity, production build, Chromium mobile battle vertical slice, and Wrangler validation. Post-merge main CI/Worker deployment for `eff6abd` is not yet confirmed; no production D1 operation or deployment was performed by PR #100.
+
+- **PUSHED / PR #101 OPEN (draft):** `automation/degen/paid-mana-killing-blow-race-v01`, created from exact main SHA above. Code/test head before this continuity update: `e591dc22a73a5092c62ab3711aa64bbafbef234a`. Exact-head CI is required for the refreshed branch head; do not treat code inspection as a test pass. No direct-main write.
+
+- **Task / files changed:** `tests/worker-d1-concurrency.mjs` adds an isolated local Worker/D1 race between a paid `crack` killing blow and `/api/battle/complete`. The test asserts that the Worker commits one turn, spends the final Mana exactly once, leaves player HP unchanged on the killing blow, persists enemy HP at zero and player Mana at zero, and returns one canonical reduced-reward receipt across concurrent completion retries. It also asserts one victory history row and one currency application. Existing free-action race coverage remains unchanged. No runtime, reward math, schema/migration, deployment config, or content canon changed.
+
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` and bespoke `manaCost`, authoritative battle-start/action snapshots, persisted `player_mana`, rejection without mutation, exact deduction, zero-cost use at zero, terminal behavior, cost-aware controls, no monster Mana, and no Mana-triggered reversion remain implemented. Migration `0006_backfill_active_battle_mana.sql` is tracked.
+
+- **Battle authority / reward idempotency:** Worker/D1 owns combat state, turn compare-and-swap, terminal outcome, audited receipts, retry recovery, and exactly-once progression/history/inventory/currency. The new scenario is test-only and does not change reward authority or economy.
+
+- **D1 assumptions / unresolved gates:** `wrangler.toml` remains authoritative for binding `DB` → `DEGEN` and `db/migrations`; verified deployment workflow order remains base schema → tracked migrations → Worker on previously verified runs. The `0007_player_inventory_quantity_guards.sql` versus draft PR #14 `0007_player_sessions.sql` numbering conflict remains unresolved. Production Discord/Telegram credentials, controlled identity/session verification, and an approved legacy identity-collision policy remain blockers for platform-auth release work. No migration, production D1 operation, secret/configuration change, or deployment was performed in this run.
+
+- **Miles blocker:** none for this test-only race. Existing platform-auth and migration-sequencing gates remain.
+
+- **One best next task:** verify exact-head CI for PR #101; if all stages pass and mergeability is clean, deliver through the normal PR path, then independently verify post-merge main CI before taking up the gated Shield slice.
+
+---
+
+## Follow-up — 2026-10-28 (isolate paid-Mana race integration fixture after CI regression)
+
+- **Authoritative main SHA:** `eff6abdce2aa330c16fea28cd028e0b893a5fa9d`. PR #100 remains merged; its exact-head CI passed before merge. Post-merge main CI/Worker deployment is still not confirmed here.
+
+- **PUSHED / PR #101 OPEN (draft):** `automation/degen/paid-mana-killing-blow-race-v01`. The first continuity head `8ac4d66118cfe2914485147aedf3be490f969c17` failed exact-head CI [run 40765075442](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40765075442) in the isolated Worker/D1 concurrency script at the later assertion `invalid receipt replay must not reserve another event clear` (expected one existing counter row, observed zero). The new race had reused `integration-player` and `integration-cycle`, altering shared fixture progression before that assertion.
+
+- **Evidence-backed correction:** the paid killing-blow race now uses a dedicated `paid-killing-race-player` and `paid-killing-race-cycle`, with its own character and permit. It no longer changes the existing integration player's clear sequence. The isolated scenario expects its own first full reward. Current code/test commit: `ff35dcf8bcd2ed125344b12afc587d2a9bfa7cab`; this progress update creates a newer head, so exact-head CI must be checked again before review readiness. No Worker runtime or reward logic changed.
+
+- **Scope:** `tests/worker-d1-concurrency.mjs` only. The test still races a paid final-Mana killing blow against completion, verifies persisted Mana 0 / enemy HP 0 / turn 1 / no retaliation, and verifies concurrent completion retries return one receipt and apply currency once.
+
+- **Mana / authority / D1:** Mana remains COMPLETE / MERGED on main with tracked migration `0006_backfill_active_battle_mana.sql`; no monster Mana and no zero-Mana reversion. Worker/D1 remains authoritative for combat, terminal outcomes, and reward settlement. `wrangler.toml` remains the source for `DB` → `DEGEN` and `db/migrations`; the `0007` migration-number conflict and platform-auth credentials/identity-policy gates remain unresolved. No production D1 operation or deployment.
+
+- **One best next task:** verify exact-head CI for refreshed PR #101; if the isolated D1 suite and all remaining stages pass, mark it ready and use the normal PR merge path. Otherwise fix only the newly evidenced failure.
+
+
+---
+
+## Latest run — 2026-10-28 (sync authoritative Underpass snapshot validation to current main)
+
+- **Authoritative main SHA:** `fabe9b91e3a241a124129a61538918ea707246b7`. Main CI [40715549470](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40715549470) and Cloudflare Pages preview [40715549546](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40715549546) passed. The last Worker deployment workflow [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) passed on `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; the newer main commit is client-only.
+- **PUSHED / PR #94 OPEN (draft; not merged):** sync existing branch `automation/degen/validate-underpass-snapshot-v01` with current main ancestry without creating a competing branch. The merge commit preserves current-main runtime files and overlays only this PR's `src/app/api.ts` and `tests/battle-start-client.test.ts` changes; the progress file starts from current main and records this sync. The prior code/test head `fae4691fe620194ff589b2bcd0dacfbb7a4db35c` had a successful Cloudflare Pages preview, but exact-head CI was not verified before this sync. The new synchronized head requires its own exact-head CI before review readiness.
+- **Task / files changed:** `src/app/api.ts` validates Worker-returned Underpass world snapshots before enabling client start behavior and reuses the same validator for completion receipts, including timestamp chronology and server-source checks. `tests/battle-start-client.test.ts` covers valid snapshots, malformed HTTP-200 snapshots, and invalid completion-receipt world events. The existing battle-start resume/recovery methods remain present. No Worker combat/reward code, economy, schema, D1 migration, or deployment configuration changed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost at zero, terminal coverage, cost-aware controls, no monster Mana, no zero-Mana reversion, and tracked `0006_backfill_active_battle_mana.sql`.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for actions, turn CAS, terminal outcomes, permits, reward receipts, and exactly-once settlement/recovery. This PR validates client presentation of server-owned world snapshots only.
+- **D1 / release gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007` migration-number collision and production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain unresolved. No production D1 operation or deployment was performed.
+- **One best next task:** verify exact-head CI and Cloudflare Pages for the synchronized PR #94 head; make it review-ready only after all required checks pass, and do not bypass the platform-auth release gate.
+
+
+---
+
+## Follow-up — 2026-10-28 (sync housing reliability branch to authoritative main)
+
+- **Authoritative main SHA:** `2306eaee803d85c4f8e9568d1c4185a680c73b90`. Main CI [40769013148](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40769013148) and Pages preview [40769013068](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40769013068) passed. Worker deployment remains last verified on `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; main changes since then were client/test-only.
+- **PUSHED / PR #97 OPEN, NOT MERGED:** synced the existing `automation/degen/housing-reliability-current-main-v01` branch with current main using a two-parent merge commit; no force-push and no direct-main write. The initial PR merge attempt correctly failed because GitHub refreshed the mergeability result to `dirty`; this sync resolves the stale-base conflict while preserving the feature branch history.
+- **Task / files in the sync:** retain the existing housing outbox/save-order logic, server-owned furniture quantity validation, empty-room persistence, and mobile Chromium + local Worker/D1 coverage. The sync overlays only the branch-specific housing files and CI step onto current main; `src/app/api.ts` and `tests/battle-start-client.test.ts` already match main byte-for-byte and are not overwritten.
+- **QA:** prior exact PR head `a36e00386b48811dd9bd239e07c16e027dfdc9cf` passed all 14 CI steps in [run 40756694414](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40756694414), including deterministic tests, local Worker/D1 reward recovery/concurrency, Underpass cycle/rollover races, defeat-history atomicity, mobile housing persistence, production build, Chromium battle vertical slice, and Wrangler validation. The synchronized head is new; exact-head CI must pass again before review readiness.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost use at zero, terminal coverage, cost-aware controls, no monster Mana, no zero-Mana reversion, and tracked `0006_backfill_active_battle_mana.sql`.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, action CAS, terminal outcomes, audited reward receipts, transient-failure recovery, and exactly-once progression/history/inventory/currency. This branch adds no reward or combat authority changes.
+- **D1 assumptions / Miles blocker:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. No schema/migration change is included. The `0007` inventory-guard / player-session numbering conflict and production Discord/Telegram identity/session release gates remain unresolved. Keep PR #97 unmerged and do not deploy it until those gates are cleared.
+- **One best next task:** verify exact-head CI on the synchronized PR #97; keep it unmerged while the auth/migration gate remains, then continue the next non-blocked production gameplay slice.

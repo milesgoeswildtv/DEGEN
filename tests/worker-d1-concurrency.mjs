@@ -127,7 +127,8 @@ try {
       ('inventory-cap-player','Inventory Cap'),
       ('inventory-atomic-player','Inventory Atomicity'),
       ('inventory-race-player','Inventory Race'),
-      ('inventory-oversized-player','Oversized Inventory');
+      ('inventory-oversized-player','Oversized Inventory'),
+      ('paid-killing-race-player','Paid Mana Race QA');
     INSERT INTO characters(player_id,level,xp,currency,degen_key)
       VALUES
         ('integration-player',1,0,0,'test-degen'),
@@ -155,7 +156,8 @@ try {
         ('inventory-cap-player',1,0,0,'test-degen'),
         ('inventory-atomic-player',1,0,0,'test-degen'),
         ('inventory-race-player',1,0,0,'test-degen'),
-        ('inventory-oversized-player',1,0,0,'test-degen');
+        ('inventory-oversized-player',1,0,0,'test-degen'),
+        ('paid-killing-race-player',1,0,0,'test-degen');
     INSERT INTO player_inventory(id,player_id,item_key,item_type,quantity)
       VALUES
         ('inventory-cap-player:item:underpass-scrap','inventory-cap-player','underpass-scrap','item',10000),
@@ -165,6 +167,7 @@ try {
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
         ('integration-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('paid-killing-race-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('closed-after-entry-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('start-before-open-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
         ('start-at-open-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
@@ -250,6 +253,7 @@ try {
       ('permit-defeat','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',10,0,92,0),
       ('permit-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,0,92,0),
       ('permit-paid-turn-race','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,92,0),
+      ('permit-paid-killing-race','paid-killing-race-player','underpass','paid-killing-race-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,4,20,0),
       ('permit-e','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','+20 minutes'),'active',80,12,1,0),
       ('expired','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
       ('expired-active','integration-player','underpass','integration-cycle','tunnel-maw',datetime('now','-20 minutes'),'active',80,12,92,0),
@@ -1663,6 +1667,48 @@ try {
     'one victory receipt/history row must exist for the permit');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id = 'permit-e' AND reward_state = 'awarded' AND battle_status = 'victory' AND enemy_hp = 0 AND turn_count = 1"), 1,
     'the completed permit must retain one authoritative terminal state');
+
+  // Repeat the action/completion race with a paid killing blow that consumes the
+  // Degen's final Mana. The receipt race must not charge the ability twice or
+  // let completion observe a client-authored outcome.
+  const paidRaceCurrencyBefore = queryRows("SELECT currency FROM characters WHERE player_id='paid-killing-race-player'")[0]?.currency;
+  assert.equal(paidRaceCurrencyBefore, 0, 'the isolated race fixture starts with no currency');
+  const [paidRaceActionResponse, paidRaceEarlyCompletion] = await Promise.all([
+    fetch(base + '/api/battle/action', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'paid-killing-race-player', permitId: 'permit-paid-killing-race',
+        abilityId: 'crack', expectedTurnCount: 0,
+      }),
+    }),
+    complete('permit-paid-killing-race', 'paid-killing-race-player'),
+  ]);
+  const paidRaceAction = await paidRaceActionResponse.json();
+  assert.equal(paidRaceActionResponse.status, 200, JSON.stringify(paidRaceAction));
+  assert.equal(paidRaceAction.status, 'victory');
+  assert.equal(paidRaceAction.playerHp, 80, 'a killing blow must not receive retaliation');
+  assert.equal(paidRaceAction.playerMana, 0, 'the paid killing blow must spend the final Mana');
+  assert.equal(paidRaceAction.enemyHp, 0);
+  assert.equal(paidRaceAction.turnCount, 1);
+  assert.ok([200, 409].includes(paidRaceEarlyCompletion.status),
+    'completion may see the active permit or the committed Worker victory');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-paid-killing-race' AND battle_status='victory' AND player_hp=80 AND player_mana=0 AND enemy_hp=0 AND turn_count=1"), 1,
+    'the authoritative paid killing-blow state must be persisted exactly once');
+
+  const [paidCompletionA, paidCompletionB] = await Promise.all([
+    eventuallyComplete('permit-paid-killing-race', {}, 'paid-killing-race-player'),
+    eventuallyComplete('permit-paid-killing-race', {}, 'paid-killing-race-player'),
+  ]);
+  assert.equal(paidCompletionA.reward.tier, 'full');
+  assert.deepEqual(paidCompletionB.reward, paidCompletionA.reward,
+    'concurrent retries must return the same stored paid-killing-blow receipt');
+  assert.equal(paidCompletionA.player.currency, paidRaceCurrencyBefore + paidCompletionA.reward.currency,
+    'the paid killing-blow reward must apply currency exactly once');
+  assert.equal(paidCompletionB.player.currency, paidCompletionA.player.currency);
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-paid-killing-race:victory'"), 1,
+    'one victory history row must exist for the paid killing-blow permit');
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-paid-killing-race' AND reward_state='awarded' AND battle_status='victory' AND player_hp=80 AND player_mana=0 AND enemy_hp=0 AND turn_count=1"), 1,
+    'the final paid Mana state and awarded receipt must agree');
 
   // A permit already issued while the Underpass is open remains legal until its own expiry.
   // Closing the world-event cycle must not interrupt an encounter or move its reward to a new cycle.

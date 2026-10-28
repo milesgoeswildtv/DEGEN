@@ -27,7 +27,15 @@ const { BattleEngine } = runInNewContext(
     onComplete: () => void,
   ) => {
     useAbility(abilityId: string): void;
-    snapshot: { playerMana: number; status: string; playerName: string };
+    snapshot: {
+      playerHp: number;
+      playerMana: number;
+      enemyHp: number;
+      turnCount: number;
+      status: string;
+      playerName: string;
+      log: string[];
+    };
   };
 };
 
@@ -149,6 +157,39 @@ test('turn resolution rejects a paid ability when the Degen lacks Mana', () => {
     degen: TEST_DEGEN,
     enemy: TUNNEL_MAW,
   }), /Insufficient Mana/);
+});
+
+test('BattleEngine deducts paid Mana once and an unaffordable retry changes no combat state', () => {
+  const paid = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(paid);
+  assert.ok(paid.manaCost > 0);
+
+  // This test-only pool lets one paid action reach exactly zero without defining
+  // any production Degen balance.
+  const limitedDegen = { ...TEST_DEGEN, maxMana: paid.manaCost, abilities: [paid] };
+  let completionCalls = 0;
+  const engine = new BattleEngine(limitedDegen, TUNNEL_MAW, () => {
+    completionCalls += 1;
+  });
+
+  engine.useAbility(paid.id);
+  const afterPaidAction = engine.snapshot;
+  assert.equal(afterPaidAction.playerMana, 0, 'the paid action deducts its cost exactly once');
+  assert.equal(afterPaidAction.turnCount, 1);
+  assert.equal(afterPaidAction.enemyHp, TUNNEL_MAW.maxHp - paid.damage - Math.floor(limitedDegen.power * 0.5));
+  assert.equal(afterPaidAction.status, 'active');
+  assert.equal(afterPaidAction.playerName, limitedDegen.name, 'zero Mana does not revert the Degen');
+  assert.equal(completionCalls, 0);
+
+  engine.useAbility(paid.id);
+  const afterRejectedAction = engine.snapshot;
+  assert.equal(afterRejectedAction.playerHp, afterPaidAction.playerHp);
+  assert.equal(afterRejectedAction.playerMana, afterPaidAction.playerMana);
+  assert.equal(afterRejectedAction.enemyHp, afterPaidAction.enemyHp);
+  assert.equal(afterRejectedAction.turnCount, afterPaidAction.turnCount);
+  assert.equal(afterRejectedAction.status, afterPaidAction.status);
+  assert.equal(completionCalls, 0, 'an unaffordable retry cannot complete or end combat');
+  assert.match(afterRejectedAction.log.at(-1) ?? '', /Not enough Mana/);
 });
 
 test('Underpass rewards are full for the first three clears and reduced after', () => {
