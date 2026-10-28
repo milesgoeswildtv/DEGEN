@@ -190,8 +190,19 @@ export class AppController {
         || this.route !== 'underpass'
         || this.battlePermit !== existingPermit) return;
 
-      if (error instanceof GameApiError && error.status < 500) {
-        // Remove only this exact rejected key; a newer encounter must survive a late response.
+      const errorMessage = error instanceof GameApiError
+        && error.payload && typeof error.payload === 'object'
+        && 'error' in error.payload && typeof error.payload.error === 'string'
+        ? error.payload.error
+        : undefined;
+      const unrecoverableStartErrors = new Set([
+        'Battle start request is already used or invalid.',
+        'The Underpass is sealed.',
+      ]);
+      if (error instanceof GameApiError && error.status === 409
+        && errorMessage !== undefined && unrecoverableStartErrors.has(errorMessage)) {
+        // Only known Worker responses that prove this key cannot recover clear it.
+        // The API compares IDs before removal so a newer encounter survives a late response.
         this.api.discardUnrecoverableUnderpassStart?.(playerId, permitId);
         let expectedPermitAfterRefresh = existingPermit;
         if (existingPermit && this.battlePermit === existingPermit && this.battlePermitOwnerId === playerId) {
