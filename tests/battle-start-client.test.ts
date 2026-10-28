@@ -43,7 +43,7 @@ const useBattleAbility = runInNewContext(
   { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
 ) as (this: any, abilityId: string) => Promise<void>;
 
-const startControllerMethod = controllerSource.match(/private async enterUnderpass\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private mountBattle/);
+const startControllerMethod = controllerSource.match(/private async enterUnderpass\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private async resumeUnderpass/);
 assert.ok(startControllerMethod, 'AppController start handler must remain available for the durable-key regression');
 const enterUnderpass = runInNewContext(
   stripTypeScriptTypes(`async function enterUnderpass(): Promise<void> {${startControllerMethod[1]}\n}\nenterUnderpass;`, { mode: 'transform' }),
@@ -672,3 +672,23 @@ test('AppController ignores malformed terminal snapshots from battle conflicts',
   }
 });
 
+
+
+test('discarding an unrecoverable resume clears only the matching saved permit key', async () => {
+  const fetcher: typeof fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as { requestId: string };
+    return new Response(JSON.stringify(validPermit(request.requestId)), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  const permit = await api.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+  api.acknowledgeUnderpassStart('player-1', 'cycle-1', permit.permitId);
+  assert.equal(startRequestStorage.size, 1);
+
+  api.discardUnrecoverableUnderpassStart('player-1', 'different-permit');
+  assert.equal(startRequestStorage.size, 1, 'a stale rejection must not clear a newer permit key');
+
+  api.discardUnrecoverableUnderpassStart('player-1', permit.permitId);
+  assert.equal(startRequestStorage.size, 0, 'the definitive rejection clears the exact unrecoverable key');
+});

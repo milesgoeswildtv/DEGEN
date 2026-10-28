@@ -274,8 +274,10 @@ try {
     'the same test player must survive the reload');
   await assertFitsMobile('Map after reload');
   await tap("[data-route=underpass]");
-  await until('Underpass entry after reload', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
-  await tap("[data-start-battle]");
+  await until('Recoverable Underpass encounter after reload', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
+  assert.equal(await cdp.evaluate('!!document.querySelector("[data-start-battle]")'), false,
+    'a persisted uncertain start must offer resume, not mint a second permit');
+  await tap("[data-resume-battle]");
   await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
@@ -295,9 +297,13 @@ try {
     'the reloaded page must reuse the persisted request ID from both failed attempts');
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
     'recovery after reload must not create a duplicate permit');
-  const startStorageKey = 'degen:pending-battle-start:' + encodeURIComponent(playerId) + ':' + encodeURIComponent('browser-cycle');
-  assert.equal(await cdp.evaluate('localStorage.getItem(' + JSON.stringify(startStorageKey) + ')'), null,
-    'AppController clears the key only after accepting the recovered permit');
+  const startStorageKey = 'degen:battle-start:' + encodeURIComponent(playerId);
+  const activeStartKey = await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(startStorageKey) + ') || "null")');
+  assert.deepEqual(activeStartKey, {
+    cycleId: 'browser-cycle',
+    requestId: firstStartRequestIds[0],
+    state: 'active',
+  }, 'recovery must retain the player-scoped active key until authoritative reward completion');
   const permitId = activeRows[0].id;
   assert.equal(permitId, startRequestIds[0], 'the recovered permit ID must match the request idempotency key');
   assert.equal(activeRows[0].player_hp, 120);
@@ -363,6 +369,34 @@ try {
     assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
     assert.ok(hudOrder.manifested > hudOrder.mana,
       'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
+
+    if (turn === 1) {
+      const activeCycleId = sql("SELECT cycle_id FROM battle_permits WHERE id='" + permitId + "'")[0]?.cycle_id;
+      assert.ok(activeCycleId, 'the active permit must retain its issuing cycle');
+      // Preserve started_at < closes_at, then let that issuing cycle close naturally.
+      sql("UPDATE world_event_cycles SET closes_at = datetime('now', '+1 second') WHERE id='" + activeCycleId + "'");
+      await sleep(1500);
+      const closedWorld = await (await fetch(
+        'http://127.0.0.1:8789/api/world/underpass?playerId=' + encodeURIComponent(playerId),
+      )).json();
+      assert.equal(closedWorld.phase, 'sealed', 'the current Underpass must be closed before resume');
+      assert.notEqual(closedWorld.cycleId, activeCycleId, 'the current world cycle must advance after closure');
+
+      await tap("[data-route=underpass]");
+      await until('resume action after the issuing cycle closes', () => cdp.evaluate(
+        '!!document.querySelector("[data-resume-battle]") && !document.querySelector("[data-start-battle]")',
+      ));
+      await tap("[data-resume-battle]");
+      await until('persisted active encounter resumed after cycle closure', () => cdp.evaluate(
+        '(() => { const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? ""; return !!document.querySelector("[data-ability=crack]") && hud.includes("HP 110 of 120, Mana 8 of 12") && hud.includes("Tunnel Maw: HP 57 of 92. Turn 1."); })()',
+      ));
+      const resumedState = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
+      assert.deepEqual(resumedState, {
+        player_hp: 110, player_mana: 8, enemy_hp: 57, battle_status: 'active', turn_count: 1,
+      }, 'resume must remount from the persisted Worker snapshot without applying another turn');
+      await assertFitsMobile('Resumed battle after Underpass closure');
+      await assertFitsCompact('Resumed battle after Underpass closure');
+    }
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
@@ -373,6 +407,8 @@ try {
   assert.equal(finalPermit?.player_mana, 0);
   assert.equal(finalPermit?.turn_count, 3);
   assert.ok(finalPermit?.completed_at, 'Worker should persist completion after awarding the victory receipt');
+  assert.equal(await cdp.evaluate('localStorage.getItem(' + JSON.stringify(startStorageKey) + ')'), null,
+    'only the accepted authoritative reward receipt clears the active start key');
   assert.equal(await cdp.evaluate('window.__degenLostActionResponses'), 2,
     'both the first active turn and the killing blow should recover after their committed responses are lost');
   assert.equal(await cdp.evaluate('window.__degenTimedOutActionResponses'), 1,
