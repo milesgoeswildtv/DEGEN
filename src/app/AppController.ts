@@ -213,7 +213,28 @@ export class AppController {
       if (error instanceof GameApiError && error.status === 409 && error.payload && typeof error.payload === 'object') {
         const payload = error.payload as { battleState?: unknown; error?: unknown };
         const battleState = payload.battleState;
-        if (isAuthoritativeBattleActionState(battleState, permitId)) {
+        const invalidPermitWithoutSnapshot = payload.error === 'Battle permit is invalid, expired, or already completed.'
+          && !isAuthoritativeBattleActionState(battleState, permitId);
+        if (invalidPermitWithoutSnapshot) {
+          const samePermit = this.battlePermit?.permitId === permitId
+            && this.battlePermitOwnerId === playerId
+            && this.store.snapshot.id === playerId;
+          if (samePermit) {
+            // No authoritative snapshot means this permit is no longer actionable.
+            // Leave the battle view instead of re-enabling moves against an expired permit.
+            this.battlePermit = undefined;
+            this.battlePermitOwnerId = undefined;
+            synchronized = true;
+            if (this.route === 'battle') {
+              await this.refreshWorld();
+              this.navigate('underpass');
+            } else if (this.route === 'underpass') {
+              await this.refreshWorld();
+              this.render();
+            }
+          }
+        }
+        if (!synchronized && isAuthoritativeBattleActionState(battleState, permitId)) {
           const samePermit = this.battlePermit?.permitId === permitId
             && this.battlePermitOwnerId === playerId
             && this.store.snapshot.id === playerId;
