@@ -674,6 +674,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     return fail(request, env, 'Battle turn limit reached.', 409);
   }
 
+  // A pre-existing defeat marker means this permit's audit trail is inconsistent.
+  // Fail closed before mutating combat state instead of silently treating a
+  // conflicting history row as a successful terminal action.
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
@@ -685,9 +688,10 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           AND julianday(battle_permits.started_at) <= julianday('now')
           AND julianday(battle_permits.started_at) < julianday(closes_at))
       AND turn_count = ?
+      AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
     RETURNING turn_count`)
     .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId,
-      TUNNEL_MAW.id, permit.turn_count);
+      TUNNEL_MAW.id, permit.turn_count, `${input.permitId}:defeat`);
 
   let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
@@ -790,6 +794,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     history_player_level: number | null;
     history_xp_awarded: number | null;
     history_currency_awarded: number | null;
+    victory_history_marker_count: number;
   };
   const loadReceipt = async () => env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
@@ -817,7 +822,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       history.encounter_key AS history_encounter_key,
       history.player_level AS history_player_level,
       history.xp_awarded AS history_xp_awarded,
-      history.currency_awarded AS history_currency_awarded
+      history.currency_awarded AS history_currency_awarded,
+      (SELECT COUNT(*) FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
     LEFT JOIN world_event_clears AS clears
@@ -907,6 +914,12 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     return fail(request, env, 'Battle is not an authoritative victory.', 409);
   }
   if (!isValidBattlePermitState(receipt)) return fail(request, env, 'Battle state is invalid.', 409);
+  // A pending/claiming victory cannot already own a history key: the receipt,
+  // progression, inventory, and audit row are committed in one atomic D1 batch.
+  // Detect any owner/result collision before reserving a clear or claiming rewards.
+  if (receipt.victory_history_marker_count > 0) {
+    return fail(request, env, 'Battle victory history marker conflicts with pending reward.', 409);
+  }
 
   const token = crypto.randomUUID();
   // The token-scoped cleanup also covers an ambiguous failure while acquiring
@@ -932,6 +945,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     SET reward_state = 'claiming', reward_claim_token = ?, reward_claimed_at = CURRENT_TIMESTAMP
     WHERE id = ? AND player_id = ? AND event_key = 'underpass'
       AND encounter_key = ? AND completed_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
       AND EXISTS (SELECT 1 FROM world_event_cycles
         WHERE id = battle_permits.cycle_id AND event_key = 'underpass'
           AND julianday(opens_at) <= julianday(battle_permits.started_at)
@@ -943,7 +957,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
         AND strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at
         AND julianday(reward_claimed_at) < julianday('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
-    .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id)
+    .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id, `${input.permitId}:victory`)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
     if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 

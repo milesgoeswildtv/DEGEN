@@ -119,15 +119,25 @@ const AppController = runInNewContext(
   },
   api: {
     enabled: boolean;
+    hasRecoverableUnderpassStart?(playerId: string): boolean;
+    recoverableUnderpassCycleId?(playerId: string): string | undefined;
+    recoverableUnderpassPermitId?(playerId: string): string | undefined;
+    discardUnrecoverableUnderpassStart?(playerId: string, permitId: string): void;
+    startUnderpass?(playerId: string, cycleId: string, requestIdOverride?: string): Promise<{
+      permitId: string; cycleId: string; initialState: unknown;
+    } | undefined>;
+    acknowledgeUnderpassStart?(playerId: string, cycleId: string, permitId: string): void;
     actUnderpass(...args: unknown[]): Promise<unknown>;
     completeUnderpass(playerId: string, permitId: string): Promise<{ player: unknown; worldEvent: unknown }>;
   },
 ) => {
   route: string;
-  battlePermit?: { permitId: string };
+  battlePermit?: { permitId: string; cycleId?: string; initialState?: unknown };
   battlePermitOwnerId?: string;
   battleEngine?: BattleEngineInstance;
+  underpassEvent?: { phase: string; cycleId: string };
   useBattleAbility(abilityId: string): Promise<void>;
+  resumeUnderpass(): Promise<void>;
   finishBattle(status: 'victory' | 'defeat'): Promise<void>;
   destroyBattle(): void;
 };
@@ -607,4 +617,650 @@ test('a stale active snapshot cannot synchronize a newer permit after battle tea
   assert.equal(completionCalls, 0);
   assert.equal(store.localRewards, 0);
   assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), undefined);
+});
+
+
+test('an unrecoverable 409 without an authoritative snapshot exits stale battle without rewards', async () => {
+  for (const { errorMessage, payload } of [
+    {
+      errorMessage: 'Battle permit is invalid, expired, or already completed.',
+      payload: { error: 'Battle permit is invalid, expired, or already completed.' },
+    },
+    {
+      errorMessage: 'Battle state is unavailable.',
+      payload: { error: 'Battle state is unavailable.' },
+    },
+  ]) {
+    timers.length = 0;
+    storage.clear();
+    actionStatus.textContent = '';
+    actionStatus.hidden = true;
+    root.innerHTML = '';
+
+    const permitId = errorMessage.includes('expired') ? 'permit-expired' : 'permit-corrupt';
+    const store = {
+      snapshot: { id: 'player-1' },
+      replaced: 0,
+      localRewards: 0,
+      replaceFromServer(_player: unknown) { this.replaced += 1; },
+      applyReward(_reward: unknown) { this.localRewards += 1; },
+      markBossDefeated(_bossId: string) {},
+    };
+    let completionCalls = 0;
+    const api = {
+      enabled: true,
+      async actUnderpass() {
+        throw new TestGameApiError(409, payload, 'DEGEN API 409');
+      },
+      async getUnderpass() { return undefined; },
+      async completeUnderpass() {
+        completionCalls += 1;
+        throw new Error('an unrecoverable 409 must not request rewards');
+      },
+    };
+    const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+      assert.fail('a conflict without a valid snapshot must not resolve a local turn');
+    }, {
+      permitId,
+      status: 'active',
+      playerHp: 80,
+      playerMana: 0,
+      enemyHp: 60,
+      turnCount: 2,
+    });
+    const controller = new AppController(root, store, api);
+    controller.route = 'battle';
+    controller.battlePermit = { permitId };
+    controller.battlePermitOwnerId = 'player-1';
+    controller.battleEngine = engine;
+
+    await controller.useBattleAbility('crack');
+
+    assert.equal(controller.route, 'underpass', errorMessage);
+    assert.equal(controller.battlePermit, undefined, errorMessage);
+    assert.equal(controller.battlePermitOwnerId, undefined, errorMessage);
+    assert.equal(controller.battleEngine, undefined, errorMessage);
+    assert.equal(engine.snapshot.status, 'active', 'the client must not invent a defeat or victory');
+    assert.equal(engine.snapshot.playerMana, 0, 'zero Mana itself is not the reason for leaving combat');
+    assert.equal(engine.snapshot.turnCount, 2, 'the rejected request must not advance local combat');
+    assert.equal(completionCalls, 0, 'permit possession alone never grants or requests a reward');
+    assert.equal(store.replaced, 0);
+    assert.equal(store.localRewards, 0);
+  }
+});
+
+
+test('a malformed 409 payload preserves the permit for safe server retry without local combat', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, undefined, 'DEGEN API 409');
+    },
+    async getUnderpass() { return undefined; },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('an unverified conflict must not request rewards');
+    },
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('a malformed conflict must not resolve local combat');
+  }, {
+    permitId: 'permit-retryable-conflict',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 0,
+    enemyHp: 60,
+    turnCount: 2,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-retryable-conflict' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('crack');
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(controller.battlePermit?.permitId, 'permit-retryable-conflict',
+    'unknown conflict responses must retain the permit for a later authoritative retry');
+  assert.equal(controller.battleEngine, engine);
+  assert.equal(engine.snapshot.status, 'active');
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.turnCount, 2);
+  assert.equal(completionCalls, 0);
+  assert.equal(store.replaced, 0);
+  assert.equal(store.localRewards, 0);
+  assert.equal(actionStatus.textContent, 'The server rejected that move.');
+});
+
+
+test('a late expired-permit rejection cannot clear a newer encounter', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  let rejectAction!: (error: unknown) => void;
+  const actionResponse = new Promise<unknown>((_resolve, reject) => { rejectAction = reject; });
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    actUnderpass() { return actionResponse; },
+    async getUnderpass() { return undefined; },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('a rejected expired permit must not request reward completion');
+    },
+  };
+  const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the old engine must not resolve an expired action');
+  }, {
+    permitId: 'permit-old-expired',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 0,
+    enemyHp: 60,
+    turnCount: 2,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-old-expired' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = oldEngine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  controller.destroyBattle();
+  const newEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the newer encounter must remain untouched');
+  }, {
+    permitId: 'permit-new',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-new' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = newEngine;
+
+  rejectAction(new TestGameApiError(409, {
+    error: 'Battle permit is invalid, expired, or already completed.',
+  }, 'DEGEN API 409'));
+  await pendingAction;
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(controller.battlePermit?.permitId, 'permit-new');
+  assert.equal(controller.battleEngine, newEngine);
+  assert.equal(newEngine.snapshot.status, 'active');
+  assert.equal(newEngine.snapshot.turnCount, 0);
+  assert.equal(newEngine.snapshot.playerMana, 8);
+  assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+});
+
+
+
+test('a delayed expired-permit refresh cannot navigate away from a newer encounter', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  let resolveWorld!: (value: undefined) => void;
+  const worldRefresh = new Promise<undefined>((resolve) => { resolveWorld = resolve; });
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, {
+        error: 'Battle permit is invalid, expired, or already completed.',
+      }, 'DEGEN API 409');
+    },
+    getUnderpass() { return worldRefresh; },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('expired-permit recovery must not request rewards');
+    },
+  };
+  const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('an expired action must not resolve locally');
+  }, {
+    permitId: 'permit-old-expired',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 0,
+    enemyHp: 60,
+    turnCount: 2,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-old-expired' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = oldEngine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.battlePermit, undefined, 'the expired permit is cleared before the refresh resolves');
+
+  const newEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the new encounter must not be completed by old cleanup');
+  }, {
+    permitId: 'permit-new-after-refresh',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-new-after-refresh' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = newEngine;
+
+  resolveWorld(undefined);
+  await pendingAction;
+
+  assert.equal(controller.route, 'battle', 'late cleanup must not navigate away from a newer encounter');
+  assert.equal(controller.battlePermit?.permitId, 'permit-new-after-refresh');
+  assert.equal(controller.battleEngine, newEngine);
+  assert.equal(newEngine.snapshot.status, 'active');
+  assert.equal(newEngine.snapshot.turnCount, 0);
+  assert.equal(newEngine.snapshot.playerMana, 8);
+  assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+});
+
+
+test('a delayed expired-permit refresh cannot navigate after the active account changes', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  let resolveWorld!: (value: undefined) => void;
+  const worldRefresh = new Promise<undefined>((resolve) => { resolveWorld = resolve; });
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, {
+        error: 'Battle permit is invalid, expired, or already completed.',
+      }, 'DEGEN API 409');
+    },
+    getUnderpass() { return worldRefresh; },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('expired-permit cleanup must not request rewards');
+    },
+  };
+  const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('an expired action must not resolve locally');
+  }, {
+    permitId: 'permit-account-switch-expired',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 0,
+    enemyHp: 60,
+    turnCount: 2,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-account-switch-expired' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = oldEngine;
+
+  const pendingAction = controller.useBattleAbility('crack');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.battlePermit, undefined, 'the unusable permit is cleared before refresh finishes');
+
+  // Simulate the active account changing while the old encounter's world refresh is pending.
+  store.snapshot.id = 'player-2';
+  resolveWorld(undefined);
+  await pendingAction;
+
+  assert.equal(controller.route, 'battle', 'old cleanup must not navigate the newly active account');
+  assert.equal(controller.battlePermit, undefined);
+  assert.equal(controller.battleEngine, oldEngine, 'the stale request must not mutate another account’s encounter');
+  assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+});
+
+
+test('an active encounter can be resumed from a sealed Underpass with fresh Worker state', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const existingPermit = {
+    permitId: 'permit-resume-closed',
+    cycleId: 'cycle-that-closed',
+    eventKey: 'underpass',
+    encounterKey: 'tunnel-maw',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    initialState: {
+      permitId: 'permit-resume-closed', status: 'active' as const,
+      playerHp: 120, playerMana: 12, enemyHp: 92, turnCount: 0,
+    },
+  };
+  const resumedPermit = {
+    ...existingPermit,
+    initialState: {
+      permitId: 'permit-resume-closed', status: 'active' as const,
+      playerHp: 110, playerMana: 8, enemyHp: 57, turnCount: 1,
+    },
+  };
+  const startCalls: unknown[][] = [];
+  const acknowledgements: unknown[][] = [];
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    hasRecoverableUnderpassStart: () => true,
+    recoverableUnderpassCycleId: () => 'cycle-that-closed',
+    async startUnderpass(...args: [string, string, string?]) {
+      startCalls.push(args);
+      return resumedPermit;
+    },
+    acknowledgeUnderpassStart(...args: [string, string, string]) { acknowledgements.push(args); },
+    async actUnderpass() { assert.fail('resume must not apply a combat action'); },
+    async completeUnderpass() {
+      completionCalls += 1;
+      throw new Error('resume must not request rewards');
+    },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'underpass';
+  controller.underpassEvent = { phase: 'sealed', cycleId: 'new-cycle' };
+  controller.battlePermit = existingPermit;
+  controller.battlePermitOwnerId = 'player-1';
+
+  await controller.resumeUnderpass();
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(controller.battlePermit?.permitId, 'permit-resume-closed');
+  assert.deepEqual(controller.battlePermit?.initialState, {
+    permitId: 'permit-resume-closed', status: 'active',
+    playerHp: 110, playerMana: 8, enemyHp: 57, turnCount: 1,
+  });
+  assert.deepEqual(startCalls, [['player-1', 'cycle-that-closed', 'permit-resume-closed']],
+    'resume must reuse the issued permit ID and original cycle rather than minting a new encounter');
+  assert.deepEqual(acknowledgements, [['player-1', 'cycle-that-closed', 'permit-resume-closed']]);
+  assert.equal(completionCalls, 0);
+  assert.equal(store.localRewards, 0);
+});
+
+test('a reload can recover an active encounter from the player-scoped saved start key', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const resumedPermit = {
+    permitId: 'permit-reload-resume',
+    cycleId: 'cycle-persisted',
+    eventKey: 'underpass',
+    encounterKey: 'tunnel-maw',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    initialState: {
+      permitId: 'permit-reload-resume', status: 'active' as const,
+      playerHp: 95, playerMana: 4, enemyHp: 22, turnCount: 2,
+    },
+  };
+  const startCalls: unknown[][] = [];
+  const api = {
+    enabled: true,
+    hasRecoverableUnderpassStart: () => true,
+    recoverableUnderpassCycleId: () => 'cycle-persisted',
+    recoverableUnderpassPermitId: () => 'permit-reload-resume',
+    async startUnderpass(...args: [string, string, string?]) {
+      startCalls.push(args);
+      return resumedPermit;
+    },
+    acknowledgeUnderpassStart() {},
+    async actUnderpass() { assert.fail('reload recovery must not apply an action'); },
+    async completeUnderpass() { assert.fail('reload recovery must not claim a reward'); },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'underpass';
+
+  await controller.resumeUnderpass();
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(controller.battlePermit?.permitId, 'permit-reload-resume');
+  assert.deepEqual(controller.battlePermit?.initialState, resumedPermit.initialState);
+  assert.deepEqual(startCalls, [['player-1', 'cycle-persisted', 'permit-reload-resume']],
+    'a fresh controller must retry the saved request key and recover the persisted permit');
+  assert.equal(store.localRewards, 0);
+});
+
+
+test('an unrecoverable resumed permit clears only its matching persisted start key', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  let recoverable = true;
+  const discarded: string[] = [];
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const api = {
+    enabled: true,
+    hasRecoverableUnderpassStart: () => recoverable,
+    recoverableUnderpassCycleId: () => recoverable ? 'cycle-persisted' : undefined,
+    recoverableUnderpassPermitId: () => recoverable ? 'permit-expired' : undefined,
+    async startUnderpass(playerId: string, cycleId: string, requestIdOverride?: string) {
+      assert.deepEqual([playerId, cycleId, requestIdOverride], ['player-1', 'cycle-persisted', 'permit-expired']);
+      throw new TestGameApiError(409, {
+        error: 'Battle start request is already used or invalid.',
+      }, 'DEGEN API 409');
+    },
+    discardUnrecoverableUnderpassStart(playerId: string, permitId: string) {
+      assert.equal(playerId, 'player-1');
+      discarded.push(permitId);
+      if (permitId === 'permit-expired') recoverable = false;
+    },
+    async getUnderpass() { return undefined; },
+    async completeUnderpass() { assert.fail('an invalid permit cannot request rewards'); },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'underpass';
+  controller.underpassEvent = { phase: 'sealed', cycleId: 'new-cycle' };
+
+  await controller.resumeUnderpass();
+
+  assert.deepEqual(discarded, ['permit-expired']);
+  assert.equal(recoverable, false, 'a definitive rejection removes the stale player-scoped key');
+  assert.equal(controller.route, 'underpass');
+  assert.equal(controller.battlePermit, undefined);
+  assert.equal(store.localRewards, 0);
+});
+
+
+test('an expired in-memory permit rerenders the sealed Underpass after cleanup', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+  root.innerHTML = '';
+
+  let recoverable = true;
+  const discarded: string[] = [];
+  const rendered: unknown[][] = [];
+  const originalUnderpassView = scope.underpassView;
+  scope.underpassView = (...args: any[]) => {
+    rendered.push(args);
+    return '';
+  };
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const expiredPermit = {
+    permitId: 'permit-expired-memory',
+    cycleId: 'cycle-old',
+    eventKey: 'underpass',
+    encounterKey: 'tunnel-maw',
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+  };
+  const api = {
+    enabled: true,
+    hasRecoverableUnderpassStart: () => recoverable,
+    recoverableUnderpassCycleId: () => recoverable ? 'cycle-old' : undefined,
+    recoverableUnderpassPermitId: () => recoverable ? expiredPermit.permitId : undefined,
+    async startUnderpass(_playerId: string, _cycleId: string, requestIdOverride?: string) {
+      assert.equal(requestIdOverride, expiredPermit.permitId);
+      throw new TestGameApiError(409, {
+        error: 'Battle start request is already used or invalid.',
+      }, 'DEGEN API 409');
+    },
+    discardUnrecoverableUnderpassStart(_playerId: string, permitId: string) {
+      discarded.push(permitId);
+      if (permitId === expiredPermit.permitId) recoverable = false;
+    },
+    async getUnderpass() { return undefined; },
+    async completeUnderpass() { assert.fail('an expired permit cannot request rewards'); },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'underpass';
+  controller.underpassEvent = { phase: 'sealed', cycleId: 'new-cycle' };
+  controller.battlePermit = expiredPermit;
+  controller.battlePermitOwnerId = 'player-1';
+
+  try {
+    await controller.resumeUnderpass();
+    assert.deepEqual(discarded, [expiredPermit.permitId]);
+    assert.equal(recoverable, false);
+    assert.equal(controller.battlePermit, undefined);
+    assert.equal(controller.battlePermitOwnerId, undefined);
+    assert.equal(controller.route, 'underpass');
+    assert.equal(rendered.length, 1, 'cleanup must render after clearing the old permit');
+    assert.equal(rendered[0]?.[2], false, 'the sealed view must stop advertising a stale resume key');
+    assert.equal(store.localRewards, 0);
+  } finally {
+    scope.underpassView = originalUnderpassView;
+  }
+});
+
+
+test('unknown or authentication resume errors retain the permit and saved key', async () => {
+  for (const error of [
+    new TestGameApiError(409, { error: 'Unexpected conflict response.' }, 'DEGEN API 409'),
+    new TestGameApiError(401, { error: 'Unauthorized.' }, 'DEGEN API 401'),
+  ]) {
+    timers.length = 0;
+    storage.clear();
+    actionStatus.textContent = '';
+    actionStatus.hidden = true;
+    root.innerHTML = '';
+
+    const existingPermit = {
+      permitId: 'permit-retryable',
+      cycleId: 'cycle-original',
+      eventKey: 'underpass',
+      encounterKey: 'tunnel-maw',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const discarded: string[] = [];
+    let refreshCalls = 0;
+    const store = {
+      snapshot: { id: 'player-1' },
+      replaced: 0,
+      localRewards: 0,
+      replaceFromServer(_player: unknown) { this.replaced += 1; },
+      applyReward(_reward: unknown) { this.localRewards += 1; },
+      markBossDefeated(_bossId: string) {},
+    };
+    const api = {
+      enabled: true,
+      async startUnderpass() { throw error; },
+      discardUnrecoverableUnderpassStart(_playerId: string, permitId: string) { discarded.push(permitId); },
+      async getUnderpass() { refreshCalls += 1; return undefined; },
+      async completeUnderpass() { assert.fail('an unverified conflict cannot request rewards'); },
+    };
+    const controller = new AppController(root, store, api);
+    controller.route = 'underpass';
+    controller.underpassEvent = { phase: 'sealed', cycleId: 'cycle-current' };
+    controller.battlePermit = existingPermit;
+    controller.battlePermitOwnerId = 'player-1';
+
+    await controller.resumeUnderpass();
+
+    assert.equal(controller.battlePermit, existingPermit, 'unknown/auth errors must retain the in-memory permit');
+    assert.equal(controller.battlePermitOwnerId, 'player-1');
+    assert.deepEqual(discarded, [], 'unknown/auth errors must not discard the saved request key');
+    assert.equal(refreshCalls, 0, 'only known unrecoverable Worker responses trigger a refresh');
+    assert.equal(controller.route, 'underpass');
+    assert.equal(store.localRewards, 0);
+  }
 });
