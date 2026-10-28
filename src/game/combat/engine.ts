@@ -123,6 +123,16 @@ export class BattleEngine {
     if (this.status !== 'active' || !this.permitId || result.permitId !== this.permitId) return;
     if (!Number.isSafeInteger(result.turnCount) || result.turnCount < this.turnCount) return;
 
+    // A turn count identifies one immutable combat snapshot. Same-turn retries
+    // are idempotent only when every authoritative field agrees; a conflicting
+    // same-turn response must not roll back or rewrite the displayed battle.
+    if (result.turnCount === this.turnCount && (
+      result.playerHp !== this.playerHp
+      || result.playerMana !== this.playerMana
+      || result.enemyHp !== this.enemyHp
+      || result.status !== this.status
+    )) return;
+
     const changed = this.playerHp !== result.playerHp
       || this.playerMana !== result.playerMana
       || this.enemyHp !== result.enemyHp
