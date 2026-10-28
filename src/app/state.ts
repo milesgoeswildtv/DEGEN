@@ -256,10 +256,16 @@ export class PlayerStore {
   }
 
   private commitLocal(): void {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      ...this.state,
-      __housingOutbox: Object.fromEntries(this.pendingHousingSaves),
-    }));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        ...this.state,
+        __housingOutbox: Object.fromEntries(this.pendingHousingSaves),
+      }));
+    } catch (error) {
+      // Local storage is best-effort. A browser quota/privacy failure must not
+      // prevent the server-backed housing outbox from attempting its D1 save.
+      console.warn('Local player storage unavailable; keeping in-memory state.', error);
+    }
     const snapshot = this.snapshot;
     for (const listener of this.listeners) listener(snapshot);
   }
