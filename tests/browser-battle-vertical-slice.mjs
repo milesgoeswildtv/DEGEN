@@ -274,8 +274,10 @@ try {
     'the same test player must survive the reload');
   await assertFitsMobile('Map after reload');
   await tap("[data-route=underpass]");
-  await until('Underpass entry after reload', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
-  await tap("[data-start-battle]");
+  await until('Recoverable Underpass encounter after reload', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
+  assert.equal(await cdp.evaluate('!!document.querySelector("[data-start-battle]")'), false,
+    'a persisted uncertain start must offer resume, not mint a second permit');
+  await tap("[data-resume-battle]");
   await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
