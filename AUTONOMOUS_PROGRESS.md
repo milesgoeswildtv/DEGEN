@@ -1993,6 +1993,19 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 
 ---
 
+## Latest run — 2026-10-28 (sync authoritative Underpass snapshot validation to current main)
+
+- **Authoritative main SHA:** `fabe9b91e3a241a124129a61538918ea707246b7`. Main CI [40715549470](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40715549470) and Cloudflare Pages preview [40715549546](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40715549546) passed. The last Worker deployment workflow [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) passed on `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; the newer main commit is client-only.
+- **PUSHED / PR #94 OPEN (draft; not merged):** sync existing branch `automation/degen/validate-underpass-snapshot-v01` with current main ancestry without creating a competing branch. The merge commit preserves current-main runtime files and overlays only this PR's `src/app/api.ts` and `tests/battle-start-client.test.ts` changes; the progress file starts from current main and records this sync. The prior code/test head `fae4691fe620194ff589b2bcd0dacfbb7a4db35c` had a successful Cloudflare Pages preview, but exact-head CI was not verified before this sync. The new synchronized head requires its own exact-head CI before review readiness.
+- **Task / files changed:** `src/app/api.ts` validates Worker-returned Underpass world snapshots before enabling client start behavior and reuses the same validator for completion receipts, including timestamp chronology and server-source checks. `tests/battle-start-client.test.ts` covers valid snapshots, malformed HTTP-200 snapshots, and invalid completion-receipt world events. The existing battle-start resume/recovery methods remain present. No Worker combat/reward code, economy, schema, D1 migration, or deployment configuration changed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, rejection without mutation, exact deduction, zero-cost at zero, terminal coverage, cost-aware controls, no monster Mana, no zero-Mana reversion, and tracked `0006_backfill_active_battle_mana.sql`.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for actions, turn CAS, terminal outcomes, permits, reward receipts, and exactly-once settlement/recovery. This PR validates client presentation of server-owned world snapshots only.
+- **D1 / release gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007` migration-number collision and production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain unresolved. No production D1 operation or deployment was performed.
+- **One best next task:** verify exact-head CI and Cloudflare Pages for the synchronized PR #94 head; make it review-ready only after all required checks pass, and do not bypass the platform-auth release gate.
+
+
+---
+
 ## Follow-up — 2026-10-28 (housing persistence exact-head CI verification)
 
 - **Authoritative main SHA:** `fabe9b91e3a241a124129a61538918ea707246b7`. Main CI [40715549470](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40715549470) and Cloudflare Pages preview [40715549546](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40715549546) passed. The latest main Worker deployment workflow [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) passed on parent main `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; the newer `fabe9b9` change is client-only, so no new Worker deployment is implied.
