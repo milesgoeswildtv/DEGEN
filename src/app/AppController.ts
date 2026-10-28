@@ -332,9 +332,11 @@ export class AppController {
             synchronized = true;
             if (this.route === 'battle') {
               await this.refreshWorld();
-              // A delayed world refresh must not navigate away from a newer route or permit.
+              // A delayed world refresh must not navigate away from a newer route,
+              // account, or permit after this stale encounter was cleared.
+              if (this.store.snapshot.id !== playerId) return;
               const routeAfterRefresh = this.route as RouteKey;
-              if (routeAfterRefresh === 'battle' && !this.battlePermit) {
+              if (routeAfterRefresh === 'battle' && !this.battlePermit && !this.battlePermitOwnerId) {
                 this.navigate('underpass');
               } else if (routeAfterRefresh === 'underpass') {
                 this.render();
