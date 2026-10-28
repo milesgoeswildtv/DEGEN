@@ -86,6 +86,10 @@ type BattleActionPermitRow = BattlePermitStateRow & {
   cycle_event_key: string | null;
 };
 
+type BattleActionConflictRow = BattleActionPermitRow & {
+  permit_is_unexpired: number;
+};
+
 const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
 
@@ -608,7 +612,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     const latest = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-        permit.enemy_hp, permit.battle_status, permit.turn_count
+        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        CASE WHEN julianday(permit.expires_at) > julianday('now')
+          THEN 1 ELSE 0 END AS permit_is_unexpired
       FROM battle_permits AS permit
       LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
       WHERE permit.id = ? AND permit.player_id = ?
@@ -616,12 +622,17 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
-      .first<BattleActionPermitRow>();
+      .first<BattleActionConflictRow>();
     if (latest && (latest.event_key !== 'underpass' || latest.cycle_event_key !== 'underpass' || latest.encounter_key !== TUNNEL_MAW.id)) {
       return fail(request, env, 'Unsupported battle permit.', 409);
     }
     if (!latest || !isValidBattlePermitState(latest)) {
       return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+    }
+    // A turn can cross permit expiry between the first read and this conflict re-read.
+    // Never return an active snapshot that would leave the client presenting an unusable battle.
+    if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
+      return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
     }
     return json(request, env, {
       error: message,
@@ -706,7 +717,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     const latest = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-        permit.enemy_hp, permit.battle_status, permit.turn_count
+        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        CASE WHEN julianday(permit.expires_at) > julianday('now')
+          THEN 1 ELSE 0 END AS permit_is_unexpired
       FROM battle_permits AS permit
       LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
       WHERE permit.id = ? AND permit.player_id = ?
@@ -714,11 +727,16 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
-      .first<BattleActionPermitRow>();
+      .first<BattleActionConflictRow>();
     if (latest && (latest.event_key !== 'underpass' || latest.cycle_event_key !== 'underpass' || latest.encounter_key !== TUNNEL_MAW.id)) {
       return fail(request, env, 'Unsupported battle permit.', 409);
     }
     if (latest && isValidBattlePermitState(latest)) {
+      // A lost CAS at expiry must not return a stale active snapshot; terminal states
+      // remain recoverable after expiry because the accepted action already resolved them.
+      if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
+        return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
+      }
       return json(request, env, {
         error: 'Battle state changed; synchronized from the latest authoritative state.',
         battleState: {
