@@ -297,7 +297,7 @@ try {
     'the reloaded page must reuse the persisted request ID from both failed attempts');
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
     'recovery after reload must not create a duplicate permit');
-  const startStorageKey = 'degen:pending-battle-start:' + encodeURIComponent(playerId);
+  const startStorageKey = 'degen:battle-start:' + encodeURIComponent(playerId);
   const activeStartKey = await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(startStorageKey) + ') || "null")');
   assert.deepEqual(activeStartKey, {
     cycleId: 'browser-cycle',
