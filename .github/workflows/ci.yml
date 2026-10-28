@@ -30,6 +30,8 @@ jobs:
         run: node tests/worker-d1-cycle-rollover.mjs
       - name: Verify atomic defeat history on isolated local Worker/D1
         run: node tests/worker-d1-defeat-atomic.mjs
+      - name: Exercise mobile browser housing persistence with isolated local Worker/D1
+        run: node tests/browser-housing-persistence.mjs
       - name: Build web app
         run: npm run build
       - name: Exercise real Chromium mobile battle vertical slice with local Worker/D1
