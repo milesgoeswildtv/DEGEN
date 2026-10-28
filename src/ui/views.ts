@@ -178,7 +178,17 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
 
   document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
     const manaCost = Number(button.dataset.manaCost ?? 0);
-    button.disabled = snapshot.status !== 'active' || manaCost > snapshot.playerMana;
+    const unaffordable = snapshot.status === 'active' && manaCost > snapshot.playerMana;
+    button.disabled = snapshot.status !== 'active' || unaffordable;
+
+    // Keep the reason for a disabled paid move visible on small touch screens;
+    // the HUD remains the authoritative current-Mana readout.
+    const costLabel = button.querySelector<HTMLElement>('small');
+    if (costLabel) {
+      costLabel.textContent = unaffordable
+        ? `NEED ${manaCost} MANA`
+        : manaCost === 0 ? 'NO MANA' : `${manaCost} MANA`;
+    }
   });
 
   if (snapshot.status !== 'active') {
