@@ -210,8 +210,10 @@ export class AppController {
       }
     } catch (error) {
       let synchronized = false;
-      if (error instanceof GameApiError && error.status === 409 && error.payload && typeof error.payload === 'object') {
-        const payload = error.payload as { battleState?: unknown; error?: unknown };
+      if (error instanceof GameApiError && error.status === 409) {
+        const payload = error.payload && typeof error.payload === 'object'
+          ? error.payload as { battleState?: unknown; error?: unknown }
+          : {};
         const battleState = payload.battleState;
         // A 409 without a valid server-owned snapshot cannot safely advance this local encounter.
         // Fail closed even when the Worker reports corrupt/unavailable persisted state rather than expiry.
