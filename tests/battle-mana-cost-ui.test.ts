@@ -9,6 +9,16 @@ import { TEST_DEGEN } from '../src/data/combatPrototype.ts';
 const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/\bexport const /g, 'const ');
+const buttonWithCostLabel = (manaCost: string, label: string) => {
+  const costLabel = { textContent: label };
+  return {
+    dataset: { manaCost },
+    disabled: false,
+    costLabel,
+    querySelector: (selector: string) => selector === 'small' ? costLabel : null,
+  };
+};
+
 const ui = runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ battleView, updateBattleDom });',
   { document: undefined },
@@ -36,8 +46,8 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
   const log = { innerHTML: '', append: (_node: unknown) => undefined };
   const accessibleHud = { textContent: '' };
   const buttons = [
-    { dataset: { manaCost: '0' }, disabled: true },
-    { dataset: { manaCost: '4' }, disabled: false },
+    buttonWithCostLabel('0', 'NO MANA'),
+    buttonWithCostLabel('4', '4 MANA'),
   ];
   const fakeDocument = {
     querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
@@ -80,12 +90,18 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
   boundUi.updateBattleDom(snapshot(0));
   assert.equal(buttons[0]?.disabled, false);
   assert.equal(buttons[1]?.disabled, true);
+  assert.equal(buttons[0]?.costLabel.textContent, 'NO MANA');
+  assert.equal(buttons[1]?.costLabel.textContent, 'NEED 4 MANA',
+    'an unaffordable paid move must explain why it is unavailable');
   assert.match(accessibleHud.textContent, /TEST_DEGEN: HP 73 of 120, Mana 0 of 12/);
   assert.match(accessibleHud.textContent, /Tunnel Maw: HP 51 of 92\. Turn 2\. Choose an action\./);
 
   boundUi.updateBattleDom(snapshot(4));
   assert.equal(buttons[0]?.disabled, false);
   assert.equal(buttons[1]?.disabled, false);
+  assert.equal(buttons[0]?.costLabel.textContent, 'NO MANA');
+  assert.equal(buttons[1]?.costLabel.textContent, '4 MANA',
+    'the normal cost label returns when the move becomes affordable');
   assert.match(accessibleHud.textContent, /Mana 4 of 12/);
 });
 
@@ -97,8 +113,8 @@ test('battle terminal outcomes announce defeat/victory and disable every ability
   };
   const accessibleHud = { textContent: '' };
   const buttons = [
-    { dataset: { manaCost: '0' }, disabled: false },
-    { dataset: { manaCost: '4' }, disabled: false },
+    buttonWithCostLabel('0', 'NO MANA'),
+    buttonWithCostLabel('4', '4 MANA'),
   ];
   const fakeDocument = {
     querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
@@ -143,6 +159,9 @@ test('battle terminal outcomes announce defeat/victory and disable every ability
     boundUi.updateBattleDom({ ...base, status });
 
     assert.ok(buttons.every((button) => button.disabled), status + ' must disable free and paid abilities');
+    assert.equal(buttons[0]?.costLabel.textContent, 'NO MANA');
+    assert.equal(buttons[1]?.costLabel.textContent, '4 MANA',
+      'terminal controls should show the move cost, not a live affordability warning');
     assert.match(accessibleHud.textContent, status === 'defeat'
       ? /Defeat\. Returning to the Underpass\./
       : /Victory\. Verifying rewards\./);
