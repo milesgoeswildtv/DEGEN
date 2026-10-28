@@ -278,6 +278,10 @@ try {
   await tap("[data-start-battle]");
   await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
+  const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
+  assert.equal(initialAccessibleHud,
+    'TEST_DEGEN: HP 120 of 120, Mana 12 of 12. Tunnel Maw: HP 92 of 92. Turn 0. Choose an action.',
+    'the live DOM status must expose the initial Worker-backed battle snapshot outside the Phaser canvas');
   assert.deepEqual(await cdp.evaluate("(() => { const status = document.querySelector('#battle-action-status'); return { exists: !!status, hidden: status?.hidden, ariaLive: status?.getAttribute('aria-live'), display: status ? getComputedStyle(status).display : null }; })()"),
     { exists: true, hidden: true, ariaLive: 'polite', display: 'none' },
     'the mobile battle screen must render an initially hidden, accessible action-status region');
@@ -331,6 +335,19 @@ try {
       battle_status: turn === 3 ? 'victory' : 'active',
       turn_count: turn,
     };
+    await until('accessible DOM HUD after authoritative turn ' + turn, () => cdp.evaluate(`(() => {
+      const text = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
+      return text.includes(${JSON.stringify(`Mana ${expected.player_mana} of 12`)})
+        && text.includes(${JSON.stringify(`Turn ${turn}.`)})
+        && text.includes(${JSON.stringify(turn === 3 ? 'Victory. Verifying rewards.' : 'Choose an action.')});
+    })()`));
+    const accessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
+    assert.ok(accessibleHud.includes(`Mana ${expected.player_mana} of 12`),
+      'accessible HUD Mana must follow the Worker result for turn ' + turn);
+    assert.ok(accessibleHud.includes(`Turn ${turn}.`),
+      'accessible HUD turn count must follow the Worker result for turn ' + turn);
+    assert.ok(accessibleHud.includes(turn === 3 ? 'Victory. Verifying rewards.' : 'Choose an action.'),
+      'accessible HUD outcome must follow the authoritative battle state for turn ' + turn);
     const persisted = await until('D1 state for authoritative turn ' + turn, () => {
       const row = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
       return row?.turn_count === turn ? row : null;
