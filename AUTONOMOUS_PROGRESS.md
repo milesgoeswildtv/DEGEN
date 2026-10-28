@@ -1,3 +1,17 @@
+## Latest run — 2026-10-28 (stabilize mobile housing browser QA startup)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`; main CI run [40785252356](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40785252356) passed. This work continues the existing housing reliability PR, not a competing branch.
+- **PUSHED / PR #97 OPEN, NOT MERGED:** `automation/degen/housing-reliability-current-main-v01`, new code/test head `2e8d5e055d9605be1c4979f506b739f9c24b5571`. No direct-main write.
+- **Task / file changed:** `tests/browser-housing-persistence.mjs` gives the Chrome DevTools page-target startup probe 60 seconds rather than the generic 30-second deadline. The previous exact-head CI run `40773964076` passed all deterministic tests (193/193), isolated Worker/D1 reward concurrency and transient-failure recovery, Underpass cycle/rollover concurrency, and atomic defeat history; it failed before exercising housing assertions because Chromium's DevTools page target did not appear before the 30-second startup deadline. The browser log showed Chromium eventually announced its DevTools endpoint at the timeout boundary. This is a test-harness timing adjustment, not a claim that housing browser QA passed.
+- **QA status:** PUSHED / PR branch only. Exact-head CI for `2e8d5e055d9605be1c4979f506b739f9c24b5571` is pending/unverified. No local shell is available in this run; no `npm test`, build, browser, or Wrangler result is claimed for this new head. No production D1 operation or deployment.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` and bespoke `manaCost`, authoritative `player_mana`, rejection without mutation, exact deduction, zero-cost actions at zero Mana, terminal behavior, cost-aware controls, no monster Mana, no zero-Mana reversion, and tracked active-battle backfill migration.
+- **Battle authority / reward idempotency:** unchanged and retained on main. Worker/D1 owns turn CAS, terminal outcome, audit history, reward receipts, progression, currency, inventory, and recoverable exactly-once settlement; recent main CI includes isolated Worker/D1 race and transient-failure recovery.
+- **D1 / migration assumptions:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` versus draft session migration numbering collision remains unresolved; no migration/config changes here.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling still gate auth-dependent release. Do not bypass that gate or merge/deploy housing around it.
+- **One best next task:** verify exact-head CI for this housing test-harness fix; if green, recheck PR #97 mergeability and preserve the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-28 (deterministic Mana rejection atomicity)
 
 - **Authoritative main SHA:** `5cb1dd95b3aa26c6cde7ab4bf03f37485432756f`.
