@@ -39,6 +39,7 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
     player_hp: 70,
     enemy_hp: 63,
     turn_count: 1,
+    permit_is_unexpired: 1,
   };
   const reads: string[] = [];
   const db = {
@@ -89,6 +90,91 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
     turnCount: 1,
   }, 'a rejected request must not resynchronize the client to a pre-race snapshot');
   assert.equal(reads.length, 2, 'the conflict path must re-read persisted state');
+});
+
+test('an expiry crossed during a conflict re-read does not return an unusable active snapshot', async () => {
+  const activeSnapshot = {
+    event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
+    encounter_key: TUNNEL_MAW.id,
+    player_hp: 80, player_mana: 0, enemy_hp: 50, battle_status: 'active', turn_count: 0,
+  };
+  const expiredSnapshot = { ...activeSnapshot, permit_is_unexpired: 0 };
+  const reads: string[] = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(..._params: unknown[]) {
+          return {
+            first: async () => {
+              reads.push(sql);
+              if (sql.includes('completed_at IS NULL')) return activeSnapshot;
+              if (sql.includes('permit_is_unexpired')) return expiredSnapshot;
+              throw new Error('Unexpected query in expiry-during-conflict test: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+  const request = new Request('https://degen-api.example/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'player-1', permitId: 'permit-1', abilityId: 'crack', expectedTurnCount: 0,
+    }),
+  });
+
+  const response = await handleBattleAction(request, { DB: db });
+  const result = await response.json() as { error: string; battleState?: unknown };
+
+  assert.equal(response.status, 409);
+  assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in result, false,
+    'a permit that expired after the initial read must not be presented as an active battle');
+  assert.equal(reads.length, 2, 'the rejected action must remain read-only');
+});
+
+test('a failed action compare-and-swap after expiry does not return an active snapshot', async () => {
+  const activeSnapshot = {
+    event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
+    encounter_key: TUNNEL_MAW.id,
+    player_hp: 80, player_mana: 12, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+  };
+  const expiredSnapshot = { ...activeSnapshot, permit_is_unexpired: 0 };
+  const reads: string[] = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(..._params: unknown[]) {
+          return {
+            first: async () => {
+              reads.push(sql);
+              if (sql.includes('UPDATE battle_permits')) return null;
+              if (sql.includes('completed_at IS NULL')) return activeSnapshot;
+              if (sql.includes('permit_is_unexpired')) return expiredSnapshot;
+              throw new Error('Unexpected query in expiry-during-CAS test: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+  const request = new Request('https://degen-api.example/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'player-1', permitId: 'permit-1', abilityId: 'slash', expectedTurnCount: 0,
+    }),
+  });
+
+  const response = await handleBattleAction(request, { DB: db });
+  const result = await response.json() as { error: string; battleState?: unknown };
+
+  assert.equal(response.status, 409);
+  assert.equal(result.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in result, false,
+    'a failed CAS at expiry must not synchronize the client to a non-actionable active permit');
+  assert.equal(reads.length, 3, 'the handler must read the permit, attempt the CAS, and re-read after failure');
 });
 
 test('replayed action after reward settlement returns the persisted victory snapshot', async () => {
