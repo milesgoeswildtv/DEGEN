@@ -427,8 +427,8 @@ try {
     'recovering the lost killing-blow and reward responses must settle exactly one victory-history row');
 
   // Exercise the actual running UI with an authoritative active snapshot at zero
-  // Mana. The local D1 fixture models Mana depletion from an approved future
-  // interaction without inventing a monster resource or combat rule.
+  // Mana. The local D1 fixture models a valid Worker-owned zero-Mana snapshot
+  // for UI QA; it does not add or name a Mana-drain mechanic or monster resource.
   sql("UPDATE world_event_cycles SET opens_at = datetime('now','-10 minutes'), closes_at = datetime('now','+90 minutes') WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)");
   await tap("[data-route=map]");
   await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
@@ -440,8 +440,8 @@ try {
   const affordabilityPermit = sql("SELECT id FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL AND battle_status='active' ORDER BY started_at DESC LIMIT 1")[0];
   assert.ok(affordabilityPermit?.id, 'the affordability scenario must use a real Worker-issued local permit');
   assert.notEqual(affordabilityPermit.id, permitId, 'the affordability scenario must not reuse the awarded permit');
-  // Seed a valid later authoritative snapshot to model another tab having spent
-  // the remaining resource before this tab refreshes its state.
+  // Seed a valid later authoritative snapshot to model server state changing
+  // before this tab refreshes; no new combat source or resource is introduced.
   sql("UPDATE battle_permits SET player_hp=110, player_mana=0, enemy_hp=57, battle_status='active', turn_count=1 WHERE id='" + affordabilityPermit.id + "' AND player_id='" + playerId + "' AND completed_at IS NULL");
   await tap("[data-ability=crack]");
   await until('disabled paid move explains its Mana shortfall', () => cdp.evaluate(`(() => {
