@@ -20,7 +20,7 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
   .replace('import.meta.env.VITE_API_BASE', 'globalThis.__API_BASE')
   .replace(/\bexport class /g, 'class ')
   .replace(/\bexport const /g, 'const ');
-const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError, isAuthoritativeBattleActionState });', {
+const { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState });', {
   __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW,
   fetch: (...args: any[]) => globalThis.fetch(...args), Response, URL, AbortController, setTimeout, clearTimeout,
   crypto: globalThis.crypto, localStorage: testLocalStorage, Date, Number, JSON, Error, encodeURIComponent, console,
@@ -35,6 +35,7 @@ const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewCont
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
   };
   GameApiError: new (status: number, payload: unknown, message: string) => Error & { status: number; payload: unknown };
+  GameApiProtocolError: new (message: string) => Error;
   isAuthoritativeBattleActionState: (value: unknown, permitId: string) => boolean;
 };
 
@@ -43,7 +44,7 @@ const controllerMethod = controllerSource.match(/private async useBattleAbility\
 assert.ok(controllerMethod, 'AppController action handler must remain available for the recovery regression');
 const useBattleAbility = runInNewContext(
   stripTypeScriptTypes(`async function useBattleAbility(abilityId: string): Promise<void> {${controllerMethod[1]}\n}\nuseBattleAbility;`, { mode: 'transform' }),
-  { GameApiError, isAuthoritativeBattleActionState, console: { warn() {} } },
+  { GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState, console: { warn() {} } },
 ) as (this: any, abilityId: string) => Promise<void>;
 
 const startControllerMethod = controllerSource.match(/private async enterUnderpass\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private async resumeUnderpass/);
