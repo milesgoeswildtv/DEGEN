@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-29 (fail closed on corrupt active housing state)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #97 OPEN, not merged:** continued `automation/degen/housing-reliability-current-main-v01`; code commit `887b804c145116ca1018dbae805e40720e2aa0b3`, regression-test commit `7b03ce5547351e1658680264bbae244f8959db4d`. No direct-main write.
+- **Task / files changed:** `src/app/state.ts` now validates the active local housing snapshot before it can be preferred over a queued or in-flight snapshot during server bootstrap. A valid queued snapshot remains recoverable if the parallel local player layout is corrupt. Housing edits are blocked while the active persisted layout is malformed, preventing an invalid request from being sent before authoritative bootstrap. `tests/housing-save-order.test.ts` covers corrupt active state with a valid outbox, and corrupt state with no valid outbox.
+- **QA:** the pre-change branch head `d558448928d81b2a1eed3b308d1912ff75abb93b` had exact-head CI [40881105935](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40881105935) in progress; earlier synchronized head `83eebea1ceaea0e0b9bb85654843de397abad410` passed CI [40880236478](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40880236478). The new code/test head requires a fresh complete CI run, including deterministic tests, isolated Worker/D1 suites, Chromium housing and battle scenarios, production build, and Wrangler validation. No local shell run, production D1 operation, or Worker deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main; this is housing recovery only. Zero Mana remains valid, zero-cost abilities remain usable at zero, monsters have no Mana, and Mana depletion never causes reversion.
+- **Battle authority / reward idempotency:** PR #106 remains open and unmerged; its exact code/test head `dca6d3ef6e4584023680546c089acc192f89805f` passed all 13 CI stages in [40876244644](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40876244644). Worker/D1 remains authoritative for combat state and reward settlement.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` with `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` collision remains unresolved. No migration or deployment configuration changed.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling remain release gates. No auth or Shield scope added.
+- **One best next task:** verify exact-head CI for the new PR #97 code/test commits; fix only demonstrated failures and keep the branch PR-only.
+
+---
+
 ## Follow-up — 2026-10-29 (reject malformed persisted housing outbox layouts)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`; the housing branch is synchronized with current main by merge commit `83eebea1ceaea0e0b9bb85654843de397abad410`.
