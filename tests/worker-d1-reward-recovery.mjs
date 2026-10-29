@@ -564,6 +564,9 @@ try {
   // A live claim lease must not be stolen by a concurrent completion attempt.
   const beforeLiveClaim = sql(`SELECT level, xp, currency, last_reward_claim_token
     FROM characters WHERE player_id = 'qa-player'`);
+  // Earlier fault-injection cases intentionally exercise several D1 transactions; refresh the
+  // live lease immediately before asserting that a non-stale claim cannot be stolen.
+  sql("UPDATE battle_permits SET reward_claimed_at = CURRENT_TIMESTAMP WHERE id = 'permit-live-claim'");
   const liveClaim = await complete('permit-live-claim');
   assert.equal(liveClaim.status, 409, JSON.stringify(liveClaim.body));
   assert.equal(liveClaim.body?.error, 'Battle reward is already being claimed, or the permit expired.');
