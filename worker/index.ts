@@ -674,9 +674,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     return fail(request, env, 'Battle turn limit reached.', 409);
   }
 
-  // A pre-existing defeat marker means this permit's audit trail is inconsistent.
-  // Fail closed before mutating combat state instead of silently treating a
-  // conflicting history row as a successful terminal action.
+  // Any pre-existing terminal marker makes this active permit's audit trail inconsistent.
+  // Keep both deterministic terminal keys out of the action compare-and-swap so a
+  // poisoned victory marker cannot mutate combat and strand the later reward claim.
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
@@ -689,9 +689,10 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           AND julianday(battle_permits.started_at) < julianday(closes_at))
       AND turn_count = ?
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+      AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
     RETURNING turn_count`)
     .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId,
-      TUNNEL_MAW.id, permit.turn_count, `${input.permitId}:defeat`);
+      TUNNEL_MAW.id, permit.turn_count, `${input.permitId}:defeat`, `${input.permitId}:victory`);
 
   let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
