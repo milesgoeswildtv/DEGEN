@@ -1,28 +1,14 @@
-## Latest run — 2026-10-29 (expired active permit regression; harness corrected)
+## Latest run — 2026-10-29 (expired battle-start replay rejection)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
-- **PUSHED / PR #106 OPEN, not merged:** `automation/degen/active-victory-marker-action-guard-v01`; latest test commit `f050411e88dd6431e2aaecd177989bf1300196eb`.
-- **Task / files changed:** `tests/worker-d1-defeat-atomic.mjs` adds explicit rejection coverage for an already-expired active permit and asserts its combat state/history remain unchanged. The fixture also preserves the approved invariant that an unexpired permit issued before Underpass closure remains usable. D1 snapshots are now captured before Worker startup and asserted only after Worker shutdown, avoiding concurrent Wrangler CLI access to the same local SQLite file.
-- **QA boundary:** previous fully verified PR head `6bcd19843fcc018c7ee50d98d5f44bffd1997b16` passed [CI 40851283370](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40851283370). Runs for the intermediate test/docs commits were in progress when checked; this latest test commit and the following continuity update require fresh exact-head CI. No local-shell test execution is claimed. Integration uses isolated Wrangler local D1 only; no production D1 operation or Worker deployment.
+- **PUSHED / PR #106 OPEN, not merged:** `automation/degen/active-victory-marker-action-guard-v01`; code/test commit `920d54c96b9aff10538890e6b973089aa21faed4`.
+- **Task / files changed:** `tests/worker-d1-reward-recovery.mjs` adds a distinct regression for replaying an already-expired active permit through `POST /api/battle/start`. It asserts 409, no `initialState`, and byte-for-byte unchanged persisted permit fields before/after the request. Existing `worker-d1-concurrency.mjs` already covers expired active action rejection, so this extends coverage to the separate start-replay route rather than duplicating that test. No Worker runtime, schema, migration, or balance changed.
+- **QA boundary:** previous complete PR head `6bcd19843fcc018c7ee50d98d5f44bffd1997b16` passed [CI 40851283370](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40851283370). Exact-head CI for the new test and this continuity update is pending; no local-shell test execution is claimed. The test uses isolated local Wrangler D1 only; no production D1 operation or Worker deployment.
 - **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable-action rejection, exact deduction, zero-cost-at-zero, no monster Mana, and no Mana-triggered reversion. Tracked `0006_backfill_active_battle_mana.sql` remains unchanged.
-- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, action CAS, terminal history, reward claims/receipts, XP/currency/inventory, and clear sequencing. PR #106 remains open and not live.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, action CAS, terminal history, reward claims/receipts, XP/currency/inventory, and clear sequencing. Existing integration covers concurrent action/completion, paid killing-blow races, duplicate settlement, expiry, and reward recovery. PR #106 remains open and not live.
 - **D1 / migration assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft `0007_player_sessions.sql` conflict and platform-auth release gates remain unresolved; no migration/configuration change was made.
 - **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling remain release gates. Existing Shield PR #20 must not be duplicated or advanced around the migration/auth gate.
-- **One best next task:** verify exact-head CI for the final continuity commit; if green, inspect any remaining untested reward-recovery edge without duplicating the existing concurrent action/completion and paid killing-blow coverage.
-
----
-
-## Latest run — 2026-10-29 (expired active permit fails closed)
-
-- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
-- **PUSHED / PR #106 OPEN, not merged:** `automation/degen/active-victory-marker-action-guard-v01`; code/test commit `8173c5f38cf664c6c0255d4aa06c1a85fe86bc5a` adds an isolated local Worker/D1 regression for expired active permits.
-- **Task / files changed:** `tests/worker-d1-defeat-atomic.mjs` seeds an active permit whose expiry is already past and asserts `POST /api/battle/action` returns 409 without changing player HP, player Mana, enemy HP, turn count, battle status, or terminal history. The same harness still proves a valid permit issued before Underpass closure remains actionable until its own expiry.
-- **QA boundary:** previous PR head `6bcd19843fcc018c7ee50d98d5f44bffd1997b16` passed exact-head CI [40851283370](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40851283370). The new test commit needs fresh exact-head CI; no local-shell run is claimed. Its D1 harness uses isolated Wrangler local D1 only; no production D1 operation or Worker deployment.
-- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable-action rejection, exact deduction, zero-cost-at-zero, no monster Mana, and no Mana-triggered reversion. Tracked `0006_backfill_active_battle_mana.sql` remains unchanged.
-- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, action CAS, terminal history, reward claims/receipts, XP/currency/inventory, and clear sequencing. PR #106 remains open and not live.
-- **D1 / migration assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft `0007_player_sessions.sql` conflict and platform-auth release gates remain unresolved; no migration/configuration change was made.
-- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling remain release gates. Existing Shield PR #20 must not be duplicated or advanced around the migration/auth gate.
-- **One best next task:** verify exact-head CI for `8173c5f38cf664c6c0255d4aa06c1a85fe86bc5a`; if green, add any still-missing same-permit concurrent action/completion integration assertion before the next approved gameplay slice.
+- **One best next task:** verify exact-head CI for the final continuity commit; if green, review the remaining start/action idempotency race coverage before selecting another non-blocked persistence task.
 
 ---
 
