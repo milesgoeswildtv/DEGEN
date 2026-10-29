@@ -27,6 +27,7 @@ const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewCont
 }) as {
   GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number, startTimeoutMs?: number) => {
     getUnderpass(playerId: string): Promise<unknown>;
+    getPendingBattleRewards(playerId: string): Promise<string[]>;
     completeUnderpass(playerId: string, permitId: string): Promise<unknown>;
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
     acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void;
@@ -81,6 +82,31 @@ async function apiReturning(value: unknown) {
   try { return await api.startUnderpass('player-1', 'cycle-1'); }
   finally { globalThis.fetch = oldFetch; }
 }
+
+test('pending reward discovery validates and deduplicates server permit IDs', async () => {
+  let requestedUrl = '';
+  const fetcher: typeof fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify({ permitIds: ['permit-1', 'permit-1', 'permit-2'] }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  assert.deepEqual(await api.getPendingBattleRewards('player / one'), ['permit-1', 'permit-2']);
+  assert.equal(requestedUrl,
+    'https://degen-api.example/api/battle/pending-rewards?playerId=player%20%2F%20one');
+});
+
+test('pending reward discovery rejects malformed server data', async () => {
+  const fetcher: typeof fetch = async () => new Response(JSON.stringify({ permitIds: ['permit-1', 7] }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  });
+  const api = new GameApi('https://degen-api.example', fetcher);
+  await assert.rejects(
+    () => api.getPendingBattleRewards('player-1'),
+    /Malformed pending battle reward response/,
+  );
+});
 
 test('AppController acknowledges the start key only after attaching the permit for the active player', async () => {
   const events: string[] = [];
