@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (bootstrap protocol guard merged)
+
+- **Authoritative main SHA:** `98d607d255baa0fc43c7809e77942295aaaaefda`, verified by comparing the merge commit with `main` (identical).
+- **MERGED:** PR #109, `fix(client): validate authoritative player bootstrap snapshots`, squash merge `98d607d255baa0fc43c7809e77942295aaaaefda`. Feature branch head was `dfd2185bad66697ed7e23598d47d72aa95ef95b8`.
+- **Task / files changed in PR #109:** `src/app/api.ts` validates `/api/player/bootstrap` responses before they can replace PlayerStore state and reuses that player-state validator for battle-completion receipts. It rejects cross-player IDs, malformed player/economy fields, malformed housing placement shape, and coordinates outside the existing 8×6 grid. `tests/api-response-protocol.test.ts` covers valid bootstrap, malformed payload, cross-player response, and all four out-of-bounds coordinate edges.
+- **Exact-head QA — PASS:** CI run [40937838613](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40937838613) passed on the final PR head `dfd2185bad66697ed7e23598d47d72aa95ef95b8`: deterministic tests; isolated Worker/D1 reward concurrency; transient D1 reward recovery; Underpass cycle and rollover concurrency; atomic defeat history; production build; Chromium mobile battle vertical slice with local Worker/D1; and Wrangler Worker validation. Cloudflare Pages preview for `dfd2185` also reported successful deployment. No separate local-shell run or production deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost moves at zero Mana, killing-blow/defeat behavior, cost-aware controls, no monster Mana, and no zero-Mana reversion remain intact. Tracked migrations `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for action compare-and-swap, terminal outcome/history, progression, inventory, currency, audited reward receipts, and recovery. PR #109 is client protocol validation only; it adds no client reward/economy authority.
+- **D1 / deployment assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft auth PR #14 `0007_player_sessions.sql` numbering collision remains unresolved. No schema, migration, Worker, or deployment-config changes were part of PR #109. Post-merge main CI and production deployment status are not independently verified here.
+- **Miles blocker:** none for the merged client protocol guard. Production Discord/Telegram identity/session verification and the legacy identity-collision policy remain release gates; do not bypass those gates or renumber the colliding migration without approval.
+- **One best next task:** verify post-merge main CI and Pages/Worker deployment status for `98d607d`; then choose the next scoped reliability task without reopening the superseded Mana branch.
+
+---
+
 # DEGEN — AUTONOMOUS PROGRESS
 
 ## Latest run — 2026-10-29 (validate authoritative player bootstrap snapshots)
