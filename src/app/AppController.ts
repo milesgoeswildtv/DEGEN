@@ -1,11 +1,13 @@
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
+import { WORLD_LOCATIONS } from '../data/world';
+import { bindCityViewport, type CityCamera } from '../ui/cityViewport';
 import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
-import { battleView, homeView, mapView, underpassView, updateBattleDom } from '../ui/views';
+import { battleView, districtView, homeView, locationView, mapView, underpassView, updateBattleDom } from '../ui/views';
 import { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
@@ -31,6 +33,11 @@ const shouldRetryBattleRecovery = (error: unknown): boolean => {
 
 export class AppController {
   private route: RouteKey = 'map';
+  private selectedDistrict = 'Central';
+  private selectedLocationId = 'downtown';
+  private cityCamera?: CityCamera;
+  private releaseCityViewport?: () => void;
+  private worldSyncFailed = false;
   private selectedFurniture?: string;
   private battleGame?: Phaser.Game;
   private battleEngine?: BattleEngine;
@@ -75,9 +82,17 @@ export class AppController {
   }
 
   private render(): void {
+    this.releaseCityViewport?.();
+    this.releaseCityViewport = undefined;
     const player = this.store.snapshot;
 
     switch (this.route) {
+      case 'district':
+        this.root.innerHTML = districtView(player, this.selectedDistrict, this.underpassEvent, this.worldSyncFailed);
+        break;
+      case 'location':
+        this.root.innerHTML = locationView(player, this.selectedLocationId);
+        break;
       case 'home':
         this.root.innerHTML = homeView(player, this.selectedFurniture);
         break;
@@ -86,7 +101,7 @@ export class AppController {
           (this.battlePermit !== undefined && this.battlePermitOwnerId === player.id)
           || (this.api.hasRecoverableUnderpassStart?.(player.id) ?? false)
         );
-        this.root.innerHTML = underpassView(player, this.underpassEvent, hasRecoverableEncounter);
+        this.root.innerHTML = underpassView(player, this.underpassEvent, hasRecoverableEncounter, this.worldSyncFailed);
         break;
       }
       case 'battle':
@@ -94,11 +109,15 @@ export class AppController {
         break;
       case 'map':
       default:
-        this.root.innerHTML = mapView(player, this.underpassEvent);
+        this.root.innerHTML = mapView(player, this.underpassEvent, this.worldSyncFailed);
         break;
     }
 
     this.bindCommonNavigation();
+    this.bindCityNavigation();
+    if (this.route === 'map') {
+      this.releaseCityViewport = bindCityViewport(this.root, this.cityCamera, (next) => { this.cityCamera = next; });
+    }
     if (this.route === 'home') this.bindHousing();
     if (this.route === 'underpass') this.bindUnderpass();
     if (this.route === 'battle') this.mountBattle();
@@ -109,6 +128,28 @@ export class AppController {
       button.addEventListener('click', () => {
         const route = button.dataset.route as RouteKey | undefined;
         if (route) this.navigate(route);
+      });
+    });
+  }
+
+  private bindCityNavigation(): void {
+    this.root.querySelectorAll<HTMLButtonElement>('[data-district]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const district = button.dataset.district;
+        if (!district || !WORLD_LOCATIONS.some((location) =>
+          location.district === district && this.store.snapshot.unlockedLocations.includes(location.id))) return;
+        this.selectedDistrict = district;
+        this.navigate('district');
+      });
+    });
+
+    this.root.querySelectorAll<HTMLButtonElement>('[data-location]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const location = WORLD_LOCATIONS.find((entry) => entry.id === button.dataset.location);
+        if (!location || !this.store.snapshot.unlockedLocations.includes(location.id)) return;
+        this.selectedDistrict = location.district;
+        this.selectedLocationId = location.id;
+        this.navigate(location.route);
       });
     });
   }
@@ -150,7 +191,7 @@ export class AppController {
 
   private async enterUnderpass(): Promise<void> {
     const event = this.underpassEvent;
-    if (!event || event.phase !== 'open') return;
+    if (!event || event.phase !== 'open' || (this.api.enabled && this.worldSyncFailed)) return;
 
     try {
       const playerId = this.store.snapshot.id;
@@ -622,16 +663,22 @@ export class AppController {
 
   private async refreshWorld(rerender = false): Promise<void> {
     try {
-      this.underpassEvent = this.api.enabled
-        ? await this.api.getUnderpass(this.store.snapshot.id)
-        : getPreviewUnderpass();
+      if (this.api.enabled) {
+        const snapshot = await this.api.getUnderpass(this.store.snapshot.id);
+        if (!snapshot) throw new Error('Missing authoritative world-event snapshot.');
+        this.underpassEvent = snapshot;
+      } else {
+        this.underpassEvent = getPreviewUnderpass();
+      }
+      this.worldSyncFailed = false;
     } catch (error) {
-      console.warn('World-event sync failed.', error);
-      // Server-backed play must not fabricate an Underpass cycle when auth/network sync fails.
+      console.warn('World-event sync failed; server-backed combat is unavailable.', error);
+      this.worldSyncFailed = this.api.enabled;
+      // Never fabricate a preview cycle for a server-backed player.
       this.underpassEvent = this.api.enabled ? undefined : getPreviewUnderpass();
     }
 
-    if (rerender && (this.route === 'map' || this.route === 'underpass')) this.render();
+    if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 
   private destroyBattle(): void {
