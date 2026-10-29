@@ -26,6 +26,7 @@ const apiModule = runInNewContext(compiled + '\n({ GameApi, GameApiProtocolError
   GameApi: new (apiBase: string, fetcher: typeof fetch) => {
     getUnderpass(playerId: string): Promise<unknown>;
     getPendingBattleRewards(playerId: string): Promise<string[]>;
+    startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
     actUnderpass(playerId: string, permitId: string, abilityId: string, expectedTurnCount: number): Promise<unknown>;
     completeUnderpass(playerId: string, permitId: string): Promise<unknown>;
   };
@@ -41,6 +42,40 @@ test('malformed JSON from a successful API response is a protocol error', async 
     api.getPendingBattleRewards('player-1'),
     apiModule.GameApiProtocolError,
   );
+});
+
+test('malformed JSON battle-start response is a protocol error without retry', async () => {
+  let requests = 0;
+  const api = new apiModule.GameApi('https://example.test', async () => {
+    requests += 1;
+    return new Response('{', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+
+  await assert.rejects(
+    api.startUnderpass('player-1', 'cycle-1'),
+    apiModule.GameApiProtocolError,
+  );
+  assert.equal(requests, 1, 'malformed battle-start JSON must not be retried as a transport failure');
+});
+
+test('malformed battle-start snapshot is a protocol error without retry', async () => {
+  let requests = 0;
+  const api = new apiModule.GameApi('https://example.test', async () => {
+    requests += 1;
+    return new Response('{}', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+
+  await assert.rejects(
+    api.startUnderpass('player-1', 'cycle-1'),
+    apiModule.GameApiProtocolError,
+  );
+  assert.equal(requests, 1, 'a malformed start snapshot must not be mistaken for a transport failure');
 });
 
 test('malformed JSON battle-action response is a protocol error without retry', async () => {

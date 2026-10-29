@@ -346,6 +346,7 @@ export class GameApi {
     try {
       permit = await sendStart();
     } catch (error) {
+      if (error instanceof GameApiProtocolError) throw error;
       if (error instanceof GameApiError && error.status < 500) {
         clearBattleStartRequestKey(playerId, requestId);
         throw error;
@@ -370,7 +371,7 @@ export class GameApi {
       || !isAuthoritativeBattleStartState(permit.initialState, permit.permitId)) {
       // Do not discard the key on a malformed 2xx response: the Worker may
       // have committed the permit, so a later retry must remain idempotent.
-      throw new Error('Missing or malformed authoritative battle start state.');
+      throw new GameApiProtocolError('Missing or malformed authoritative battle start state.');
     }
     // Keep the one correlation record through the encounter; the controller
     // marks it active and clears it only after authoritative reward completion.
