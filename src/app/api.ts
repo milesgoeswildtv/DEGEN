@@ -71,12 +71,30 @@ const isFurniturePlacementArray = (
     && entry.instanceId.length > 0
     && typeof entry.furnitureId === 'string'
     && entry.furnitureId.length > 0
-    && isBoundedSafeInteger(entry.x, 0, Number.MAX_SAFE_INTEGER)
-    && isBoundedSafeInteger(entry.y, 0, Number.MAX_SAFE_INTEGER));
+    && isBoundedSafeInteger(entry.x, 0, 7)
+    && isBoundedSafeInteger(entry.y, 0, 5));
 
-// Completion responses are authoritative account/economy snapshots. Validate the
-// response envelope before AppController can replace a PlayerStore or clear a
-// pending receipt; never synthesize or repair reward values on the client.
+// Player snapshots from the Worker are account and persistence authority. Validate
+// them before bootstrap or completion can replace client state; never repair malformed
+// server data or synthesize progression locally.
+const isAuthoritativePlayerState = (value: unknown, playerId: string): value is PlayerState => {
+  if (!isRecord(value)) return false;
+  const housing = value.housing;
+  if (!isRecord(housing)) return false;
+
+  return value.id === playerId
+    && typeof value.displayName === 'string'
+    && isBoundedSafeInteger(value.level, 1, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(value.xp, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(value.currency, 0, Number.MAX_SAFE_INTEGER)
+    && typeof value.degenId === 'string'
+    && isStringArray(value.inventory)
+    && isStringArray(value.unlockedLocations)
+    && isStringArray(value.defeatedBosses)
+    && isStringArray(housing.inventory)
+    && isFurniturePlacementArray(housing.placements);
+};
+
 const isAuthoritativeBattleCompletionResult = (
   value: unknown,
   playerId: string,
@@ -85,22 +103,9 @@ const isAuthoritativeBattleCompletionResult = (
   const player = value.player;
   const reward = value.reward;
   const worldEvent = value.worldEvent;
-  if (!isRecord(player) || !isRecord(reward) || !isRecord(worldEvent)) return false;
-  const housing = player.housing;
-  if (!isRecord(housing)) return false;
+  if (!isAuthoritativePlayerState(player, playerId) || !isRecord(reward) || !isRecord(worldEvent)) return false;
 
-  return player.id === playerId
-    && typeof player.displayName === 'string'
-    && isBoundedSafeInteger(player.level, 1, Number.MAX_SAFE_INTEGER)
-    && isBoundedSafeInteger(player.xp, 0, Number.MAX_SAFE_INTEGER)
-    && isBoundedSafeInteger(player.currency, 0, Number.MAX_SAFE_INTEGER)
-    && typeof player.degenId === 'string'
-    && isStringArray(player.inventory)
-    && isStringArray(player.unlockedLocations)
-    && isStringArray(player.defeatedBosses)
-    && isStringArray(housing.inventory)
-    && isFurniturePlacementArray(housing.placements)
-    && isBoundedSafeInteger(reward.xp, 0, Number.MAX_SAFE_INTEGER)
+  return isBoundedSafeInteger(reward.xp, 0, Number.MAX_SAFE_INTEGER)
     && isBoundedSafeInteger(reward.currency, 0, Number.MAX_SAFE_INTEGER)
     && isStringArray(reward.items)
     && isStringArray(reward.furniture)
@@ -266,10 +271,14 @@ export class GameApi {
 
   async bootstrap(playerId: string, identity: PlatformIdentity): Promise<PlayerState | undefined> {
     if (!this.enabled) return undefined;
-    return this.request<PlayerState>('/api/player/bootstrap', {
+    const player = await this.request<unknown>('/api/player/bootstrap', {
       method: 'POST',
       body: JSON.stringify({ playerId, displayName: identity.displayName, platform: identity.platform, platformUserId: identity.platformUserId }),
     });
+    if (!isAuthoritativePlayerState(player, playerId)) {
+      throw new GameApiProtocolError('Malformed authoritative player bootstrap snapshot.');
+    }
+    return player;
   }
 
   async saveHousing(playerId: string, housing: HousingState): Promise<void> {

@@ -1,3 +1,19 @@
+# DEGEN — AUTONOMOUS PROGRESS
+
+## Latest run — 2026-10-29 (validate authoritative player bootstrap snapshots)
+
+- **Authoritative main SHA at branch start:** `d1635033a276cb1a3bbf22d6686edf7aa2977ec1`, the normal merge commit for PR #108.
+- **PUSHED / PR #109 OPEN, not merged:** `automation/degen/player-bootstrap-protocol-guard-v01`. Current code/test head: `a5941583c902159d6aa6a307c33afeb5ba890653`; the continuity update below creates another head and requires its own exact-head CI.
+- **Task / files changed:** `src/app/api.ts` validates `/api/player/bootstrap` before returning player state to `PlayerStore`. A shared `isAuthoritativePlayerState` validator now serves bootstrap and battle-completion receipts. It rejects mismatched player IDs, malformed player/economy fields, malformed placements, and coordinates outside the existing 8×6 housing grid. `tests/api-response-protocol.test.ts` covers valid bootstrap, malformed state, cross-player response IDs, and all four out-of-bounds coordinate edges.
+- **QA:** PR #108's actual merged head `faebe2e9696d7ee8d810bdfb78850a7b514fddcf` passed exact-head CI [40931713309](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40931713309): deterministic tests, isolated Worker/D1 reward concurrency and recovery, Underpass cycle/rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Wrangler validation. For PR #109, deterministic tests passed on the earlier continuity head `904bd3c` in [40936795984](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40936795984), but its Worker/D1 reward-concurrency stage was still running at last check. The new code/test head and this continuity head need fresh exact-head CI. No local-shell run or production deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, terminal handling, cost-aware controls, no monster Mana, and no zero-Mana reversion remain intact. Tracked migrations `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for action compare-and-swap, terminal outcomes/history, progression, inventory, currency, reward receipts, and recovery. PR #109 is client protocol validation only; no reward or economy authority moves to the client.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` with `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` numbering collision remains unresolved. No schema, migration, deployment configuration, production D1 operation, or production deployment changed in this task. Production Discord/Telegram identity verification and legacy identity-collision policy remain release gates.
+- **Miles blocker:** none for this scoped client snapshot guard. The production-auth and migration gates still block schema-backed Shield/status releases; do not bypass or renumber the colliding migration without approval.
+- **One best next task:** verify exact-head CI for PR #109. If green, merge normally and separately verify post-merge main CI; revisit the gated Shield foundation only after auth/migration blockers are reconciled.
+
+---
+
 ## Latest run — 2026-10-29 (PR #108 exact-head CI verified)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
