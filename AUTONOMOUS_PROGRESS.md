@@ -1,3 +1,28 @@
+## Post-merge verification — 2026-10-29 (main CI and Worker deployment green)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
+- **Main CI — PASS:** [run 40898054254](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054254) completed successfully after the PR #106 merge. It includes deterministic tests, isolated Worker/D1 reward concurrency and recovery, Underpass cycle/rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Wrangler validation.
+- **Worker deployment — PASS:** [run 40898054039](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054039) completed successfully. Logs show schema application processed 17 queries, tracked migration runner reported “No migrations to apply,” and deployed Worker version `514affa6-6550-48d7-82b6-f81e5ea82429` at the configured Worker URL. Pages preview [run 40898054082](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054082) also succeeded. No direct HTTP health probe or separate local-shell run is claimed.
+- **D1 assumptions unchanged:** no new migration was introduced; `0006_backfill_active_battle_mana.sql` remains tracked. The `0007` inventory-guard / player-session migration-number conflict remains unresolved and must not be bypassed.
+- **One best next task:** verify the exact-head CI for the in-progress reward-recovery protocol guard PR, then update continuity from its final observed result.
+
+---
+
+## Latest run — 2026-10-29 (terminal battle reward recovery merged)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448` (normal squash merge of PR #106). No direct-main write.
+- **MERGED:** [PR #106 — harden terminal battle reward recovery](https://github.com/milesgoeswildtv/DEGEN/pull/106), code/test head `dca6d3ef6e4584023680546c089acc192f89805f`; exact-head CI [40876244644](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40876244644) passed. Merge commit: `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
+- **Files changed by the merged PR:** `worker/index.ts`, `src/app/AppController.ts`, `src/app/api.ts`, and battle/reward-recovery Worker + client tests. Terminal history keys are checked before action/start/reward settlement; reward claims recheck both victory and defeat markers through guarded writes; server-owned eligible victory permit IDs can be recovered without returning reward amounts/progression; client completion requests are coalesced and retry only transient or explicitly retryable conflicts.
+- **Post-merge status:** main CI [40898054254](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054254), Deploy Worker [40898054039](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054039), and Deploy Preview [40898054082](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054082) were still in progress at last check. Do not claim post-merge CI, production D1 migration, Worker deployment, or live behavior until those runs complete. Pre-merge Pages preview succeeded on the PR head; no separate local-shell run is claimed.
+- **Mana:** COMPLETE / MERGED before this run. Degen-only maxMana/manaCost, authoritative player_mana, reject-without-mutation, exact deduction, zero-cost at zero, killing blow/defeat coverage, no monster Mana, no zero-Mana reversion, and tracked `0006_backfill_active_battle_mana.sql` remain intact.
+- **Battle authority / reward idempotency:** the merged guard rejects conflicting `<permitId>:victory` / `<permitId>:defeat` history markers and protects settlement/clear counters against races. Reward recovery never returns reward amounts or progression to the client. The pending-reward discovery route uses the existing playerId API contract; platform authentication remains an outstanding production release gate.
+- **D1 assumptions / gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main's `0007_player_inventory_quantity_guards.sql` still conflicts by sequence number with draft PR #14's `0007_player_sessions.sql`; do not renumber or bypass that conflict. No manual/remote D1 operation was performed.
+- **Related PR #97:** housing bootstrap guard code/test head `e864a7eb7e542f2fa6ae7b49b73b8923a198dec9` passed [CI 40893382529](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40893382529); continuity head `b42ba8aee95ba5181454fdfe7a95373885754512` passed [CI 40893454767](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40893454767) and its Pages preview. PR remains open/unmerged because the platform-auth release gate is not cleared.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and an approved legacy identity-collision policy remain unresolved. Shield PR #20 remains gated. No monster canon was changed.
+- **One best next task:** verify the post-merge main CI and Worker deployment runs above, then continue with a non-auth-dependent reliability gap; do not resolve the `0007` migration conflict or bypass auth gates without explicit approval.
+
+---
+
 ## Latest run — 2026-10-29 (coalesce duplicate reward completion retries)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`; the prior continuity record reports main CI and Pages preview green on this SHA. Main was not modified.
