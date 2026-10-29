@@ -11,7 +11,12 @@ const controllerSource = readFileSync(new URL('../src/app/AppController.ts', imp
   .replace('export class AppController', 'class AppController');
 const compiled = stripTypeScriptTypes(controllerSource, { mode: 'transform' });
 
-const setup = (enabled: boolean, completeUnderpass?: (playerId: string, permitId: string) => Promise<unknown>) => {
+const setup = (
+  enabled: boolean,
+  completeUnderpass?: (playerId: string, permitId: string) => Promise<unknown>,
+  getPendingBattleRewards?: (playerId: string) => Promise<string[]>,
+  storageUnavailable = false,
+) => {
   const storage = new Map<string, string>();
   const timers: Array<{ callback: () => void; delay: number }> = [];
   const store = {
@@ -26,6 +31,7 @@ const setup = (enabled: boolean, completeUnderpass?: (playerId: string, permitId
     enabled,
     completeUnderpass: completeUnderpass ?? (async () => ({ player: {}, worldEvent: {} })),
     getUnderpass: async () => ({}),
+    getPendingBattleRewards: getPendingBattleRewards ?? (async () => []),
   };
   const root = { innerHTML: '', querySelectorAll: () => [] };
   const scope = {
@@ -35,8 +41,14 @@ const setup = (enabled: boolean, completeUnderpass?: (playerId: string, permitId
       setInterval: () => 1,
     },
     localStorage: {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => { storage.set(key, value); },
+      getItem: (key: string) => {
+        if (storageUnavailable) throw new Error('localStorage unavailable');
+        return storage.get(key) ?? null;
+      },
+      setItem: (key: string, value: string) => {
+        if (storageUnavailable) throw new Error('localStorage unavailable');
+        storage.set(key, value);
+      },
     },
     console: { warn: () => {} },
     mapView: () => '', homeView: () => '', underpassView: () => '', battleView: () => '',
@@ -75,6 +87,34 @@ test('failed Worker completion retains the permit and persists retry across cont
   assert.equal(fixture.store.replaced, 1);
   assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '[]');
   assert.equal(fixture.store.localRewards, 0);
+});
+
+test('server-discovered victory recovery works when localStorage is unavailable', async () => {
+  let attempts = 0;
+  let discoveredFor = '';
+  const fixture = setup(
+    true,
+    async (playerId, permitId) => {
+      attempts += 1;
+      assert.equal(playerId, 'test-player');
+      assert.equal(permitId, 'server-only-permit');
+      return { player: { id: playerId }, worldEvent: {} };
+    },
+    async (playerId) => {
+      discoveredFor = playerId;
+      return ['server-only-permit'];
+    },
+    true,
+  );
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  await controller.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(discoveredFor, 'test-player');
+  assert.equal(attempts, 1, 'the server-discovered permit must be completed exactly once');
+  assert.equal(fixture.store.replaced, 1, 'only the authoritative completion snapshot is applied');
+  assert.equal(fixture.store.localRewards, 0, 'recovery never computes or grants client rewards');
 });
 
 test('successful Worker completion returns from victory only after authoritative reward', async () => {
