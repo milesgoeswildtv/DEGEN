@@ -92,6 +92,7 @@ test('real Worker housing save response is not cacheable', async () => {
     prepare: (_sql: string) => ({
       bind: (..._values: unknown[]) => ({
         all: async () => ({ results: [] }),
+        first: async () => ({ ready: 1 }),
       }),
     }),
     batch: async (_statements: unknown[]) => [],
