@@ -954,6 +954,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     WHERE id = ? AND player_id = ? AND event_key = 'underpass'
       AND encounter_key = ? AND completed_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+      AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
       AND EXISTS (SELECT 1 FROM world_event_cycles
         WHERE id = battle_permits.cycle_id AND event_key = 'underpass'
           AND julianday(opens_at) <= julianday(battle_permits.started_at)
@@ -965,7 +966,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
         AND strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at
         AND julianday(reward_claimed_at) < julianday('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
-    .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id, `${input.permitId}:victory`)
+    .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id, `${input.permitId}:victory`, `${input.permitId}:defeat`)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
     if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 
@@ -1023,20 +1024,25 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
                 AND other.id <> ? AND other.reward_clear_number IS NOT NULL
                 AND EXISTS (SELECT 1 FROM world_event_cycles AS other_cycle
                   WHERE other_cycle.id = other.cycle_id AND other_cycle.event_key = 'underpass')
-            ), 0)`)
+            ), 0)
+          AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+          AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`)
         .bind(input.playerId, claim.cycle_id, input.permitId, input.playerId, token,
           input.playerId, claim.cycle_id,
           input.playerId, claim.cycle_id,
           input.playerId, claim.cycle_id,
-          input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId),
+          input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId,
+          `${input.permitId}:victory`, `${input.permitId}:defeat`),
       env.DB.prepare(`UPDATE world_event_clears SET full_reward_clears = (
           SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?
             AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL
         ) WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
           AND full_reward_clears < (SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?
-            AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL)`)
+            AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+          AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`)
         .bind(input.permitId, input.playerId, token, input.playerId, claim.cycle_id,
-          input.permitId, input.playerId, token),
+          input.permitId, input.playerId, token, `${input.permitId}:victory`, `${input.permitId}:defeat`),
       // If the completion marker appeared after clear-number assignment, undo only
       // this token's still-unawarded reservation. The cycle counter above is guarded
       // by the same incomplete-claim predicate, so the sequence remains untouched.
