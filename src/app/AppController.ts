@@ -454,8 +454,11 @@ export class AppController {
       console.warn('Unable to discover pending server battle rewards.', error);
       // Retry transient failures while the app stays open. A reload also repeats
       // discovery, so recovery does not depend on browser storage surviving.
-      if (this.store.snapshot.id === playerId
-        && !(error instanceof GameApiError && error.status < 500)) {
+      const definitiveClientRejection = error instanceof GameApiError
+        && error.status < 500
+        && error.status !== 404
+        && error.status !== 429;
+      if (this.store.snapshot.id === playerId && !definitiveClientRejection) {
         window.setTimeout(() => {
           if (this.store.snapshot.id === playerId && this.api.enabled) {
             void this.discoverPendingBattleRewards(playerId);
