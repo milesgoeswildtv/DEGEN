@@ -286,8 +286,10 @@ export class GameApi {
 
   async getPendingBattleRewards(playerId: string): Promise<string[]> {
     if (!this.enabled) return [];
-    const response = await this.request<unknown>(
+    const response = await this.requestWithTimeout<unknown>(
       `/api/battle/pending-rewards?playerId=${encodeURIComponent(playerId)}`,
+      {},
+      this.completionTimeoutMs,
     );
     if (!isRecord(response)
       || !Array.isArray(response.permitIds)
