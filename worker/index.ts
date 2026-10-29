@@ -1143,7 +1143,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
         .bind(progression.level, progression.xp, reward.currency, token, input.playerId,
           character.level, character.xp, input.permitId, input.playerId, token,
           `${input.permitId}:victory`, `${input.permitId}:defeat`, ...inventoryCapacityBinds),
-      // A pre-existing victory marker must fail the whole D1 transaction.
+      // A pre-existing victory marker must block the reward batch before receipt insertion.
       env.DB.prepare(`INSERT INTO battle_history
         (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
         SELECT ?, ?, ?, 'victory', ?, ?, ? WHERE ${historyGuard}`)
