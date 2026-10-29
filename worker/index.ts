@@ -513,7 +513,16 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     const completed = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-        permit.enemy_hp, permit.battle_status, permit.turn_count
+        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')
+            AND marker.player_id = permit.player_id
+            AND marker.encounter_key = permit.encounter_key
+            AND marker.result = 'victory') AS valid_victory_history_marker_count
       FROM battle_permits AS permit
       LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
       WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NOT NULL
@@ -522,11 +531,18 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
-      .first<BattleActionPermitRow>();
+      .first<BattleActionPermitRow & {
+        victory_history_marker_count: number;
+        defeat_history_marker_count: number;
+        valid_victory_history_marker_count: number;
+      }>();
     if (completed
       && completed.event_key === 'underpass'
       && completed.cycle_event_key === 'underpass'
       && completed.encounter_key === TUNNEL_MAW.id
+      && completed.victory_history_marker_count === 1
+      && completed.valid_victory_history_marker_count === 1
+      && completed.defeat_history_marker_count === 0
       && isValidBattlePermitState(completed)) {
       return json(request, env, {
         error: 'Battle permit is already completed.',
@@ -548,7 +564,11 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
-        permit.completed_at, permit.reward_state
+        permit.completed_at, permit.reward_state,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count
       FROM battle_permits AS permit
       LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
       WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NULL
@@ -560,12 +580,17 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       .first<BattleActionPermitRow & {
         completed_at: string | null;
         reward_state: 'pending' | 'claiming' | 'awarded';
+        victory_history_marker_count: number;
+        defeat_history_marker_count: number;
       }>();
     const pendingVictory = terminal?.battle_status === 'victory'
       && (terminal.reward_state === 'pending' || terminal.reward_state === 'claiming');
     const unresolvedDefeat = terminal?.battle_status === 'defeat'
       && terminal.reward_state === 'pending';
-    if (terminal
+    const terminalHasConflictingMarkers = terminal?.battle_status === 'victory'
+      ? terminal.victory_history_marker_count > 0 || terminal.defeat_history_marker_count > 0
+      : terminal?.battle_status === 'defeat' && terminal.victory_history_marker_count > 0;
+    if (terminal && !terminalHasConflictingMarkers
       && terminal.event_key === 'underpass'
       && terminal.cycle_event_key === 'underpass'
       && terminal.encounter_key === TUNNEL_MAW.id
@@ -637,10 +662,12 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     }
     // A turn can cross permit expiry between the first read and this conflict re-read.
     // Never return an active snapshot that would leave the client presenting an unusable battle.
-    if (latest.battle_status === 'active'
-      && (latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0)) {
-      // An active permit with a terminal history key is inconsistent and cannot be
-      // presented as actionable. Do not return a valid-looking active snapshot.
+    const hasConflictingTerminalMarkers =
+      latest.battle_status === 'active' || latest.battle_status === 'victory'
+        ? latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0
+        : latest.battle_status === 'defeat' && latest.victory_history_marker_count > 0;
+    if (hasConflictingTerminalMarkers) {
+      // Never echo a combat snapshot whose terminal audit disagrees with persisted status.
       return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
     }
     if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
@@ -755,12 +782,14 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     if (latest && isValidBattlePermitState(latest)) {
       // A lost CAS at expiry must not return a stale active snapshot; terminal states
       // remain recoverable after expiry because the accepted action already resolved them.
-      if (latest.battle_status === 'active'
-        && (latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0)) {
-        // An active permit with a terminal history key is inconsistent and cannot be
-        // presented as actionable. Do not return a valid-looking active snapshot.
-        return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
-      }
+          const hasConflictingTerminalMarkers =
+            latest.battle_status === 'active' || latest.battle_status === 'victory'
+              ? latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0
+              : latest.battle_status === 'defeat' && latest.victory_history_marker_count > 0;
+          if (hasConflictingTerminalMarkers) {
+            // Never echo a combat snapshot whose terminal audit disagrees with persisted status.
+            return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+          }
       if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
         return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
       }

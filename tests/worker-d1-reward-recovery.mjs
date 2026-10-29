@@ -323,6 +323,19 @@ try {
     assert.equal(pendingPermitIds.has(permitId), false, `ineligible victory ${permitId} must not be discovered`);
   }
 
+  // A terminal status with a conflicting history key is not a safe snapshot to
+  // hand back to a stale tab. This pending victory already has a defeat marker.
+  const poisonedPendingStateBefore = sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+    FROM battle_permits WHERE id = 'permit-defeat-history-conflict'`);
+  const poisonedPendingAction = await act('permit-defeat-history-conflict');
+  assert.equal(poisonedPendingAction.status, 409, JSON.stringify(poisonedPendingAction.body));
+  assert.equal(poisonedPendingAction.body?.error, 'Battle state changed; authoritative snapshot unavailable.');
+  assert.equal('battleState' in (poisonedPendingAction.body ?? {}), false,
+    'a pending victory with a conflicting terminal marker must not be echoed');
+  assert.deepEqual(sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+    FROM battle_permits WHERE id = 'permit-defeat-history-conflict'`), poisonedPendingStateBefore,
+    'snapshot rejection must not mutate the persisted terminal state');
+
   // The claim itself can succeed before a conflicting terminal marker appears.
   // The reservation CAS must recheck both keys before consuming a clear slot.
   const markerRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
@@ -560,6 +573,11 @@ try {
     'a conflicting terminal marker must not rewrite the stored receipt');
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-recovery:victory'`)[0]?.n, 1);
   assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-recovery:defeat'`)[0]?.n, 1);
+  const corruptedAwardAction = await act('permit-recovery', 'slash', 1);
+  assert.equal(corruptedAwardAction.status, 409, JSON.stringify(corruptedAwardAction.body));
+  assert.equal(corruptedAwardAction.body?.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in (corruptedAwardAction.body ?? {}), false,
+    'a corrupted awarded receipt must not be replayed as a trustworthy victory snapshot');
 
   // A live claim lease must not be stolen by a concurrent completion attempt.
   const beforeLiveClaim = sql(`SELECT level, xp, currency, last_reward_claim_token
