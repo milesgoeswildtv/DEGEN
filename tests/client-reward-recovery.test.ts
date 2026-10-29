@@ -29,7 +29,7 @@ const setup = (
   storageUnavailable = false,
 ) => {
   const storage = new Map<string, string>();
-  const timers: Array<{ callback: () => void; delay: number }> = [];
+  const timers: Array<{ callback: () => void; delay: number; id: number; cancelled: boolean }> = [];
   const store = {
     snapshot: { id: 'test-player' },
     replaced: 0,
@@ -47,8 +47,15 @@ const setup = (
   const root = { innerHTML: '', querySelectorAll: () => [] };
   const scope = {
     window: {
-      setTimeout: (callback: () => void, delay: number) => { timers.push({ callback, delay }); return timers.length; },
-      clearTimeout: () => {},
+      setTimeout: (callback: () => void, delay: number) => {
+        const id = timers.length + 1;
+        timers.push({ callback, delay, id, cancelled: false });
+        return id;
+      },
+      clearTimeout: (id: number) => {
+        const timer = timers.find((candidate) => candidate.id === id);
+        if (timer) timer.cancelled = true;
+      },
       setInterval: () => 1,
     },
     localStorage: {
@@ -136,6 +143,80 @@ test('retryable reward claim conflicts still schedule recovery', async () => {
 
   assert.ok(fixture.timers.some((timer) => timer.delay === 15_000),
     'a Worker conflict explicitly marked retryable must continue bounded recovery');
+  assert.equal(fixture.store.localRewards, 0);
+});
+
+test('duplicate victory notifications share one in-flight Worker completion', async () => {
+  let resolveCompletion!: (value: unknown) => void;
+  let attempts = 0;
+  const completionResponse = new Promise<unknown>((resolve) => { resolveCompletion = resolve; });
+  const fixture = setup(true, async () => {
+    attempts += 1;
+    return completionResponse;
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-duplicate-notification' };
+  controller.battlePermitOwnerId = 'test-player';
+  controller.route = 'battle';
+
+  const first = controller.finishBattle('victory');
+  const second = controller.finishBattle('victory');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(attempts, 1, 'duplicate finish/recovery notifications must coalesce before reaching the Worker');
+
+  resolveCompletion({ player: { id: 'test-player', level: 2 }, worldEvent: { cycleId: 'cycle-1' } });
+  await Promise.all([first, second]);
+
+  assert.equal(attempts, 1);
+  assert.equal(fixture.store.replaced, 1, 'only one authoritative player snapshot is applied');
+  assert.equal(fixture.store.localRewards, 0, 'deduplication never moves reward authority to the client');
+  assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000 && !timer.cancelled).length, 0);
+  assert.equal(controller.battlePermit, undefined);
+});
+
+test('successful manual reward retry cancels the existing automatic retry timer', async () => {
+  let attempts = 0;
+  const fixture = setup(true, async () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('temporary network failure');
+    return { player: { id: 'test-player', level: 2 }, worldEvent: {} };
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-manual-retry' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await controller.finishBattle('victory');
+  const retry = fixture.timers.find((timer) => timer.delay === 15_000);
+  assert.ok(retry);
+  assert.equal(retry.cancelled, false);
+
+  await controller.finishBattle('victory');
+  assert.equal(attempts, 2);
+  assert.equal(retry.cancelled, true, 'successful completion must cancel its stale scheduled retry');
+  assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000 && !timer.cancelled).length, 0);
+  assert.equal(fixture.store.replaced, 1);
+  assert.equal(fixture.store.localRewards, 0);
+});
+
+test('duplicate failed reward notifications create only one automatic retry timer', async () => {
+  let attempts = 0;
+  const fixture = setup(true, async () => {
+    attempts += 1;
+    throw new Error('temporary network failure');
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-duplicate-retry' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await Promise.all([
+    controller.finishBattle('victory'),
+    controller.finishBattle('victory'),
+  ]);
+
+  assert.equal(attempts, 1, 'same-permit failures are coalesced while in flight');
+  assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000 && !timer.cancelled).length, 1,
+    'one permit must have at most one scheduled retry');
+  assert.equal(controller.battlePermit?.permitId, 'permit-duplicate-retry');
   assert.equal(fixture.store.localRewards, 0);
 });
 
