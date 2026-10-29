@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (terminal-marker reward recovery — exact-head CI pass)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #106 OPEN, ready for review (not merged):** `automation/degen/active-victory-marker-action-guard-v01`. Exact tested head before this continuity update: `890a4008c11895d20568330ef64035abb54a75d0`.
+- **QA — exact tested head PASS:** GitHub Actions CI run [40841463675](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40841463675) completed successfully on that head. All 13 required stages passed: deterministic game tests; isolated local Worker/D1 reward concurrency; transient-D1-failure reward recovery; Underpass cycle and rollover concurrency; atomic defeat history; production build; real Chromium mobile battle vertical slice with local Worker/D1; and Wrangler Worker validation. No local-shell execution is claimed. The following documentation commit creates a new head, so verify exact-head CI again before describing the final PR head as green.
+- **Task / files:** this branch continues the existing terminal-history integrity/recovery slice in `worker/index.ts`, the local Worker/D1 fault-injection harnesses, client-side discovery of server-owned pending victory permit IDs, and replay/response validation tests. Conflicting `:victory` / `:defeat` audit markers cannot mutate an active battle, produce an actionable terminal snapshot, be rediscovered as pending rewards, or pass settlement into XP/currency/inventory/victory-receipt writes. Trigger-injected races cover claim, clear-number assignment, counter advancement, and settlement.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic insufficient-Mana rejection, exact deduction, zero-cost-at-zero, terminal outcomes, cost-aware controls, no monster Mana, and no Mana-triggered reversion remain intact. `0006_backfill_active_battle_mana.sql` remains tracked; the divergent `sidekick/degen-mana-foundation-v01` remains stale and was not revived.
+- **Battle authority / rewards:** Worker/D1 remains authoritative for battle permit state, action CAS, terminal audit markers, reward claims/receipts, XP, currency, inventory, and cycle clear sequencing. No client reward authority was introduced. PR #106 remains unmerged and has not been deployed.
+- **D1 / deployment assumptions:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; deployment workflow applies schema, then tracked migrations, then Worker code. No schema/migration/configuration change, remote D1 operation, or production Worker deployment occurred in this run. The `0007` auth/inventory migration-number collision and platform-auth release gates remain unresolved and must not be bypassed.
+- **Miles blocker:** none for this scoped reliability change; normal PR review is still required.
+- **One best next task:** verify exact-head CI after this continuity commit, then continue the next missing Worker/D1 integration edge only if it can be added without weakening terminal audit/reward idempotency or bypassing the auth/migration gates.
+
+---
+
 ## Follow-up — 2026-10-29 (align completed-action fixtures with audit guard)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
