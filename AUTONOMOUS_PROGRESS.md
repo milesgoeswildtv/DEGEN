@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (malformed battle-start handling + browser QA correction)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
+- **PUSHED / PR #108 OPEN, not merged:** `automation/degen/reward-recovery-protocol-error-guard-v01`. Code/test head before this continuity update: `71bc637e1db9f3ac3222c96dbc4195708e868789`; prior protocol guard/test commit: `f3b378186f957f6090c03edd5ac83def93e0280d`.
+- **Implementation / files changed:** `src/app/api.ts` now rethrows `GameApiProtocolError` from battle start instead of treating malformed successful JSON as a transient transport failure; malformed start snapshots also raise the typed protocol error. `tests/api-response-protocol.test.ts` adds one-request-only regression cases for malformed battle-start JSON and malformed battle-start snapshots. `tests/browser-battle-vertical-slice.mjs` now mutates only the isolated local D1 Mana value, leaves the battle view, and resumes through the real Worker replay path before asserting zero-Mana controls. This respects the immutable same-turn snapshot guard rather than expecting a conflicting same-turn response to overwrite client state.
+- **QA:** exact-head CI [40923146520](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40923146520) is running on `71bc637`: deterministic game tests passed; isolated Worker/D1 reward concurrency is in progress; recovery, cycle/rollover concurrency, defeat history, build, Chromium, and Wrangler stages remain unverified. Earlier exact-head run [40919000462](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40919000462) passed deterministic tests, reward concurrency/recovery, cycle/rollover concurrency, defeat-history integration, and build, but failed Chromium at `Timeout waiting for disabled paid move explains its Mana shortfall`. Root cause was the browser fixture mutating persisted Mana without reloading the server-authoritative snapshot; the test is corrected on `71bc637`. No local-shell test run is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted player Mana, atomic unaffordable rejection, exact deduction, zero-cost use at zero, killing-blow/defeat math, cost-aware controls, no monster Mana, and no zero-Mana reversion remain intact. Tracked migrations `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain unchanged.
+- **Battle authority / rewards:** Worker/D1 still owns action compare-and-swap, terminal outcome, audited receipts, progression, inventory, and reward recovery. PR #108 remains client/API integrity work only; no reward/economy authority moved to the client.
+- **D1 / deployment assumptions:** `wrangler.toml` binds `DB` to `DEGEN` with `db/migrations`; main deploy order remains schema → tracked migrations → Worker. No schema or deployment config changed. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` numbering collision and production Discord/Telegram identity/session release gates remain unresolved.
+- **Miles blocker:** none for this scoped client/API fix. Do not bypass the migration/auth gates for Shield or auth-dependent housing work.
+- **One best next task:** verify every stage of exact-head CI for `71bc637`; inspect any real failure before editing again. Do not merge or deploy while the full run is pending.
+
+---
+
 ## Latest run — 2026-10-29 (reject malformed pending-reward permit IDs)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
