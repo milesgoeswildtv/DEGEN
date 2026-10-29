@@ -1,3 +1,13 @@
+## Follow-up — 2026-10-29 (classify malformed JSON as a protocol failure)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`; feature branch remains `automation/degen/reward-recovery-protocol-error-guard-v01`.
+- **Latest implementation/test head before this progress update:** `b8805127349172075c0ca160d511b96d76209c09`. This extends PR #108; it does not create a competing reward-recovery branch.
+- **Files added/changed:** `src/app/api.ts` now converts JSON syntax failures from successful HTTP responses into `GameApiProtocolError` while preserving non-SyntaxError transport failures for retry. New `tests/api-response-protocol.test.ts` verifies both invalid JSON and a malformed pending-reward payload shape produce the typed protocol error. Existing `AppController` tests ensure typed protocol failures do not schedule endless reward retries.
+- **QA:** exact-head CI for the new follow-up has not completed; do not claim tests/build/browser/Worker checks pass until it does. No local-shell run is claimed. No Worker runtime, D1, schema, migration, or deploy-config change.
+- **One best next task:** verify PR #108 exact-head CI, including the new API response protocol tests, and verify post-merge main CI [40898054254](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054254).
+
+---
+
 ## Latest run — 2026-10-29 (do not loop on malformed reward responses)
 
 - **Authoritative main SHA at branch start:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`, after the normal squash merge of PR #106. No direct-main write.
