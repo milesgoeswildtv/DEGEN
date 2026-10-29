@@ -782,14 +782,14 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     if (latest && isValidBattlePermitState(latest)) {
       // A lost CAS at expiry must not return a stale active snapshot; terminal states
       // remain recoverable after expiry because the accepted action already resolved them.
-          const hasConflictingTerminalMarkers =
-            latest.battle_status === 'active' || latest.battle_status === 'victory'
-              ? latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0
-              : latest.battle_status === 'defeat' && latest.victory_history_marker_count > 0;
-          if (hasConflictingTerminalMarkers) {
-            // Never echo a combat snapshot whose terminal audit disagrees with persisted status.
-            return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
-          }
+      const hasConflictingTerminalMarkers =
+        latest.battle_status === 'active' || latest.battle_status === 'victory'
+          ? latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0
+          : latest.battle_status === 'defeat' && latest.victory_history_marker_count > 0;
+      if (hasConflictingTerminalMarkers) {
+        // Never echo a combat snapshot whose terminal audit disagrees with persisted status.
+        return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+      }
       if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
         return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
       }

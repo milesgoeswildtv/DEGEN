@@ -327,7 +327,7 @@ try {
   // hand back to a stale tab. This pending victory already has a defeat marker.
   const poisonedPendingStateBefore = sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
     FROM battle_permits WHERE id = 'permit-defeat-history-conflict'`);
-  const poisonedPendingAction = await act('permit-defeat-history-conflict');
+  const poisonedPendingAction = await act('permit-defeat-history-conflict', 'slash', 1);
   assert.equal(poisonedPendingAction.status, 409, JSON.stringify(poisonedPendingAction.body));
   assert.equal(poisonedPendingAction.body?.error, 'Battle state changed; authoritative snapshot unavailable.');
   assert.equal('battleState' in (poisonedPendingAction.body ?? {}), false,
