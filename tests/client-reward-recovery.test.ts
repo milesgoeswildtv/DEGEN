@@ -22,6 +22,13 @@ class TestGameApiError extends Error {
   }
 }
 
+class TestGameApiProtocolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GameApiProtocolError';
+  }
+}
+
 const setup = (
   enabled: boolean,
   completeUnderpass?: (playerId: string, permitId: string) => Promise<unknown>,
@@ -70,6 +77,7 @@ const setup = (
     },
     console: { warn: () => {} },
     GameApiError: TestGameApiError,
+    GameApiProtocolError: TestGameApiProtocolError,
     mapView: () => '', homeView: () => '', underpassView: () => '', battleView: () => '',
     getPreviewUnderpass: () => ({}),
     recordPreviewClear: () => 0,
@@ -271,6 +279,38 @@ test('successful Worker completion returns from victory only after authoritative
   assert.equal(fixture.store.replaced, 1);
   assert.equal(fixture.store.localRewards, 0);
   assert.ok(fixture.timers.some((timer) => timer.delay === 1400));
+});
+
+
+test('malformed server reward discovery response is not retried as a transient failure', async () => {
+  let discoveries = 0;
+  const fixture = setup(true, undefined, async () => {
+    discoveries += 1;
+    throw new TestGameApiProtocolError('Malformed pending battle reward response.');
+  });
+  new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(discoveries, 1);
+  assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000 && !timer.cancelled).length, 0,
+    'a malformed authoritative response must not create an endless discovery loop');
+});
+
+test('malformed reward completion response retains the permit without a retry loop', async () => {
+  const fixture = setup(true, async () => {
+    throw new TestGameApiProtocolError('Malformed authoritative battle completion response.');
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-malformed-completion' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await controller.finishBattle('victory');
+
+  assert.equal(controller.battlePermit?.permitId, 'permit-malformed-completion',
+    'keep the permit for later repair/recovery rather than discard the identifier');
+  assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000 && !timer.cancelled).length, 0,
+    'a malformed authoritative receipt must not retry forever');
+  assert.equal(fixture.store.localRewards, 0, 'the client never fabricates rewards');
 });
 
 test('offline preview still applies its local non-economic reward', async () => {
