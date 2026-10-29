@@ -1196,6 +1196,63 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   }
 }
 
+
+async function handlePendingBattleRewards(request: Request, env: Env, playerId: string): Promise<Response> {
+  type PendingRewardRow = BattlePermitStateRow & {
+    id: string;
+    event_key: string;
+    cycle_event_key: string | null;
+    permit_started_in_cycle: number;
+  };
+
+  // Local storage is only a retry hint. Recover eligible server-owned victories
+  // even when the browser lost that hint, without returning rewards or progression.
+  // A terminal victory remains claimable after permit expiry; only its original
+  // event-cycle chronology and persisted terminal state determine eligibility.
+  const pending = await env.DB.prepare(`SELECT
+      permit.id, permit.event_key, permit.cycle_id, permit.encounter_key,
+      permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      cycle.event_key AS cycle_event_key,
+      CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
+        AND julianday(permit.started_at) <= julianday('now')
+        AND julianday(permit.started_at) < julianday(cycle.closes_at)
+        THEN 1 ELSE 0 END AS permit_started_in_cycle
+    FROM battle_permits AS permit
+    JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+    WHERE permit.player_id = ?
+      AND permit.event_key = 'underpass'
+      AND cycle.event_key = 'underpass'
+      AND permit.encounter_key = ?
+      AND permit.completed_at IS NULL
+      AND permit.battle_status = 'victory'
+      AND permit.reward_state IN ('pending', 'claiming')
+      AND (
+        permit.reward_state = 'pending'
+        OR (permit.reward_state = 'claiming'
+          AND strftime('%Y-%m-%d %H:%M:%S', permit.reward_claimed_at) = permit.reward_claimed_at
+          AND julianday(permit.reward_claimed_at) < julianday('now', '-60 seconds'))
+      )
+      AND NOT EXISTS (SELECT 1 FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':victory'))
+      AND NOT EXISTS (SELECT 1 FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':defeat'))
+      AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+      AND julianday(permit.started_at) <= julianday('now')
+      AND julianday(permit.started_at) < julianday(cycle.closes_at)
+    ORDER BY permit.started_at ASC`)
+    .bind(playerId, TUNNEL_MAW.id).all<PendingRewardRow>();
+
+  const permitIds = pending.results
+    .filter((row) => row.event_key === 'underpass'
+      && row.cycle_event_key === 'underpass'
+      && row.encounter_key === TUNNEL_MAW.id
+      && row.permit_started_in_cycle === 1
+      && isValidBattlePermitState(row))
+    .map((row) => row.id);
+
+  return json(request, env, { permitIds });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(request, env) });
@@ -1205,6 +1262,11 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/health') return json(request, env, { ok: true, service: 'degen-api' });
       if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return await handleBootstrap(request, env);
       if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(request, env);
+      if (request.method === 'GET' && url.pathname === '/api/battle/pending-rewards') {
+        const playerId = url.searchParams.get('playerId');
+        if (!playerId) return fail(request, env, 'playerId is required');
+        return await handlePendingBattleRewards(request, env, playerId);
+      }
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
         const playerId = url.searchParams.get('playerId');
         if (!playerId) return fail(request, env, 'playerId is required');
