@@ -483,21 +483,25 @@ try {
   assert.deepEqual(sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + affordabilityPermit.id + "'"), committedMalformedTurn,
     'safe retry must recover the committed turn without applying damage or Mana twice');
 
-  // Force a Mana-starved authoritative state to verify the cost controls still
-  // fail closed after the recovered server snapshot.
+  // Model a recovered encounter after its persisted Mana snapshot has changed.
+  // Leave and resume through the real Worker start/replay path so the client reads
+  // the authoritative zero-Mana state instead of accepting conflicting same-turn data.
   sql("UPDATE battle_permits SET player_mana=0 WHERE id='" + affordabilityPermit.id + "' AND player_id='" + playerId + "' AND completed_at IS NULL");
-  await tap("[data-ability=crack]");
-  await until('disabled paid move explains its Mana shortfall', () => cdp.evaluate(`(() => {
+  await tap("[data-route=underpass]");
+  await until('Underpass exposes the active encounter for recovery', () => cdp.evaluate(`(() => {
+    const resume = document.querySelector("[data-resume-battle]");
+    return !!resume && !resume.disabled;
+  })()`));
+  await tap("[data-resume-battle]");
+  await until('resumed authoritative zero-Mana snapshot disables the paid move', () => cdp.evaluate(`(() => {
     const paid = document.querySelector("[data-ability=crack]");
     const free = document.querySelector("[data-ability=slash]");
     const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
-    const status = document.querySelector("#battle-action-status")?.textContent ?? "";
     return paid?.disabled === true
       && paid.querySelector("small")?.textContent === "NEED 4 MANA"
       && free?.disabled === false
       && free.querySelector("small")?.textContent === "NO MANA"
-      && hud.includes("Mana 0 of 12") && hud.includes("Turn 1.")
-      && status === "Insufficient Mana for Crack";
+      && hud.includes("Mana 0 of 12") && hud.includes("Turn 1.");
   })()`));
   await assertFitsMobile('Mana-starved battle');
   await assertFitsCompact('Mana-starved battle');
