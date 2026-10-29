@@ -302,7 +302,7 @@ export class GameApi {
       || !Array.isArray(response.permitIds)
       || response.permitIds.length > 10_000
       || !response.permitIds.every((permitId) =>
-        typeof permitId === 'string' && permitId.trim().length > 0 && permitId.length <= 256)) {
+        typeof permitId === 'string' && permitId.trim().length > 0 && permitId === permitId.trim() && permitId.length <= 256)) {
       throw new GameApiProtocolError('Malformed pending battle reward response.');
     }
     return [...new Set(response.permitIds as string[])];
