@@ -11,6 +11,12 @@ const controllerSource = readFileSync(new URL('../src/app/AppController.ts', imp
   .replace('export class AppController', 'class AppController');
 const compiled = stripTypeScriptTypes(controllerSource, { mode: 'transform' });
 
+class TestGameApiError extends Error {
+  constructor(readonly status: number, readonly payload: unknown, message: string) {
+    super(message);
+  }
+}
+
 const setup = (
   enabled: boolean,
   completeUnderpass?: (playerId: string, permitId: string) => Promise<unknown>,
@@ -51,6 +57,7 @@ const setup = (
       },
     },
     console: { warn: () => {} },
+    GameApiError: TestGameApiError,
     mapView: () => '', homeView: () => '', underpassView: () => '', battleView: () => '',
     getPreviewUnderpass: () => ({}),
     recordPreviewClear: () => 0,
@@ -89,8 +96,9 @@ test('failed Worker completion retains the permit and persists retry across cont
   assert.equal(fixture.store.localRewards, 0);
 });
 
-test('server-discovered victory recovery works when localStorage is unavailable', async () => {
+test('server-discovered victory recovery retries a transient lookup failure without localStorage', async () => {
   let attempts = 0;
+  let discoveries = 0;
   let discoveredFor = '';
   const fixture = setup(
     true,
@@ -101,7 +109,9 @@ test('server-discovered victory recovery works when localStorage is unavailable'
       return { player: { id: playerId }, worldEvent: {} };
     },
     async (playerId) => {
+      discoveries += 1;
       discoveredFor = playerId;
+      if (discoveries === 1) throw new Error('transient D1 failure');
       return ['server-only-permit'];
     },
     true,
@@ -109,9 +119,16 @@ test('server-discovered victory recovery works when localStorage is unavailable'
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   await controller.start();
   await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(discoveries, 1);
+  const retry = fixture.timers.find((timer) => timer.delay === 15_000);
+  assert.ok(retry, 'transient discovery failure must schedule a bounded-delay retry');
+  retry.callback();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(discoveredFor, 'test-player');
+  assert.equal(discoveries, 2, 'the server discovery query must retry after a transient failure');
   assert.equal(attempts, 1, 'the server-discovered permit must be completed exactly once');
   assert.equal(fixture.store.replaced, 1, 'only the authoritative completion snapshot is applied');
   assert.equal(fixture.store.localRewards, 0, 'recovery never computes or grants client rewards');
