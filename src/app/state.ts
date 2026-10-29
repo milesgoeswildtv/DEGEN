@@ -85,10 +85,15 @@ export class PlayerStore {
     const wasActive = this.state.id === player.id;
     const pending = this.pendingHousingSaves.get(player.id);
     const inFlight = this.housingSavePlayerId === player.id ? this.housingSaveSnapshot : undefined;
-    const unsavedHousing = pending ?? inFlight;
+    const localHousing = this.isValidHousingSnapshot(this.state.housing) ? this.state.housing : undefined;
+    const unsavedHousing = pending && this.isValidHousingSnapshot(pending)
+      ? pending
+      : inFlight && this.isValidHousingSnapshot(inFlight)
+        ? inFlight
+        : undefined;
     const placements = unsavedHousing
-      ? structuredClone(wasActive
-        ? this.state.housing.placements
+      ? structuredClone(wasActive && localHousing
+        ? localHousing.placements
         : unsavedHousing.placements)
       : undefined;
     this.state = placements ? { ...player, housing: { ...player.housing, placements } } : player;
@@ -124,6 +129,9 @@ export class PlayerStore {
   }
 
   placeFurniture(furnitureId: string, x: number, y: number): void {
+    // Corrupt persisted layouts must not be mutated into a new invalid save before
+    // the authoritative bootstrap has a chance to replace them.
+    if (!this.isValidHousingSnapshot(this.state.housing)) return;
     if (!this.state.housing.inventory.includes(furnitureId)) return;
     if (x < 0 || x > 7 || y < 0 || y > 5) return;
 
@@ -145,6 +153,7 @@ export class PlayerStore {
   }
 
   removeFurnitureAt(x: number, y: number): void {
+    if (!this.isValidHousingSnapshot(this.state.housing)) return;
     this.state.housing.placements = this.state.housing.placements.filter(
       (item) => item.x !== x || item.y !== y,
     );
