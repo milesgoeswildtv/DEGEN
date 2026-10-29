@@ -67,6 +67,8 @@ test('district view exposes the existing Central destinations and Underpass live
   assert.match(html, /role="group"/);
   assert.match(html, /class="district-iso-pin"[^>]*data-location="downtown"/);
   assert.match(html, /class="district-iso-pin"[^>]*data-location="underpass"/);
+  assert.match(html, /--district-pin-x:25%/);
+  assert.match(html, /--district-pin-x:75%/);
   assert.match(html, /aria-label="The Underpass, SEALED"/);
   assert.match(html, /city-iso-art/);
   assert.match(html, /data-location="underpass"/);
