@@ -1,5 +1,17 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Follow-up — 2026-10-29 (reject housing saves before player bootstrap)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #97 OPEN, not merged:** continued `automation/degen/housing-reliability-current-main-v01` from `2b6fe173d67927bbf653a295f3ec7159f7186c93`; this scoped change remains PR-only.
+- **Task / files changed:** `worker/index.ts` now rejects a housing save unless both the player and character records exist. An empty placement array previously could return 204 for an unknown/orphan player because deleting zero rows was treated as a successful save. `tests/housing-bootstrap-seed.test.ts` covers both a missing player and a player row without a character, asserting 404 and no housing mutation. Normal bootstrap-created players can still intentionally clear their room; existing inventory/placement validation remains unchanged.
+- **QA:** previous exact head `8565a1c967cb3374bd75e478d6f88d433a9b1211` passed all 14 workflow steps in [CI 40888504580](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40888504580). The new Worker/test commit needs fresh exact-head CI; no local shell run, production D1 operation, or Worker deployment is claimed.
+- **Mana / battle authority:** Degen-only Mana remains complete on main. Worker/D1 continues to own combat state and exactly-once reward settlement; PR #106's prior exact head passed all 13 stages in [CI 40876244644](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40876244644).
+- **D1 assumptions / blockers:** no schema or migration changes. `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; the `0007` inventory-guard / draft player-session migration conflict and production platform-auth gates remain unresolved. This existence check does not substitute for authentication and does not authorize production release.
+- **One best next task:** verify the new exact-head housing CI, then continue only a demonstrated auth-independent persistence gap; do not bypass the platform-auth or migration gates.
+
+---
+
 ## Verification — 2026-10-29 (housing bootstrap guard full CI)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.

@@ -309,6 +309,15 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     return fail(request, env, 'playerId and housing are required');
   }
 
+  const bootstrappedPlayer = await env.DB.prepare(`SELECT 1 AS ready FROM players
+    INNER JOIN characters ON characters.player_id = players.id
+    WHERE players.id = ? LIMIT 1`)
+    .bind(input.playerId)
+    .first<{ ready: number }>();
+  if (!bootstrappedPlayer) {
+    return fail(request, env, 'Player must be bootstrapped before saving housing.', 404);
+  }
+
   const inventory = await env.DB.prepare(`SELECT item_key, quantity FROM player_inventory
     WHERE player_id = ? AND item_type = 'furniture'`)
     .bind(input.playerId)

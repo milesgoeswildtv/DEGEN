@@ -273,3 +273,19 @@ test('a placement ID claimed after preflight returns conflict and rolls back the
   ], 'the concurrent owner and placement must remain intact');
   db.close();
 });
+
+
+test('housing saves require a bootstrapped player even for an empty layout', async () => {
+  const { db, adapter } = makeDb();
+
+  const missingPlayer = await handleHousing(housingRequest('missing-player', []), { DB: adapter });
+  assert.equal(missingPlayer.status, 404);
+
+  db.prepare('INSERT INTO players (id, display_name) VALUES (?, ?)').run('orphan-player', 'Orphan');
+  const missingCharacter = await handleHousing(housingRequest('orphan-player', []), { DB: adapter });
+  assert.equal(missingCharacter.status, 404);
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 0,
+    'a save rejected before bootstrap must not create or delete housing state');
+  db.close();
+});
