@@ -27,9 +27,21 @@ const createDefaultPlayer = (id = newPlayerId()): PlayerState => ({
 export class PlayerStore {
   private state: PlayerState;
   private listeners = new Set<(state: PlayerState) => void>();
+  private housingSaveInFlight = false;
+  private housingSavePlayerId?: string;
+  private housingSaveSnapshot?: PlayerState['housing'];
+  // Coalesce per player, not globally: a pending save for one account must not
+  // be discarded when another account edits housing before the first resolves.
+  private pendingHousingSaves = new Map<string, PlayerState['housing']>();
+  // Accounts reactivated during an in-flight save get one retry if that save fails.
+  private reactivatedHousingPlayers = new Set<string>();
+  // A malformed saved room is replaced with a safe placeholder until server bootstrap.
+  // Never let that placeholder become an outbound save or override a valid outbox snapshot.
+  private housingNeedsAuthoritativeBootstrap = false;
 
   constructor(private readonly api: GameApi) {
     this.state = this.load();
+    this.pendingHousingSaves = this.loadHousingOutbox();
   }
 
   get snapshot(): PlayerState {
@@ -50,10 +62,7 @@ export class PlayerStore {
 
     try {
       const remote = await this.api.bootstrap(this.state.id, identity);
-      if (remote) {
-        this.state = remote;
-        this.commitLocal();
-      }
+      if (remote) this.replaceFromServer(remote);
     } catch (error) {
       console.warn('DEGEN backend unavailable; retaining local preview state.', error);
     }
@@ -73,8 +82,33 @@ export class PlayerStore {
   }
 
   replaceFromServer(player: PlayerState): void {
-    this.state = player;
+    // Preserve unsaved placement edits for this account even if another account
+    // was active while the save was queued or in flight. Inventory and progression
+    // always come from the server response.
+    const wasActive = this.state.id === player.id;
+    const pending = this.pendingHousingSaves.get(player.id);
+    const inFlight = this.housingSavePlayerId === player.id ? this.housingSaveSnapshot : undefined;
+    const localHousing = !this.housingNeedsAuthoritativeBootstrap && this.isValidHousingSnapshot(this.state.housing)
+      ? this.state.housing
+      : undefined;
+    const unsavedHousing = pending && this.isValidHousingSnapshot(pending)
+      ? pending
+      : inFlight && this.isValidHousingSnapshot(inFlight)
+        ? inFlight
+        : undefined;
+    const placements = unsavedHousing
+      ? structuredClone(wasActive && localHousing
+        ? localHousing.placements
+        : unsavedHousing.placements)
+      : undefined;
+    this.state = placements ? { ...player, housing: { ...player.housing, placements } } : player;
+    this.housingNeedsAuthoritativeBootstrap = false;
     this.commitLocal();
+
+    // Retry a queued layout on reactivation. If only an in-flight snapshot exists,
+    // remember the reactivation so a later failure can get one bounded retry.
+    if (pending) void this.drainHousingSaves();
+    if (inFlight && !wasActive) this.reactivatedHousingPlayers.add(player.id);
   }
 
   applyReward(reward: BattleReward): void {
@@ -101,6 +135,9 @@ export class PlayerStore {
   }
 
   placeFurniture(furnitureId: string, x: number, y: number): void {
+    // Corrupt persisted layouts must not be mutated into a new invalid save before
+    // the authoritative bootstrap has a chance to replace them.
+    if (this.housingNeedsAuthoritativeBootstrap || !this.isValidHousingSnapshot(this.state.housing)) return;
     if (!this.state.housing.inventory.includes(furnitureId)) return;
     if (x < 0 || x > 7 || y < 0 || y > 5) return;
 
@@ -118,40 +155,164 @@ export class PlayerStore {
     };
 
     this.state.housing.placements.push(placement);
-    this.commitLocal();
-    void this.persistHousing();
+    this.queueHousingSave();
   }
 
   removeFurnitureAt(x: number, y: number): void {
+    if (this.housingNeedsAuthoritativeBootstrap || !this.isValidHousingSnapshot(this.state.housing)) return;
     this.state.housing.placements = this.state.housing.placements.filter(
       (item) => item.x !== x || item.y !== y,
     );
-    this.commitLocal();
-    void this.persistHousing();
+    this.queueHousingSave();
   }
 
-  private async persistHousing(): Promise<void> {
+  private queueHousingSave(): void {
+    this.pendingHousingSaves.set(this.state.id, structuredClone(this.state.housing));
+    // Persist the outbox before starting network I/O so a failed/in-flight save
+    // can be recovered after reload without replacing the server-owned player data.
+    this.commitLocal();
+    void this.drainHousingSaves();
+  }
+
+  private async drainHousingSaves(): Promise<void> {
+    if (this.housingSaveInFlight) return;
+    this.housingSaveInFlight = true;
+    const failedSnapshots = new Map<string, PlayerState['housing']>();
     try {
-      await this.api.saveHousing(this.state.id, this.state.housing);
-    } catch (error) {
-      console.warn('Housing save failed; local copy retained.', error);
+      while (this.pendingHousingSaves.size > 0) {
+        const activePlayerId = this.state.id;
+        const next = [...this.pendingHousingSaves.entries()]
+          .find(([playerId, housing]) =>
+            playerId === activePlayerId && failedSnapshots.get(playerId) !== housing);
+        if (!next) break;
+        const [playerId, housing] = next;
+        // Keep the immutable snapshot in the durable outbox until the server
+        // confirms it. Removing it before await would lose recovery on page exit.
+        this.housingSavePlayerId = playerId;
+        this.housingSaveSnapshot = structuredClone(housing);
+        try {
+          await this.api.saveHousing(playerId, housing);
+          if (this.pendingHousingSaves.get(playerId) === housing) {
+            this.pendingHousingSaves.delete(playerId);
+            this.commitLocal();
+          }
+          this.reactivatedHousingPlayers.delete(playerId);
+        } catch (error) {
+          const retryAfterReactivation = this.reactivatedHousingPlayers.delete(playerId)
+            && this.state.id === playerId;
+          if (this.pendingHousingSaves.get(playerId) === housing) {
+            failedSnapshots.set(playerId, housing);
+          }
+          // Permit one retry when the same account was reactivated mid-flight;
+          // otherwise leave the latest snapshot queued for the next edit/reload.
+          if (retryAfterReactivation) failedSnapshots.delete(playerId);
+          console.warn('Housing save failed; latest layout remains queued for retry.', error);
+        } finally {
+          this.housingSavePlayerId = undefined;
+          this.housingSaveSnapshot = undefined;
+        }
+      }
+    } finally {
+      this.housingSaveInFlight = false;
     }
+  }
+
+  private loadHousingOutbox(): Map<string, PlayerState['housing']> {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return new Map();
+      const parsed = JSON.parse(raw) as { __housingOutbox?: unknown };
+      const value = parsed.__housingOutbox;
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return new Map();
+      const outbox = new Map<string, PlayerState['housing']>();
+      for (const [playerId, housing] of Object.entries(value)) {
+        if (playerId && this.isValidHousingSnapshot(housing)) {
+          outbox.set(playerId, structuredClone(housing));
+        }
+      }
+      return outbox;
+    } catch {
+      return new Map();
+    }
+  }
+
+  private isValidHousingSnapshot(value: unknown): value is PlayerState['housing'] {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const housing = value as Record<string, unknown>;
+    if (!Array.isArray(housing.inventory)
+      || !housing.inventory.every((item) => typeof item === 'string')
+      || !Array.isArray(housing.placements)
+      || housing.placements.length > 48) return false;
+
+    const instanceIds = new Set<string>();
+    const cells = new Set<string>();
+    return housing.placements.every((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+      const placement = entry as Record<string, unknown>;
+      const { instanceId, furnitureId, x, y, rotation } = placement;
+      if (typeof instanceId !== 'string' || instanceId.length === 0
+        || typeof furnitureId !== 'string' || furnitureId.length === 0
+        || typeof x !== 'number' || !Number.isSafeInteger(x) || x < 0 || x > 7
+        || typeof y !== 'number' || !Number.isSafeInteger(y) || y < 0 || y > 5
+        || (rotation !== undefined && (typeof rotation !== 'number' || !Number.isSafeInteger(rotation)))) {
+        return false;
+      }
+      const cell = `${x},${y}`;
+      if (instanceIds.has(instanceId) || cells.has(cell)) return false;
+      instanceIds.add(instanceId);
+      cells.add(cell);
+      return true;
+    });
   }
 
   private load(): PlayerState {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return createDefaultPlayer();
-      const parsed = JSON.parse(raw) as PlayerState;
-      const id = parsed.id && parsed.id !== 'local-player' ? parsed.id : newPlayerId();
-      return { ...createDefaultPlayer(id), ...parsed, id };
+      if (!raw) {
+        // A first-run placeholder is not authoritative when a Worker is enabled.
+        // Do not let an early housing edit overwrite the server before bootstrap.
+        this.housingNeedsAuthoritativeBootstrap = this.api.enabled;
+        return createDefaultPlayer();
+      }
+      const parsed = JSON.parse(raw) as PlayerState & {
+        __housingOutbox?: unknown;
+        __housingNeedsBootstrap?: unknown;
+      };
+      const {
+        __housingOutbox: _outbox,
+        __housingNeedsBootstrap: needsHousingBootstrap,
+        ...player
+      } = parsed;
+      void _outbox;
+      const id = player.id && player.id !== 'local-player' ? player.id : newPlayerId();
+      const hasSavedHousing = Object.prototype.hasOwnProperty.call(player, 'housing');
+      const restored = { ...createDefaultPlayer(id), ...player, id };
+      this.housingNeedsAuthoritativeBootstrap = this.api.enabled && needsHousingBootstrap === true;
+      // Check the saved field itself, not only the merged default: a legacy/corrupt
+      // record with housing omitted must not make a fabricated starter room look trusted.
+      if (!hasSavedHousing || !this.isValidHousingSnapshot(player.housing)) {
+        this.housingNeedsAuthoritativeBootstrap = this.api.enabled;
+        restored.housing = createDefaultPlayer(id).housing;
+      }
+      return restored;
     } catch {
+      this.housingNeedsAuthoritativeBootstrap = this.api.enabled;
       return createDefaultPlayer();
     }
   }
 
   private commitLocal(): void {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        ...this.state,
+        __housingOutbox: Object.fromEntries(this.pendingHousingSaves),
+        __housingNeedsBootstrap: this.housingNeedsAuthoritativeBootstrap || undefined,
+      }));
+    } catch (error) {
+      // Local storage is best-effort. A browser quota/privacy failure must not
+      // prevent the server-backed housing outbox from attempting its D1 save.
+      console.warn('Local player storage unavailable; keeping in-memory state.', error);
+    }
     const snapshot = this.snapshot;
     for (const listener of this.listeners) listener(snapshot);
   }
