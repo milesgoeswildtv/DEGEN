@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (expired active permit fails closed)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #106 OPEN, not merged:** `automation/degen/active-victory-marker-action-guard-v01`; code/test commit `8173c5f38cf664c6c0255d4aa06c1a85fe86bc5a` adds an isolated local Worker/D1 regression for expired active permits.
+- **Task / files changed:** `tests/worker-d1-defeat-atomic.mjs` seeds an active permit whose expiry is already past and asserts `POST /api/battle/action` returns 409 without changing player HP, player Mana, enemy HP, turn count, battle status, or terminal history. The same harness still proves a valid permit issued before Underpass closure remains actionable until its own expiry.
+- **QA boundary:** previous PR head `6bcd19843fcc018c7ee50d98d5f44bffd1997b16` passed exact-head CI [40851283370](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40851283370). The new test commit needs fresh exact-head CI; no local-shell run is claimed. Its D1 harness uses isolated Wrangler local D1 only; no production D1 operation or Worker deployment.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable-action rejection, exact deduction, zero-cost-at-zero, no monster Mana, and no Mana-triggered reversion. Tracked `0006_backfill_active_battle_mana.sql` remains unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, action CAS, terminal history, reward claims/receipts, XP/currency/inventory, and clear sequencing. PR #106 remains open and not live.
+- **D1 / migration assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft `0007_player_sessions.sql` conflict and platform-auth release gates remain unresolved; no migration/configuration change was made.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling remain release gates. Existing Shield PR #20 must not be duplicated or advanced around the migration/auth gate.
+- **One best next task:** verify exact-head CI for `8173c5f38cf664c6c0255d4aa06c1a85fe86bc5a`; if green, add any still-missing same-permit concurrent action/completion integration assertion before the next approved gameplay slice.
+
+---
+
 ## Latest run — 2026-10-29 (terminal-marker guard exact-head verification)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`; main CI [40812891007](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40812891007) and Deploy Preview [40812891043](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40812891043) passed on this SHA.
