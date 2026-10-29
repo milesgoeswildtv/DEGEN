@@ -181,7 +181,7 @@ test('server-backed offline mode exposes a warning and disables fake Underpass e
   const district = views.districtView(player, 'Central', event, true);
   assert.match(district, /LIVE WORLD UNAVAILABLE/);
   const underpass = views.underpassView(player, event, false, true);
-  assert.match(underpass, /UNDERPASS SEALED/);
+  assert.match(underpass, /SERVER UNAVAILABLE/);
   assert.match(underpass, /data-start-battle disabled/);
   assert.doesNotMatch(underpass, /Local preview cycle/);
 });
