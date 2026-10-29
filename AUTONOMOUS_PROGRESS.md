@@ -1,3 +1,17 @@
+## Follow-up — 2026-10-29 (align start-handler tests with terminal-marker guards)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #106 OPEN, not merged:** `automation/degen/active-victory-marker-action-guard-v01`; previous head `3527c8111ccbf14b40603ed08d6d7b1e3c5b1209`. CI run [40847907994](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40847907994) failed at deterministic tests (165 passed, 3 failed) because the Worker start insert now has two additional terminal-history binds and the handler unit fixtures lacked the new zero-marker counts. This exposed test-harness assumptions; the new guard is not yet considered verified.
+- **Task / files changed:** `tests/worker-battle-start-state.test.ts` now asserts both bound terminal keys, models zero marker counts for clean replay fixtures, and adds a regression that rejects either conflicting marker without returning a snapshot or issuing another permit. The local Worker/D1 harness separately covers conflicting markers and orphan request IDs.
+- **QA boundary:** no local shell execution is claimed. Current branch head needs a fresh exact-head CI run; do not claim tests/build/Worker-D1/browser/Wrangler green until it completes. No production D1 operation or Worker deployment.
+- **Mana:** COMPLETE / MERGED on main; no Mana, balance, monster content, schema, migration, or deployment configuration changes in this follow-up.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, action CAS, terminal history, receipts, and settlement. The added start guard prevents a corrupted history key from returning an apparently active encounter or being reused as a new permit ID.
+- **D1 / migration assumptions:** `wrangler.toml` remains source of truth; tracked migrations deploy before Worker code. The `0007` migration-number conflict and platform-auth release gates remain untouched.
+- **Miles blocker:** none for the scoped fix; PR review remains required.
+- **One best next task:** finish exact-head CI for PR #106, then move to the approved simple Shield foundation only from the then-current main SHA after this reliability PR is reviewed.
+
+---
+
 ## Latest run — 2026-10-29 (reject poisoned battle-start replay and permit issuance)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
