@@ -333,12 +333,22 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     if (collision) return fail(request, env, 'Housing placement ID is already in use.', 409);
   }
 
-  await env.DB.batch([
-    env.DB.prepare(`DELETE FROM housing_placements WHERE player_id = ?`).bind(input.playerId),
-    ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements
-      (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)
-      .bind(item.instanceId, input.playerId, item.furnitureId, item.x, item.y, item.rotation ?? 0)),
-  ]);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM housing_placements WHERE player_id = ?`).bind(input.playerId),
+      ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements
+        (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(item.instanceId, input.playerId, item.furnitureId, item.x, item.y, item.rotation ?? 0)),
+    ]);
+  } catch (error) {
+    // A second player can claim an ID after the preflight read but before this
+    // atomic replacement. D1 rolls the batch back; normalize only that specific
+    // primary-key race to a conflict and preserve other database failures as 500s.
+    if (error instanceof Error && /UNIQUE constraint failed: housing_placements\.id/.test(error.message)) {
+      return fail(request, env, 'Housing placement ID is already in use.', 409);
+    }
+    throw error;
+  }
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store', ...corsHeaders(request, env) } });
 }
 
