@@ -405,7 +405,9 @@ export class AppController {
         }
       }
       if (!synchronized) {
-        if (error instanceof GameApiError && error.status < 500) {
+        if (error instanceof GameApiProtocolError) {
+          this.setBattleActionStatus('The server returned an unreadable battle response. Your move may have reached the server. Tap the same move again to safely resync; the server prevents duplicate turns.');
+        } else if (error instanceof GameApiError && error.status < 500) {
           const payload = error.payload && typeof error.payload === 'object'
             ? error.payload as { error?: unknown }
             : undefined;
