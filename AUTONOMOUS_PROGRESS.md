@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (bound reward-completion retries to recoverable failures)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`; main CI and Deploy Preview both passed on this SHA. Main has not moved during this run.
+- **PUSHED / PR #106 OPEN, ready for review, not merged:** `automation/degen/active-victory-marker-action-guard-v01`. Code/test head `3ae6632d8b1018c3d0777778578f65e1d4bb89b5`; the following continuity-only commit has its own CI run and must be checked separately.
+- **Task / files changed:** `src/app/AppController.ts` now shares one retry classifier between server pending-reward discovery and completion. Network/unknown failures, 5xx, 404 rollout mismatch, 429, and explicitly retryable Worker claim-race 409s retain bounded retries. Definitive 4xx/terminal-history conflicts keep the permit ID for later reload/server recovery but do not schedule an endless 15-second completion loop. `tests/client-reward-recovery.test.ts` covers permanent terminal conflict retention/no timer and retryable claim-conflict scheduling. Client never computes or grants rewards.
+- **QA:** deterministic game tests passed on code/test head `3ae6632` in [CI run 40866780303](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40866780303). At this progress update, Worker/D1 concurrency and recovery, cycle/rollover concurrency, atomic defeat, production build, Chromium vertical slice, and Wrangler validation were still running/pending. No local-shell run, production D1 operation, or production Worker deployment is claimed. Cloudflare Pages preview reports successful deployment for the current PR head.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, rejection without mutation, exact deduction, zero-cost-at-zero, no monster Mana, no zero-Mana reversion, and tracked `0006_backfill_active_battle_mana.sql`. The latest main UI guard fails closed on invalid costs and over-cap Mana.
+- **Battle authority / reward idempotency:** PR #106 continues terminal-history conflict guards and D1-backed recovery. Worker/D1 owns permit state, action CAS, terminal history, reward claims/receipts, clear sequencing, XP/currency/inventory, and settlement. This branch remains PR-only and not live.
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. The main `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` sequence collision remains unresolved. No migration/configuration change or remote D1 operation.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling remain release gates. Shield PR #20 stays gated; no monster content was invented.
+- **One best next task:** verify the full exact-head CI for `3ae6632`; if green, leave PR #106 for normal review and continue from the then-current main after the protected merge.
+
+---
+
 ## Latest run — 2026-10-29 (verify expired battle-start replay CI)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`; main CI and Deploy Preview were recorded green in the preceding main verification.
