@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (malformed authoritative API response coverage)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
+- **PUSHED / PR #108 OPEN, ready for review, not merged:** `automation/degen/reward-recovery-protocol-error-guard-v01`. Implementation/test head before this continuity commit: `f4d210942853c68cf2b3116aac8e4600fc1373f0`.
+- **Task / files changed:** `tests/api-response-protocol.test.ts` now exercises malformed Underpass snapshots, malformed battle-action snapshots (proves no response-shape retry), malformed completion receipts, malformed JSON, and malformed pending-reward response shape. Runtime code is unchanged in this follow-up; `src/app/api.ts` and `src/app/AppController.ts` retain the existing typed protocol-error behavior.
+- **QA:** fresh exact-head CI for code/test head `f4d2109` is running as [40904096696](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40904096696). Deterministic tests and Worker/D1 reward concurrency passed on the preceding head; its CI [40900008320](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40900008320) remained in the transient local D1 recovery step for over 20 minutes, so no full-suite pass is claimed. The new tests do not yet have a confirmed CI result. No separate local-shell test run is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / `manaCost`, persisted player-only `player_mana`, atomic insufficient-Mana rejection, exact deduction, zero-cost-at-zero, killing-blow/defeat math, cost-aware controls, no monster Mana, and no zero-Mana reversion remain covered by main's deterministic and Worker/D1 tests. Tracked `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain unchanged.
+- **Battle authority / reward idempotency:** PR #106 is merged on main; Worker/D1 remains authoritative for action CAS, terminal history, reward claims/receipts, progression, inventory, and recovery. PR #108 is client/API protocol validation only and grants no rewards.
+- **D1 / deployment assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order is schema → tracked migrations → Worker. Main post-merge CI [40898054254](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054254) and Worker deployment [40898054039](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054039) passed; Worker version `514affa6-6550-48d7-82b6-f81e5ea82429` deployed. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` collision and production platform-auth gates remain unresolved; no migration or deployment-config change was made here.
+- **Miles blocker:** none for this client/API test slice. Approved Discord/Telegram production credentials, live identity/session verification, and legacy identity-collision policy still block auth-dependent releases; do not advance Shield or housing around those gates.
+- **One best next task:** verify fresh exact-head CI for the continuity commit and all downstream stages; if transient D1 recovery stalls again, inspect the actual failed/timed-out stage before changing code or retrying.
+
+---
+
 ## Follow-up — 2026-10-29 (repair protocol-test execution model)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`; branch `automation/degen/reward-recovery-protocol-error-guard-v01`.
