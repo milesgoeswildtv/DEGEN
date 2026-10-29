@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { GameApi, GameApiProtocolError } from '../src/app/api';
+import { GameApi, GameApiProtocolError } from '../src/app/api.ts';
 
 test('malformed JSON from a successful API response is a protocol error', async () => {
   const api = new GameApi('https://example.test', async () =>
