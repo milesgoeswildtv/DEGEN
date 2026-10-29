@@ -103,23 +103,27 @@ test('bootstrap rejects a snapshot belonging to a different player ID', async ()
   assert.equal(requests, 1, 'a cross-player snapshot must be rejected without retry');
 });
 
-test('bootstrap rejects malformed housing placements before replacing player state', async () => {
-  let requests = 0;
-  const snapshot = validPlayerSnapshot();
-  snapshot.housing.placements[0]!.x = -1;
-  const api = new apiModule.GameApi('https://example.test', async () => {
-    requests += 1;
-    return new Response(JSON.stringify(snapshot), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
+test('bootstrap rejects malformed and out-of-bounds housing placements before replacing player state', async () => {
+  for (const [x, y] of [[-1, 1], [8, 1], [1, -1], [1, 6]]) {
+    let requests = 0;
+    const snapshot = validPlayerSnapshot();
+    snapshot.housing.placements[0]!.x = x;
+    snapshot.housing.placements[0]!.y = y;
+    const api = new apiModule.GameApi('https://example.test', async () => {
+      requests += 1;
+      return new Response(JSON.stringify(snapshot), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     });
-  });
 
-  await assert.rejects(
-    api.bootstrap('player-1', identity),
-    apiModule.GameApiProtocolError,
-  );
-  assert.equal(requests, 1);
+    await assert.rejects(
+      api.bootstrap('player-1', identity),
+      apiModule.GameApiProtocolError,
+      `placement at ${x},${y} must be rejected`,
+    );
+    assert.equal(requests, 1, 'invalid housing data must not be retried as a transport failure');
+  }
 });
 
 test('malformed JSON from a successful API response is a protocol error', async () => {
