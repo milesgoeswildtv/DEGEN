@@ -155,6 +155,9 @@ try {
   await start();
   const poisonedVictory = await act('poisoned-victory-marker', 'crack');
   assert.equal(poisonedVictory.status,409,JSON.stringify(poisonedVictory.body));
+  assert.equal(poisonedVictory.body?.error, 'Battle state changed; authoritative snapshot unavailable.');
+  assert.equal('battleState' in (poisonedVictory.body ?? {}), false,
+    'a terminal marker conflict must not be returned as an actionable active snapshot');
   await stop();
   assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='poisoned-victory-marker'"),
     [{player_hp:80,player_mana:4,enemy_hp:1,turn_count:0,battle_status:'active'}],

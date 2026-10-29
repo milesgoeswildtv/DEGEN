@@ -88,6 +88,8 @@ type BattleActionPermitRow = BattlePermitStateRow & {
 
 type BattleActionConflictRow = BattleActionPermitRow & {
   permit_is_unexpired: number;
+  victory_history_marker_count: number;
+  defeat_history_marker_count: number;
 };
 
 const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
@@ -613,6 +615,10 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count,
         CASE WHEN julianday(permit.expires_at) > julianday('now')
           THEN 1 ELSE 0 END AS permit_is_unexpired
       FROM battle_permits AS permit
@@ -631,6 +637,12 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     }
     // A turn can cross permit expiry between the first read and this conflict re-read.
     // Never return an active snapshot that would leave the client presenting an unusable battle.
+    if (latest.battle_status === 'active'
+      && (latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0)) {
+      // An active permit with a terminal history key is inconsistent and cannot be
+      // presented as actionable. Do not return a valid-looking active snapshot.
+      return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+    }
     if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
       return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
     }
@@ -723,6 +735,10 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count,
         CASE WHEN julianday(permit.expires_at) > julianday('now')
           THEN 1 ELSE 0 END AS permit_is_unexpired
       FROM battle_permits AS permit
@@ -739,6 +755,12 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     if (latest && isValidBattlePermitState(latest)) {
       // A lost CAS at expiry must not return a stale active snapshot; terminal states
       // remain recoverable after expiry because the accepted action already resolved them.
+      if (latest.battle_status === 'active'
+        && (latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0)) {
+        // An active permit with a terminal history key is inconsistent and cannot be
+        // presented as actionable. Do not return a valid-looking active snapshot.
+        return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+      }
       if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
         return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
       }

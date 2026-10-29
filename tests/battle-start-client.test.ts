@@ -654,6 +654,56 @@ test('AppController synchronizes terminal snapshots returned with expired action
   }
 });
 
+test('AppController exits the battle when a terminal-marker conflict has no safe snapshot', async () => {
+  const synchronized: unknown[] = [];
+  const applied: unknown[] = [];
+  const events: string[] = [];
+  const engine = {
+    snapshot: { permitId: 'permit-1', status: 'active', playerHp: 80, playerMana: 4, enemyHp: 1, turnCount: 0 },
+    synchronizeAuthoritativeState(state: unknown) {
+      synchronized.push(state);
+      this.snapshot = state as typeof this.snapshot;
+    },
+    applyAuthoritativeAction(...args: unknown[]) { applied.push(args); },
+  };
+  const controller: any = {
+    battleEngine: engine,
+    battlePermit: { permitId: 'permit-1' },
+    battlePermitOwnerId: 'player-1',
+    battleActionPending: false,
+    route: 'battle',
+    api: {
+      enabled: true,
+      async actUnderpass() {
+        throw new GameApiError(409, {
+          error: 'Battle state changed; authoritative snapshot unavailable.',
+        }, 'Battle state changed; authoritative snapshot unavailable.');
+      },
+    },
+    store: { snapshot: { id: 'player-1' } },
+    async refreshWorld() { events.push('refresh'); },
+    navigate(route: string) {
+      events.push(`navigate:${route}`);
+      this.route = route;
+      this.battleEngine = undefined;
+      this.battleActionPending = false;
+    },
+    render() { events.push('render'); },
+    setBattleActionStatus() {},
+    setAbilityButtonsDisabled() {},
+  };
+
+  await useBattleAbility.call(controller, 'crack');
+
+  assert.deepEqual(synchronized, [], 'an inconsistent active permit must never be synchronized into the client');
+  assert.deepEqual(applied, [], 'a rejected action must never fall back to local combat math');
+  assert.equal(controller.battlePermit, undefined, 'the unusable permit must be cleared');
+  assert.equal(controller.battlePermitOwnerId, undefined);
+  assert.equal(controller.route, 'underpass', 'the player must leave the stuck battle view');
+  assert.deepEqual(events, ['refresh', 'navigate:underpass']);
+  assert.equal(controller.battleActionPending, false);
+});
+
 test('AppController ignores malformed terminal snapshots from battle conflicts', async () => {
   const invalidStates = [
     { permitId: 'another-permit', status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1 },
