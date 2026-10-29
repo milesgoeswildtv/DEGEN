@@ -268,7 +268,12 @@ export class PlayerStore {
   private load(): PlayerState {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return createDefaultPlayer();
+      if (!raw) {
+        // A first-run placeholder is not authoritative when a Worker is enabled.
+        // Do not let an early housing edit overwrite the server before bootstrap.
+        this.housingNeedsAuthoritativeBootstrap = this.api.enabled;
+        return createDefaultPlayer();
+      }
       const parsed = JSON.parse(raw) as PlayerState & {
         __housingOutbox?: unknown;
         __housingNeedsBootstrap?: unknown;
@@ -280,14 +285,18 @@ export class PlayerStore {
       } = parsed;
       void _outbox;
       const id = player.id && player.id !== 'local-player' ? player.id : newPlayerId();
+      const hasSavedHousing = Object.prototype.hasOwnProperty.call(player, 'housing');
       const restored = { ...createDefaultPlayer(id), ...player, id };
       this.housingNeedsAuthoritativeBootstrap = this.api.enabled && needsHousingBootstrap === true;
-      if (!this.isValidHousingSnapshot(restored.housing)) {
+      // Check the saved field itself, not only the merged default: a legacy/corrupt
+      // record with housing omitted must not make a fabricated starter room look trusted.
+      if (!hasSavedHousing || !this.isValidHousingSnapshot(player.housing)) {
         this.housingNeedsAuthoritativeBootstrap = this.api.enabled;
         restored.housing = createDefaultPlayer(id).housing;
       }
       return restored;
     } catch {
+      this.housingNeedsAuthoritativeBootstrap = this.api.enabled;
       return createDefaultPlayer();
     }
   }
