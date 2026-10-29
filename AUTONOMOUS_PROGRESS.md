@@ -1,3 +1,14 @@
+## Follow-up — 2026-10-29 (correct protocol-test harness failures)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`; branch `automation/degen/reward-recovery-protocol-error-guard-v01`.
+- **Latest code/test head before this progress update:** `fb945267fbdf61217d32baf39bc7cbe0e64d4578`.
+- **Observed failure:** exact-head CI [40898895351](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898895351) failed in `npm test`: 175 passed, 2 failed. The new API test used an extensionless ESM import, so Node could not resolve `src/app/api`; the controller retry test also asserted discovery before calling `start()`, but discovery runs from `start()`, not the constructor.
+- **Correction:** `tests/api-response-protocol.test.ts` now imports `../src/app/api.ts`; the discovery test awaits `controller.start()` before asserting one malformed response and no retry timer. The runtime behavior was not weakened to make the tests pass.
+- **QA:** these fixes are pushed; fresh exact-head CI is required. No local-shell test run is claimed. Worker/D1 integration, build, browser, and Wrangler stages were skipped on the failed run and must complete on the corrected head.
+- **One best next task:** inspect fresh exact-head CI for `fb945267fbdf61217d32baf39bc7cbe0e64d4578`; fix only a demonstrated remaining failure, then refresh the progress record after the post-merge main CI completes.
+
+---
+
 ## Follow-up — 2026-10-29 (classify malformed JSON as a protocol failure)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`; feature branch remains `automation/degen/reward-recovery-protocol-error-guard-v01`.
