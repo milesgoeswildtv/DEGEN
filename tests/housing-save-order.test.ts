@@ -11,10 +11,29 @@ const source = readFileSync(new URL('../src/app/state.ts', import.meta.url), 'ut
 const compiled = stripTypeScriptTypes(source, { mode: 'transform' });
 const flush = async () => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); };
 
+const defaultHousingValues = () => new Map<string, string>([[
+  'degen.prototype.player.v2',
+  JSON.stringify({
+    id: 'test-housing-player',
+    displayName: 'Player',
+    level: 1,
+    xp: 0,
+    currency: 0,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: ['home', 'downtown', 'underpass'],
+    housing: {
+      inventory: ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'],
+      placements: [{ instanceId: 'starter-bed-placed', furnitureId: 'starter-bed', x: 1, y: 1 }],
+    },
+    defeatedBosses: [],
+  }),
+]]);
+
 function makeStore(
   saveHousing: (id: string, housing: unknown) => Promise<void>,
   warnings: string[] = [],
-  values = new Map<string, string>(),
+  values = defaultHousingValues(),
   bootstrap: (id: string, identity: any) => Promise<any> = async () => undefined,
   writeStorage: (key: string, value: string) => void = (key, value) => { values.set(key, value); },
   enabled = true,
@@ -47,7 +66,7 @@ test('localStorage write failures do not block server-backed housing saves or UI
   const saved: any[] = [];
   const store = makeStore(async (_playerId, housing) => {
     saved.push(structuredClone(housing));
-  }, warnings, new Map(), async () => undefined, () => {
+  }, warnings, defaultHousingValues(), async () => undefined, () => {
     throw new Error('storage quota exceeded');
   });
   let notifications = 0;
@@ -686,6 +705,69 @@ test('offline preview remains editable after corrupt housing is normalized', asy
     'disabled preview saves should not leave a retry queue');
 });
 
+
+
+test('first-run, malformed, and housing-omitted server-backed records stay blocked until bootstrap', async () => {
+  const cases: Array<{ label: string; raw?: string }> = [
+    { label: 'no saved player record' },
+    { label: 'malformed JSON', raw: '{not-json' },
+    {
+      label: 'legacy record with housing omitted',
+      raw: JSON.stringify({
+        id: 'legacy-no-housing',
+        displayName: 'Player',
+        level: 1,
+        xp: 0,
+        currency: 0,
+        degenId: 'test-degen',
+        inventory: [],
+        unlockedLocations: ['home', 'downtown', 'underpass'],
+        defeatedBosses: [],
+      }),
+    },
+  ];
+
+  for (const scenario of cases) {
+    const values = new Map<string, string>();
+    if (scenario.raw !== undefined) values.set('degen.prototype.player.v2', scenario.raw);
+    const saved: unknown[] = [];
+    const store = makeStore(async (_id, housing) => {
+      saved.push(structuredClone(housing));
+    }, [], values, async () => undefined, undefined, true);
+
+    store.placeFurniture('starter-chair', 2, 2);
+    await flush();
+    assert.equal(saved.length, 0, scenario.label + ': placeholder edits must not reach the Worker');
+
+    await store.initialize({ displayName: 'Player' });
+    store.removeFurnitureAt(1, 1);
+    await flush();
+    assert.equal(saved.length, 0, scenario.label + ': a failed/empty bootstrap must leave saves blocked');
+
+    store.replaceFromServer({
+      ...store.snapshot,
+      housing: {
+        inventory: ['starter-bed', 'starter-chair'],
+        placements: [{ instanceId: 'server-bed', furnitureId: 'starter-bed', x: 1, y: 1 }],
+      },
+    });
+    store.placeFurniture('starter-chair', 3, 3);
+    await flush();
+    assert.equal(saved.length, 1, scenario.label + ': valid server bootstrap should enable edits');
+    assert.ok((saved[0] as any).placements.some((placement: any) =>
+      placement.furnitureId === 'starter-chair' && placement.x === 3 && placement.y === 3));
+  }
+});
+
+test('offline preview with no saved record remains editable', async () => {
+  const store = makeStore(async () => {
+    throw new Error('disabled API should not submit housing');
+  }, [], new Map(), async () => undefined, undefined, false);
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.ok(store.snapshot.housing.placements.some((placement: any) =>
+    placement.furnitureId === 'starter-chair' && placement.x === 2 && placement.y === 2));
+});
 
 test('server-backed housing bootstrap requirement survives reload', async () => {
   const playerId = 'corrupt-room-bootstrap-marker';
