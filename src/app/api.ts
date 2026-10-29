@@ -64,15 +64,29 @@ const isStringArray = (value: unknown): value is string[] =>
 
 const isFurniturePlacementArray = (
   value: unknown,
-): value is BattleCompletionResult['player']['housing']['placements'] =>
-  Array.isArray(value) && value.every((entry) =>
-    isRecord(entry)
-    && typeof entry.instanceId === 'string'
-    && entry.instanceId.length > 0
-    && typeof entry.furnitureId === 'string'
-    && entry.furnitureId.length > 0
-    && isBoundedSafeInteger(entry.x, 0, 7)
-    && isBoundedSafeInteger(entry.y, 0, 5));
+): value is BattleCompletionResult['player']['housing']['placements'] => {
+  // A saved room is an 8×6 grid. Treat a malformed Worker snapshot as a
+  // protocol failure instead of letting impossible layouts enter client state.
+  if (!Array.isArray(value) || value.length > 48) return false;
+
+  const instanceIds = new Set<string>();
+  const cells = new Set<string>();
+  return value.every((entry) => {
+    if (!isRecord(entry)
+      || typeof entry.instanceId !== 'string'
+      || entry.instanceId.length === 0
+      || typeof entry.furnitureId !== 'string'
+      || entry.furnitureId.length === 0
+      || !isBoundedSafeInteger(entry.x, 0, 7)
+      || !isBoundedSafeInteger(entry.y, 0, 5)) return false;
+
+    const cell = `${entry.x},${entry.y}`;
+    if (instanceIds.has(entry.instanceId) || cells.has(cell)) return false;
+    instanceIds.add(entry.instanceId);
+    cells.add(cell);
+    return true;
+  });
+};
 
 // Player snapshots from the Worker are account and persistence authority. Validate
 // them before bootstrap or completion can replace client state; never repair malformed
