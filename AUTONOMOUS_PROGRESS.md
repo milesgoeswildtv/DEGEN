@@ -1,3 +1,18 @@
+## Latest run — 2026-10-29 (housing reliability rebuilt on current main)
+
+- **Authoritative main SHA at branch start:** `66806acc10f303ce60e32f1fac848b0e9f0034d2`.
+- **PUSHED / PR #111 OPEN, not merged:** `automation/degen/housing-reliability-main-v02`. Code/test head before this continuity update: `e982edd9de43ff68ba28cbf308c3c016259f3fbf`. This is a clean successor to stale PR #97, whose branch was divergent (75 ahead / 4 behind) and not mergeable; PR #97 remains open until this replacement passes exact-head CI.
+- **Task / files changed:** `src/app/state.ts`, `worker/index.ts`, `worker/housingQuantityGuard.ts`, `tests/housingQuantityGuard.test.ts`, `tests/housing-bootstrap-seed.test.ts`, `tests/housing-save-order.test.ts`, `tests/browser-housing-persistence.mjs`, `tests/pages-cors.test.ts`, and `.github/workflows/ci.yml`. The Worker now seeds the starter bed only for a newly created character; rejects housing saves before player/character bootstrap; validates the complete layout against server-owned furniture quantities, duplicate IDs/cells, 8×6 bounds, and 48-cell capacity before atomic replacement; and returns a conflict for globally reused placement IDs. The client now serializes housing saves through a durable per-player outbox and protects queued edits across rapid edits, account switching, reloads, and local-storage failures.
+- **QA status:** the prior PR #97 head `b42ba8aee95ba5181454fdfe7a95373885754512` had a completed successful workflow job ([run 40893454767](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40893454767)), but that is stale-branch evidence only. The new current-main branch requires its own exact-head CI. No local-shell test run, production D1 operation, or deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, atomic insufficient-Mana rejection, exact deduction, zero-cost moves at zero, killing-blow/defeat handling, cost-aware controls, no monster Mana, and no zero-Mana reversion remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for battle actions, terminal outcome/history, audited reward receipts, progression, inventory, currency, and recoverable exactly-once settlement. This PR changes housing persistence only and adds no client economy authority.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` with `db/migrations`; no schema, migration, database ID, or deployment configuration changed. The `0007_player_inventory_quantity_guards.sql` / draft auth PR #14 `0007_player_sessions.sql` collision remains unresolved. Platform identity/session verification remains a separate release gate; this housing validation is not authentication.
+- **Main CI/deploy status:** the available combined-status query returned no statuses for the current main commit, and the commit workflow lookup exposes PR-triggered runs only. Post-merge main CI and production deployment for `66806acc` are therefore **not independently verified** here.
+- **Miles blocker:** none for this auth-independent housing integrity slice. Do not bypass the platform-auth or migration-numbering gates to ship Shield/status or identity work.
+- **One best next task:** verify exact-head CI for PR #111; if green, close stale PR #97 as superseded and then reconcile the auth/migration gate before Shield/status work.
+
+---
+
 ## Latest run — 2026-10-29 (bootstrap protocol guard merged)
 
 - **Authoritative main SHA:** `98d607d255baa0fc43c7809e77942295aaaaefda`, verified by comparing the merge commit with `main` (identical).
