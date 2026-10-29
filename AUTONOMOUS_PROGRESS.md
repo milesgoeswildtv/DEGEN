@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (real-browser city pan QA)
+
+- **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
+- **PUSHED / PR #113 OPEN, draft and unmerged:** `automation/degen/city-navigation-current-v01`. This commit extends the existing city-navigation vertical slice; it does not create a competing branch.
+- **Task / files changed:** `tests/browser-battle-vertical-slice.mjs` now drives an actual mobile touch drag through Chromium's input protocol and asserts that the rendered city world transform changes, then resets the camera before continuing Map → District → Location → Home/Underpass → Worker-backed battle. `AUTONOMOUS_PROGRESS.md` records this run. No gameplay rules, content canon, Worker API, D1 schema, migration, binding, or deployment configuration changed.
+- **Exact-head QA:** prior exact head `fe6297272eae25bad500a8cc551cc5af8c31328c` passed CI run [40972021143](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40972021143): deterministic tests; isolated Worker/D1 reward concurrency and transient-failure recovery; Underpass cycle and rollover concurrency; atomic defeat history; housing persistence in mobile Chromium; production build; full Chromium Worker/D1 battle vertical slice; and Wrangler validation. The new touch-drag regression is pushed with this entry and requires its own exact-head CI before PR #113 can be marked ready.
+- **Mana:** COMPLETE / MERGED on main. Current main carries Degen-only `maxMana`, bespoke `manaCost`, persisted authoritative `player_mana`, atomic insufficient-Mana rejection, exact deduction, zero-cost use at zero, killing-blow/defeat behavior, cost-aware controls, no monster Mana, and no Mana-triggered reversion. Current branch listing did not return `sidekick/degen-mana-foundation-v01`; the old Mana work is already superseded by merged mainline implementation and tracked migrations `0003` / `0006`.
+- **Battle authority / reward idempotency:** unchanged. Worker/D1 owns permit state, HP/Mana/turn compare-and-swap, terminal outcomes/history, reward receipts and recovery, progression, currency, inventory, and housing persistence. Main integration suites already exercise duplicate completion, stale/fresh claim races, action/completion concurrency, full/reduced clear tiers, level-up math, malformed/expired permit chronology, and event closure while a valid permit remains active.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; current main deployment evidence records schema → tracked migrations → Worker order. No database ID, migration, schema, or deploy setting was changed in this run. The `0007_player_inventory_quantity_guards.sql` / draft auth `0007_player_sessions.sql` collision remains an explicit gate; no renumbering or bypass.
+- **Miles blocker:** no blocker for this navigation/test slice. Production Discord/Telegram identity verification and legacy identity-collision policy remain separate auth release gates; no auth or Shield work was attempted.
+- **One best next task:** verify the new exact-head touch-drag Chromium run; if green, mark PR #113 ready for review, then continue the next non-schema gameplay slice without inventing unapproved monster content.
+
+---
+
 ## Latest run — 2026-10-29 (all housing browser map waits corrected)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`; main remains unchanged.

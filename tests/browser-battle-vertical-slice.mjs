@@ -261,6 +261,26 @@ try {
   await tap("[data-city-reset]");
   assert.equal(await cdp.evaluate('Number(document.querySelector("[data-city-viewport]")?.dataset.cityScale)'), initialCityScale,
     'map reset must restore the current mobile scale');
+
+  // Verify that the visible map responds to a real Chromium touch drag, not
+  // only to the pure camera helper tests or the zoom buttons.
+  const panPoint = await cdp.evaluate(`(() => {
+    const rect = document.querySelector('[data-city-viewport]').getBoundingClientRect();
+    return { id: 1, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  const cityTransformBeforePan = await cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform ?? ""');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [panPoint] });
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ ...panPoint, x: panPoint.x + 36, y: panPoint.y + 18 }],
+  });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const cityTransformAfterPan = await cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform ?? ""');
+  assert.notEqual(cityTransformAfterPan, cityTransformBeforePan,
+    'a real mobile touch drag must pan the city camera');
+  await tap("[data-city-reset]");
+  await until('city camera reset after touch drag', () =>
+    cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform.includes("translate(0px, 0px)") ?? false'));
   await tap("[data-route=home]");
   await until('Home grid', () => cdp.evaluate('!!document.querySelector(".room-grid")'));
   await assertFitsMobile('Home');
