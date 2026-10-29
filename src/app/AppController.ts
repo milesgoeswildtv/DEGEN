@@ -3,6 +3,7 @@ import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
 import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
+import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
 import { battleView, homeView, mapView, underpassView, updateBattleDom } from '../ui/views';
 import { GameApi, GameApiError, isAuthoritativeBattleActionState } from './api';
@@ -403,11 +404,17 @@ export class AppController {
 
   private setAbilityButtonsDisabled(disabled: boolean): void {
     const snapshot = this.battleEngine?.snapshot;
+    const validManaState = snapshot
+      && isValidManaState(snapshot.playerMana, snapshot.playerMaxMana);
     this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
-      const manaCost = Number(button.dataset.manaCost ?? 0);
+      const rawManaCost = button.dataset.manaCost;
+      const manaCost = rawManaCost?.trim() ? Number(rawManaCost) : Number.NaN;
+      const validManaCost = isValidManaCost(manaCost);
       button.disabled = disabled
         || !snapshot
         || snapshot.status !== 'active'
+        || !validManaState
+        || !validManaCost
         || manaCost > snapshot.playerMana;
     });
   }
