@@ -321,6 +321,18 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     return fail(request, env, 'Invalid housing placement request.', 400);
   }
 
+  // Placement IDs are globally unique in D1. Detect an ID owned by another
+  // player before deleting this player's saved layout, and report a client
+  // conflict instead of surfacing an avoidable database constraint error.
+  if (placements.length > 0) {
+    const placeholders = placements.map(() => '?').join(', ');
+    const collision = await env.DB.prepare(`SELECT id FROM housing_placements
+      WHERE player_id <> ? AND id IN (${placeholders}) LIMIT 1`)
+      .bind(input.playerId, ...placements.map((item) => item.instanceId))
+      .first<{ id: string }>();
+    if (collision) return fail(request, env, 'Housing placement ID is already in use.', 409);
+  }
+
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM housing_placements WHERE player_id = ?`).bind(input.playerId),
     ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements
