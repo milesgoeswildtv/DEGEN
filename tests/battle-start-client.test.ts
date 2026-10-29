@@ -92,7 +92,7 @@ test('pending reward discovery validates and deduplicates server permit IDs', as
     });
   };
   const api = new GameApi('https://degen-api.example', fetcher);
-  assert.deepEqual(await api.getPendingBattleRewards('player / one'), ['permit-1', 'permit-2']);
+  assert.deepEqual(Array.from(await api.getPendingBattleRewards('player / one')), ['permit-1', 'permit-2']);
   assert.equal(requestedUrl,
     'https://degen-api.example/api/battle/pending-rewards?playerId=player%20%2F%20one');
 });
