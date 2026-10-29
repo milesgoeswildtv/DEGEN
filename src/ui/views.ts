@@ -34,7 +34,7 @@ const worldStatus = (event?: WorldEventSnapshot, backendOffline = false) =>
 
 const worldConnectionNotice = (backendOffline: boolean): string =>
   backendOffline
-    ? '<p class="world-connection-error" role="status">LIVE WORLD UNAVAILABLE — The game cannot reach its server. Underpass combat is disabled until connection is restored.</p>'
+    ? '<p class="world-connection-error" role="status">LIVE WORLD UNAVAILABLE — The game cannot reach its server. New Underpass entry is disabled; an existing server-issued encounter can still be recovered when its permit service is reachable.</p>'
     : '';
 
 export const appShell = (player: PlayerState, content: string): string => `
