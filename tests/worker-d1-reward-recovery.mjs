@@ -410,38 +410,7 @@ try {
   assert.equal(pendingAfterSettlementRace.status, 200, JSON.stringify(pendingAfterSettlementBody));
   assert.equal(new Set(pendingAfterSettlementBody.permitIds).has('permit-settlement-marker-race'), false,
     'a terminally inconsistent receipt must not be rediscovered for reward settlement');
-  // A final marker can appear when the clear counter advances. The settlement
-  // batch must not apply XP/currency/items or write a victory receipt in that case.
-  // Keep the already-advanced slot reserved rather than decrementing a sequence
-  // that another concurrent clear may already have observed.
-  const settlementRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
-    FROM characters WHERE player_id = 'qa-player'`);
-  const settlementRaceInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
-    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
-  const settlementRace = await complete('permit-settlement-marker-race');
-  assert.equal(settlementRace.status, 409, JSON.stringify(settlementRace.body));
-  assert.equal(settlementRace.body?.error, 'Battle terminal history marker conflicts with reward settlement.');
-  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number, completed_at
-    FROM battle_permits WHERE id = 'permit-settlement-marker-race'`), [{
-    reward_state: 'pending', reward_claim_token: null, reward_claimed_at: null,
-    reward_clear_number: 1, completed_at: null,
-  }], 'a poisoned post-counter victory must be unclaimed and remain auditable');
-  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
-    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-claim-race-cycle'`),
-    [{ full_reward_clears: 1 }], 'do not renumber a clear slot after the counter has advanced');
-  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
-    FROM characters WHERE player_id = 'qa-player'`), settlementRaceCharacterBefore);
-  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
-    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), settlementRaceInventoryBefore);
-  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-settlement-marker-race:victory'`)[0]?.n, 0,
-    'the invalid victory must not create its reward receipt');
-  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-settlement-marker-race:defeat'`)[0]?.n, 1);
-  const pendingAfterSettlementRace = await fetch(origin + '/api/battle/pending-rewards?playerId=qa-player');
-  const pendingAfterSettlementBody = await pendingAfterSettlementRace.json();
-  assert.equal(pendingAfterSettlementRace.status, 200, JSON.stringify(pendingAfterSettlementBody));
-  assert.equal(new Set(pendingAfterSettlementBody.permitIds).has('permit-settlement-marker-race'), false,
-    'a terminally inconsistent receipt must not be rediscovered for reward settlement');
-  sql('DROP TRIGGER qa_marker_during_claim');
+    sql('DROP TRIGGER qa_marker_during_claim');
   sql('DROP TRIGGER qa_marker_after_clear_assignment');
   sql('DROP TRIGGER qa_marker_after_counter_advance');
   sql('DROP TRIGGER qa_marker_after_counter_advance');
