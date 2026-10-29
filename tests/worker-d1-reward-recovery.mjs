@@ -410,9 +410,8 @@ try {
   assert.equal(pendingAfterSettlementRace.status, 200, JSON.stringify(pendingAfterSettlementBody));
   assert.equal(new Set(pendingAfterSettlementBody.permitIds).has('permit-settlement-marker-race'), false,
     'a terminally inconsistent receipt must not be rediscovered for reward settlement');
-    sql('DROP TRIGGER qa_marker_during_claim');
+  sql('DROP TRIGGER qa_marker_during_claim');
   sql('DROP TRIGGER qa_marker_after_clear_assignment');
-  sql('DROP TRIGGER qa_marker_after_counter_advance');
   sql('DROP TRIGGER qa_marker_after_counter_advance');
 
   // A pre-existing deterministic victory key is not a valid pending receipt.
