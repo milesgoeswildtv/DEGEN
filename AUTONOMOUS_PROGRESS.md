@@ -1,3 +1,15 @@
+## Follow-up — 2026-10-29 (align completed-action fixtures with audit guard)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #106 OPEN (not merged):** `automation/degen/active-victory-marker-action-guard-v01`. Corrected code/test head: `c7f68940c67bb2214ac37a0bd6197a7888dc45f6`.
+- **Observed CI failure:** run [40841203907](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40841203907) stopped at deterministic tests (166 passed, 2 failed). Both failures were mock fixtures for the already-awarded action replay path: they omitted the newly required valid victory-history marker counts, so the Worker correctly failed closed and the old test expected a snapshot. No Worker/D1 integration, build, browser, or Wrangler stage ran on that failed head.
+- **Correction / files changed:** `tests/worker-battle-action-conflict.test.ts` now models the independent receipt audit fields for both ordinary and legacy-NULL-Mana completed victories: exactly one `:victory` marker, no `:defeat` marker, and a valid owner/encounter/result marker. This preserves valid replay behavior without weakening the new conflict guard.
+- **QA boundary:** the corrected head requires a fresh exact-head CI run. No local-shell test result is claimed; the runtime cannot resolve github.com for a clone. No production D1 operation or Worker deployment.
+- **Mana / authority / D1:** Mana remains COMPLETE / MERGED on main, including tracked `0006_backfill_active_battle_mana.sql`. Worker/D1 remains authoritative; no balance, schema, migration, or deployment-config changes. The `0007` auth/inventory migration collision and platform-auth release gates remain unresolved.
+- **One best next task:** verify CI for the corrected head and fix only failures reproduced by that exact run.
+
+---
+
 ## Latest run — 2026-10-29 (fail closed on conflicting terminal battle snapshots)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`. The Degen-only Mana foundation is complete/merged on main; the old `sidekick/degen-mana-foundation-v01` remains stale and is not the active implementation branch.
