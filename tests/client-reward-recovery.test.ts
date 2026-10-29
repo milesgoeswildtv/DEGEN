@@ -101,7 +101,7 @@ test('failed Worker completion retains the permit and persists retry across cont
   assert.equal(fixture.store.localRewards, 0);
 });
 
-test('server-discovered victory recovery retries a transient lookup failure without localStorage', async () => {
+test('server-discovered victory recovery retries a not-yet-deployed endpoint without localStorage', async () => {
   let attempts = 0;
   let discoveries = 0;
   let discoveredFor = '';
@@ -116,7 +116,9 @@ test('server-discovered victory recovery retries a transient lookup failure with
     async (playerId) => {
       discoveries += 1;
       discoveredFor = playerId;
-      if (discoveries === 1) throw new Error('transient D1 failure');
+      if (discoveries === 1) {
+        throw new TestGameApiError(404, { error: 'Not found' }, 'pending-reward route is not deployed yet');
+      }
       return ['server-only-permit'];
     },
     true,
