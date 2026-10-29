@@ -18,11 +18,21 @@ let worker;
 let logs = '';
 
 function cli(args) {
-  const result = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120_000 });
-  if (result.error || result.status !== 0) {
-    throw new Error(`wrangler ${args.join(' ')}: ${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
+  for (let attempt = 0; ; attempt += 1) {
+    const result = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120_000 });
+    if (!result.error && result.status === 0) return result.stdout;
+
+    const details = `${result.error ?? ''}\n${result.stdout}\n${result.stderr}`;
+    const transientSqliteLock = /SQLITE_BUSY|database is locked|database is busy/i.test(details);
+    if (!transientSqliteLock || attempt >= 7) {
+      throw new Error(`wrangler ${args.join(' ')}: ${details}`);
+    }
+
+    // The Worker and a separate Wrangler D1 command share the same local SQLite
+    // persistence. Retry only explicit busy/locked errors; real SQL or Worker
+    // failures still fail the integration test immediately.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(100 * (2 ** attempt), 800));
   }
-  return result.stdout;
 }
 function sql(query) {
   const raw = cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, '--json', `--command=${query}`]);
