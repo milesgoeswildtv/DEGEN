@@ -377,6 +377,74 @@ test('reactivation during an in-flight housing save retries once if that save fa
 });
 
 
+test('corrupt housing outbox layouts are discarded before server bootstrap', async () => {
+  const layouts = [
+    [
+      { instanceId: 'cell-a', furnitureId: 'starter-bed', x: 1, y: 1 },
+      { instanceId: 'cell-b', furnitureId: 'starter-chair', x: 1, y: 1 },
+    ],
+    [
+      { instanceId: 'duplicate-id', furnitureId: 'starter-bed', x: 1, y: 1 },
+      { instanceId: 'duplicate-id', furnitureId: 'starter-chair', x: 2, y: 2 },
+    ],
+    Array.from({ length: 49 }, (_, index) => ({
+      instanceId: `over-cap-${index}`,
+      furnitureId: `furniture-${index}`,
+      x: index % 8,
+      y: Math.floor(index / 8) % 6,
+    })),
+  ];
+  const serverPlacements = [
+    { instanceId: 'server-bed', furnitureId: 'starter-bed', x: 4, y: 4 },
+  ];
+
+  for (let index = 0; index < layouts.length; index += 1) {
+    const playerId = `browser-corrupt-outbox-${index}`;
+    const values = new Map<string, string>();
+    const saved: unknown[] = [];
+    const localPlayer = {
+      id: playerId,
+      displayName: 'Player',
+      level: 1,
+      xp: 0,
+      currency: 0,
+      degenId: 'test-degen',
+      inventory: [],
+      unlockedLocations: ['home', 'downtown', 'underpass'],
+      housing: {
+        inventory: ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'],
+        placements: [],
+      },
+      defeatedBosses: [],
+      __housingOutbox: {
+        [playerId]: {
+          inventory: ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'],
+          placements: layouts[index],
+        },
+      },
+    };
+    values.set('degen.prototype.player.v2', JSON.stringify(localPlayer));
+    const serverPlayer: any = {
+      ...localPlayer,
+      housing: { ...localPlayer.housing, placements: serverPlacements },
+    };
+    delete serverPlayer.__housingOutbox;
+
+    const store = makeStore(async (_id, housing) => {
+      saved.push(structuredClone(housing));
+    }, [], values, async (id) => ({ ...serverPlayer, id }));
+
+    await store.initialize({ displayName: 'Player' });
+    await flush();
+
+    assert.deepEqual(store.snapshot.housing.placements, serverPlacements,
+      'invalid local outbox must not override the server layout');
+    assert.equal(saved.length, 0, 'invalid local outbox must not be replayed to the Worker');
+    assert.deepEqual(JSON.parse(values.get('degen.prototype.player.v2')!).__housingOutbox, {},
+      'discarding a malformed outbox must persist the cleaned queue');
+  }
+});
+
 test('failed housing outbox survives reload and retries after server bootstrap', async () => {
   const values = new Map<string, string>();
   const warnings: string[] = [];

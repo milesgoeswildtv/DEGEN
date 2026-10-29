@@ -226,18 +226,27 @@ export class PlayerStore {
     const housing = value as Record<string, unknown>;
     if (!Array.isArray(housing.inventory)
       || !housing.inventory.every((item) => typeof item === 'string')
-      || !Array.isArray(housing.placements)) return false;
+      || !Array.isArray(housing.placements)
+      || housing.placements.length > 48) return false;
+
+    const instanceIds = new Set<string>();
+    const cells = new Set<string>();
     return housing.placements.every((entry) => {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
       const placement = entry as Record<string, unknown>;
-      return typeof placement.instanceId === 'string' && placement.instanceId.length > 0
-        && typeof placement.furnitureId === 'string' && placement.furnitureId.length > 0
-        && typeof placement.x === 'number' && Number.isSafeInteger(placement.x)
-        && placement.x >= 0 && placement.x <= 7
-        && typeof placement.y === 'number' && Number.isSafeInteger(placement.y)
-        && placement.y >= 0 && placement.y <= 5
-        && (placement.rotation === undefined
-          || (typeof placement.rotation === 'number' && Number.isSafeInteger(placement.rotation)));
+      const { instanceId, furnitureId, x, y, rotation } = placement;
+      if (typeof instanceId !== 'string' || instanceId.length === 0
+        || typeof furnitureId !== 'string' || furnitureId.length === 0
+        || typeof x !== 'number' || !Number.isSafeInteger(x) || x < 0 || x > 7
+        || typeof y !== 'number' || !Number.isSafeInteger(y) || y < 0 || y > 5
+        || (rotation !== undefined && (typeof rotation !== 'number' || !Number.isSafeInteger(rotation)))) {
+        return false;
+      }
+      const cell = `${x},${y}`;
+      if (instanceIds.has(instanceId) || cells.has(cell)) return false;
+      instanceIds.add(instanceId);
+      cells.add(cell);
+      return true;
     });
   }
 

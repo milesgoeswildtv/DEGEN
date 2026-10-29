@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Follow-up — 2026-10-29 (reject malformed persisted housing outbox layouts)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`; the housing branch is synchronized with current main by merge commit `83eebea1ceaea0e0b9bb85654843de397abad410`.
+- **PUSHED / PR #97 OPEN, NOT MERGED:** continuing `automation/degen/housing-reliability-current-main-v01`. The new change hardens the existing housing outbox instead of adding a parallel save path.
+- **Task / files changed:** `src/app/state.ts` now rejects persisted outbox snapshots with more than 48 placements, duplicate placement IDs, or duplicate grid cells before they can override a server bootstrap snapshot or be retried forever. `tests/housing-save-order.test.ts` adds regression cases for all three malformed layouts and confirms the authoritative server layout survives and the outbox is cleaned.
+- **QA status:** before this change, the synchronized merge head's CI [40880236478](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40880236478) was still running (Worker/D1 reward concurrency stage). The new code/test head requires its own exact-head CI, including deterministic tests, isolated Worker/D1 suites, browser housing persistence, production build, Chromium battle vertical slice, and Wrangler validation. No local-shell test, production D1 operation, or Worker deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main; the current main Mana validation/UI guard is preserved in the merged tree. Zero Mana does not revert Degens, and monsters have no Mana resource.
+- **Battle authority / reward idempotency:** PR #106 remains open and unmerged; exact head `dca6d3ef6e4584023680546c089acc192f89805f` passed all 13 CI stages in [40876244644](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40876244644). Worker/D1 remains authoritative for action state and reward settlement.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and uses `db/migrations`; schema → tracked migrations → Worker remains the deployment order. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` conflict remains unresolved. No migration or deployment configuration changed.
+- **Miles blocker:** production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling remain release gates; PR #20 Shield stays draft/gated.
+- **One best next task:** verify fresh CI for this housing outbox guard; address only demonstrated failures, then keep PR #97 unmerged until the platform-auth gate is explicitly cleared.
+
+---
+
 ## Latest run — 2026-10-29 (forward-only housing branch sync and exact-head QA)
 
 - **Authoritative main SHA at sync:** `eb3fd826b5c561e365298a7e052132eae757fa47`. Main CI and Cloudflare Pages preview both passed for this exact SHA: [CI 40812891007](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40812891007), [Pages 40812891043](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40812891043).
