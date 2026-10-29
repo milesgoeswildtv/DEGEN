@@ -1097,14 +1097,20 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL)`;
   const applied = `EXISTS (SELECT 1 FROM characters WHERE player_id = ?
     AND last_reward_claim_token = ?)`;
+  const noTerminalMarkers = `NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+    AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`;
+  const noDefeatMarker = `NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`;
   // Capacity is checked on the first character CAS. Once that CAS applies, the
   // remaining reward writes run atomically in the same D1 batch under the token guard.
   const inventoryCapacity = reward.tier === 'full'
     ? ` AND (SELECT COALESCE(SUM(quantity), 0) FROM player_inventory
         WHERE player_id = ? AND item_type <> 'furniture') < ${MAX_INVENTORY_SNAPSHOT_ITEMS}`
     : '';
-  const settlementGuard = `${owns}${inventoryCapacity}`;
-  const guard = `${owns} AND ${applied}`;
+  const settlementGuard = `${owns} AND ${noTerminalMarkers}${inventoryCapacity}`;
+  const historyGuard = `${owns} AND ${applied} AND ${noTerminalMarkers}`;
+  // The victory history row is inserted before the remaining reward writes in the
+  // atomic batch, so later statements only need to keep a conflicting defeat marker out.
+  const guard = `${owns} AND ${applied} AND ${noDefeatMarker}`;
   const inventoryCapacityBinds = reward.tier === 'full' ? [input.playerId] : [];
 
   // Other permits may award the same character after our snapshot. Retry
@@ -1135,18 +1141,19 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           last_reward_claim_token = ?, updated_at = CURRENT_TIMESTAMP
         WHERE player_id = ? AND level = ? AND xp = ? AND ${settlementGuard}`)
         .bind(progression.level, progression.xp, reward.currency, token, input.playerId,
-          character.level, character.xp, input.permitId, input.playerId, token, ...inventoryCapacityBinds),
+          character.level, character.xp, input.permitId, input.playerId, token,
+          `${input.permitId}:victory`, `${input.permitId}:defeat`, ...inventoryCapacityBinds),
       // A pre-existing victory marker must fail the whole D1 transaction.
       env.DB.prepare(`INSERT INTO battle_history
         (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
-        SELECT ?, ?, ?, 'victory', ?, ?, ? WHERE ${guard}`)
+        SELECT ?, ?, ?, 'victory', ?, ?, ? WHERE ${historyGuard}`)
         .bind(`${input.permitId}:victory`, input.playerId, owned.encounter_key,
           progression.level, reward.xp, reward.currency, input.permitId, input.playerId,
-          token, input.playerId, token),
+          token, input.playerId, token, `${input.permitId}:victory`, `${input.permitId}:defeat`),
       env.DB.prepare(`INSERT OR IGNORE INTO defeated_bosses (player_id, boss_key)
         SELECT ?, ? WHERE ${guard}`)
         .bind(input.playerId, owned.encounter_key, input.permitId, input.playerId,
-          token, input.playerId, token),
+          token, input.playerId, token, `${input.permitId}:defeat`),
     ];
     if (reward.tier === 'full') {
       writes.push(
@@ -1154,20 +1161,21 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           SELECT ?, ?, 'underpass-scrap', 'item', 1 WHERE ${guard}
           ON CONFLICT(id) DO UPDATE SET quantity = quantity + 1`)
           .bind(`${input.playerId}:item:underpass-scrap`, input.playerId, input.permitId,
-            input.playerId, token, input.playerId, token),
+            input.playerId, token, input.playerId, token, `${input.permitId}:defeat`),
         env.DB.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity)
           SELECT ?, ?, 'tunnel-trophy', 'furniture', 1 WHERE ${guard}`)
           .bind(`${input.playerId}:furniture:tunnel-trophy`, input.playerId, input.permitId,
-            input.playerId, token, input.playerId, token),
+            input.playerId, token, input.playerId, token, `${input.permitId}:defeat`),
       );
     }
     writes.push(env.DB.prepare(`UPDATE battle_permits SET reward_state = 'awarded',
         completed_at = CURRENT_TIMESTAMP, reward_xp = ?, reward_currency = ?,
         reward_tier = ?, reward_level = ?, reward_remaining_xp = ?
       WHERE id = ? AND player_id = ? AND reward_state = 'claiming'
-        AND reward_claim_token = ? AND completed_at IS NULL AND ${applied}`)
+        AND reward_claim_token = ? AND completed_at IS NULL AND ${applied}
+        AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`)
       .bind(reward.xp, reward.currency, reward.tier, progression.level, progression.xp,
-        input.permitId, input.playerId, token, input.playerId, token));
+        input.permitId, input.playerId, token, input.playerId, token, `${input.permitId}:defeat`));
 
     // All award statements are one atomic D1 batch. A stale character
     // snapshot changes zero rows and the token gate blocks every later write.
@@ -1175,6 +1183,11 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     // Validate the complete persisted receipt before returning a reward on this
     // request too; the idempotent retry path is not the only response path.
     const settledReceipt = await loadReceipt();
+    if (settledReceipt?.reward_state !== 'awarded' && settledReceipt
+      && (settledReceipt.victory_history_marker_count > 0 || settledReceipt.defeat_history_marker_count > 0)) {
+      await releaseClaim();
+      return fail(request, env, 'Battle terminal history marker conflicts with reward settlement.', 409);
+    }
     if (settledReceipt?.reward_state === 'awarded') {
       if (!isValidAwardedReceipt(settledReceipt)) {
         return fail(request, env, 'Battle reward receipt is invalid.', 409);
