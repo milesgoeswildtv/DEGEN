@@ -88,6 +88,8 @@ type BattleActionPermitRow = BattlePermitStateRow & {
 
 type BattleActionConflictRow = BattleActionPermitRow & {
   permit_is_unexpired: number;
+  victory_history_marker_count: number;
+  defeat_history_marker_count: number;
 };
 
 const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
@@ -348,6 +350,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     reward_claimed_at: string | null;
     permit_started_in_cycle: number;
     permit_is_unexpired: number;
+    victory_history_marker_count: number;
+    defeat_history_marker_count: number;
   };
   const loadExistingPermit = async () => env.DB.prepare(`SELECT
       permit.id, permit.player_id, permit.event_key, permit.cycle_id, permit.encounter_key,
@@ -355,6 +359,10 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       permit.reward_xp, permit.reward_currency, permit.reward_tier, permit.reward_level,
       permit.reward_remaining_xp, permit.reward_claim_token, permit.reward_claimed_at,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      (SELECT COUNT(*) FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+      (SELECT COUNT(*) FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count,
       cycle.event_key AS cycle_event_key,
       CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
         AND julianday(permit.started_at) <= julianday('now')
@@ -389,6 +397,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       || existing.reward_claimed_at !== null
       || existing.permit_started_in_cycle !== 1
       || existing.permit_is_unexpired !== 1
+      || existing.victory_history_marker_count !== 0
+      || existing.defeat_history_marker_count !== 0
       || existing.battle_status !== 'active'
       || !isValidBattlePermitState(existing)) {
       return fail(request, env, 'Battle start request is already used or invalid.', 409);
@@ -453,10 +463,15 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         AND existing.battle_status = 'active'
         AND julianday(existing.expires_at) > julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     )
+    AND NOT EXISTS (
+      SELECT 1 FROM battle_history AS marker
+      WHERE marker.id = (? || ':victory') OR marker.id = (? || ':defeat')
+    )
     ON CONFLICT(id) DO NOTHING
     RETURNING id, expires_at`)
     .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id,
-      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id, input.playerId)
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id, input.playerId,
+      permitId, permitId)
     .first<{ id: string; expires_at: string }>();
   if (!issuedPermit) {
     // Another request may have inserted this same idempotency key between the
@@ -511,7 +526,16 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     const completed = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-        permit.enemy_hp, permit.battle_status, permit.turn_count
+        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')
+            AND marker.player_id = permit.player_id
+            AND marker.encounter_key = permit.encounter_key
+            AND marker.result = 'victory') AS valid_victory_history_marker_count
       FROM battle_permits AS permit
       LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
       WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NOT NULL
@@ -520,11 +544,18 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         AND julianday(permit.started_at) <= julianday('now')
         AND julianday(permit.started_at) < julianday(cycle.closes_at)`)
       .bind(input.permitId, input.playerId)
-      .first<BattleActionPermitRow>();
+      .first<BattleActionPermitRow & {
+        victory_history_marker_count: number;
+        defeat_history_marker_count: number;
+        valid_victory_history_marker_count: number;
+      }>();
     if (completed
       && completed.event_key === 'underpass'
       && completed.cycle_event_key === 'underpass'
       && completed.encounter_key === TUNNEL_MAW.id
+      && completed.victory_history_marker_count === 1
+      && completed.valid_victory_history_marker_count === 1
+      && completed.defeat_history_marker_count === 0
       && isValidBattlePermitState(completed)) {
       return json(request, env, {
         error: 'Battle permit is already completed.',
@@ -546,7 +577,11 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
-        permit.completed_at, permit.reward_state
+        permit.completed_at, permit.reward_state,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count
       FROM battle_permits AS permit
       LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
       WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NULL
@@ -558,12 +593,17 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       .first<BattleActionPermitRow & {
         completed_at: string | null;
         reward_state: 'pending' | 'claiming' | 'awarded';
+        victory_history_marker_count: number;
+        defeat_history_marker_count: number;
       }>();
     const pendingVictory = terminal?.battle_status === 'victory'
       && (terminal.reward_state === 'pending' || terminal.reward_state === 'claiming');
     const unresolvedDefeat = terminal?.battle_status === 'defeat'
       && terminal.reward_state === 'pending';
-    if (terminal
+    const terminalHasConflictingMarkers = terminal?.battle_status === 'victory'
+      ? terminal.victory_history_marker_count > 0 || terminal.defeat_history_marker_count > 0
+      : terminal?.battle_status === 'defeat' && terminal.victory_history_marker_count > 0;
+    if (terminal && !terminalHasConflictingMarkers
       && terminal.event_key === 'underpass'
       && terminal.cycle_event_key === 'underpass'
       && terminal.encounter_key === TUNNEL_MAW.id
@@ -613,6 +653,10 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count,
         CASE WHEN julianday(permit.expires_at) > julianday('now')
           THEN 1 ELSE 0 END AS permit_is_unexpired
       FROM battle_permits AS permit
@@ -631,6 +675,14 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     }
     // A turn can cross permit expiry between the first read and this conflict re-read.
     // Never return an active snapshot that would leave the client presenting an unusable battle.
+    const hasConflictingTerminalMarkers =
+      latest.battle_status === 'active' || latest.battle_status === 'victory'
+        ? latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0
+        : latest.battle_status === 'defeat' && latest.victory_history_marker_count > 0;
+    if (hasConflictingTerminalMarkers) {
+      // Never echo a combat snapshot whose terminal audit disagrees with persisted status.
+      return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+    }
     if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
       return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
     }
@@ -674,9 +726,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     return fail(request, env, 'Battle turn limit reached.', 409);
   }
 
-  // A pre-existing defeat marker means this permit's audit trail is inconsistent.
-  // Fail closed before mutating combat state instead of silently treating a
-  // conflicting history row as a successful terminal action.
+  // Any pre-existing terminal marker makes this active permit's audit trail inconsistent.
+  // Keep both deterministic terminal keys out of the action compare-and-swap so a
+  // poisoned victory marker cannot mutate combat and strand the later reward claim.
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
     SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
@@ -689,9 +741,10 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           AND julianday(battle_permits.started_at) < julianday(closes_at))
       AND turn_count = ?
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+      AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
     RETURNING turn_count`)
     .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId,
-      TUNNEL_MAW.id, permit.turn_count, `${input.permitId}:defeat`);
+      TUNNEL_MAW.id, permit.turn_count, `${input.permitId}:defeat`, `${input.permitId}:victory`);
 
   let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
@@ -722,6 +775,10 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         permit.event_key, cycle.event_key AS cycle_event_key,
         permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+        (SELECT COUNT(*) FROM battle_history AS marker
+          WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count,
         CASE WHEN julianday(permit.expires_at) > julianday('now')
           THEN 1 ELSE 0 END AS permit_is_unexpired
       FROM battle_permits AS permit
@@ -738,6 +795,14 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     if (latest && isValidBattlePermitState(latest)) {
       // A lost CAS at expiry must not return a stale active snapshot; terminal states
       // remain recoverable after expiry because the accepted action already resolved them.
+      const hasConflictingTerminalMarkers =
+        latest.battle_status === 'active' || latest.battle_status === 'victory'
+          ? latest.victory_history_marker_count > 0 || latest.defeat_history_marker_count > 0
+          : latest.battle_status === 'defeat' && latest.victory_history_marker_count > 0;
+      if (hasConflictingTerminalMarkers) {
+        // Never echo a combat snapshot whose terminal audit disagrees with persisted status.
+        return fail(request, env, 'Battle state changed; authoritative snapshot unavailable.', 409);
+      }
       if (latest.battle_status === 'active' && latest.permit_is_unexpired !== 1) {
         return fail(request, env, 'Battle permit is invalid, expired, or already completed.', 409);
       }
@@ -795,6 +860,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     history_xp_awarded: number | null;
     history_currency_awarded: number | null;
     victory_history_marker_count: number;
+    defeat_history_marker_count: number;
   };
   const loadReceipt = async () => env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
@@ -824,7 +890,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       history.xp_awarded AS history_xp_awarded,
       history.currency_awarded AS history_currency_awarded,
       (SELECT COUNT(*) FROM battle_history AS marker
-        WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count
+        WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+      (SELECT COUNT(*) FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
     LEFT JOIN world_event_clears AS clears
@@ -863,6 +931,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       || typeof row.completed_at !== 'string' || row.completed_at.trim().length === 0
       || typeof row.reward_claim_token !== 'string' || row.reward_claim_token.trim().length === 0
       || typeof row.reward_claimed_at !== 'string' || row.reward_claimed_at.trim().length === 0
+      || !isSafeIntegerBetween(row.defeat_history_marker_count, 0, 0)
       || row.history_id !== `${row.permit_id}:victory`
       || row.history_result !== 'victory'
       || row.history_encounter_key !== row.encounter_key
@@ -920,6 +989,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   if (receipt.victory_history_marker_count > 0) {
     return fail(request, env, 'Battle victory history marker conflicts with pending reward.', 409);
   }
+  if (receipt.defeat_history_marker_count > 0) {
+    return fail(request, env, 'Battle defeat history marker conflicts with pending reward.', 409);
+  }
 
   const token = crypto.randomUUID();
   // The token-scoped cleanup also covers an ambiguous failure while acquiring
@@ -946,6 +1018,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     WHERE id = ? AND player_id = ? AND event_key = 'underpass'
       AND encounter_key = ? AND completed_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+      AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
       AND EXISTS (SELECT 1 FROM world_event_cycles
         WHERE id = battle_permits.cycle_id AND event_key = 'underpass'
           AND julianday(opens_at) <= julianday(battle_permits.started_at)
@@ -957,7 +1030,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
         AND strftime('%Y-%m-%d %H:%M:%S', reward_claimed_at) = reward_claimed_at
         AND julianday(reward_claimed_at) < julianday('now', '-60 seconds'))
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
-    .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id, `${input.permitId}:victory`)
+    .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id, `${input.permitId}:victory`, `${input.permitId}:defeat`)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
     if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
 
@@ -1015,20 +1088,25 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
                 AND other.id <> ? AND other.reward_clear_number IS NOT NULL
                 AND EXISTS (SELECT 1 FROM world_event_cycles AS other_cycle
                   WHERE other_cycle.id = other.cycle_id AND other_cycle.event_key = 'underpass')
-            ), 0)`)
+            ), 0)
+          AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+          AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`)
         .bind(input.playerId, claim.cycle_id, input.permitId, input.playerId, token,
           input.playerId, claim.cycle_id,
           input.playerId, claim.cycle_id,
           input.playerId, claim.cycle_id,
-          input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId),
+          input.playerId, claim.cycle_id, TUNNEL_MAW.id, input.permitId,
+          `${input.permitId}:victory`, `${input.permitId}:defeat`),
       env.DB.prepare(`UPDATE world_event_clears SET full_reward_clears = (
           SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?
             AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL
         ) WHERE player_id = ? AND event_key = 'underpass' AND cycle_id = ?
           AND full_reward_clears < (SELECT reward_clear_number FROM battle_permits WHERE id = ? AND player_id = ?
-            AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL)`)
+            AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+          AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`)
         .bind(input.permitId, input.playerId, token, input.playerId, claim.cycle_id,
-          input.permitId, input.playerId, token),
+          input.permitId, input.playerId, token, `${input.permitId}:victory`, `${input.permitId}:defeat`),
       // If the completion marker appeared after clear-number assignment, undo only
       // this token's still-unawarded reservation. The cycle counter above is guarded
       // by the same incomplete-claim predicate, so the sequence remains untouched.
@@ -1083,14 +1161,20 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     AND reward_state = 'claiming' AND reward_claim_token = ? AND completed_at IS NULL)`;
   const applied = `EXISTS (SELECT 1 FROM characters WHERE player_id = ?
     AND last_reward_claim_token = ?)`;
+  const noTerminalMarkers = `NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
+    AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`;
+  const noDefeatMarker = `NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`;
   // Capacity is checked on the first character CAS. Once that CAS applies, the
   // remaining reward writes run atomically in the same D1 batch under the token guard.
   const inventoryCapacity = reward.tier === 'full'
     ? ` AND (SELECT COALESCE(SUM(quantity), 0) FROM player_inventory
         WHERE player_id = ? AND item_type <> 'furniture') < ${MAX_INVENTORY_SNAPSHOT_ITEMS}`
     : '';
-  const settlementGuard = `${owns}${inventoryCapacity}`;
-  const guard = `${owns} AND ${applied}`;
+  const settlementGuard = `${owns} AND ${noTerminalMarkers}${inventoryCapacity}`;
+  const historyGuard = `${owns} AND ${applied} AND ${noTerminalMarkers}`;
+  // The victory history row is inserted before the remaining reward writes in the
+  // atomic batch, so later statements only need to keep a conflicting defeat marker out.
+  const guard = `${owns} AND ${applied} AND ${noDefeatMarker}`;
   const inventoryCapacityBinds = reward.tier === 'full' ? [input.playerId] : [];
 
   // Other permits may award the same character after our snapshot. Retry
@@ -1121,18 +1205,19 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           last_reward_claim_token = ?, updated_at = CURRENT_TIMESTAMP
         WHERE player_id = ? AND level = ? AND xp = ? AND ${settlementGuard}`)
         .bind(progression.level, progression.xp, reward.currency, token, input.playerId,
-          character.level, character.xp, input.permitId, input.playerId, token, ...inventoryCapacityBinds),
-      // A pre-existing victory marker must fail the whole D1 transaction.
+          character.level, character.xp, input.permitId, input.playerId, token,
+          `${input.permitId}:victory`, `${input.permitId}:defeat`, ...inventoryCapacityBinds),
+      // A pre-existing victory marker must block the reward batch before receipt insertion.
       env.DB.prepare(`INSERT INTO battle_history
         (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
-        SELECT ?, ?, ?, 'victory', ?, ?, ? WHERE ${guard}`)
+        SELECT ?, ?, ?, 'victory', ?, ?, ? WHERE ${historyGuard}`)
         .bind(`${input.permitId}:victory`, input.playerId, owned.encounter_key,
           progression.level, reward.xp, reward.currency, input.permitId, input.playerId,
-          token, input.playerId, token),
+          token, input.playerId, token, `${input.permitId}:victory`, `${input.permitId}:defeat`),
       env.DB.prepare(`INSERT OR IGNORE INTO defeated_bosses (player_id, boss_key)
         SELECT ?, ? WHERE ${guard}`)
         .bind(input.playerId, owned.encounter_key, input.permitId, input.playerId,
-          token, input.playerId, token),
+          token, input.playerId, token, `${input.permitId}:defeat`),
     ];
     if (reward.tier === 'full') {
       writes.push(
@@ -1140,20 +1225,21 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
           SELECT ?, ?, 'underpass-scrap', 'item', 1 WHERE ${guard}
           ON CONFLICT(id) DO UPDATE SET quantity = quantity + 1`)
           .bind(`${input.playerId}:item:underpass-scrap`, input.playerId, input.permitId,
-            input.playerId, token, input.playerId, token),
+            input.playerId, token, input.playerId, token, `${input.permitId}:defeat`),
         env.DB.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity)
           SELECT ?, ?, 'tunnel-trophy', 'furniture', 1 WHERE ${guard}`)
           .bind(`${input.playerId}:furniture:tunnel-trophy`, input.playerId, input.permitId,
-            input.playerId, token, input.playerId, token),
+            input.playerId, token, input.playerId, token, `${input.permitId}:defeat`),
       );
     }
     writes.push(env.DB.prepare(`UPDATE battle_permits SET reward_state = 'awarded',
         completed_at = CURRENT_TIMESTAMP, reward_xp = ?, reward_currency = ?,
         reward_tier = ?, reward_level = ?, reward_remaining_xp = ?
       WHERE id = ? AND player_id = ? AND reward_state = 'claiming'
-        AND reward_claim_token = ? AND completed_at IS NULL AND ${applied}`)
+        AND reward_claim_token = ? AND completed_at IS NULL AND ${applied}
+        AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)`)
       .bind(reward.xp, reward.currency, reward.tier, progression.level, progression.xp,
-        input.permitId, input.playerId, token, input.playerId, token));
+        input.permitId, input.playerId, token, input.playerId, token, `${input.permitId}:defeat`));
 
     // All award statements are one atomic D1 batch. A stale character
     // snapshot changes zero rows and the token gate blocks every later write.
@@ -1161,6 +1247,11 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     // Validate the complete persisted receipt before returning a reward on this
     // request too; the idempotent retry path is not the only response path.
     const settledReceipt = await loadReceipt();
+    if (settledReceipt?.reward_state !== 'awarded' && settledReceipt
+      && (settledReceipt.victory_history_marker_count > 0 || settledReceipt.defeat_history_marker_count > 0)) {
+      await releaseClaim();
+      return fail(request, env, 'Battle terminal history marker conflicts with reward settlement.', 409);
+    }
     if (settledReceipt?.reward_state === 'awarded') {
       if (!isValidAwardedReceipt(settledReceipt)) {
         return fail(request, env, 'Battle reward receipt is invalid.', 409);
@@ -1188,6 +1279,57 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   }
 }
 
+
+async function handlePendingBattleRewards(request: Request, env: Env, playerId: string): Promise<Response> {
+  type PendingRewardRow = BattlePermitStateRow & {
+    id: string;
+    event_key: string;
+    cycle_event_key: string | null;
+  };
+
+  // Local storage is only a retry hint. Recover eligible server-owned victories
+  // even when the browser lost that hint, without returning rewards or progression.
+  // A terminal victory remains claimable after permit expiry; only its original
+  // event-cycle chronology and persisted terminal state determine eligibility.
+  const pending = await env.DB.prepare(`SELECT
+      permit.id, permit.event_key, permit.cycle_id, permit.encounter_key,
+      permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      cycle.event_key AS cycle_event_key
+    FROM battle_permits AS permit
+    JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
+    WHERE permit.player_id = ?
+      AND permit.event_key = 'underpass'
+      AND cycle.event_key = 'underpass'
+      AND permit.encounter_key = ?
+      AND permit.completed_at IS NULL
+      AND permit.battle_status = 'victory'
+      AND permit.reward_state IN ('pending', 'claiming')
+      AND (
+        permit.reward_state = 'pending'
+        OR (permit.reward_state = 'claiming'
+          AND strftime('%Y-%m-%d %H:%M:%S', permit.reward_claimed_at) = permit.reward_claimed_at
+          AND julianday(permit.reward_claimed_at) < julianday('now', '-60 seconds'))
+      )
+      AND NOT EXISTS (SELECT 1 FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':victory'))
+      AND NOT EXISTS (SELECT 1 FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':defeat'))
+      AND julianday(cycle.opens_at) <= julianday(permit.started_at)
+      AND julianday(permit.started_at) <= julianday('now')
+      AND julianday(permit.started_at) < julianday(cycle.closes_at)
+    ORDER BY permit.started_at ASC`)
+    .bind(playerId, TUNNEL_MAW.id).all<PendingRewardRow>();
+
+  const permitIds = pending.results
+    .filter((row) => row.event_key === 'underpass'
+      && row.cycle_event_key === 'underpass'
+      && row.encounter_key === TUNNEL_MAW.id
+      && isValidBattlePermitState(row))
+    .map((row) => row.id);
+
+  return json(request, env, { permitIds });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(request, env) });
@@ -1197,6 +1339,11 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/health') return json(request, env, { ok: true, service: 'degen-api' });
       if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return await handleBootstrap(request, env);
       if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(request, env);
+      if (request.method === 'GET' && url.pathname === '/api/battle/pending-rewards') {
+        const playerId = url.searchParams.get('playerId');
+        if (!playerId) return fail(request, env, 'playerId is required');
+        return await handlePendingBattleRewards(request, env, playerId);
+      }
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
         const playerId = url.searchParams.get('playerId');
         if (!playerId) return fail(request, env, 'playerId is required');

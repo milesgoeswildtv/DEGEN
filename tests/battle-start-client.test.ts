@@ -27,6 +27,7 @@ const { GameApi, GameApiError, isAuthoritativeBattleActionState } = runInNewCont
 }) as {
   GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number, startTimeoutMs?: number) => {
     getUnderpass(playerId: string): Promise<unknown>;
+    getPendingBattleRewards(playerId: string): Promise<string[]>;
     completeUnderpass(playerId: string, permitId: string): Promise<unknown>;
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
     acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void;
@@ -81,6 +82,31 @@ async function apiReturning(value: unknown) {
   try { return await api.startUnderpass('player-1', 'cycle-1'); }
   finally { globalThis.fetch = oldFetch; }
 }
+
+test('pending reward discovery validates and deduplicates server permit IDs', async () => {
+  let requestedUrl = '';
+  const fetcher: typeof fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify({ permitIds: ['permit-1', 'permit-1', 'permit-2'] }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const api = new GameApi('https://degen-api.example', fetcher);
+  assert.deepEqual(Array.from(await api.getPendingBattleRewards('player / one')), ['permit-1', 'permit-2']);
+  assert.equal(requestedUrl,
+    'https://degen-api.example/api/battle/pending-rewards?playerId=player%20%2F%20one');
+});
+
+test('pending reward discovery rejects malformed server data', async () => {
+  const fetcher: typeof fetch = async () => new Response(JSON.stringify({ permitIds: ['permit-1', 7] }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  });
+  const api = new GameApi('https://degen-api.example', fetcher);
+  await assert.rejects(
+    () => api.getPendingBattleRewards('player-1'),
+    /Malformed pending battle reward response/,
+  );
+});
 
 test('AppController acknowledges the start key only after attaching the permit for the active player', async () => {
   const events: string[] = [];
@@ -626,6 +652,56 @@ test('AppController synchronizes terminal snapshots returned with expired action
     assert.equal(controller.battleActionPending, false);
     assert.deepEqual(disabledStates, [true], 'terminal recovery must not re-enable terminal action buttons');
   }
+});
+
+test('AppController exits the battle when a terminal-marker conflict has no safe snapshot', async () => {
+  const synchronized: unknown[] = [];
+  const applied: unknown[] = [];
+  const events: string[] = [];
+  const engine = {
+    snapshot: { permitId: 'permit-1', status: 'active', playerHp: 80, playerMana: 4, enemyHp: 1, turnCount: 0 },
+    synchronizeAuthoritativeState(state: unknown) {
+      synchronized.push(state);
+      this.snapshot = state as typeof this.snapshot;
+    },
+    applyAuthoritativeAction(...args: unknown[]) { applied.push(args); },
+  };
+  const controller: any = {
+    battleEngine: engine,
+    battlePermit: { permitId: 'permit-1' },
+    battlePermitOwnerId: 'player-1',
+    battleActionPending: false,
+    route: 'battle',
+    api: {
+      enabled: true,
+      async actUnderpass() {
+        throw new GameApiError(409, {
+          error: 'Battle state changed; authoritative snapshot unavailable.',
+        }, 'Battle state changed; authoritative snapshot unavailable.');
+      },
+    },
+    store: { snapshot: { id: 'player-1' } },
+    async refreshWorld() { events.push('refresh'); },
+    navigate(route: string) {
+      events.push(`navigate:${route}`);
+      this.route = route;
+      this.battleEngine = undefined;
+      this.battleActionPending = false;
+    },
+    render() { events.push('render'); },
+    setBattleActionStatus() {},
+    setAbilityButtonsDisabled() {},
+  };
+
+  await useBattleAbility.call(controller, 'crack');
+
+  assert.deepEqual(synchronized, [], 'an inconsistent active permit must never be synchronized into the client');
+  assert.deepEqual(applied, [], 'a rejected action must never fall back to local combat math');
+  assert.equal(controller.battlePermit, undefined, 'the unusable permit must be cleared');
+  assert.equal(controller.battlePermitOwnerId, undefined);
+  assert.equal(controller.route, 'underpass', 'the player must leave the stuck battle view');
+  assert.deepEqual(events, ['refresh', 'navigate:underpass']);
+  assert.equal(controller.battleActionPending, false);
 });
 
 test('AppController ignores malformed terminal snapshots from battle conflicts', async () => {

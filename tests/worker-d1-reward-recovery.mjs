@@ -18,11 +18,21 @@ let worker;
 let logs = '';
 
 function cli(args) {
-  const result = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120_000 });
-  if (result.error || result.status !== 0) {
-    throw new Error(`wrangler ${args.join(' ')}: ${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
+  for (let attempt = 0; ; attempt += 1) {
+    const result = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120_000 });
+    if (!result.error && result.status === 0) return result.stdout;
+
+    const details = `${result.error ?? ''}\n${result.stdout}\n${result.stderr}`;
+    const transientSqliteLock = /SQLITE_BUSY|database is locked|database is busy/i.test(details);
+    if (!transientSqliteLock || attempt >= 7) {
+      throw new Error(`wrangler ${args.join(' ')}: ${details}`);
+    }
+
+    // The Worker and a separate Wrangler D1 command share the same local SQLite
+    // persistence. Retry only explicit busy/locked errors; real SQL or Worker
+    // failures still fail the integration test immediately.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(100 * (2 ** attempt), 800));
   }
-  return result.stdout;
 }
 function sql(query) {
   const raw = cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, '--json', `--command=${query}`]);
@@ -98,6 +108,24 @@ async function act(permitId, abilityId = 'slash', expectedTurnCount = 0) {
   try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
   return { status: response.status, body };
 }
+async function startBattle(requestId, playerId = 'qa-player', cycleId = 'qa-start-marker-cycle') {
+  const response = await fetch(origin + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId,
+      eventKey: 'underpass',
+      cycleId,
+      encounterKey: 'tunnel-maw',
+      requestId,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const raw = await response.text();
+  let body;
+  try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
+  return { status: response.status, body };
+}
 
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, '--file=db/schema.sql']);
@@ -107,11 +135,13 @@ try {
     PRAGMA foreign_keys = ON;
     INSERT INTO players(id, display_name) VALUES
       ('qa-player', 'Reward Recovery QA'),
-      ('qa-marker-owner', 'Conflicting History Marker Owner');
+      ('qa-marker-owner', 'Conflicting History Marker Owner'),
+      ('qa-start-orphan-player', 'Start Orphan Marker QA');
     INSERT INTO characters(player_id, level, xp, currency, degen_key)
       VALUES ('qa-player', 1, 0, 0, 'test-degen');
     INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at)
       VALUES
+        ('qa-start-marker-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+2 hours')),
         ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-reservation-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
@@ -119,13 +149,15 @@ try {
         ('qa-action-race-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-poison-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-malformed-cleanup-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
-        ('qa-completed-poison-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
+        ('qa-completed-poison-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
+        ('qa-claim-race-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour'));
     INSERT INTO world_event_clears(player_id, event_key, cycle_id, full_reward_clears)
       VALUES
         ('qa-player', 'underpass', 'qa-legacy-cycle', 3),
         ('qa-player', 'underpass', 'qa-poison-cycle', 1),
         ('qa-player', 'underpass', 'qa-malformed-cleanup-cycle', 1),
-        ('qa-player', 'underpass', 'qa-completed-poison-cycle', 1);
+        ('qa-player', 'underpass', 'qa-completed-poison-cycle', 1),
+        ('qa-player', 'underpass', 'qa-claim-race-cycle', 0);
     INSERT INTO battle_permits(
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count,
@@ -228,9 +260,40 @@ try {
       (
         'permit-history-conflict', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-defeat-history-conflict', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-marker-race', 'qa-player', 'underpass', 'qa-claim-race-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-counter-marker-race', 'qa-player', 'underpass', 'qa-claim-race-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-settlement-marker-race', 'qa-player', 'underpass', 'qa-claim-race-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
+    INSERT INTO battle_permits(
+      id, player_id, event_key, cycle_id, encounter_key, expires_at,
+      player_hp, player_mana, enemy_hp, battle_status, turn_count
+    ) VALUES
+      ('00000000-0000-4000-8000-000000000101', 'qa-player', 'underpass', 'qa-start-marker-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0),
+      ('00000000-0000-4000-8000-000000000102', 'qa-player', 'underpass', 'qa-start-marker-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0),
+      ('00000000-0000-4000-8000-000000000104', 'qa-player', 'underpass', 'qa-start-marker-cycle', 'tunnel-maw',
+        datetime('now', '-1 minute'), 80, 12, 92, 'active', 0);
     INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
-      VALUES ('permit-history-conflict:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
+      VALUES
+        ('permit-history-conflict:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0),
+        ('permit-defeat-history-conflict:defeat', 'qa-marker-owner', 'tunnel-maw', 'victory', 99, 999, 999),
+        ('00000000-0000-4000-8000-000000000101:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0),
+        ('00000000-0000-4000-8000-000000000102:defeat', 'qa-marker-owner', 'tunnel-maw', 'victory', 99, 999, 999),
+        ('00000000-0000-4000-8000-000000000103:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
     UPDATE battle_permits SET completed_at = datetime('now', '-2 minutes')
       WHERE id = 'permit-completed-claim';
     UPDATE battle_permits SET reward_clear_number = 999999
@@ -242,13 +305,200 @@ try {
   `);
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, `--file=${seed}`]);
 
+  // Simulate a conflicting terminal marker appearing immediately after the claim
+  // CAS, between the initial receipt read and clear-slot reservation. Reservation
+  // and counter advancement must both fail closed and leave the slot untouched.
+  sql(`CREATE TRIGGER qa_marker_during_claim AFTER UPDATE OF reward_state ON battle_permits
+    WHEN NEW.id = 'permit-marker-race' AND NEW.reward_state = 'claiming' AND OLD.reward_state <> 'claiming'
+    BEGIN
+      INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+      VALUES ('permit-marker-race:defeat', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
+    END`);
+  sql(`CREATE TRIGGER qa_marker_after_clear_assignment AFTER UPDATE OF reward_clear_number ON battle_permits
+    WHEN NEW.id = 'permit-counter-marker-race' AND NEW.reward_clear_number IS NOT NULL AND OLD.reward_clear_number IS NULL
+    BEGIN
+      INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+      VALUES ('permit-counter-marker-race:defeat', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
+    END`);
+  sql(`CREATE TRIGGER qa_marker_after_counter_advance AFTER UPDATE OF full_reward_clears ON world_event_clears
+    WHEN NEW.player_id = 'qa-player' AND NEW.cycle_id = 'qa-claim-race-cycle'
+      AND NEW.full_reward_clears > OLD.full_reward_clears
+    BEGIN
+      INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+      VALUES ('permit-settlement-marker-race:defeat', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
+    END`);
+
   // Force the atomic award batch to fail after the clear number has been
   // reserved. The lease must be released without rolling back or duplicating
   // that reservation, so the next request can retry immediately.
   sql(`CREATE TRIGGER qa_fail_victory_receipt BEFORE INSERT ON battle_history
     WHEN NEW.id = 'permit-recovery:victory'
     BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_REWARD_FAILURE'); END`);
+  const expiredStartPermitBefore = sql(`SELECT id, expires_at, battle_status, player_hp, player_mana, enemy_hp, turn_count,
+      reward_state, reward_clear_number, completed_at
+    FROM battle_permits WHERE id = '00000000-0000-4000-8000-000000000104'`);
   await start();
+  const expiredStartReplay = await startBattle('00000000-0000-4000-8000-000000000104');
+  assert.equal(expiredStartReplay.status, 409, JSON.stringify(expiredStartReplay.body));
+  assert.equal(expiredStartReplay.body?.error, 'Battle start request is already used or invalid.');
+  assert.equal('initialState' in (expiredStartReplay.body ?? {}), false,
+    'an expired active permit must not be replayed as a fresh actionable battle snapshot');
+  await stop();
+  assert.deepEqual(sql(`SELECT id, expires_at, battle_status, player_hp, player_mana, enemy_hp, turn_count,
+      reward_state, reward_clear_number, completed_at
+    FROM battle_permits WHERE id = '00000000-0000-4000-8000-000000000104'`), expiredStartPermitBefore,
+    'rejecting an expired start replay must not mutate the persisted permit');
+  await start();
+
+  // Battle-start replay must not return a playable snapshot for an active permit
+  // whose independent terminal history markers disagree with persisted state.
+  for (const [permitId, markerKind] of [
+    ['00000000-0000-4000-8000-000000000101', 'victory'],
+    ['00000000-0000-4000-8000-000000000102', 'defeat'],
+  ]) {
+    const before = sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+      FROM battle_permits WHERE id = '${permitId}'`);
+    const poisonedStart = await startBattle(permitId);
+    assert.equal(poisonedStart.status, 409, JSON.stringify(poisonedStart.body));
+    assert.equal('initialState' in (poisonedStart.body ?? {}), false,
+      `start replay must not expose a snapshot with a conflicting ${markerKind} marker`);
+    assert.deepEqual(sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+      FROM battle_permits WHERE id = '${permitId}'`), before,
+      'rejecting a poisoned start replay must not mutate the persisted battle');
+  }
+  const orphanMarkerStart = await startBattle(
+    '00000000-0000-4000-8000-000000000103', 'qa-start-orphan-player',
+  );
+  assert.equal(orphanMarkerStart.status, 409, JSON.stringify(orphanMarkerStart.body));
+  assert.equal('initialState' in (orphanMarkerStart.body ?? {}), false,
+    'a request ID colliding with an orphan terminal marker must not issue a permit');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = '00000000-0000-4000-8000-000000000103'`)[0]?.n, 0,
+    'a poisoned request ID must not create a new permit');
+
+  // Server discovery is the recovery path when localStorage lost a permit ID.
+  // Only valid, recoverable Worker-owned victories are returned; no reward data
+  // is exposed, and active/live-claim/corrupt/awarded permits are not candidates.
+  const pendingResponse = await fetch(origin + '/api/battle/pending-rewards?playerId=qa-player');
+  const pendingBody = await pendingResponse.json();
+  assert.equal(pendingResponse.status, 200, JSON.stringify(pendingBody));
+  assert.deepEqual(Object.keys(pendingBody), ['permitIds']);
+  assert.ok(Array.isArray(pendingBody.permitIds));
+  const pendingPermitIds = new Set(pendingBody.permitIds);
+  for (const permitId of ['permit-recovery', 'permit-legacy-recovery', 'permit-stale-claim', 'permit-stale-race']) {
+    assert.ok(pendingPermitIds.has(permitId), `recoverable victory ${permitId} should be discoverable`);
+  }
+  for (const permitId of [
+    'permit-live-claim', 'permit-missing-claim-time', 'permit-invalid-claim-time',
+    'permit-nonnormalized-claim-time', 'permit-completed-claim', 'permit-action-complete-race',
+    'permit-history-conflict', 'permit-defeat-history-conflict', 'permit-completed-poisoned-reservation',
+  ]) {
+    assert.equal(pendingPermitIds.has(permitId), false, `ineligible victory ${permitId} must not be discovered`);
+  }
+
+  // A terminal status with a conflicting history key is not a safe snapshot to
+  // hand back to a stale tab. This pending victory already has a defeat marker.
+  const poisonedPendingStateBefore = sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+    FROM battle_permits WHERE id = 'permit-defeat-history-conflict'`);
+  const poisonedPendingAction = await act('permit-defeat-history-conflict', 'slash', 1);
+  assert.equal(poisonedPendingAction.status, 409, JSON.stringify(poisonedPendingAction.body));
+  assert.equal(poisonedPendingAction.body?.error, 'Battle state changed; authoritative snapshot unavailable.');
+  assert.equal('battleState' in (poisonedPendingAction.body ?? {}), false,
+    'a pending victory with a conflicting terminal marker must not be echoed');
+  assert.deepEqual(sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+    FROM battle_permits WHERE id = 'permit-defeat-history-conflict'`), poisonedPendingStateBefore,
+    'snapshot rejection must not mutate the persisted terminal state');
+
+  // The claim itself can succeed before a conflicting terminal marker appears.
+  // The reservation CAS must recheck both keys before consuming a clear slot.
+  const markerRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const markerRaceInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const markerRace = await complete('permit-marker-race');
+  assert.equal(markerRace.status, 409, JSON.stringify(markerRace.body));
+  assert.equal(markerRace.body?.error, 'Unable to assign authoritative reward clear.');
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-marker-race'`), [{
+    reward_state: 'pending', reward_claim_token: null, reward_claimed_at: null,
+    reward_clear_number: null, completed_at: null,
+  }], 'a poisoned claim must release its lease without reserving a clear number');
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-claim-race-cycle'`),
+    [{ full_reward_clears: 0 }], 'a marker race must not advance the reward sequence');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), markerRaceCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), markerRaceInventoryBefore);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-marker-race:defeat'`)[0]?.n, 1,
+    'the conflicting terminal marker remains intact for audit');
+  const pendingAfterMarkerRace = await fetch(origin + '/api/battle/pending-rewards?playerId=qa-player');
+  const pendingAfterMarkerBody = await pendingAfterMarkerRace.json();
+  assert.equal(pendingAfterMarkerRace.status, 200, JSON.stringify(pendingAfterMarkerBody));
+  assert.equal(new Set(pendingAfterMarkerBody.permitIds).has('permit-marker-race'), false,
+    'server discovery must not requeue a victory with a conflicting terminal marker');
+  // Inject a terminal marker after clear-number allocation but before the counter update.
+  // The counter guard must prevent sequence advancement, and recovery must release
+  // the invalid reservation rather than strand or consume the slot.
+  const counterRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const counterRaceInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const counterRace = await complete('permit-counter-marker-race');
+  assert.equal(counterRace.status, 409, JSON.stringify(counterRace.body));
+  assert.equal(counterRace.body?.error, 'Unable to assign authoritative reward clear.');
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-counter-marker-race'`), [{
+    reward_state: 'pending', reward_claim_token: null, reward_claimed_at: null,
+    reward_clear_number: null, completed_at: null,
+  }], 'a marker after allocation must release the claim and clear its unused reservation');
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-claim-race-cycle'`),
+    [{ full_reward_clears: 0 }], 'a terminal marker arriving after allocation must not advance the counter');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), counterRaceCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), counterRaceInventoryBefore);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-counter-marker-race:defeat'`)[0]?.n, 1);
+  const pendingAfterCounterRace = await fetch(origin + '/api/battle/pending-rewards?playerId=qa-player');
+  const pendingAfterCounterBody = await pendingAfterCounterRace.json();
+  assert.equal(pendingAfterCounterRace.status, 200, JSON.stringify(pendingAfterCounterBody));
+  assert.equal(new Set(pendingAfterCounterBody.permitIds).has('permit-counter-marker-race'), false,
+    'server discovery must exclude a victory poisoned after clear-number assignment');
+  // A final marker can appear when the clear counter advances. The settlement
+  // batch must not apply XP/currency/items or write a victory receipt in that case.
+  // Keep the already-advanced slot reserved rather than decrementing a sequence
+  // that another concurrent clear may already have observed.
+  const settlementRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const settlementRaceInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const settlementRace = await complete('permit-settlement-marker-race');
+  assert.equal(settlementRace.status, 409, JSON.stringify(settlementRace.body));
+  assert.equal(settlementRace.body?.error, 'Battle terminal history marker conflicts with reward settlement.');
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-settlement-marker-race'`), [{
+    reward_state: 'pending', reward_claim_token: null, reward_claimed_at: null,
+    reward_clear_number: 1, completed_at: null,
+  }], 'a poisoned post-counter victory must be unclaimed and remain auditable');
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-claim-race-cycle'`),
+    [{ full_reward_clears: 1 }], 'do not renumber a clear slot after the counter has advanced');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), settlementRaceCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), settlementRaceInventoryBefore);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-settlement-marker-race:victory'`)[0]?.n, 0,
+    'the invalid victory must not create its reward receipt');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-settlement-marker-race:defeat'`)[0]?.n, 1);
+  const pendingAfterSettlementRace = await fetch(origin + '/api/battle/pending-rewards?playerId=qa-player');
+  const pendingAfterSettlementBody = await pendingAfterSettlementRace.json();
+  assert.equal(pendingAfterSettlementRace.status, 200, JSON.stringify(pendingAfterSettlementBody));
+  assert.equal(new Set(pendingAfterSettlementBody.permitIds).has('permit-settlement-marker-race'), false,
+    'a terminally inconsistent receipt must not be rediscovered for reward settlement');
+  sql('DROP TRIGGER qa_marker_during_claim');
+  sql('DROP TRIGGER qa_marker_after_clear_assignment');
+  sql('DROP TRIGGER qa_marker_after_counter_advance');
 
   // A pre-existing deterministic victory key is not a valid pending receipt.
   // Reject it before clear reservation or progression/inventory mutation.
@@ -278,6 +528,34 @@ try {
   assert.deepEqual(sql(`SELECT id, player_id, encounter_key, result, player_level,
       xp_awarded, currency_awarded FROM battle_history
     WHERE id = 'permit-history-conflict:victory'`), conflictHistoryBefore);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), conflictCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), conflictInventoryBefore);
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`), conflictClearsBefore);
+
+  // A defeat marker is just as terminal as a victory marker. It must not allow
+  // a corrupted victory permit to claim progression, inventory, or a clear slot.
+  const defeatConflictPermitBefore = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-defeat-history-conflict'`);
+  const defeatConflictHistoryBefore = sql(`SELECT id, player_id, encounter_key, result, player_level,
+      xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-defeat-history-conflict:defeat'`);
+  const historyDefeatConflict = await complete('permit-defeat-history-conflict');
+  assert.equal(historyDefeatConflict.status, 409, JSON.stringify(historyDefeatConflict.body));
+  assert.equal(historyDefeatConflict.body?.error, 'Battle defeat history marker conflicts with pending reward.');
+  assert.equal('reward' in (historyDefeatConflict.body ?? {}), false);
+  assert.equal('player' in (historyDefeatConflict.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
+      reward_clear_number, reward_xp, reward_currency, reward_tier, reward_level,
+      reward_remaining_xp, completed_at
+    FROM battle_permits WHERE id = 'permit-defeat-history-conflict'`), defeatConflictPermitBefore);
+  assert.deepEqual(sql(`SELECT id, player_id, encounter_key, result, player_level,
+      xp_awarded, currency_awarded FROM battle_history
+    WHERE id = 'permit-defeat-history-conflict:defeat'`), defeatConflictHistoryBefore);
   assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
     FROM characters WHERE player_id = 'qa-player'`), conflictCharacterBefore);
   assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
@@ -350,9 +628,36 @@ try {
   assert.equal(sql(`SELECT full_reward_clears FROM world_event_clears
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears, 1);
 
+  // A post-award conflicting defeat marker invalidates the independent audit
+  // rather than allowing a corrupted terminal receipt to replay as trustworthy.
+  sql(`INSERT INTO battle_history
+    (id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+    VALUES ('permit-recovery:defeat', 'qa-marker-owner', 'tunnel-maw', 'victory', 99, 999, 999)`);
+  const corruptedAwardReplay = await complete();
+  assert.equal(corruptedAwardReplay.status, 409, JSON.stringify(corruptedAwardReplay.body));
+  assert.equal(corruptedAwardReplay.body?.error, 'Battle reward receipt is invalid.');
+  assert.equal('reward' in (corruptedAwardReplay.body ?? {}), false);
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), characterAfterAward,
+    'a conflicting terminal marker must not alter already-awarded progression');
+  assert.deepEqual(sql(`SELECT reward_state, reward_clear_number, reward_xp,
+      reward_currency, reward_tier, completed_at
+    FROM battle_permits WHERE id = 'permit-recovery'`), permitAfterAward,
+    'a conflicting terminal marker must not rewrite the stored receipt');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-recovery:victory'`)[0]?.n, 1);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-recovery:defeat'`)[0]?.n, 1);
+  const corruptedAwardAction = await act('permit-recovery', 'slash', 1);
+  assert.equal(corruptedAwardAction.status, 409, JSON.stringify(corruptedAwardAction.body));
+  assert.equal(corruptedAwardAction.body?.error, 'Battle permit is invalid, expired, or already completed.');
+  assert.equal('battleState' in (corruptedAwardAction.body ?? {}), false,
+    'a corrupted awarded receipt must not be replayed as a trustworthy victory snapshot');
+
   // A live claim lease must not be stolen by a concurrent completion attempt.
   const beforeLiveClaim = sql(`SELECT level, xp, currency, last_reward_claim_token
     FROM characters WHERE player_id = 'qa-player'`);
+  // Earlier fault-injection cases intentionally exercise several D1 transactions; refresh the
+  // live lease immediately before asserting that a non-stale claim cannot be stolen.
+  sql("UPDATE battle_permits SET reward_claimed_at = CURRENT_TIMESTAMP WHERE id = 'permit-live-claim'");
   const liveClaim = await complete('permit-live-claim');
   assert.equal(liveClaim.status, 409, JSON.stringify(liveClaim.body));
   assert.equal(liveClaim.body?.error, 'Battle reward is already being claimed, or the permit expired.');

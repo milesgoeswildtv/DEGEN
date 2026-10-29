@@ -86,6 +86,7 @@ try {
     WHEN NEW.id='boundary' AND NEW.battle_status='defeat'
     BEGIN UPDATE battle_permits SET expires_at=datetime('now','-1 minute') WHERE id=NEW.id; END`);
   await start();
+  // The boundary permit was issued before its event closed and remains valid until expiry.
   assert.equal((await act('boundary')).status,200);
   for(let i=0;i<10;i++) assert.equal((await act('boundary')).status,409);
   await stop();
@@ -143,7 +144,31 @@ try {
   assert.deepEqual(sql("SELECT id,player_id,encounter_key,result,player_level,xp_awarded,currency_awarded FROM battle_history WHERE id='poisoned-marker:defeat'"),
     [{id:'poisoned-marker:defeat',player_id:'qa-player',encounter_key:'different-encounter',result:'victory',player_level:99,xp_awarded:999,currency_awarded:999}]);
   assert.deepEqual(sql("SELECT xp,currency FROM characters WHERE player_id='qa-player'"),[{xp:0,currency:0}]);
-  console.log('PASS local Worker/D1 defeat expiry, free and paid rollback, retry, conflicting history marker, and no rewards');
+
+  // A victory marker is also terminal audit state. Even if a conflicting marker
+  // exists while the permit row says active, a killing blow must not mutate it
+  // into an unclaimable victory or spend resources.
+  seed('poisoned-victory-marker');
+  sql("UPDATE battle_permits SET player_hp=80,player_mana=4,enemy_hp=1 WHERE id='poisoned-victory-marker'");
+  sql(`INSERT INTO battle_history (
+    id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
+  ) VALUES ('poisoned-victory-marker:victory','qa-player','different-encounter','defeat',99,999,999)`);
+  await start();
+  const poisonedVictory = await act('poisoned-victory-marker', 'crack');
+  assert.equal(poisonedVictory.status,409,JSON.stringify(poisonedVictory.body));
+  assert.equal(poisonedVictory.body?.error, 'Battle state changed; authoritative snapshot unavailable.');
+  assert.equal('battleState' in (poisonedVictory.body ?? {}), false,
+    'a terminal marker conflict must not be returned as an actionable active snapshot');
+  await stop();
+  assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='poisoned-victory-marker'"),
+    [{player_hp:80,player_mana:4,enemy_hp:1,turn_count:0,battle_status:'active'}],
+    'a conflicting victory marker must block the killing blow without HP/Mana/turn mutation');
+  assert.deepEqual(sql("SELECT id,player_id,encounter_key,result,player_level,xp_awarded,currency_awarded FROM battle_history WHERE id='poisoned-victory-marker:victory'"),
+    [{id:'poisoned-victory-marker:victory',player_id:'qa-player',encounter_key:'different-encounter',result:'defeat',player_level:99,xp_awarded:999,currency_awarded:999}],
+    'the conflicting audit row must remain untouched');
+  assert.deepEqual(sql("SELECT xp,currency FROM characters WHERE player_id='qa-player'"),[{xp:0,currency:0}],
+    'the rejected terminal action must not award progression or currency');
+  console.log('PASS local Worker/D1: atomic defeat, paid rollback, conflicting defeat/victory markers, and no rewards');
 } finally {
   await stop();
   rmSync(scratch,{recursive:true,force:true});

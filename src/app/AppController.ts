@@ -10,6 +10,23 @@ import { GameApi, GameApiError, isAuthoritativeBattleActionState } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
 
+const shouldRetryBattleRecovery = (error: unknown): boolean => {
+  if (!(error instanceof GameApiError)) return true;
+  if (error.status >= 500 || error.status === 404 || error.status === 429) return true;
+  if (error.status !== 409) return false;
+
+  const payload = error.payload;
+  const message = typeof payload === 'object' && payload !== null && 'error' in payload
+    ? (payload as { error?: unknown }).error
+    : undefined;
+  // These Worker 409 responses explicitly describe a race that can settle or
+  // become recoverable after a claim lease expires. Other 409s are invariant
+  // violations or invalid requests and must not create an endless retry loop.
+  return message === 'Battle reward is already being claimed, or the permit expired.'
+    || message === 'Reward claim changed; retry.'
+    || message === 'Concurrent reward updates; retry completion.';
+};
+
 export class AppController {
   private route: RouteKey = 'map';
   private selectedFurniture?: string;
@@ -24,6 +41,8 @@ export class AppController {
   private battleResumePending = false;
   private battleResumeAttempt = 0;
   private rewardResolution: Promise<void> = Promise.resolve();
+  private rewardCompletionInFlight = new Map<string, Promise<void>>();
+  private rewardRetryTimers = new Map<string, number>();
 
   constructor(
     private readonly root: HTMLElement,
@@ -36,7 +55,9 @@ export class AppController {
     this.render();
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
-      for (const permitId of this.pendingRewardPermits(playerId)) void this.queueRewardCompletion(permitId, playerId);
+      const localPending = new Set(this.pendingRewardPermits(playerId));
+      for (const permitId of localPending) void this.queueRewardCompletion(permitId, playerId);
+      void this.discoverPendingBattleRewards(playerId);
     }
     this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
   }
@@ -438,6 +459,30 @@ export class AppController {
     if (button) button.disabled = disabled;
   }
 
+  private async discoverPendingBattleRewards(playerId: string): Promise<void> {
+    const discovery = this.api.getPendingBattleRewards?.(playerId);
+    if (!discovery) return;
+    try {
+      const permitIds = await discovery;
+      if (this.store.snapshot.id !== playerId) return;
+      const localPending = new Set(this.pendingRewardPermits(playerId));
+      for (const permitId of permitIds) {
+        if (!localPending.has(permitId)) void this.queueRewardCompletion(permitId, playerId);
+      }
+    } catch (error) {
+      console.warn('Unable to discover pending server battle rewards.', error);
+      // Retry transient failures while the app stays open. A reload also repeats
+      // discovery, so recovery does not depend on browser storage surviving.
+      if (this.store.snapshot.id === playerId && shouldRetryBattleRecovery(error)) {
+        window.setTimeout(() => {
+          if (this.store.snapshot.id === playerId && this.api.enabled) {
+            void this.discoverPendingBattleRewards(playerId);
+          }
+        }, 15_000);
+      }
+    }
+  }
+
   private pendingRewardKey(playerId: string): string {
     return `degen.pending.reward-permits.v1:${playerId}`;
   }
@@ -471,12 +516,42 @@ export class AppController {
     }
   }
 
+  private rewardCompletionKey(playerId: string, permitId: string): string {
+    return JSON.stringify([playerId, permitId]);
+  }
+
+  private clearRewardCompletionRetry(key: string): void {
+    const timer = this.rewardRetryTimers.get(key);
+    if (timer === undefined) return;
+    window.clearTimeout(timer);
+    this.rewardRetryTimers.delete(key);
+  }
+
+  private scheduleRewardCompletionRetry(key: string, permitId: string, playerId: string): void {
+    // Several recovery paths can observe the same permit. Keep one automatic retry
+    // timer per player/permit pair so duplicate notifications cannot multiply polling.
+    if (this.rewardRetryTimers.has(key)) return;
+    const timer = window.setTimeout(() => {
+      if (this.rewardRetryTimers.get(key) !== timer) return;
+      this.rewardRetryTimers.delete(key);
+      if (this.api.enabled) void this.queueRewardCompletion(permitId, playerId);
+    }, 15_000);
+    this.rewardRetryTimers.set(key, timer);
+  }
+
   private queueRewardCompletion(permitId: string, playerId: string): Promise<void> {
-    // Serialize pending completions so an older response cannot replace a newer player snapshot.
-    this.rewardResolution = this.rewardResolution.then(async () => {
+    const key = this.rewardCompletionKey(playerId, permitId);
+    const inFlight = this.rewardCompletionInFlight.get(key);
+    if (inFlight) return inFlight;
+
+    // Serialize distinct completions so an older response cannot replace a newer player snapshot,
+    // while coalescing duplicate requests for the same permit into one Worker call.
+    let task: Promise<void>;
+    task = this.rewardResolution.then(async () => {
       try {
         const result = await this.api.completeUnderpass(playerId, permitId);
         if (!result) throw new Error('Missing authoritative battle completion response.');
+        this.clearRewardCompletionRetry(key);
         const isCurrentPlayer = this.store.snapshot.id === playerId;
         if (isCurrentPlayer) {
           this.store.replaceFromServer(result.player);
@@ -494,11 +569,18 @@ export class AppController {
           this.render();
         }
       } catch (error) {
-        console.warn('Server reward verification failed; retaining permit for retry.', error);
-        window.setTimeout(() => void this.queueRewardCompletion(permitId, playerId), 15_000);
+        console.warn('Server reward verification failed; retaining permit for recovery.', error);
+        // Keep the permit ID for a later reload/server-discovery pass, but only
+        // poll automatically when the failure can plausibly resolve without data repair.
+        if (shouldRetryBattleRecovery(error)) this.scheduleRewardCompletionRetry(key, permitId, playerId);
+        else this.clearRewardCompletionRetry(key);
       }
+    }).finally(() => {
+      if (this.rewardCompletionInFlight.get(key) === task) this.rewardCompletionInFlight.delete(key);
     });
-    return this.rewardResolution;
+    this.rewardCompletionInFlight.set(key, task);
+    this.rewardResolution = task;
+    return task;
   }
 
   private async finishBattle(status: 'victory' | 'defeat'): Promise<void> {
