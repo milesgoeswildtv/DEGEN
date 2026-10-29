@@ -23,11 +23,12 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
 const { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState });', {
   __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW,
   fetch: (...args: any[]) => globalThis.fetch(...args), Response, URL, AbortController, setTimeout, clearTimeout,
-  crypto: globalThis.crypto, localStorage: testLocalStorage, Date, Number, JSON, Error, encodeURIComponent, console,
+  crypto: globalThis.crypto, localStorage: testLocalStorage, Date, Number, JSON, Error, SyntaxError: globalThis.SyntaxError, encodeURIComponent, console,
 }) as {
   GameApi: new (apiBase?: string, fetcher?: typeof fetch, actionTimeoutMs?: number, completionTimeoutMs?: number, startTimeoutMs?: number) => {
     getUnderpass(playerId: string): Promise<unknown>;
     getPendingBattleRewards(playerId: string): Promise<string[]>;
+    recoverableUnderpassPermitId(playerId: string): string | undefined;
     completeUnderpass(playerId: string, permitId: string): Promise<unknown>;
     startUnderpass(playerId: string, cycleId: string): Promise<unknown>;
     acknowledgeUnderpassStart(playerId: string, cycleId: string, permitId: string): void;
@@ -333,6 +334,46 @@ test('battle start preserves an uncertain request ID across failed retries and a
   assert.equal(activeRecord.requestId, recovered.permitId);
   assert.equal(activeRecord.cycleId, 'cycle-1');
   assert.equal(activeRecord.state, 'active', 'acknowledgement changes lifecycle state without duplicating storage');
+});
+
+test('malformed successful battle-start response retains its request key for later recovery', async () => {
+  const failedBodies: string[] = [];
+  const malformedFetcher: typeof fetch = async (_input, init) => {
+    failedBodies.push(String(init?.body));
+    return new Response('{', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const failedApi = new GameApi('https://degen-api.example', malformedFetcher);
+  await assert.rejects(
+    failedApi.startUnderpass('player-1', 'cycle-1'),
+    GameApiProtocolError,
+  );
+
+  assert.equal(failedBodies.length, 1, 'a malformed 2xx response is not retried as a transport failure');
+  assert.equal(startRequestStorage.size, 1, 'the uncertain server start key must remain durable');
+  const firstRequestId = (JSON.parse(failedBodies[0] ?? '{}') as { requestId: string }).requestId;
+  assert.equal(failedApi.recoverableUnderpassPermitId('player-1'), firstRequestId);
+
+  const recoveredBodies: string[] = [];
+  const recoveredFetcher: typeof fetch = async (_input, init) => {
+    const body = String(init?.body);
+    recoveredBodies.push(body);
+    const request = JSON.parse(body) as { requestId: string };
+    return new Response(JSON.stringify(validPermit(request.requestId)), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const recoveredApi = new GameApi('https://degen-api.example', recoveredFetcher);
+  const recovered = await recoveredApi.startUnderpass('player-1', 'cycle-1') as ReturnType<typeof validPermit>;
+  const resumedRequestId = (JSON.parse(recoveredBodies[0] ?? '{}') as { requestId: string }).requestId;
+
+  assert.equal(recoveredBodies.length, 1);
+  assert.equal(resumedRequestId, firstRequestId,
+    'a later API instance must recover using the exact key whose 2xx response was malformed');
+  assert.equal(recovered.permitId, firstRequestId);
 });
 
 test('one per-player battle key survives reload and cycle rollover until reward completion', async () => {
