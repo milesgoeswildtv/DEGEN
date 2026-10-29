@@ -12,8 +12,13 @@ const controllerSource = readFileSync(new URL('../src/app/AppController.ts', imp
 const compiled = stripTypeScriptTypes(controllerSource, { mode: 'transform' });
 
 class TestGameApiError extends Error {
-  constructor(readonly status: number, readonly payload: unknown, message: string) {
+  readonly status: number;
+  readonly payload: unknown;
+
+  constructor(status: number, payload: unknown, message: string) {
     super(message);
+    this.status = status;
+    this.payload = payload;
   }
 }
 
