@@ -1,3 +1,25 @@
+## Latest run — 2026-10-28 (housing placement ID collision is a client conflict)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`, after PR #105 merged through the normal PR path. PR #105 exact-head CI `40807543117` passed all 13 stages before merge. Post-merge main CI/Pages status is not verified here; no production Worker deployment or remote D1 operation is claimed.
+
+- **PUSHED / PR #97 OPEN, NOT MERGED:** continuing the existing `automation/degen/housing-reliability-current-main-v01` housing reliability branch. Its current code/test head before this continuity update is `27f1455d67f881473a6032222c4111c990329f66`. The branch base is `d34b791090ddab43a960369d50f026dc8fcbe5dd`; main has since advanced to `eb3fd826b5c561e365298a7e052132eae757fa47`, so normal branch synchronization and fresh exact-head CI remain required before review/merge. No direct-main write.
+
+- **Task / files changed:** `worker/index.ts` now checks validated placement IDs against other players' persisted placements before deleting/replacing the caller's layout. A cross-player global-primary-key collision returns HTTP 409 instead of surfacing an avoidable HTTP 500. `tests/housing-bootstrap-seed.test.ts` verifies the conflict response and preservation of both rooms, and verifies that a player can still reuse their own placement ID while moving furniture. `AUTONOMOUS_PROGRESS.md` records this run.
+
+- **QA:** the regression tests are committed to the existing PR branch, but this environment cannot resolve `github.com` from the local shell; no local `npm test`, build, Worker check, or browser run is claimed. Fresh exact-head CI is required after the latest branch commit. No production D1 operation or deployment.
+
+- **Mana:** COMPLETE / MERGED on main. PR #105 is now merged as `eb3fd826b5c561e365298a7e052132eae757fa47`; invalid ability Mana costs and invalid current/max Mana fail closed in the client UI and shared deterministic rules. Valid zero-cost abilities remain usable at 0 Mana; no monster Mana or Mana-triggered reversion was introduced. The stale `sidekick/degen-mana-foundation-v01` remains retired (11 ahead / 94 behind main).
+
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit HP/Mana/enemy HP/status/turn count, action CAS, terminal outcomes, audit history, reward receipts, progression, currency, inventory, and exactly-once settlement/recovery. The housing change does not alter combat or economy authority.
+
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. `0006_backfill_active_battle_mana.sql` remains tracked. The `0007_player_inventory_quantity_guards.sql` versus draft auth PR #14 `0007_player_sessions.sql` numbering conflict remains unresolved; no migration or deployment configuration changed.
+
+- **Miles blockers:** platform-auth credentials, controlled live identity/session verification, and the approved legacy identity-collision policy remain release gates. PR #97 remains unmerged; do not bypass the auth gate. Shield remains blocked by migration/auth coordination. No monster content was invented.
+
+- **One best next task:** synchronize PR #97 with current main using a normal merge commit, then verify fresh exact-head CI for the housing regression and preserve the platform-auth release gate.
+
+---
+
 ## Latest run — 2026-10-28 (repair housing QA startup and sync current main)
 
 - **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`; main CI [40785252356](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40785252356) passed.
