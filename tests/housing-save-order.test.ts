@@ -470,7 +470,7 @@ test('corrupt housing outbox layouts are discarded before server bootstrap', asy
 });
 
 test('failed housing outbox survives reload and retries after server bootstrap', async () => {
-  const values = new Map<string, string>();
+  const values = defaultHousingValues();
   const warnings: string[] = [];
   const calls: Array<{ playerId: string; housing: any }> = [];
   let rejectFirst!: (error: Error) => void;
