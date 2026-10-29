@@ -199,3 +199,18 @@ test('cross-player placement ID collision rolls back replacement and preserves b
   ], 'the other owner’s placement must remain unchanged');
   db.close();
 });
+
+test('a player can reuse their own placement ID while moving saved furniture', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'same-owner', 'Same Owner');
+
+  const response = await handleHousing(housingRequest('same-owner', [
+    { instanceId: 'same-owner:starter-bed-placed', furnitureId: 'starter-bed', x: 6, y: 4 },
+  ]), { DB: adapter });
+
+  assert.equal(response.status, 204);
+  assert.deepEqual(db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='same-owner'`).all(), [
+    { id: 'same-owner:starter-bed-placed', grid_x: 6, grid_y: 4 },
+  ]);
+  db.close();
+});
