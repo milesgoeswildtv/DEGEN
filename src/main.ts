@@ -1,5 +1,6 @@
 import './styles.css';
 import './world-events.css';
+import './city.css';
 import { AppController } from './app/AppController';
 import { GameApi } from './app/api';
 import { PlayerStore } from './app/state';
