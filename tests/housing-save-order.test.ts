@@ -17,6 +17,7 @@ function makeStore(
   values = new Map<string, string>(),
   bootstrap: (id: string, identity: any) => Promise<any> = async () => undefined,
   writeStorage: (key: string, value: string) => void = (key, value) => { values.set(key, value); },
+  enabled = true,
 ) {
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
@@ -34,7 +35,11 @@ function makeStore(
     replaceFromServer(player: any): void;
     initialize(identity: any): Promise<void>;
   };
-  return new Store({ enabled: true, saveHousing, bootstrap });
+  return new Store({
+    enabled,
+    saveHousing: (playerId: string, housing: unknown) => enabled ? saveHousing(playerId, housing) : Promise.resolve(),
+    bootstrap,
+  });
 }
 
 test('localStorage write failures do not block server-backed housing saves or UI updates', async () => {
@@ -649,4 +654,34 @@ test('null persisted housing cannot crash the home view or save before bootstrap
   await flush();
   assert.equal(saved.length, 1, 'housing edits resume after authoritative bootstrap');
   assert.ok((saved[0] as any).placements.some((p: any) => p.x === 4 && p.y === 4));
+});
+
+
+test('offline preview remains editable after corrupt housing is normalized', async () => {
+  const values = new Map<string, string>();
+  values.set('degen.prototype.player.v2', JSON.stringify({
+    id: 'offline-corrupt-housing',
+    displayName: 'Player',
+    level: 1,
+    xp: 0,
+    currency: 0,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: ['home', 'downtown', 'underpass'],
+    housing: null,
+    defeatedBosses: [],
+  }));
+  const store = makeStore(async () => {
+    throw new Error('disabled API should not submit housing');
+  }, [], values, async () => undefined, undefined, false);
+
+  assert.ok(Array.isArray(store.snapshot.housing.placements),
+    'corrupt local state is normalized before the view renders');
+  store.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.ok(store.snapshot.housing.placements.some((p: any) =>
+    p.furnitureId === 'starter-chair' && p.x === 2 && p.y === 2),
+  'local preview housing should remain usable without an authoritative backend');
+  assert.deepEqual(JSON.parse(values.get('degen.prototype.player.v2')!).__housingOutbox, {},
+    'disabled preview saves should not leave a retry queue');
 });
