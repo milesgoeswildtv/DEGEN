@@ -497,7 +497,7 @@ try {
       && free?.disabled === false
       && free.querySelector("small")?.textContent === "NO MANA"
       && hud.includes("Mana 0 of 12") && hud.includes("Turn 1.")
-      && status === "Battle state refreshed from the server. Choose your next move.";
+      && status === "Insufficient Mana for Crack";
   })()`));
   await assertFitsMobile('Mana-starved battle');
   await assertFitsCompact('Mana-starved battle');
