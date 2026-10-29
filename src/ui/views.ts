@@ -1,4 +1,5 @@
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
+import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
 
@@ -144,13 +145,16 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
       <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
       <p id="battle-action-status" class="battle-action-status" role="status" aria-live="polite" hidden></p>
       <div class="ability-grid">
-        ${degen.abilities.map((ability) => `
-          <button type="button" data-ability="${ability.id}" data-mana-cost="${ability.manaCost}">
+        ${degen.abilities.map((ability) => {
+          const manaCost = isValidManaCost(ability.manaCost) ? ability.manaCost : undefined;
+          return `
+          <button type="button" data-ability="${ability.id}" data-mana-cost="${manaCost ?? ''}" ${manaCost === undefined ? 'disabled' : ''}>
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
-            <small>${ability.manaCost === 0 ? 'NO MANA' : `${ability.manaCost} MANA`}</small>
+            <small>${manaCost === undefined ? 'UNAVAILABLE' : manaCost === 0 ? 'NO MANA' : `${manaCost} MANA`}</small>
           </button>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
       <div id="battle-log" class="battle-log" role="log" aria-label="Battle event log" aria-live="off" tabindex="0"></div>
       <button class="secondary-action" type="button" data-route="underpass">ABANDON FIGHT</button>
@@ -159,6 +163,8 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
 `);
 
 export const updateBattleDom = (snapshot: BattleSnapshot): void => {
+  const validManaState = isValidManaState(snapshot.playerMana, snapshot.playerMaxMana);
+
   // Phaser renders to canvas, which does not expose changing combat values to
   // assistive technology. Keep a compact DOM projection of the same snapshot.
   const accessibleHud = document.querySelector<HTMLElement>('#battle-accessible-hud');
@@ -168,7 +174,10 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
       : snapshot.status === 'victory'
         ? 'Victory. Verifying rewards.'
         : 'Defeat. Returning to the Underpass.';
-    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, Mana ${snapshot.playerMana} of ${snapshot.playerMaxMana}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}. Turn ${snapshot.turnCount}. ${outcome}`;
+    const manaSummary = validManaState
+      ? `Mana ${snapshot.playerMana} of ${snapshot.playerMaxMana}`
+      : 'Mana unavailable';
+    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, ${manaSummary}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}. Turn ${snapshot.turnCount}. ${outcome}`;
   }
 
   const log = document.querySelector<HTMLElement>('#battle-log');
@@ -177,17 +186,25 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   log.innerHTML = snapshot.log.map((entry) => `<div>${escapeHtml(entry)}</div>`).join('');
 
   document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
-    const manaCost = Number(button.dataset.manaCost ?? 0);
-    const unaffordable = snapshot.status === 'active' && manaCost > snapshot.playerMana;
-    button.disabled = snapshot.status !== 'active' || unaffordable;
+    const rawManaCost = button.dataset.manaCost;
+    const parsedManaCost = rawManaCost?.trim() ? Number(rawManaCost) : Number.NaN;
+    const validManaCost = isValidManaCost(parsedManaCost);
+    const unaffordable = snapshot.status === 'active'
+      && (!validManaState || !validManaCost || parsedManaCost > snapshot.playerMana);
+    button.disabled = snapshot.status !== 'active'
+      || !validManaState
+      || !validManaCost
+      || parsedManaCost > snapshot.playerMana;
 
-    // Keep the reason for a disabled paid move visible on small touch screens;
-    // the HUD remains the authoritative current-Mana readout.
+    // Malformed configuration or a corrupt snapshot must fail closed rather
+    // than making a paid move appear usable when the rules engine will reject it.
     const costLabel = button.querySelector<HTMLElement>('small');
     if (costLabel) {
-      costLabel.textContent = unaffordable
-        ? `NEED ${manaCost} MANA`
-        : manaCost === 0 ? 'NO MANA' : `${manaCost} MANA`;
+      costLabel.textContent = !validManaState || !validManaCost
+        ? 'UNAVAILABLE'
+        : unaffordable
+          ? `NEED ${parsedManaCost} MANA`
+          : parsedManaCost === 0 ? 'NO MANA' : `${parsedManaCost} MANA`;
     }
   });
 

@@ -1,5 +1,5 @@
 import type { BattleActionResult, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
-import { canUseAbility, resolveCombatTurn } from './rules';
+import { canUseAbility, isValidManaState, resolveCombatTurn } from './rules';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
 
@@ -156,6 +156,13 @@ export class BattleEngine {
 
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
     if (!ability) return;
+
+    if (!isValidManaState(this.playerMana, this.degen.maxMana)) {
+      this.log.push('Mana state is invalid; refresh the encounter.');
+      this.trimLog();
+      this.emit();
+      return;
+    }
 
     if (!canUseAbility(this.playerMana, ability)) {
       this.log.push(`Not enough Mana for ${ability.name}.`);

@@ -5,6 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
+import { isValidManaCost, isValidManaState } from '../src/game/combat/rules.ts';
 import type { BattleSnapshot } from '../src/game/combat/engine.ts';
 import type { PlayerState } from '../src/domain/types.ts';
 
@@ -12,6 +13,8 @@ const viewsSource = readFileSync(new URL('../src/ui/views.ts', import.meta.url),
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/\bexport const /g, 'const ');
 const viewContext: Record<string, unknown> = {
+  isValidManaCost,
+  isValidManaState,
   FURNITURE_CATALOG: [],
   WORLD_LOCATIONS: [],
   getFurniture: () => undefined,
