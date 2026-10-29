@@ -289,8 +289,7 @@ test('malformed server reward discovery response is not retried as a transient f
     throw new TestGameApiProtocolError('Malformed pending battle reward response.');
   });
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
-  await controller.start();
-  await new Promise((resolve) => setImmediate(resolve));
+  await (controller as any).discoverPendingBattleRewards('test-player');
 
   assert.equal(discoveries, 1);
   assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000 && !timer.cancelled).length, 0,
