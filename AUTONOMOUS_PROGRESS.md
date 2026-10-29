@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (reject poisoned battle-start replay and permit issuance)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #106 OPEN, not merged:** `automation/degen/active-victory-marker-action-guard-v01`. Prior exact head `81e2a8bcdfc4a9cf637bfc596bc5e135225316ac` passed CI run [40843754687](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40843754687), including all 13 stages. The code/test changes below trigger a fresh exact-head CI run; no result is claimed until that run finishes.
+- **Task / files changed:** `worker/index.ts` rejects battle-start replay when either persisted terminal history key conflicts with an active permit and prevents issuing a new permit whose request ID collides with an orphan `:victory`/`:defeat` history key. `tests/worker-d1-reward-recovery.mjs` adds real local Worker/D1 regressions for both conflicting marker kinds and orphan marker IDs. `AUTONOMOUS_PROGRESS.md` records this handoff.
+- **QA boundary:** no local shell execution is claimed. Latest completed exact-head CI was green on `81e2a8bcdfc4a9cf637bfc596bc5e135225316ac`; current changes require a fresh CI run covering deterministic tests, isolated Worker/D1 reward/concurrency, build, Chromium mobile vertical slice, and Wrangler validation. No production D1 operation or Worker deployment.
+- **Mana:** COMPLETE / MERGED on main; the stale divergent `sidekick/degen-mana-foundation-v01` is not revived. `maxMana`, bespoke `manaCost`, persisted authoritative player Mana, insufficient-cost atomic rejection, exact deduction, zero-cost-at-zero, terminal outcomes, cost-aware controls, no monster Mana, and no Mana-triggered reversion remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 owns permits, action CAS, terminal history, reward receipts/recovery, XP/currency/inventory, and clear sequencing. PR #106 remains unmerged and undeployed; this fix only closes an invalid start-snapshot path and does not alter reward values or balance.
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; migrations run before Worker deployment. No schema/migration/configuration changes or remote D1 operations. The `0007` migration-number conflict and platform-auth release gates remain unresolved and are not bypassed.
+- **Miles blocker:** none for this scoped branch change; PR review is still required.
+- **One best next task:** after exact-head CI is green and PR #106 is reviewed, proceed to the already-approved simple Shield foundation on a fresh branch from the then-current main SHA.
+
+---
+
 ## Latest run — 2026-10-29 (terminal-marker reward recovery — exact-head CI pass)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.

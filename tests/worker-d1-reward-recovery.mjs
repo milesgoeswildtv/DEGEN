@@ -108,6 +108,24 @@ async function act(permitId, abilityId = 'slash', expectedTurnCount = 0) {
   try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
   return { status: response.status, body };
 }
+async function startBattle(requestId) {
+  const response = await fetch(origin + '/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'qa-player',
+      eventKey: 'underpass',
+      cycleId: 'qa-cycle',
+      encounterKey: 'tunnel-maw',
+      requestId,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const raw = await response.text();
+  let body;
+  try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
+  return { status: response.status, body };
+}
 
 try {
   cli(['d1', 'execute', 'DEGEN', '--local', `--persist-to=${persist}`, '--file=db/schema.sql']);
@@ -257,10 +275,21 @@ try {
         'permit-settlement-marker-race', 'qa-player', 'underpass', 'qa-claim-race-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
+    INSERT INTO battle_permits(
+      id, player_id, event_key, cycle_id, encounter_key, expires_at,
+      player_hp, player_mana, enemy_hp, battle_status, turn_count
+    ) VALUES
+      ('00000000-0000-4000-8000-000000000101', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0),
+      ('00000000-0000-4000-8000-000000000102', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0);
     INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
       VALUES
         ('permit-history-conflict:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0),
-        ('permit-defeat-history-conflict:defeat', 'qa-marker-owner', 'tunnel-maw', 'victory', 99, 999, 999);
+        ('permit-defeat-history-conflict:defeat', 'qa-marker-owner', 'tunnel-maw', 'victory', 99, 999, 999),
+        ('00000000-0000-4000-8000-000000000101:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0),
+        ('00000000-0000-4000-8000-000000000102:defeat', 'qa-marker-owner', 'tunnel-maw', 'victory', 99, 999, 999),
+        ('00000000-0000-4000-8000-000000000103:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
     UPDATE battle_permits SET completed_at = datetime('now', '-2 minutes')
       WHERE id = 'permit-completed-claim';
     UPDATE battle_permits SET reward_clear_number = 999999
@@ -302,6 +331,30 @@ try {
     WHEN NEW.id = 'permit-recovery:victory'
     BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_REWARD_FAILURE'); END`);
   await start();
+
+  // Battle-start replay must not return a playable snapshot for an active permit
+  // whose independent terminal history markers disagree with persisted state.
+  for (const [permitId, markerKind] of [
+    ['00000000-0000-4000-8000-000000000101', 'victory'],
+    ['00000000-0000-4000-8000-000000000102', 'defeat'],
+  ]) {
+    const before = sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+      FROM battle_permits WHERE id = '${permitId}'`);
+    const poisonedStart = await startBattle(permitId);
+    assert.equal(poisonedStart.status, 409, JSON.stringify(poisonedStart.body));
+    assert.equal('initialState' in (poisonedStart.body ?? {}), false,
+      `start replay must not expose a snapshot with a conflicting ${markerKind} marker`);
+    assert.deepEqual(sql(`SELECT battle_status, player_hp, player_mana, enemy_hp, turn_count
+      FROM battle_permits WHERE id = '${permitId}'`), before,
+      'rejecting a poisoned start replay must not mutate the persisted battle');
+  }
+  const orphanMarkerStart = await startBattle('00000000-0000-4000-8000-000000000103');
+  assert.equal(orphanMarkerStart.status, 409, JSON.stringify(orphanMarkerStart.body));
+  assert.equal('initialState' in (orphanMarkerStart.body ?? {}), false,
+    'a request ID colliding with an orphan terminal marker must not issue a permit');
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_permits
+    WHERE id = '00000000-0000-4000-8000-000000000103'`)[0]?.n, 0,
+    'a poisoned request ID must not create a new permit');
 
   // Server discovery is the recovery path when localStorage lost a permit ID.
   // Only valid, recoverable Worker-owned victories are returned; no reward data

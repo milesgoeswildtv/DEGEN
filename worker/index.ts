@@ -350,6 +350,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     reward_claimed_at: string | null;
     permit_started_in_cycle: number;
     permit_is_unexpired: number;
+    victory_history_marker_count: number;
+    defeat_history_marker_count: number;
   };
   const loadExistingPermit = async () => env.DB.prepare(`SELECT
       permit.id, permit.player_id, permit.event_key, permit.cycle_id, permit.encounter_key,
@@ -357,6 +359,10 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       permit.reward_xp, permit.reward_currency, permit.reward_tier, permit.reward_level,
       permit.reward_remaining_xp, permit.reward_claim_token, permit.reward_claimed_at,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      (SELECT COUNT(*) FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+      (SELECT COUNT(*) FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count,
       cycle.event_key AS cycle_event_key,
       CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
         AND julianday(permit.started_at) <= julianday('now')
@@ -391,6 +397,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       || existing.reward_claimed_at !== null
       || existing.permit_started_in_cycle !== 1
       || existing.permit_is_unexpired !== 1
+      || existing.victory_history_marker_count !== 0
+      || existing.defeat_history_marker_count !== 0
       || existing.battle_status !== 'active'
       || !isValidBattlePermitState(existing)) {
       return fail(request, env, 'Battle start request is already used or invalid.', 409);
@@ -455,10 +463,15 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         AND existing.battle_status = 'active'
         AND julianday(existing.expires_at) > julianday(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     )
+    AND NOT EXISTS (
+      SELECT 1 FROM battle_history AS marker
+      WHERE marker.id = (? || ':victory') OR marker.id = (? || ':defeat')
+    )
     ON CONFLICT(id) DO NOTHING
     RETURNING id, expires_at`)
     .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id,
-      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id, input.playerId)
+      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id, input.playerId,
+      permitId, permitId)
     .first<{ id: string; expires_at: string }>();
   if (!issuedPermit) {
     // Another request may have inserted this same idempotency key between the
