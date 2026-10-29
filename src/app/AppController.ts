@@ -38,21 +38,7 @@ export class AppController {
       const playerId = this.store.snapshot.id;
       const localPending = new Set(this.pendingRewardPermits(playerId));
       for (const permitId of localPending) void this.queueRewardCompletion(permitId, playerId);
-
-      // Browser storage is a best-effort hint, not the source of truth for
-      // unfinished victories. Discover server-owned pending receipts so a reload
-      // or unavailable localStorage cannot permanently lose the retry identifier.
-      const discovery = this.api.getPendingBattleRewards?.(playerId);
-      if (discovery) {
-        void discovery.then((permitIds) => {
-          if (this.store.snapshot.id !== playerId) return;
-          for (const permitId of permitIds) {
-            if (!localPending.has(permitId)) void this.queueRewardCompletion(permitId, playerId);
-          }
-        }).catch((error) => {
-          console.warn('Unable to discover pending server battle rewards.', error);
-        });
-      }
+      void this.discoverPendingBattleRewards(playerId);
     }
     this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
   }
@@ -452,6 +438,31 @@ export class AppController {
   private setUnderpassResumeDisabled(disabled: boolean): void {
     const button = this.root.querySelector<HTMLButtonElement>('[data-resume-battle]');
     if (button) button.disabled = disabled;
+  }
+
+  private async discoverPendingBattleRewards(playerId: string): Promise<void> {
+    const discovery = this.api.getPendingBattleRewards?.(playerId);
+    if (!discovery) return;
+    try {
+      const permitIds = await discovery;
+      if (this.store.snapshot.id !== playerId) return;
+      const localPending = new Set(this.pendingRewardPermits(playerId));
+      for (const permitId of permitIds) {
+        if (!localPending.has(permitId)) void this.queueRewardCompletion(permitId, playerId);
+      }
+    } catch (error) {
+      console.warn('Unable to discover pending server battle rewards.', error);
+      // Retry transient failures while the app stays open. A reload also repeats
+      // discovery, so recovery does not depend on browser storage surviving.
+      if (this.store.snapshot.id === playerId
+        && !(error instanceof GameApiError && error.status < 500)) {
+        window.setTimeout(() => {
+          if (this.store.snapshot.id === playerId && this.api.enabled) {
+            void this.discoverPendingBattleRewards(playerId);
+          }
+        }, 15_000);
+      }
+    }
   }
 
   private pendingRewardKey(playerId: string): string {
