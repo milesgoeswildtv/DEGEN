@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Verification — 2026-10-29 (housing bootstrap guard full CI)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #97 OPEN, not merged:** `automation/degen/housing-reliability-current-main-v01`; exact code/test + continuity head `8565a1c967cb3374bd75e478d6f88d433a9b1211`. No direct-main write.
+- **QA — exact head PASS:** CI run [40888504580](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40888504580) completed successfully across all 14 substantive workflow steps: deterministic tests, isolated Worker/D1 reward concurrency and transient-failure recovery, Underpass cycle and rollover concurrency, atomic defeat history, mobile housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler validation.
+- **Task/files under verification:** `src/app/state.ts` fails closed on first-run/malformed/missing-housing local records until authoritative bootstrap, preserves valid queued placement recovery, and keeps offline preview editable. Worker housing validation checks the complete layout against server-owned furniture quantities before the atomic replacement. The failed-outbox retry fixture now starts from a valid saved player. This run makes no runtime change.
+- **Mana:** COMPLETE / MERGED on main: Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted player Mana, reject-without-mutation, exact deduction, zero-cost use at zero, no monster Mana, and no zero-Mana reversion.
+- **Battle authority / reward idempotency:** PR #106 remains open/unmerged; exact head `dca6d3ef6e4584023680546c089acc192f89805f` passed all 13 workflow stages in [CI 40876244644](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40876244644). Worker/D1 retains authority over action CAS, terminal history, receipts, XP/currency/inventory, and exactly-once settlement/recovery.
+- **D1 assumptions / blockers:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` numbering conflict remains unresolved. Production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling remain release gates. No production D1 operation or Worker deployment.
+- **One best next task:** keep PR #97 and PR #106 in normal review; after any merge, verify post-merge main CI/Pages independently, then select the next demonstrated auth-independent persistence/recovery gap. Keep the session-migration and platform-auth gates closed until explicitly resolved.
+
+---
+
 ## Follow-up — 2026-10-29 (correct housing retry test fixture after fail-closed guard)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
