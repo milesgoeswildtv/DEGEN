@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
@@ -19,12 +19,20 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class /g, 'class ');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, resolveCombatTurn },
+  { canUseAbility, isValidManaState, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,
     enemy: typeof TUNNEL_MAW,
     onComplete: () => void,
+    initialState?: {
+      permitId: string;
+      status: 'active' | 'victory' | 'defeat';
+      playerHp: number;
+      playerMana: number;
+      enemyHp: number;
+      turnCount: number;
+    },
   ) => {
     useAbility(abilityId: string): void;
     snapshot: {
@@ -157,6 +165,50 @@ test('turn resolution rejects a paid ability when the Degen lacks Mana', () => {
     degen: TEST_DEGEN,
     enemy: TUNNEL_MAW,
   }), /Insufficient Mana/);
+});
+
+
+test('turn resolution rejects Mana above the Degen maximum', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  assert.equal(isValidManaState(TEST_DEGEN.maxMana + 1, TEST_DEGEN.maxMana), false);
+  assert.throws(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana + 1,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  }), /Invalid player Mana/);
+});
+
+test('BattleEngine fails closed on an over-cap authoritative Mana snapshot', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  let completionCalls = 0;
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    completionCalls += 1;
+  }, {
+    permitId: 'permit-invalid-mana',
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana + 1,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const before = engine.snapshot;
+
+  engine.useAbility(free.id);
+
+  const after = engine.snapshot;
+  assert.equal(after.playerHp, before.playerHp);
+  assert.equal(after.playerMana, before.playerMana);
+  assert.equal(after.enemyHp, before.enemyHp);
+  assert.equal(after.turnCount, before.turnCount);
+  assert.equal(after.status, 'active');
+  assert.match(after.log.at(-1) ?? '', /Mana state is invalid/);
+  assert.equal(completionCalls, 0);
 });
 
 test('BattleEngine deducts paid Mana once and an unaffordable retry changes no combat state', () => {

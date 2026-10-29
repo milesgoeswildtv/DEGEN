@@ -459,15 +459,20 @@ try {
   await assertFitsMobile('Mana-starved battle');
   await assertFitsCompact('Mana-starved battle');
 
+  // Corrupt only the rendered cost metadata to exercise the UI fail-closed
+  // guard in the live app. The Worker still resolves the real zero-cost slash.
+  await cdp.evaluate('document.querySelector("[data-ability=crack]")?.setAttribute("data-mana-cost", "NaN")');
   await tap("[data-ability=slash]");
-  await until('zero-Mana free action remains usable in the running app', () => cdp.evaluate(`(() => {
+  await until('invalid Mana cost metadata fails closed after an authoritative refresh', () => cdp.evaluate(`(() => {
     const paid = document.querySelector("[data-ability=crack]");
     const free = document.querySelector("[data-ability=slash]");
     const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
-    return paid?.disabled === true && paid.querySelector("small")?.textContent === "NEED 4 MANA"
+    return paid?.disabled === true && paid.querySelector("small")?.textContent === "UNAVAILABLE"
       && free?.disabled === false && free.querySelector("small")?.textContent === "NO MANA"
       && hud.includes("Mana 0 of 12") && hud.includes("Turn 2.");
   })()`));
+  await assertFitsMobile('Malformed Mana cost');
+  await assertFitsCompact('Malformed Mana cost');
   const zeroManaActive = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + affordabilityPermit.id + "'")[0];
   assert.deepEqual(zeroManaActive, {
     player_hp: 100, player_mana: 0, enemy_hp: 28, battle_status: 'active', turn_count: 2,

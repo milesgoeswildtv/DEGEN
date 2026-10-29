@@ -2035,3 +2035,172 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blockers:** no blocker for this presentation-only slice. Production Discord/Telegram credentials, controlled identity/session verification, and the approved legacy identity-collision policy remain blockers for auth-dependent release work. Shield PR #20 and housing merge/deploy remain gated by the documented auth/migration coordination; do not bypass those gates.
 
 - **One best next task:** verify the latest exact-head CI for PR #103 and fix only any demonstrated failure. After it is green, continue the next non-blocked reliability/readability slice; do not start Shield until the migration/auth release gates are reconciled.
+
+
+---
+
+## Latest run — 2026-10-28 (battle Mana UI malformed-data fail-closed)
+
+- **Authoritative main SHA at start:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`. Degen-only Mana remains COMPLETE / MERGED on main; the current main commit records the prior Mana-affordability UI slice's exact-head CI pass. This run does not claim a separate post-merge main CI or production Worker deployment result.
+
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`, created from the exact main SHA above. The initial implementation/test head was `48e766daeabd238e693457c287d20ebaecff1759`; browser QA was then added at `a330578e897cf2647ad12398a769546fec8ed421`. This continuity commit creates a newer exact head, so verify CI for the refreshed head before review readiness. No direct-main write.
+
+- **Task / files changed:** `src/ui/views.ts` now validates ability Mana costs before rendering and updating controls. Invalid, negative, fractional, unsafe, empty, or missing cost values render as `UNAVAILABLE` and remain disabled. An invalid Mana snapshot (negative, fractional, unsafe, or above its maximum) fails closed for all abilities, including zero-cost controls; a valid zero-Mana snapshot still allows zero-cost abilities. `tests/battle-mana-cost-ui.test.ts` covers initial markup, live affordability controls, malformed costs, invalid Mana/current-maximum snapshots, and the preserved zero-cost-at-zero behavior. `tests/browser-battle-vertical-slice.mjs` now corrupts only the rendered paid-move cost metadata in a running Chromium battle, verifies the next Worker-authoritative snapshot disables it as `UNAVAILABLE`, keeps the real zero-cost action usable, and checks mobile/compact layout bounds. No Worker, combat math, reward/economy, D1 schema/migration, or content-canon changes.
+
+- **QA status:** exact-head CI is pending for the refreshed PR head. This environment cannot resolve `github.com` from the local shell, so no local `npm test`, build, Worker dry-run, or browser run is claimed. PR CI must verify the deterministic tests, Worker/D1 concurrency and recovery, production build, Chromium mobile vertical slice, and `check:worker`. No preview, production deployment, or D1 operation is claimed.
+
+- **Mana status:** COMPLETE / MERGED on main. This is a presentation/configuration-validation guard only; authoritative Degen Mana, bespoke ability costs, persisted `player_mana`, rejection without turn/damage mutation, exact deduction, zero-cost actions at zero, terminal outcomes, no monster Mana, and no zero-Mana reversion are unchanged.
+
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, turn compare-and-swap, terminal outcomes, audited receipts, retry recovery, and exactly-once XP/currency/inventory/history. This UI branch cannot award rewards or advance server combat state.
+
+- **D1 / migration assumptions:** `wrangler.toml` remains the source for `DB` → `DEGEN` and `db/migrations`; the deployment workflow still applies base schema, then tracked migrations, then Worker code. `0006_backfill_active_battle_mana.sql` remains tracked. The `0007_player_inventory_quantity_guards.sql` versus draft auth PR #14's `0007_player_sessions.sql` numbering conflict, production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain unresolved. No migration or deployment change was made.
+
+- **Miles blocker:** none for this narrow UI guard. Do not bypass the existing auth/migration release gate for Shield or housing merge/deploy.
+
+- **One best next task:** verify exact-head CI for PR #105; if all required checks pass and mergeability is clean, mark it ready for review through the normal PR path. Then continue non-blocked reliability/readability work; do not start Shield until the documented migration/auth gates are reconciled.
+
+
+---
+
+## Follow-up — 2026-10-28 (guard the controller's post-action re-enable path)
+
+- **Main base remains:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`.
+
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`. The previous head `be28a4f3dedbaff1c67d1f46b8e9615e8a27f83f` had deterministic tests pass in CI run [40791877106](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40791877106) up through the Worker/D1 reward-concurrency stage; the full run was still in progress. Further inspection found that `AppController.setAbilityButtonsDisabled()` could re-enable a malformed-cost button in its post-action `finally` path even though `updateBattleDom()` had disabled it. The implementation/test head is now `d614233876ca78d75a59b68db613c431d9813b51`; this continuity commit creates a newer head, so the full CI must be triggered and checked again.
+
+- **Task / files changed:** `src/game/combat/rules.ts` now exports shared `isValidManaCost` and `isValidManaState` predicates, and the deterministic resolver reuses the same Mana validation. `src/ui/views.ts` and `src/app/AppController.ts` both use those predicates so the UI refresh and the controller's post-action re-enable path agree. `tests/battle-mana-cost-ui.test.ts` and `tests/battle-mana-ui.test.ts` inject the shared predicates into their isolated view harnesses. `tests/browser-battle-vertical-slice.mjs` exercises the malformed cost in a running Chromium battle and checks the move remains disabled after the authoritative response and controller cleanup. No Worker, damage/retaliation math, rewards/economy, D1 schema/migration, or content-canon changes.
+
+- **QA status:** CI for the prior UI-only head passed the deterministic game-test step but had not completed the Worker/D1 concurrency stage when last checked. The shared-validator/controller fix has not yet had a complete exact-head run. Local shell cannot resolve `github.com`; no local `npm test`, build, Worker check, or browser run is claimed. No deployment or D1 operation.
+
+- **Mana / authority:** Mana remains COMPLETE / MERGED on main. This follow-up closes a client presentation race only; Worker/D1 remains authoritative for battle state and rewards. Zero-cost moves remain usable at valid zero Mana; invalid current/max Mana or invalid costs fail closed. No monster Mana or zero-Mana reversion was introduced.
+
+- **D1 / release gates:** `wrangler.toml` and `db/migrations` remain unchanged. Migration `0006_backfill_active_battle_mana.sql` is tracked; the `0007` numbering conflict and platform-auth credentials/session/identity-policy gates remain unresolved. Shield and housing merge/deploy remain gated; no bypass.
+
+- **One best next task:** trigger and verify exact-head CI for PR #105, including the real Chromium mobile vertical slice. Fix only demonstrated failures, then make the PR review-ready only if all checks pass.
+
+
+---
+
+## Follow-up — 2026-10-28 (CI caught missing Mana validators in isolated controller harness)
+
+- **Authoritative main base:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`.
+
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`. Exact-head CI run [40792393348](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40792393348) failed at deterministic tests: 12 controller recovery cases raised `ReferenceError: isValidManaState is not defined`. The tests execute `AppController.ts` in an isolated VM after stripping imports, so its new shared validator dependencies must be injected into that harness. Fixed `tests/client-battle-conflict-recovery.test.ts` to import and provide `isValidManaCost` and `isValidManaState` in the VM scope at commit `018b54735f41eb86ce3671eb003dfbab33957f3d`. This continuity commit creates a newer head; trigger and inspect fresh exact-head CI again.
+
+- **Task / files changed:** the shared validation path is now consistent across `src/game/combat/rules.ts`, `src/ui/views.ts`, and `src/app/AppController.ts`. The controller's `finally` path no longer re-enables a malformed-cost button after `updateBattleDom()` disabled it. Test harnesses updated: `tests/battle-mana-cost-ui.test.ts`, `tests/battle-mana-ui.test.ts`, and `tests/client-battle-conflict-recovery.test.ts`. Running-app mobile regression remains in `tests/browser-battle-vertical-slice.mjs`. No Worker, damage math, reward/economy, D1 schema/migration, or content-canon changes.
+
+- **QA status:** the failed deterministic run is evidence-backed and the missing VM dependencies are fixed; the corrected code has not yet passed a complete exact-head run. Other concurrent runs may refer to older branch heads and do not count as final-head proof. Local shell cannot resolve `github.com`; no local test/build/Worker/browser result is claimed. No deployment or D1 operation.
+
+- **Mana / authority / D1:** Mana remains COMPLETE / MERGED on main; this client guard does not change combat outcomes or reward authority. Tracked migration `0006_backfill_active_battle_mana.sql` and `wrangler.toml` migration ordering remain unchanged. The `0007` numbering conflict, platform-auth credentials/session/identity-policy gates, and the release gates for Shield/housing remain unresolved and untouched.
+
+- **One best next task:** rerun exact-head CI for PR #105 after this harness fix. If deterministic tests pass, continue through Worker/D1 recovery/concurrency, production build, Chromium mobile vertical slice, and Worker validation; do not mark ready until all pass.
+
+
+---
+
+## Latest run — 2026-10-28 (Mana UI fail-closed guard — exact-head CI green)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`. Current main remains on the already-merged Mana foundation; the stale `sidekick/degen-mana-foundation-v01` was rechecked at 11 commits ahead / 94 behind main and remains retired because it carries the superseded `0003_degen_mana.sql`.
+- **PUSHED / PR #105 OPEN (draft, not merged):** `automation/degen/battle-mana-ui-fail-closed-v01`. Code/test fix `018b54735f41eb86ce3671eb003dfbab33957f3d` injects shared Mana validators into the isolated AppController VM harness after CI caught the missing dependencies. Latest continuity head before this entry: `3609037d6be253bce27e72685f896bd9bff9f7ef`.
+- **Task / files changed:** shared `isValidManaCost` / `isValidManaState` checks now govern deterministic rules, battle DOM affordance labels, and the controller's post-action button re-enable path. Malformed/negative/fractional/unsafe/missing costs and invalid Mana snapshots fail closed; zero-cost abilities remain usable at a valid 0 Mana. The browser regression deliberately corrupts only rendered cost metadata and verifies the paid action stays unavailable after a Worker-authoritative free action and refresh.
+- **QA — exact current head PASS:** CI run [40792524036](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40792524036) completed successfully across all 13 workflow stages: deterministic tests, isolated Worker/D1 reward concurrency and transient-failure recovery, Underpass cycle race and rollover, atomic defeat history, production build, Chromium mobile battle vertical slice, and Wrangler Worker dry run. The preceding code/test head also passed in [40792504024](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40792504024). This is GitHub Actions evidence; no local shell result is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, reject-without-mutation, exact deduction, zero-cost use at zero, terminal outcomes, cost-aware controls, no monster Mana, no zero-Mana reversion, and tracked `0006_backfill_active_battle_mana.sql` remain intact. No combat math or canon changed in this UI guard.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, action compare-and-swap, terminal outcomes, history markers, receipts, XP/currency/inventory, and exactly-once reward settlement/recovery. The new UI checks only presentation/control availability; it does not authorize actions or calculate rewards.
+- **D1 / migration assumptions:** verified `wrangler.toml` still binds `DB` to `DEGEN` with `db/migrations`; `.github/workflows/deploy-worker.yml` applies schema, then tracked migrations, then deploys Worker code. The `0007_player_inventory_quantity_guards.sql` vs draft PR #14 `0007_player_sessions.sql` sequence collision remains unresolved. No remote D1 operation or production deployment occurred.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling remain release gates. Shield/housing release work remains gated as recorded; no bypass or new content canon.
+- **One best next task:** append this QA record, verify the new continuity head's exact CI, then mark PR #105 ready for review only if that final head is green. Do not merge or deploy from this run.
+
+
+---
+
+## Latest run — 2026-10-28 (Mana UI fail-closed — exact-head CI verification)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`.
+- **PUSHED / PR #105 OPEN (draft, not merged):** `automation/degen/battle-mana-ui-fail-closed-v01`, tested head `65ee210706ef1dc664bdf015a969607aeb43b921`. The stale `sidekick/degen-mana-foundation-v01` was inspected first: 11 commits ahead / 94 behind current main and diverged, so its implementation snapshot is superseded. `db/migrations/0003_degen_mana.sql` remains a required tracked historical migration on main (verified by `tests/mana-migration.test.ts`); do not delete or recreate that migration or revive the stale branch.
+- **Task / files changed in this slice:** `src/game/combat/rules.ts`, `src/app/AppController.ts`, `src/ui/views.ts`, `tests/battle-mana-cost-ui.test.ts`, `tests/battle-mana-ui.test.ts`, `tests/client-battle-conflict-recovery.test.ts`, `tests/browser-battle-vertical-slice.mjs`, and this progress record. Shared validation now keeps malformed Mana costs/state unavailable through initial render, authoritative refresh, and the controller's post-action re-enable path. Valid zero-cost actions remain usable at 0 Mana.
+- **QA — exact tested head PASS:** GitHub Actions run [40794600084](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40794600084) passed all 13 stages on `65ee210706ef1dc664bdf015a969607aeb43b921`: deterministic game tests, isolated Worker/D1 reward concurrency and transient-failure recovery, Underpass cycle/rollover concurrency, atomic defeat history, production build, real Chromium mobile battle vertical slice with local Worker/D1, and `npm run check:worker`. The Chromium scenario confirmed a malformed rendered paid-move cost remains disabled after a Worker-authoritative free action, while the zero-cost move remains usable at 0 Mana and the Degen remains manifested. No separate local-shell execution is claimed.
+- **Mana:** COMPLETE / MERGED on main. This PR is a presentation-validation guard only. Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, rejection without turn/damage mutation, exact deduction, zero-cost use at zero, terminal outcomes, no monster Mana, and no zero-Mana reversion remain intact.
+- **Battle authority / reward idempotency:** unchanged. Worker/D1 owns permits, action compare-and-swap, terminal outcomes, history, receipts, XP/currency/inventory, and exactly-once settlement/recovery. No reward/economy trust moved to the client.
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy workflow applies schema, tracked migrations, then Worker. `0006_backfill_active_battle_mana.sql` remains tracked. The `0007_player_inventory_quantity_guards.sql` versus draft auth PR #14's `0007_player_sessions.sql` conflict remains unresolved. No migration, remote D1 operation, production Worker deployment, or deployment-config change was made.
+- **Miles blockers:** none for this UI guard. Production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling remain gates for auth-dependent release work; Shield/housing must not bypass the recorded migration/auth gates.
+- **One best next task:** verify fresh exact-head CI after this continuity-only commit; then mark PR #105 ready for review only if every stage passes. Do not merge or deploy from this run.
+
+
+---
+
+## Latest run — 2026-10-28 (Mana UI fail-closed guard — verify refreshed continuity head)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`. Main CI run [40785252356](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40785252356) and Deploy Preview [40785251778](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40785251778) succeeded on this SHA. The stale `sidekick/degen-mana-foundation-v01` remains retired: 11 commits ahead / 94 behind main, diverged, and carries superseded `0003_degen_mana.sql`; no cherry-pick or duplicate Mana branch was created.
+
+- **PUSHED / PR #105 OPEN (draft, not merged):** `automation/degen/battle-mana-ui-fail-closed-v01`, tested code/test head `65ee210706ef1dc664bdf015a969607aeb43b921`; refreshed continuity head `da9de7fda9d0474c63d990ec35dc6a320756f870`. Exact-head CI run [40796482246](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40796482246) completed successfully. The code/test head's CI [40794600084](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40794600084) passed deterministic tests, isolated Worker/D1 reward concurrency/recovery, Underpass cycle/rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Wrangler validation. The refresh since that code/test head is continuity documentation only.
+
+- **Task / files changed in the Mana UI slice:** `src/game/combat/rules.ts`, `src/app/AppController.ts`, `src/ui/views.ts`, `tests/battle-mana-cost-ui.test.ts`, `tests/battle-mana-ui.test.ts`, `tests/client-battle-conflict-recovery.test.ts`, `tests/browser-battle-vertical-slice.mjs`, and this continuity log. Invalid/negative/fractional/unsafe/missing Mana costs and invalid Mana state fail closed across deterministic rules, rendered button availability, and the controller's post-action re-enable path. A valid zero-cost ability remains usable at 0 Mana. Browser regression evidence confirms malformed paid-move metadata stays disabled after a Worker-authoritative free action; the Degen remains manifested.
+
+- **Mana status:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative battle-start/action snapshots, persisted `player_mana`, rejection without turn/damage mutation, exact deduction, zero-cost use at zero, terminal outcomes, no monster Mana, and no Mana-triggered reversion remain intact. This PR is a client guard; it does not authorize Worker actions or compute rewards. Prototype values remain scaffolding.
+
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit ownership/state, action compare-and-swap, terminal outcomes, history markers, receipts, XP/currency/inventory, and exactly-once settlement/recovery. Existing main integration coverage includes expired permits, event-closure continuity, duplicate completion, concurrent action/completion races, full/reduced clear rewards, and level/progression behavior; no reward/economy trust moved to the client.
+
+- **D1 / migration assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; `.github/workflows/deploy-worker.yml` applies base schema, then tracked migrations, then Worker code. `0006_backfill_active_battle_mana.sql` is tracked. The `0007_player_inventory_quantity_guards.sql` vs draft auth PR #14 `0007_player_sessions.sql` numbering conflict remains unresolved; do not renumber or bypass it. No remote D1 operation, production Worker deployment, schema/configuration change, or direct-main write was performed.
+
+- **Current PR gate:** PR #105 is still draft at the time of this entry. Because this entry itself will create a new branch head, verify exact-head CI again before marking it ready. Do not merge or deploy from this run.
+
+- **Miles blockers:** none for this UI validation slice. Production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling remain blockers for auth-dependent release work; Shield/housing must not bypass the documented migration/auth release gates.
+
+- **One best next task:** verify exact-head CI after this continuity-only commit; if green, mark PR #105 ready for review. Then continue the next non-blocked reliability gap without starting Shield ahead of migration/auth coordination.
+
+
+---
+
+## Latest run — 2026-10-28 (reject over-cap Mana in deterministic combat)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`. The Mana foundation remains merged on main. The existing Mana UI branch is the coherent in-progress slice; no duplicate branch was created.
+- **PUSHED candidate for PR #105:** `automation/degen/battle-mana-ui-fail-closed-v01`, based on parent head `6ddf5c1379b121a611ff5a8fa78dafdded31364b`. This follow-up closes a consistency gap: `isValidManaState` validates the UI, but deterministic `resolveCombatTurn` only checked that current Mana was a non-negative safe integer. It now rejects current Mana above the Degen's `maxMana`; `BattleEngine.useAbility` also fails closed without spending resources, changing HP/enemy HP/turn count, or resolving the encounter when an invalid over-cap snapshot is supplied.
+- **Files changed:** `src/game/combat/rules.ts`, `src/game/combat/engine.ts`, `tests/combat-progression.test.ts`, and this log. Added deterministic tests for over-cap state rejection and unchanged battle state. No Worker runtime, reward/economy, schema/migration, prototype balance, monster resource, or content-canon change.
+- **QA:** the previous continuity head `6ddf5c1379b121a611ff5a8fa78dafdded31364b` had CI run [40801863353](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40801863353) in progress at mutation time. This code commit creates a new exact head; require fresh exact-head CI for deterministic tests, isolated Worker/D1 recovery/concurrency, production build, Chromium vertical slice, and `npm run check:worker`. No local shell result is claimed.
+- **Mana / authority:** Degen-only Mana remains COMPLETE / MERGED on main. Valid zero-cost actions remain usable at 0 Mana; this guard only rejects malformed over-cap state and never triggers reversion. Worker/D1 remains authoritative for permits, combat state, and rewards.
+- **D1 assumptions / deployment:** `0006_backfill_active_battle_mana.sql` is tracked; deploy order remains schema → tracked migrations → Worker. Last verified Worker deployment run [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) succeeded on `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`, including schema, migration, and Worker deployment steps. Comparing that SHA to current main `d34b791` shows only client/tests/docs changed; no newer Worker deployment is claimed. The `0007` auth migration-number conflict remains unresolved and must not be bypassed.
+- **Miles blockers:** none for this validation fix. Production platform-auth credentials/identity-policy gates and the Shield/housing release gates remain.
+- **One best next task:** verify the new exact-head CI; if green, update PR #105 evidence and mark it ready for review without merging or deploying.
+
+
+
+---
+
+## Latest run — 2026-10-28 (fix isolated engine harnesses after Mana-state guard CI failure)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`.
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`, code head `a09d605f0f794c6713b3954b0a8760388fb413c6`. Exact-head CI [40802399754](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40802399754) failed in deterministic tests: 161 passed, 3 failed. The failures were `ReferenceError: isValidManaState is not defined` in the stripped-import VM harnesses for `tests/battle-start-state.test.ts` (two cases) and `tests/client-worker-mana-consistency.test.ts` (one case). The new engine guard was correct; these tests execute `engine.ts` without its imports and needed to inject the shared helper explicitly.
+- **Correction / files changed:** `tests/battle-start-state.test.ts` and `tests/client-worker-mana-consistency.test.ts` now import and inject `isValidManaState` alongside the existing deterministic rules. This is a test-harness dependency correction, not a gameplay-rule change. `AUTONOMOUS_PROGRESS.md` records the observed failure and correction.
+- **QA:** no test/build/Worker/browser pass is claimed for this fix until fresh exact-head CI completes. The preceding run failed before downstream Worker/D1 integration, build, Chromium, and `check:worker` stages, so those stages must rerun.
+- **Mana / authority:** Mana remains COMPLETE / MERGED on main; the over-cap guard rejects invalid current Mana without spending or advancing a turn. Valid 0 Mana and zero-cost actions remain supported; no monster Mana or reversion. Worker/D1 reward authority is unchanged.
+- **D1 / deployment:** tracked `0006_backfill_active_battle_mana.sql`, `wrangler.toml` binding and schema → migrations → Worker order remain unchanged. Last verified Worker deploy [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) succeeded at `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; no deployment or remote D1 operation in this run. The `0007` auth migration collision and platform-auth release gates remain unresolved.
+- **One best next task:** rerun exact-head CI after the two harness fixes; address only failures demonstrated on that head, then mark PR #105 ready only after all required stages pass.
+
+
+
+---
+
+## Follow-up — 2026-10-28 (Mana UI fail-closed exact-head verification)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`. Main CI and Pages deployment checks for that SHA are green; no new Worker deployment is claimed for this client-only change.
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`, exact code/test head `4d33aa27cb49d7897280a288a41bbb072b61ad99`. GitHub Actions run [40802557513](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40802557513) passed all 13 CI stages, including deterministic game tests, isolated Worker/D1 reward concurrency and transient-failure recovery, Underpass cycle/rollover concurrency, atomic defeat history, production build, real Chromium mobile battle vertical slice, and Wrangler validation. The matching Cloudflare Pages preview check also reports “Deployed successfully” for this head. This is preview QA only, not a production Worker deployment or remote D1 operation.
+- **Task / files changed:** shared `isValidManaCost` and `isValidManaState` now guard deterministic rules, the battle DOM, and the controller's post-action re-enable path. Malformed/negative/fractional/unsafe/missing costs and invalid or over-cap Mana snapshots fail closed; valid zero-cost actions remain available at 0 Mana. The running Chromium scenario corrupts only rendered paid-move metadata and verifies the next Worker-authoritative response leaves that action unavailable while the actual free move remains usable and the Degen remains manifested.
+- **Mana:** COMPLETE / MERGED on main. This PR is a client-side validation/UI guard; it does not alter Worker authority, reward math, D1 state, monster definitions/resources, or reversion behavior.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, turn compare-and-swap, terminal outcome, completion receipts, recovery, XP/currency/inventory/history, and cycle-clear reservations. CI exercises the existing isolated integration suites; no economy trust moved to the client.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and uses `db/migrations`; deployment workflow order remains schema → tracked migrations → Worker. `0006_backfill_active_battle_mana.sql` remains tracked. The `0007_player_inventory_quantity_guards.sql` vs draft auth PR #14 `0007_player_sessions.sql` numbering collision and platform-auth credentials/session/identity-policy gates remain unresolved; no migration/configuration change was made.
+- **Miles blocker:** none for this narrow UI guard. Do not bypass the documented auth/migration gate for Shield or housing release work.
+- **One best next task:** refresh PR #105's QA summary and mark it ready for review now that exact-head CI and preview QA are green. Do not merge or deploy from this run; then choose a non-blocked reliability gap before starting gated Shield work.
+
+
+---
+
+## Latest run — 2026-10-28 (Mana UI fail-closed — ready for review)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`. Rechecked `sidekick/degen-mana-foundation-v01`: it is still divergent at 11 commits ahead / 94 behind main and contains the superseded historical `0003_degen_mana.sql` snapshot. It was not revived or cherry-picked.
+- **PUSHED / PR #105 OPEN, ready for review (not merged):** `automation/degen/battle-mana-ui-fail-closed-v01`. Before this continuity-only commit, exact head `2091a5268ab6e79a6fc99bac44526ac51447c4dd` passed CI run [40804713072](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40804713072). All 13 workflow stages passed: deterministic tests; isolated Worker/D1 reward concurrency and transient-failure recovery; Underpass cycle and rollover concurrency; atomic defeat history; production build; Chromium mobile battle vertical slice; and Wrangler Worker validation. The corresponding Pages preview was reported deployed successfully in PR #105. This docs update creates a new head, so exact-head CI must be checked again before treating the branch as fully green.
+- **Task / files changed in the Mana UI slice:** shared Mana cost/state validation fails closed in deterministic combat rules, battle DOM affordances, and the controller's post-action re-enable path. Invalid/negative/fractional/unsafe/missing costs and invalid or over-cap Mana snapshots cannot appear usable; valid zero-cost abilities remain usable at 0 Mana. Browser QA corrupts only rendered cost metadata, then verifies the paid ability stays disabled after a Worker-authoritative free action while the Degen remains manifested.
+- **Mana status:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, reject-without-turn-or-damage-mutation, exact deduction, zero-cost-at-zero, killing blow/defeat, no monster Mana, and no Mana-triggered reversion remain in the main foundation. `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain tracked; neither was changed here.
+- **Battle authority / reward idempotency:** Worker/D1 still owns permit state, action compare-and-swap, terminal outcomes, completion receipts, retry recovery, history, XP/currency/inventory, and event-clear reservations. This PR only hardens client presentation and never authorizes actions or calculates rewards.
+- **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; `.github/workflows/deploy-worker.yml` applies schema, tracked migrations, then Worker code. The `0007_player_inventory_quantity_guards.sql` / draft auth PR #14 `0007_player_sessions.sql` numbering collision remains unresolved. Production Discord/Telegram credentials, controlled identity/session verification, and the approved legacy identity-collision policy remain release gates. No local-shell result, production D1 operation, Worker deployment, or direct-main write is claimed.
+- **Current delivery status:** PR #105 is ready for review, mergeable, and unmerged. No changes were written to `main`.
+- **One best next task:** verify exact-head CI for this refreshed continuity commit, then continue only with non-blocked reliability work; do not begin Shield/housing release work until the migration/auth gates are reconciled.
