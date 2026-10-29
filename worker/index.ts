@@ -344,7 +344,10 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     // A second player can claim an ID after the preflight read but before this
     // atomic replacement. D1 rolls the batch back; normalize only that specific
     // primary-key race to a conflict and preserve other database failures as 500s.
-    if (error instanceof Error && /UNIQUE constraint failed: housing_placements\.id/.test(error.message)) {
+    const message = error && typeof error === 'object' && 'message' in error
+      ? String((error as { message?: unknown }).message ?? '')
+      : String(error ?? '');
+    if (/UNIQUE constraint failed: housing_placements\.id/.test(message)) {
       return fail(request, env, 'Housing placement ID is already in use.', 409);
     }
     throw error;
