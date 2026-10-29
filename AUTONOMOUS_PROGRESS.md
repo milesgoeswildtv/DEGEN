@@ -1,3 +1,17 @@
+## Latest run — 2026-10-28 (reject active actions with conflicting victory markers)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`. Main CI [40812891007](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40812891007) and Pages preview [40812891043](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40812891043) passed on that SHA. Latest verified Worker deployment remains [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) at `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; the subsequent main changes were client/tests/docs and do not establish a newer Worker deployment.
+- **PUSHED / PR #106 OPEN (draft, not merged):** `automation/degen/active-victory-marker-action-guard-v01`. Code/test head before this continuity update: `1184c1e7703b019500d0d2cd14634bccc66d0bb2`. No direct-main write.
+- **Task / files changed:** `worker/index.ts` now makes the authoritative battle-action compare-and-swap reject an active permit if either deterministic terminal history marker (`<permitId>:defeat` or `<permitId>:victory`) already exists. `tests/worker-d1-defeat-atomic.mjs` adds an isolated local Worker/D1 case where a conflicting victory marker is present on an otherwise-active permit and the next free action would kill the enemy. It asserts HP, Mana, enemy HP, turn count, status, conflicting history, XP, and currency remain unchanged.
+- **QA:** exact-head CI is pending after the branch update; no local-shell execution is claimed. The integration test uses Wrangler local D1 only and never uses `--remote`. Do not mark this slice green until the final PR-head CI passes deterministic tests, Worker/D1 reward concurrency/recovery, Underpass cycle/rollover concurrency, defeat atomicity, build, Chromium vertical slice, and `npm run check:worker`.
+- **Mana:** COMPLETE / MERGED on main. `DegenDefinition.maxMana`, bespoke `AbilityDefinition.manaCost`, authoritative persisted `player_mana`, reject-without-mutation, exact deduction, zero-cost-at-zero, killing-blow/defeat behavior, cost-aware UI, no monster Mana, and no Mana-triggered reversion remain intact. This slice adds no Mana mechanic or balance change.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, action CAS, terminal outcome, reward receipts, history, progression, inventory, and currency. The new CAS guard prevents a poisoned victory marker from letting an active permit mutate into an unclaimable victory; the existing reward-completion audit remains unchanged.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; `.github/workflows/deploy-worker.yml` runs schema → tracked migrations → Worker. `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain unchanged. The `0007_player_inventory_quantity_guards.sql` / `0007_player_sessions.sql` numbering collision remains unresolved; no migration/config/deployment change or production D1 operation.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision policy remain auth release gates. Shield/housing release work remains gated; no gate was bypassed.
+- **One best next task:** verify exact-head CI for PR #106; if green, record that evidence and make the PR review-ready without merging or deploying.
+
+---
+
 ## Latest run — 2026-10-28 (deterministic Mana rejection atomicity)
 
 - **Authoritative main SHA:** `5cb1dd95b3aa26c6cde7ab4bf03f37485432756f`.
