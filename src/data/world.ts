@@ -14,7 +14,7 @@ export const WORLD_LOCATIONS: LocationDefinition[] = [
     id: 'downtown',
     name: 'Downtown',
     description: 'The first public district. Shops, story contacts, and locked destinations will branch from here.',
-    route: 'map',
+    route: 'location',
     district: 'Central',
     initiallyUnlocked: true,
     kind: 'social',
