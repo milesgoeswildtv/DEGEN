@@ -18,8 +18,11 @@ export interface CombatTurnResult {
   retaliationDamage: number;
 }
 
-const isValidManaCost = (manaCost: number): boolean =>
-  Number.isSafeInteger(manaCost) && manaCost >= 0;
+export const isValidManaCost = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+export const isValidManaState = (currentMana: unknown, maxMana: unknown): currentMana is number =>
+  isValidManaCost(currentMana) && isValidManaCost(maxMana) && currentMana <= maxMana;
 
 export const canUseAbility = (playerMana: number, ability: AbilityDefinition): boolean =>
   Number.isSafeInteger(playerMana)
