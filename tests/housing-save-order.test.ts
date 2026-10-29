@@ -685,3 +685,41 @@ test('offline preview remains editable after corrupt housing is normalized', asy
   assert.deepEqual(JSON.parse(values.get('degen.prototype.player.v2')!).__housingOutbox, {},
     'disabled preview saves should not leave a retry queue');
 });
+
+
+test('server-backed housing bootstrap requirement survives reload', async () => {
+  const playerId = 'corrupt-room-bootstrap-marker';
+  const values = new Map<string, string>();
+  values.set('degen.prototype.player.v2', JSON.stringify({
+    id: playerId,
+    displayName: 'Player',
+    level: 1,
+    xp: 0,
+    currency: 0,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: ['home', 'downtown', 'underpass'],
+    housing: null,
+    defeatedBosses: [],
+  }));
+  const first = makeStore(async () => undefined, [], values, async () => undefined, undefined, true);
+  await first.initialize({ displayName: 'Miles' });
+  assert.equal(JSON.parse(values.get('degen.prototype.player.v2')!).__housingNeedsBootstrap, true,
+    'normalizing local state must persist the fact that the room still needs server authority');
+
+  const saved: unknown[] = [];
+  const restored = makeStore(async (_id, housing) => { saved.push(structuredClone(housing)); },
+    [], values, async () => undefined, undefined, true);
+  restored.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(saved.length, 0, 'a reload must not turn the safe placeholder into a server save');
+
+  restored.replaceFromServer({
+    ...restored.snapshot,
+    housing: { inventory: ['starter-bed', 'starter-chair'], placements: [] },
+  });
+  restored.placeFurniture('starter-chair', 2, 2);
+  await flush();
+  assert.equal(saved.length, 1, 'server bootstrap should clear the guard and allow housing edits');
+  assert.equal(JSON.parse(values.get('degen.prototype.player.v2')!).__housingNeedsBootstrap, undefined);
+});
