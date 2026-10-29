@@ -248,6 +248,10 @@ try {
       (
         'permit-marker-race', 'qa-player', 'underpass', 'qa-claim-race-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
+      ),
+      (
+        'permit-counter-marker-race', 'qa-player', 'underpass', 'qa-claim-race-cycle', 'tunnel-maw',
+        datetime('now', '+20 minutes'), 90, 0, 0, 'victory', 1, 'pending', NULL, NULL
       );
     INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
       VALUES
@@ -273,7 +277,12 @@ try {
       INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
       VALUES ('permit-marker-race:defeat', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
     END`);
-
+  sql(`CREATE TRIGGER qa_marker_after_clear_assignment AFTER UPDATE OF reward_clear_number ON battle_permits
+    WHEN NEW.id = 'permit-counter-marker-race' AND NEW.reward_clear_number IS NOT NULL AND OLD.reward_clear_number IS NULL
+    BEGIN
+      INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
+      VALUES ('permit-counter-marker-race:defeat', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0);
+    END`);
 
   // Force the atomic award batch to fail after the clear number has been
   // reserved. The lease must be released without rolling back or duplicating
@@ -331,7 +340,36 @@ try {
   assert.equal(pendingAfterMarkerRace.status, 200, JSON.stringify(pendingAfterMarkerBody));
   assert.equal(new Set(pendingAfterMarkerBody.permitIds).has('permit-marker-race'), false,
     'server discovery must not requeue a victory with a conflicting terminal marker');
+  // Inject a terminal marker after clear-number allocation but before the counter update.
+  // The counter guard must prevent sequence advancement, and recovery must release
+  // the invalid reservation rather than strand or consume the slot.
+  const counterRaceCharacterBefore = sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`);
+  const counterRaceInventoryBefore = sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`);
+  const counterRace = await complete('permit-counter-marker-race');
+  assert.equal(counterRace.status, 409, JSON.stringify(counterRace.body));
+  assert.equal(counterRace.body?.error, 'Unable to assign authoritative reward clear.');
+  assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at, reward_clear_number, completed_at
+    FROM battle_permits WHERE id = 'permit-counter-marker-race'`), [{
+    reward_state: 'pending', reward_claim_token: null, reward_claimed_at: null,
+    reward_clear_number: null, completed_at: null,
+  }], 'a marker after allocation must release the claim and clear its unused reservation');
+  assert.deepEqual(sql(`SELECT full_reward_clears FROM world_event_clears
+    WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-claim-race-cycle'`),
+    [{ full_reward_clears: 0 }], 'a terminal marker arriving after allocation must not advance the counter');
+  assert.deepEqual(sql(`SELECT level, xp, currency, last_reward_claim_token
+    FROM characters WHERE player_id = 'qa-player'`), counterRaceCharacterBefore);
+  assert.deepEqual(sql(`SELECT item_key, item_type, quantity FROM player_inventory
+    WHERE player_id = 'qa-player' ORDER BY item_type, item_key`), counterRaceInventoryBefore);
+  assert.equal(sql(`SELECT COUNT(*) AS n FROM battle_history WHERE id = 'permit-counter-marker-race:defeat'`)[0]?.n, 1);
+  const pendingAfterCounterRace = await fetch(origin + '/api/battle/pending-rewards?playerId=qa-player');
+  const pendingAfterCounterBody = await pendingAfterCounterRace.json();
+  assert.equal(pendingAfterCounterRace.status, 200, JSON.stringify(pendingAfterCounterBody));
+  assert.equal(new Set(pendingAfterCounterBody.permitIds).has('permit-counter-marker-race'), false,
+    'server discovery must exclude a victory poisoned after clear-number assignment');
   sql('DROP TRIGGER qa_marker_during_claim');
+  sql('DROP TRIGGER qa_marker_after_clear_assignment');
 
   // A pre-existing deterministic victory key is not a valid pending receipt.
   // Reject it before clear reservation or progression/inventory mutation.
