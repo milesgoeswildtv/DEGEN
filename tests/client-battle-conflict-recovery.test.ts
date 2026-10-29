@@ -7,6 +7,13 @@ import test from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, isValidManaCost, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
+class TestGameApiProtocolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GameApiProtocolError';
+  }
+}
+
 class TestGameApiError extends Error {
   readonly status: number;
   readonly payload: unknown;
@@ -78,6 +85,7 @@ const scope = {
   TUNNEL_MAW,
   BattleEngine,
   GameApiError: TestGameApiError,
+  GameApiProtocolError: TestGameApiProtocolError,
   isValidManaCost,
   isValidManaState,
   isAuthoritativeBattleActionState,
@@ -262,6 +270,58 @@ test('an unconfirmed action failure is visible and tells the player to safely re
   assert.equal(engine.snapshot.turnCount, 0, 'the client must not apply a turn without an authoritative result');
   assert.equal(engine.snapshot.playerMana, 8, 'the client must not spend Mana locally on an uncertain response');
   assert.equal(store.localRewards, 0, 'an uncertain action must never grant local rewards');
+});
+
+test('a malformed battle response explains safe resync without applying client combat state', async () => {
+  timers.length = 0;
+  storage.clear();
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiProtocolError('Malformed JSON response from DEGEN API.');
+    },
+    async completeUnderpass() {
+      assert.fail('a malformed action response cannot authorize completion');
+    },
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('a malformed response must not resolve a local turn');
+  }, {
+    permitId: 'permit-protocol-error',
+    status: 'active',
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: 'permit-protocol-error' };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('crack');
+
+  assert.equal(actionStatus.hidden, false);
+  assert.match(actionStatus.textContent, /unreadable battle response/i);
+  assert.match(actionStatus.textContent, /same move again to safely resync/i);
+  assert.doesNotMatch(actionStatus.textContent, /connection interrupted/i);
+  assert.equal(engine.snapshot.turnCount, 0, 'the client must wait for authoritative turn state');
+  assert.equal(engine.snapshot.playerMana, 8, 'the client must not deduct Mana on a malformed response');
+  assert.equal(engine.snapshot.enemyHp, TUNNEL_MAW.maxHp, 'the client must not assume damage landed');
+  assert.equal(controller.battlePermit?.permitId, 'permit-protocol-error', 'keep the permit for safe recovery');
+  assert.equal(store.localRewards, 0, 'the client never fabricates rewards');
 });
 
 test('an insufficient-Mana conflict shows the server error and synchronizes the latest state', async () => {
