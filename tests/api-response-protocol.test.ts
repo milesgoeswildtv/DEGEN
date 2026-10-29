@@ -57,6 +57,20 @@ test('malformed pending-reward payload shape is a protocol error', async () => {
   );
 });
 
+test('whitespace-padded pending-reward permit IDs are a protocol error', async () => {
+  const api = new apiModule.GameApi('https://example.test', async () =>
+    new Response(JSON.stringify({ permitIds: [' valid-permit '] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+
+  await assert.rejects(
+    api.getPendingBattleRewards('player-1'),
+    apiModule.GameApiProtocolError,
+  );
+});
+
 test('malformed Underpass snapshot is a protocol error', async () => {
   const api = new apiModule.GameApi('https://example.test', async () =>
     new Response(JSON.stringify({ eventKey: 'underpass', phase: 'open' }), {
