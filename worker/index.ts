@@ -3,6 +3,7 @@
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear, xpNeededForLevel } from '../src/game/progression';
+import { validateHousingPlacements } from './housingQuantityGuard';
 
 interface Env {
   DB: D1Database;
@@ -177,16 +178,14 @@ async function ensurePlayer(db: D1Database, playerId: string, displayName: strin
   await db.batch([
     db.prepare(`INSERT INTO players (id, display_name) VALUES (?, ?)
       ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP`).bind(playerId, displayName.slice(0, 32)),
+    // Seed the starter bed only for a genuinely new character. An empty layout is a saved player choice.
+    db.prepare(`INSERT OR IGNORE INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation)
+      SELECT ?, ?, 'starter-bed', 1, 1, 0
+      WHERE NOT EXISTS (SELECT 1 FROM characters WHERE player_id = ?)`).bind(`${playerId}:starter-bed-placed`, playerId, playerId),
     db.prepare(`INSERT OR IGNORE INTO characters (player_id, level, xp, currency, degen_key) VALUES (?, 1, 0, 0, 'test-degen')`).bind(playerId),
     ...STARTER_LOCATIONS.map((location) => db.prepare(`INSERT OR IGNORE INTO unlocked_locations (player_id, location_key) VALUES (?, ?)`).bind(playerId, location)),
     ...STARTER_FURNITURE.map((item) => db.prepare(`INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES (?, ?, ?, 'furniture', 1)`).bind(`${playerId}:furniture:${item}`, playerId, item)),
   ]);
-
-  const housing = await db.prepare(`SELECT COUNT(*) AS count FROM housing_placements WHERE player_id = ?`).bind(playerId).first<{ count: number }>();
-  if ((housing?.count ?? 0) === 0) {
-    await db.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, 'starter-bed', 1, 1, 0)`)
-      .bind(`${playerId}:starter-bed-placed`, playerId).run();
-  }
 }
 
 async function loadPlayer(db: D1Database, playerId: string) {
@@ -303,15 +302,67 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleHousing(request: Request, env: Env): Promise<Response> {
-  const input = await body<{ playerId?: string; housing?: { inventory?: string[]; placements?: Array<{ instanceId: string; furnitureId: string; x: number; y: number; rotation?: number }> } }>(request);
-  if (!input.playerId || !input.housing) return fail(request, env, 'playerId and housing are required');
-  const allowed = new Set((await env.DB.prepare(`SELECT item_key FROM player_inventory WHERE player_id = ? AND item_type = 'furniture'`).bind(input.playerId).all<{ item_key: string }>()).results.map((row) => row.item_key));
-  const placements = (input.housing.placements ?? []).filter((item) => allowed.has(item.furnitureId) && Number.isInteger(item.x) && Number.isInteger(item.y) && item.x >= 0 && item.x <= 7 && item.y >= 0 && item.y <= 5);
-  await env.DB.batch([
-    env.DB.prepare(`DELETE FROM housing_placements WHERE player_id = ?`).bind(input.playerId),
-    ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)
-      .bind(item.instanceId, input.playerId, item.furnitureId, item.x, item.y, item.rotation ?? 0)),
-  ]);
+  const input = await body<{
+    playerId?: string;
+    housing?: { inventory?: string[]; placements?: Array<{ instanceId: string; furnitureId: string; x: number; y: number; rotation?: number }> };
+  }>(request);
+  if (!input || typeof input.playerId !== 'string' || !input.playerId
+    || !input.housing || typeof input.housing !== 'object') {
+    return fail(request, env, 'playerId and housing are required');
+  }
+
+  const bootstrappedPlayer = await env.DB.prepare(`SELECT 1 AS ready FROM players
+    INNER JOIN characters ON characters.player_id = players.id
+    WHERE players.id = ? LIMIT 1`)
+    .bind(input.playerId)
+    .first<{ ready: number }>();
+  if (!bootstrappedPlayer) {
+    return fail(request, env, 'Player must be bootstrapped before saving housing.', 404);
+  }
+
+  const inventory = await env.DB.prepare(`SELECT item_key, quantity FROM player_inventory
+    WHERE player_id = ? AND item_type = 'furniture'`)
+    .bind(input.playerId)
+    .all<{ item_key: string; quantity: number }>();
+  let placements: ReturnType<typeof validateHousingPlacements>;
+  try {
+    // Validate the complete requested layout against server-owned inventory before deleting anything.
+    placements = validateHousingPlacements(inventory.results, input.housing.placements);
+  } catch {
+    return fail(request, env, 'Invalid housing placement request.', 400);
+  }
+
+  // Placement IDs are globally unique in D1. Detect an ID owned by another
+  // player before deleting this player's saved layout, and report a client
+  // conflict instead of surfacing an avoidable database constraint error.
+  if (placements.length > 0) {
+    const placeholders = placements.map(() => '?').join(', ');
+    const collision = await env.DB.prepare(`SELECT id FROM housing_placements
+      WHERE player_id <> ? AND id IN (${placeholders}) LIMIT 1`)
+      .bind(input.playerId, ...placements.map((item) => item.instanceId))
+      .first<{ id: string }>();
+    if (collision) return fail(request, env, 'Housing placement ID is already in use.', 409);
+  }
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM housing_placements WHERE player_id = ?`).bind(input.playerId),
+      ...placements.map((item) => env.DB.prepare(`INSERT INTO housing_placements
+        (id, player_id, furniture_key, grid_x, grid_y, rotation) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(item.instanceId, input.playerId, item.furnitureId, item.x, item.y, item.rotation ?? 0)),
+    ]);
+  } catch (error) {
+    // A second player can claim an ID after the preflight read but before this
+    // atomic replacement. D1 rolls the batch back; normalize only that specific
+    // primary-key race to a conflict and preserve other database failures as 500s.
+    const message = error && typeof error === 'object' && 'message' in error
+      ? String((error as { message?: unknown }).message ?? '')
+      : String(error ?? '');
+    if (/UNIQUE constraint failed: housing_placements\.id/.test(message)) {
+      return fail(request, env, 'Housing placement ID is already in use.', 409);
+    }
+    throw error;
+  }
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store', ...corsHeaders(request, env) } });
 }
 

@@ -1,0 +1,291 @@
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
+import { DatabaseSync } from 'node:sqlite';
+import test from 'node:test';
+import { validateHousingPlacements } from '../worker/housingQuantityGuard.ts';
+
+const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
+  .replace(/^import .*;\n/gm, '')
+  .replace(/^export default\s*\{/m, 'const worker = {');
+const { ensurePlayer, handleHousing, worker } = runInNewContext(
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ ensurePlayer, handleHousing, worker });',
+  { crypto, console, Request, Response, URL, Uint32Array, validateHousingPlacements },
+) as {
+  ensurePlayer: (db: unknown, playerId: string, displayName: string) => Promise<void>;
+  handleHousing: (request: Request, env: unknown) => Promise<Response>;
+  worker: { fetch(request: Request, env: { DB: unknown; ALLOWED_ORIGINS?: string }): Promise<Response> };
+};
+
+function makeDb() {
+  const db = new DatabaseSync(':memory:');
+  db.exec(readFileSync(new URL('../db/schema.sql', import.meta.url), 'utf8'));
+  const migrations = new URL('../db/migrations/', import.meta.url);
+  for (const filename of readdirSync(migrations).filter((name) => name.endsWith('.sql')).sort()) {
+    db.exec(readFileSync(new URL(filename, migrations), 'utf8'));
+  }
+  const adapter = {
+    prepare(sql: string) {
+      return {
+        bind(...params: unknown[]) {
+          const statement = db.prepare(sql);
+          return {
+            run: () => statement.run(...params),
+            first: () => statement.get(...params),
+            all: () => ({ results: statement.all(...params) }),
+          };
+        },
+      };
+    },
+    async batch(statements: Array<{ run(): unknown }>) {
+      db.exec('BEGIN');
+      try {
+        for (const statement of statements) statement.run();
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+    },
+  };
+  return { db, adapter };
+}
+
+test('new player receives starter furniture once, without reseeding on bootstrap', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'new-player', 'New Player');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 1);
+  await ensurePlayer(adapter, 'new-player', 'Renamed');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 1);
+  assert.equal(db.prepare('SELECT display_name FROM players').get()!.display_name, 'Renamed');
+  db.close();
+});
+
+test('intentionally cleared home remains empty after bootstrap', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'player-a', 'A');
+  db.prepare('DELETE FROM housing_placements WHERE player_id = ?').run('player-a');
+  await ensurePlayer(adapter, 'player-a', 'A');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 0);
+  db.close();
+});
+
+test('existing character with zero placements does not acquire furniture', async () => {
+  const { db, adapter } = makeDb();
+  db.prepare('INSERT INTO players(id,display_name) VALUES(?,?)').run('player-b', 'B');
+  db.prepare("INSERT INTO characters(player_id,level,xp,currency,degen_key) VALUES(?,1,0,0,'test-degen')").run('player-b');
+  await ensurePlayer(adapter, 'player-b', 'B');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 0);
+  db.close();
+});
+
+test('moved starter bed stays in its saved position', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'mover', 'Mover');
+  db.prepare('UPDATE housing_placements SET grid_x = 6, grid_y = 5 WHERE player_id = ?').run('mover');
+  await ensurePlayer(adapter, 'mover', 'Mover');
+  const placements = db.prepare('SELECT grid_x, grid_y FROM housing_placements').all();
+  assert.equal(placements.length, 1);
+  assert.equal(placements[0]!.grid_x, 6);
+  assert.equal(placements[0]!.grid_y, 5);
+  db.close();
+});
+
+test('one player clearing furniture does not affect another player', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'first', 'First');
+  await ensurePlayer(adapter, 'second', 'Second');
+  db.prepare('DELETE FROM housing_placements WHERE player_id = ?').run('first');
+  await ensurePlayer(adapter, 'first', 'First');
+  await ensurePlayer(adapter, 'second', 'Second');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements WHERE player_id = ?').get('first')!.n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements WHERE player_id = ?').get('second')!.n, 1);
+  db.close();
+});
+
+test('Worker PUT clearing the room survives subsequent bootstrap', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'player-housing', 'Housing');
+  const request = new Request('https://degen-api.example/api/player/housing', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: 'player-housing', housing: { inventory: [], placements: [] } }),
+  });
+  const response = await handleHousing(request, { DB: adapter });
+  assert.equal(response.status, 204);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 0);
+  await ensurePlayer(adapter, 'player-housing', 'Housing');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 0);
+  db.close();
+});
+
+function housingRequest(playerId: string, placements: Array<{ instanceId: string; furnitureId: string; x: number; y: number }>) {
+  return new Request('https://degen-api.example/api/player/housing', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId, housing: { inventory: [], placements } }),
+  });
+}
+
+test('server rejects an overquantity layout without replacing existing furniture', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'quantity-owner', 'Owner');
+  const response = await handleHousing(housingRequest('quantity-owner', [
+    { instanceId: 'bed-one', furnitureId: 'starter-bed', x: 0, y: 0 },
+    { instanceId: 'bed-two', furnitureId: 'starter-bed', x: 1, y: 1 },
+  ]), { DB: adapter });
+  assert.equal(response.status, 400);
+  const saved = db.prepare("SELECT id FROM housing_placements WHERE player_id='quantity-owner' ORDER BY id").all();
+  assert.deepEqual(saved.map(row => row.id), ['quantity-owner:starter-bed-placed']);
+  db.close();
+});
+
+test('server respects actual inventory quantity when two copies are owned', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'two-copies', 'Two');
+  db.prepare("UPDATE player_inventory SET quantity=2 WHERE player_id='two-copies' AND item_key='starter-bed'").run();
+  const response = await handleHousing(housingRequest('two-copies', [
+    { instanceId: 'bed-one', furnitureId: 'starter-bed', x: 0, y: 0 },
+    { instanceId: 'bed-two', furnitureId: 'starter-bed', x: 1, y: 1 },
+  ]), { DB: adapter });
+  assert.equal(response.status, 204);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='two-copies'").get()!.n, 2);
+  db.close();
+});
+
+test('server rejects duplicate cell and placement identifiers without replacing saved items', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'duplicates', 'Dupes');
+  const response = await handleHousing(housingRequest('duplicates', [
+    { instanceId: 'bed-one', furnitureId: 'starter-bed', x: 0, y: 0 },
+    { instanceId: 'chair-one', furnitureId: 'starter-chair', x: 0, y: 0 },
+    { instanceId: 'bed-one', furnitureId: 'starter-lamp', x: 1, y: 1 },
+    { instanceId: 'rug-one', furnitureId: 'starter-rug', x: 2, y: 2 },
+  ]), { DB: adapter });
+  assert.equal(response.status, 400);
+  const saved = db.prepare("SELECT id FROM housing_placements WHERE player_id='duplicates' ORDER BY id").all();
+  assert.deepEqual(saved.map(row => row.id), ['duplicates:starter-bed-placed']);
+  db.close();
+});
+
+
+test('cross-player placement ID collision rolls back replacement and preserves both rooms', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'owner-a', 'Owner A');
+  await ensurePlayer(adapter, 'owner-b', 'Owner B');
+
+  const save = (playerId: string, placement: { instanceId: string; furnitureId: string; x: number; y: number }) =>
+    worker.fetch(new Request('https://degen-api.example/api/player/housing', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId, housing: { inventory: [], placements: [placement] } }),
+    }), { DB: adapter });
+
+  const shared = { instanceId: 'globally-shared-placement', furnitureId: 'starter-bed', x: 2, y: 2 };
+  assert.equal((await save('owner-b', shared)).status, 204);
+
+  const collision = await save('owner-a', { ...shared, x: 4, y: 3 });
+  assert.equal(collision.status, 409, 'a placement ID owned by another player is a client conflict');
+  assert.deepEqual(await collision.json(), { error: 'Housing placement ID is already in use.' });
+
+  const ownerA = db.prepare("SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='owner-a'").all();
+  const ownerB = db.prepare("SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='owner-b'").all();
+  assert.deepEqual(ownerA.map(row => [row.id, row.grid_x, row.grid_y]), [
+    ['owner-a:starter-bed-placed', 1, 1],
+  ], 'failed replacement must roll back its delete and retain the original room');
+  assert.deepEqual(ownerB.map(row => [row.id, row.grid_x, row.grid_y]), [
+    ['globally-shared-placement', 2, 2],
+  ], 'the other owner’s placement must remain unchanged');
+  db.close();
+});
+
+test('a player can reuse their own placement ID while moving saved furniture', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'same-owner', 'Same Owner');
+
+  const response = await handleHousing(housingRequest('same-owner', [
+    { instanceId: 'same-owner:starter-bed-placed', furnitureId: 'starter-bed', x: 6, y: 4 },
+  ]), { DB: adapter });
+
+  assert.equal(response.status, 204);
+  const moved = db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='same-owner'`)
+    .all().map(row => ({ id: row.id, grid_x: row.grid_x, grid_y: row.grid_y }));
+  assert.deepEqual(moved, [
+    { id: 'same-owner:starter-bed-placed', grid_x: 6, grid_y: 4 },
+  ]);
+  db.close();
+});
+
+
+test('a placement ID claimed after preflight returns conflict and rolls back the layout replacement', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'race-owner-a', 'Race Owner A');
+  await ensurePlayer(adapter, 'race-owner-b', 'Race Owner B');
+  let injected = false;
+
+  const raceAdapter = {
+    prepare(sql: string) {
+      const statement = adapter.prepare(sql);
+      return {
+        bind(...params: unknown[]) {
+          const bound = statement.bind(...params);
+          if (sql.includes('SELECT id FROM housing_placements') && sql.includes('player_id <> ?')) {
+            return {
+              ...bound,
+              first: async () => {
+                const row = await bound.first();
+                if (!row && !injected) {
+                  db.prepare(`INSERT INTO housing_placements
+                    (id, player_id, furniture_key, grid_x, grid_y, rotation)
+                    VALUES (?, ?, 'starter-bed', 2, 2, 0)`)
+                    .run('racing-placement-id', 'race-owner-b');
+                  injected = true;
+                }
+                return row;
+              },
+            };
+          }
+          return bound;
+        },
+      };
+    },
+    batch: adapter.batch,
+  };
+
+  const response = await handleHousing(housingRequest('race-owner-a', [
+    { instanceId: 'racing-placement-id', furnitureId: 'starter-bed', x: 4, y: 3 },
+  ]), { DB: raceAdapter });
+
+  assert.equal(injected, true, 'the fixture must claim the ID after preflight');
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: 'Housing placement ID is already in use.' });
+  const ownerARoom = db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements
+    WHERE player_id='race-owner-a'`).all().map(row => ({ id: row.id, grid_x: row.grid_x, grid_y: row.grid_y }));
+  assert.deepEqual(ownerARoom, [
+    { id: 'race-owner-a:starter-bed-placed', grid_x: 1, grid_y: 1 },
+  ], 'the failed batch must roll back the deletion of the original room');
+  const ownerBRoom = db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements
+    WHERE player_id='race-owner-b' ORDER BY id`).all().map(row => ({ id: row.id, grid_x: row.grid_x, grid_y: row.grid_y }));
+  assert.deepEqual(ownerBRoom, [
+    { id: 'race-owner-b:starter-bed-placed', grid_x: 1, grid_y: 1 },
+    { id: 'racing-placement-id', grid_x: 2, grid_y: 2 },
+  ], 'the concurrent owner and placement must remain intact');
+  db.close();
+});
+
+
+test('housing saves require a bootstrapped player even for an empty layout', async () => {
+  const { db, adapter } = makeDb();
+
+  const missingPlayer = await handleHousing(housingRequest('missing-player', []), { DB: adapter });
+  assert.equal(missingPlayer.status, 404);
+
+  db.prepare('INSERT INTO players (id, display_name) VALUES (?, ?)').run('orphan-player', 'Orphan');
+  const missingCharacter = await handleHousing(housingRequest('orphan-player', []), { DB: adapter });
+  assert.equal(missingCharacter.status, 404);
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM housing_placements').get()!.n, 0,
+    'a save rejected before bootstrap must not create or delete housing state');
+  db.close();
+});

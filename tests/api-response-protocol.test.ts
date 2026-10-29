@@ -126,6 +126,90 @@ test('bootstrap rejects malformed and out-of-bounds housing placements before re
   }
 });
 
+test('bootstrap rejects over-capacity and duplicate housing layouts without retry', async () => {
+  const invalidLayouts = [
+    {
+      label: 'more than the 48 cells in the room',
+      placements: Array.from({ length: 49 }, (_, index) => ({
+        instanceId: `placement-${index}`,
+        furnitureId: 'starter-bed',
+        x: index % 8,
+        y: Math.floor(index / 8) % 6,
+      })),
+    },
+    {
+      label: 'duplicate placement identifiers',
+      placements: [
+        { instanceId: 'shared-id', furnitureId: 'starter-bed', x: 1, y: 1 },
+        { instanceId: 'shared-id', furnitureId: 'starter-chair', x: 2, y: 2 },
+      ],
+    },
+    {
+      label: 'duplicate occupied cells',
+      placements: [
+        { instanceId: 'bed-1', furnitureId: 'starter-bed', x: 1, y: 1 },
+        { instanceId: 'chair-1', furnitureId: 'starter-chair', x: 1, y: 1 },
+      ],
+    },
+  ];
+
+  for (const layout of invalidLayouts) {
+    let requests = 0;
+    const snapshot = validPlayerSnapshot() as any;
+    snapshot.housing.placements = layout.placements;
+    const api = new apiModule.GameApi('https://example.test', async () => {
+      requests += 1;
+      return new Response(JSON.stringify(snapshot), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    await assert.rejects(
+      api.bootstrap('player-1', identity),
+      apiModule.GameApiProtocolError,
+      layout.label,
+    );
+    assert.equal(requests, 1, `${layout.label} must not be retried as a transport failure`);
+  }
+});
+
+test('completion receipt rejects duplicate housing cells before client state replacement', async () => {
+  let requests = 0;
+  const player = validPlayerSnapshot() as any;
+  player.housing.placements = [
+    { instanceId: 'bed-1', furnitureId: 'starter-bed', x: 1, y: 1 },
+    { instanceId: 'chair-1', furnitureId: 'starter-chair', x: 1, y: 1 },
+  ];
+  const receipt = {
+    player,
+    reward: { xp: 10, currency: 5, items: [], furniture: [], tier: 'full' },
+    worldEvent: {
+      eventKey: 'underpass',
+      cycleId: 'cycle-1',
+      phase: 'open',
+      opensAt: '2026-10-29T00:00:00.000Z',
+      closesAt: '2026-10-30T00:00:00.000Z',
+      fullRewardClears: 0,
+      fullRewardLimit: 3,
+      source: 'server',
+    },
+  };
+  const api = new apiModule.GameApi('https://example.test', async () => {
+    requests += 1;
+    return new Response(JSON.stringify(receipt), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+
+  await assert.rejects(
+    api.completeUnderpass('player-1', 'permit-1'),
+    apiModule.GameApiProtocolError,
+  );
+  assert.equal(requests, 1, 'a malformed completion snapshot must not be accepted or retried');
+});
+
 test('malformed JSON from a successful API response is a protocol error', async () => {
   const api = new apiModule.GameApi('https://example.test', async () =>
     new Response('{', { status: 200, headers: { 'content-type': 'application/json' } }),
