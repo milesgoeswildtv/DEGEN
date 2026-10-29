@@ -269,11 +269,19 @@ export class PlayerStore {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return createDefaultPlayer();
-      const parsed = JSON.parse(raw) as PlayerState & { __housingOutbox?: unknown };
-      const { __housingOutbox: _outbox, ...player } = parsed;
+      const parsed = JSON.parse(raw) as PlayerState & {
+        __housingOutbox?: unknown;
+        __housingNeedsBootstrap?: unknown;
+      };
+      const {
+        __housingOutbox: _outbox,
+        __housingNeedsBootstrap: needsHousingBootstrap,
+        ...player
+      } = parsed;
       void _outbox;
       const id = player.id && player.id !== 'local-player' ? player.id : newPlayerId();
       const restored = { ...createDefaultPlayer(id), ...player, id };
+      this.housingNeedsAuthoritativeBootstrap = this.api.enabled && needsHousingBootstrap === true;
       if (!this.isValidHousingSnapshot(restored.housing)) {
         this.housingNeedsAuthoritativeBootstrap = this.api.enabled;
         restored.housing = createDefaultPlayer(id).housing;
@@ -289,6 +297,7 @@ export class PlayerStore {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         ...this.state,
         __housingOutbox: Object.fromEntries(this.pendingHousingSaves),
+        __housingNeedsBootstrap: this.housingNeedsAuthoritativeBootstrap || undefined,
       }));
     } catch (error) {
       // Local storage is best-effort. A browser quota/privacy failure must not
