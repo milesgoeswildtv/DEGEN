@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (reject malformed pending-reward permit IDs)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
+- **PUSHED / PR #108 OPEN, ready for review, not merged:** `automation/degen/reward-recovery-protocol-error-guard-v01`. Current code/test head before this continuity commit: `9fb8ae7e780fc61f5d3352fd1031dfcd856733b7` (API guard commit `e7b1de5132eb2550e813071402c07ba448c738a9`; regression-test commit `9fb8ae7e780fc61f5d3352fd1031dfcd856733b7`).
+- **Task / files changed:** `src/app/api.ts` now rejects pending reward permit IDs with leading/trailing whitespace instead of passing them to Worker completion retries as if valid. This preserves compatibility with existing opaque permit IDs while rejecting ambiguous padded values. `tests/api-response-protocol.test.ts` covers padded IDs, malformed JSON, malformed pending-reward shape, malformed Underpass snapshot, malformed action snapshot, and malformed completion receipt.
+- **QA:** exact-head CI for `9fb8ae7` is not yet visible in the workflow-run lookup. Prior head `f4d2109` had deterministic tests pass in [40904227185](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40904227185); Worker/D1 reward concurrency was still running when checked. The older run [40900008320](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40900008320) stalled in transient reward recovery and is not a full-suite pass. No local-shell test run or full CI pass is claimed for the current code/test head.
+- **Mana:** COMPLETE / MERGED on main. Player-only `maxMana` / `manaCost`, persisted `player_mana`, atomic insufficient-Mana rejection, exact deduction, zero-cost-at-zero, killing-blow/defeat math, cost-aware controls, no monster Mana, no zero-Mana reversion, and tracked migrations `0003_degen_mana.sql` / `0006_backfill_active_battle_mana.sql` remain unchanged.
+- **Battle authority / reward idempotency:** PR #106 is merged on main; Worker/D1 remains authoritative for action CAS, terminal history, reward receipts, progression, inventory, and recovery. PR #108 remains a client/API validation fix; it never computes or grants rewards.
+- **D1 / deployment assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deploy order is schema → migrations → Worker. Main CI [40898054254](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054254) and Worker deploy [40898054039](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054039) passed; Worker version `514affa6-6550-48d7-82b6-f81e5ea82429` deployed. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` collision and platform-auth release gates remain unresolved; no migration/deployment configuration changed.
+- **Miles blocker:** none for this client/API fix. Production platform credentials, controlled identity/session verification, and approved legacy identity-collision policy still block auth-dependent releases; do not advance Shield/housing around that gate.
+- **One best next task:** verify exact-head CI for the continuity commit and inspect any actual failed/timed-out stage before changing runtime or retrying.
+
+---
+
 ## Latest run — 2026-10-29 (malformed authoritative API response coverage)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
