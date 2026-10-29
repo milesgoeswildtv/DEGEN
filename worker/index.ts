@@ -1202,7 +1202,6 @@ async function handlePendingBattleRewards(request: Request, env: Env, playerId: 
     id: string;
     event_key: string;
     cycle_event_key: string | null;
-    permit_started_in_cycle: number;
   };
 
   // Local storage is only a retry hint. Recover eligible server-owned victories
@@ -1212,11 +1211,7 @@ async function handlePendingBattleRewards(request: Request, env: Env, playerId: 
   const pending = await env.DB.prepare(`SELECT
       permit.id, permit.event_key, permit.cycle_id, permit.encounter_key,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
-      cycle.event_key AS cycle_event_key,
-      CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
-        AND julianday(permit.started_at) <= julianday('now')
-        AND julianday(permit.started_at) < julianday(cycle.closes_at)
-        THEN 1 ELSE 0 END AS permit_started_in_cycle
+      cycle.event_key AS cycle_event_key
     FROM battle_permits AS permit
     JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
     WHERE permit.player_id = ?
@@ -1246,7 +1241,6 @@ async function handlePendingBattleRewards(request: Request, env: Env, playerId: 
     .filter((row) => row.event_key === 'underpass'
       && row.cycle_event_key === 'underpass'
       && row.encounter_key === TUNNEL_MAW.id
-      && row.permit_started_in_cycle === 1
       && isValidBattlePermitState(row))
     .map((row) => row.id);
 
