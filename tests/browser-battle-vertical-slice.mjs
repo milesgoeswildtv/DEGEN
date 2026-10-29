@@ -248,19 +248,49 @@ try {
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
-  await until('Map', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
+  await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
   assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
   await assertFitsCompact('Map');
+  const initialCityScale = await cdp.evaluate('Number(document.querySelector("[data-city-viewport]")?.dataset.cityScale)');
+  await tap("[data-city-zoom=in]");
+  const zoomedCityScale = await cdp.evaluate('Number(document.querySelector("[data-city-viewport]")?.dataset.cityScale)');
+  assert.ok(zoomedCityScale > initialCityScale, 'map zoom control must enlarge the city');
+  await tap("[data-city-reset]");
+  assert.equal(await cdp.evaluate('Number(document.querySelector("[data-city-viewport]")?.dataset.cityScale)'), initialCityScale,
+    'map reset must restore the current mobile scale');
   await tap("[data-route=home]");
   await until('Home grid', () => cdp.evaluate('!!document.querySelector(".room-grid")'));
   await assertFitsMobile('Home');
   await assertFitsCompact('Home');
   await tap("[data-route=map]");
-  await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
-  await tap("[data-route=underpass]");
+  await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap("[data-district=Central]");
+  await until('Central district destinations', () => cdp.evaluate('!!document.querySelector("[data-location=downtown]") && !!document.querySelector("[data-location=underpass]")'));
+  await assertFitsMobile('Central district');
+  await assertFitsCompact('Central district');
+  await tap("[data-location=downtown]");
+  await until('Downtown location scene', () => cdp.evaluate('!!document.querySelector(".location-scene") && document.querySelector(".location-scene")?.textContent.includes("Downtown")'));
+  await assertFitsMobile('Downtown location');
+  await assertFitsCompact('Downtown location');
+  assert.equal(await cdp.evaluate('document.querySelector(".location-scene-status")?.textContent'), 'ACCESSIBLE // ACTIVITIES IN DEVELOPMENT');
+  await tap("[data-route=district]");
+  await until('Central district return', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  await tap("[data-route=map]");
+  await until('Map before Residential', () => cdp.evaluate('!!document.querySelector("[data-district=Residential]")'));
+  await tap("[data-district=Residential]");
+  await until('Residential district Home destination', () => cdp.evaluate('!!document.querySelector("[data-location=home]")'));
+  await tap("[data-location=home]");
+  await until('Home reached through Residential district', () => cdp.evaluate('!!document.querySelector(".room-grid")'));
+  await assertFitsMobile('Home through district');
+  await assertFitsCompact('Home through district');
+  await tap("[data-route=map]");
+  await until('Map before Underpass', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap("[data-district=Central]");
+  await until('Central district before Underpass', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  await tap("[data-location=underpass]");
   await until('Worker-authorized Underpass entry', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
   await cdp.evaluate('window.__degenLostStartResponsesRemaining = 2');
   await tap("[data-start-battle]");
@@ -281,11 +311,13 @@ try {
   // Reload the actual browser page. localStorage must retain the uncertain key,
   // allowing a fresh GameApi instance to recover the already-issued permit.
   await cdp.send('Page.reload');
-  await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
+  await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   assert.equal(await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''"), playerId,
     'the same test player must survive the reload');
   await assertFitsMobile('Map after reload');
-  await tap("[data-route=underpass]");
+  await tap("[data-district=Central]");
+  await until('Central district after reload', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  await tap("[data-location=underpass]");
   await until('Recoverable Underpass encounter after reload', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-start-battle]")'), false,
     'a persisted uncertain start must offer resume, not mint a second permit');
@@ -443,8 +475,10 @@ try {
   // for UI QA; it does not add or name a Mana-drain mechanic or monster resource.
   sql("UPDATE world_event_cycles SET opens_at = datetime('now','-10 minutes'), closes_at = datetime('now','+90 minutes') WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)");
   await tap("[data-route=map]");
-  await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
-  await tap("[data-route=underpass]");
+  await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap("[data-district=Central]");
+  await until('Central district for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  await tap("[data-location=underpass]");
   await until('Open Underpass for Mana affordability check', () => cdp.evaluate('(() => { const button = document.querySelector("[data-start-battle]"); return !!button && !button.disabled; })()'));
   await tap("[data-start-battle]");
   await until('second manifested battle for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]") && document.querySelector("#battle-accessible-hud")?.textContent.includes("Mana 12 of 12")'));
@@ -530,7 +564,7 @@ try {
     return mana >= 0 && rendered.lastIndexOf("MANIFESTED") > mana;
   })()`));
 
-  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy, plus zero-Mana affordability feedback and free-action continuation');
+  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback and free-action continuation');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
   for (const [name, output] of logs) console.error(name + ' logs:\n' + output);
