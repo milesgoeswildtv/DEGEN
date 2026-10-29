@@ -266,7 +266,7 @@ try {
   // only to the pure camera helper tests or the zoom buttons.
   const panPoint = await cdp.evaluate(`(() => {
     const rect = document.querySelector('[data-city-viewport]').getBoundingClientRect();
-    return { id: 1, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    return { id: 1, x: rect.left + rect.width / 2, y: rect.top + rect.height * 0.8 };
   })()`);
   const cityTransformBeforePan = await cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform ?? ""');
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [panPoint] });
