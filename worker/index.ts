@@ -796,6 +796,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     history_xp_awarded: number | null;
     history_currency_awarded: number | null;
     victory_history_marker_count: number;
+    defeat_history_marker_count: number;
   };
   const loadReceipt = async () => env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
       permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
@@ -825,7 +826,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       history.xp_awarded AS history_xp_awarded,
       history.currency_awarded AS history_currency_awarded,
       (SELECT COUNT(*) FROM battle_history AS marker
-        WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count
+        WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
+      (SELECT COUNT(*) FROM battle_history AS marker
+        WHERE marker.id = (permit.id || ':defeat')) AS defeat_history_marker_count
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
     LEFT JOIN world_event_clears AS clears
@@ -864,6 +867,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       || typeof row.completed_at !== 'string' || row.completed_at.trim().length === 0
       || typeof row.reward_claim_token !== 'string' || row.reward_claim_token.trim().length === 0
       || typeof row.reward_claimed_at !== 'string' || row.reward_claimed_at.trim().length === 0
+      || !isSafeIntegerBetween(row.defeat_history_marker_count, 0, 0)
       || row.history_id !== `${row.permit_id}:victory`
       || row.history_result !== 'victory'
       || row.history_encounter_key !== row.encounter_key
@@ -920,6 +924,9 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   // Detect any owner/result collision before reserving a clear or claiming rewards.
   if (receipt.victory_history_marker_count > 0) {
     return fail(request, env, 'Battle victory history marker conflicts with pending reward.', 409);
+  }
+  if (receipt.defeat_history_marker_count > 0) {
+    return fail(request, env, 'Battle defeat history marker conflicts with pending reward.', 409);
   }
 
   const token = crypto.randomUUID();
