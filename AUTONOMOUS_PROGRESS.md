@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Follow-up — 2026-10-29 (correct housing retry test fixture after fail-closed guard)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #97 OPEN, not merged:** `automation/degen/housing-reliability-current-main-v01`, correction commit `be2d5a01bd8e28a7a90b0cf2a0931df9931e18e4`; no direct-main write.
+- **Observed CI failure:** exact-head run [40888167748](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40888167748) ran 206 deterministic tests: 205 passed, one housing outbox recovery test failed because its fixture started with an empty server-backed local store. The new production guard correctly blocked the placeholder save, so the test never reached its intended in-flight retry scenario.
+- **Correction:** `tests/housing-save-order.test.ts` now seeds a valid saved player in the failed-outbox recovery fixture. This keeps that test focused on retry-after-bootstrap behavior while the new dedicated regression tests cover empty/malformed/missing-housing first-run state. No production code change in this correction.
+- **Current QA:** a fresh exact-head CI run is required for `be2d5a01bd8e28a7a90b0cf2a0931df9931e18e4`; do not claim deterministic tests, Worker/D1 integration, housing Chromium, build, battle Chromium, or Wrangler validation passed until it finishes. No local-shell test, production D1 operation, or Worker deployment.
+- **Mana / authority:** Mana remains complete on main. Worker/D1 still owns battle permits, player Mana, action CAS, terminal state, reward receipts, progression, and inventory. No monster resource, balance, or reversion changes.
+- **D1 assumptions / blockers:** `wrangler.toml` still binds `DB` to `DEGEN` and `db/migrations`; deploy order is schema → tracked migrations → Worker. The `0007` inventory guard / player-session migration collision and platform-auth release gates remain unresolved. No schema or deployment configuration changes.
+- **One best next task:** verify exact-head CI for this fixture correction and fix only demonstrated failures.
+
+---
+
 ## Latest run — 2026-10-29 (fail closed on first-run or incomplete housing records)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
