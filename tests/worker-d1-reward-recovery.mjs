@@ -284,7 +284,9 @@ try {
       ('00000000-0000-4000-8000-000000000101', 'qa-player', 'underpass', 'qa-start-marker-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0),
       ('00000000-0000-4000-8000-000000000102', 'qa-player', 'underpass', 'qa-start-marker-cycle', 'tunnel-maw',
-        datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0);
+        datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0),
+      ('00000000-0000-4000-8000-000000000104', 'qa-player', 'underpass', 'qa-start-marker-cycle', 'tunnel-maw',
+        datetime('now', '-1 minute'), 80, 12, 92, 'active', 0);
     INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
       VALUES
         ('permit-history-conflict:victory', 'qa-marker-owner', 'tunnel-maw', 'defeat', 1, 0, 0),
@@ -332,6 +334,20 @@ try {
   sql(`CREATE TRIGGER qa_fail_victory_receipt BEFORE INSERT ON battle_history
     WHEN NEW.id = 'permit-recovery:victory'
     BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_REWARD_FAILURE'); END`);
+  const expiredStartPermitBefore = sql(`SELECT id, expires_at, battle_status, player_hp, player_mana, enemy_hp, turn_count,
+      reward_state, reward_clear_number, completed_at
+    FROM battle_permits WHERE id = '00000000-0000-4000-8000-000000000104'`);
+  await start();
+  const expiredStartReplay = await startBattle('00000000-0000-4000-8000-000000000104');
+  assert.equal(expiredStartReplay.status, 409, JSON.stringify(expiredStartReplay.body));
+  assert.equal(expiredStartReplay.body?.error, 'Battle start request is already used or invalid.');
+  assert.equal('initialState' in (expiredStartReplay.body ?? {}), false,
+    'an expired active permit must not be replayed as a fresh actionable battle snapshot');
+  await stop();
+  assert.deepEqual(sql(`SELECT id, expires_at, battle_status, player_hp, player_mana, enemy_hp, turn_count,
+      reward_state, reward_clear_number, completed_at
+    FROM battle_permits WHERE id = '00000000-0000-4000-8000-000000000104'`), expiredStartPermitBefore,
+    'rejecting an expired start replay must not mutate the persisted permit');
   await start();
 
   // Battle-start replay must not return a playable snapshot for an active permit
