@@ -2162,3 +2162,17 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blockers:** none for this validation fix. Production platform-auth credentials/identity-policy gates and the Shield/housing release gates remain.
 - **One best next task:** verify the new exact-head CI; if green, update PR #105 evidence and mark it ready for review without merging or deploying.
 
+
+
+---
+
+## Latest run — 2026-10-28 (fix isolated engine harnesses after Mana-state guard CI failure)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`.
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`, code head `a09d605f0f794c6713b3954b0a8760388fb413c6`. Exact-head CI [40802399754](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40802399754) failed in deterministic tests: 161 passed, 3 failed. The failures were `ReferenceError: isValidManaState is not defined` in the stripped-import VM harnesses for `tests/battle-start-state.test.ts` (two cases) and `tests/client-worker-mana-consistency.test.ts` (one case). The new engine guard was correct; these tests execute `engine.ts` without its imports and needed to inject the shared helper explicitly.
+- **Correction / files changed:** `tests/battle-start-state.test.ts` and `tests/client-worker-mana-consistency.test.ts` now import and inject `isValidManaState` alongside the existing deterministic rules. This is a test-harness dependency correction, not a gameplay-rule change. `AUTONOMOUS_PROGRESS.md` records the observed failure and correction.
+- **QA:** no test/build/Worker/browser pass is claimed for this fix until fresh exact-head CI completes. The preceding run failed before downstream Worker/D1 integration, build, Chromium, and `check:worker` stages, so those stages must rerun.
+- **Mana / authority:** Mana remains COMPLETE / MERGED on main; the over-cap guard rejects invalid current Mana without spending or advancing a turn. Valid 0 Mana and zero-cost actions remain supported; no monster Mana or reversion. Worker/D1 reward authority is unchanged.
+- **D1 / deployment:** tracked `0006_backfill_active_battle_mana.sql`, `wrangler.toml` binding and schema → migrations → Worker order remain unchanged. Last verified Worker deploy [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) succeeded at `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; no deployment or remote D1 operation in this run. The `0007` auth migration collision and platform-auth release gates remain unresolved.
+- **One best next task:** rerun exact-head CI after the two harness fixes; address only failures demonstrated on that head, then mark PR #105 ready only after all required stages pass.
+

@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 // Execute the real client engine with the same deterministic resolver imported by
 // the Worker. This deliberately compares behavior, not duplicated expected math.
@@ -14,7 +14,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class /g, 'class ');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, resolveCombatTurn },
+  { canUseAbility, isValidManaState, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,
