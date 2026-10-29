@@ -209,7 +209,9 @@ test('a player can reuse their own placement ID while moving saved furniture', a
   ]), { DB: adapter });
 
   assert.equal(response.status, 204);
-  assert.deepEqual(db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='same-owner'`).all(), [
+  const moved = db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='same-owner'`)
+    .all().map(row => ({ id: row.id, grid_x: row.grid_x, grid_y: row.grid_y }));
+  assert.deepEqual(moved, [
     { id: 'same-owner:starter-bed-placed', grid_x: 6, grid_y: 4 },
   ]);
   db.close();
@@ -258,12 +260,14 @@ test('a placement ID claimed after preflight returns conflict and rolls back the
   assert.equal(injected, true, 'the fixture must claim the ID after preflight');
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), { error: 'Housing placement ID is already in use.' });
-  assert.deepEqual(db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements
-    WHERE player_id='race-owner-a'`).all(), [
+  const ownerARoom = db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements
+    WHERE player_id='race-owner-a'`).all().map(row => ({ id: row.id, grid_x: row.grid_x, grid_y: row.grid_y }));
+  assert.deepEqual(ownerARoom, [
     { id: 'race-owner-a:starter-bed-placed', grid_x: 1, grid_y: 1 },
   ], 'the failed batch must roll back the deletion of the original room');
-  assert.deepEqual(db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements
-    WHERE player_id='race-owner-b' ORDER BY id`).all(), [
+  const ownerBRoom = db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements
+    WHERE player_id='race-owner-b' ORDER BY id`).all().map(row => ({ id: row.id, grid_x: row.grid_x, grid_y: row.grid_y }));
+  assert.deepEqual(ownerBRoom, [
     { id: 'race-owner-b:starter-bed-placed', grid_x: 1, grid_y: 1 },
     { id: 'racing-placement-id', grid_x: 2, grid_y: 2 },
   ], 'the concurrent owner and placement must remain intact');
