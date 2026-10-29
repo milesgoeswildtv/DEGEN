@@ -1,5 +1,19 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-10-29 (fail closed on first-run or incomplete housing records)
+
+- **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`.
+- **PUSHED / PR #97 OPEN, not merged:** continued `automation/degen/housing-reliability-current-main-v01` from branch head `a945a7b3f18b35cd0d0331147cdf9ad06929f053`; no direct-main write.
+- **Task / files changed:** `src/app/state.ts` now blocks server-backed housing edits until authoritative bootstrap when there is no saved record, stored JSON is unreadable, or a legacy/corrupt record omits the `housing` field. This prevents the synthesized starter-room fallback from being sent to D1 before bootstrap. Offline preview remains editable. `tests/housing-save-order.test.ts` adds regressions for first-run, malformed JSON, missing housing, failed/empty bootstrap, and offline first-run; the existing storage-failure test now starts from a valid saved player fixture.
+- **QA:** the preceding housing outbox head `d558448928d81b2a1eed3b308d1912ff75abb93b` passed full CI [40881105935](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40881105935). The branch head `a945a7b3f18b35cd0d0331147cdf9ad06929f053` had deterministic tests green but full Worker/D1, mobile housing browser, build, Chromium battle, and Wrangler stages still in progress at [CI 40886725900](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40886725900). These new changes require fresh exact-head CI. No local-shell test, production D1 operation, or Worker deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main; unchanged. Player-only Mana is authoritative, zero-cost abilities remain usable at zero, malformed Mana state fails closed, monsters have no Mana, and zero Mana never triggers reversion.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, action compare-and-swap, terminal history, receipts, XP/currency/inventory, and exactly-once settlement/recovery. PR #106 remains open/unmerged; its previous exact head `dca6d3ef6e4584023680546c089acc192f89805f` passed all 13 CI stages in [40876244644](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40876244644).
+- **D1 assumptions:** `wrangler.toml` remains the source for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft PR #14 `0007_player_sessions.sql` sequence collision remains unresolved. No migration/configuration change.
+- **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling remain release gates; Shield stays gated.
+- **One best next task:** verify exact-head CI for this housing bootstrap guard, then fix only failures demonstrated by that run.
+
+---
+
 ## Latest run — 2026-10-29 (fail closed on corrupt active housing state)
 
 - **Authoritative main SHA:** `eb3fd826b5c561e365298a7e052132eae757fa47`; main CI [40812891007](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40812891007) and Pages preview [40812891043](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40812891043) are green. Latest Worker deployment remains [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) at `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; comparing that SHA to main shows only client/UI/tests/docs changes, so no newer Worker deployment is claimed.
