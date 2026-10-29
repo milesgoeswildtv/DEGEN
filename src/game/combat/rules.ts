@@ -25,8 +25,7 @@ export const isValidManaState = (currentMana: unknown, maxMana: unknown): curren
   isValidManaCost(currentMana) && isValidManaCost(maxMana) && currentMana <= maxMana;
 
 export const canUseAbility = (playerMana: number, ability: AbilityDefinition): boolean =>
-  Number.isSafeInteger(playerMana)
-  && playerMana >= 0
+  isValidManaCost(playerMana)
   && isValidManaCost(ability.manaCost)
   && playerMana >= ability.manaCost;
 
@@ -41,7 +40,7 @@ export const resolveCombatTurn = ({
   if (!isValidManaCost(ability.manaCost)) {
     throw new RangeError(`Invalid Mana cost for ${ability.name}`);
   }
-  if (!Number.isSafeInteger(playerMana) || playerMana < 0) {
+  if (!isValidManaCost(playerMana)) {
     throw new RangeError('Invalid player Mana');
   }
   if (!canUseAbility(playerMana, ability)) {
