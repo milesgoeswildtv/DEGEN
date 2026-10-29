@@ -82,10 +82,20 @@ try {
     VALUES('closed-cycle','underpass',datetime('now','-10 minutes'),datetime('now','-1 minute'));`);
   cli(['d1','execute','DEGEN','--local',`--persist-to=${persist}`,`--file=${seedFile}`]);
   seed('boundary');
+  seed('expired-active');
+  sql("UPDATE battle_permits SET expires_at=datetime('now','-1 minute') WHERE id='expired-active'");
   sql(`CREATE TRIGGER qa_expire_after_defeat AFTER UPDATE OF battle_status ON battle_permits
     WHEN NEW.id='boundary' AND NEW.battle_status='defeat'
     BEGIN UPDATE battle_permits SET expires_at=datetime('now','-1 minute') WHERE id=NEW.id; END`);
   await start();
+  const expiredBefore = sql("SELECT battle_status,player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='expired-active'");
+  const expiredAction = await act('expired-active');
+  assert.equal(expiredAction.status,409,JSON.stringify(expiredAction.body));
+  assert.deepEqual(sql("SELECT battle_status,player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id='expired-active'"),expiredBefore,
+    'an expired active permit must not mutate HP, Mana, enemy HP, turn count, or terminal status');
+  assert.equal(sql("SELECT id FROM battle_history WHERE id='expired-active:defeat'").length,0,
+    'rejecting an expired permit must not create a terminal history marker');
+  // The boundary permit was issued before its event closed and remains valid until expiry.
   assert.equal((await act('boundary')).status,200);
   for(let i=0;i<10;i++) assert.equal((await act('boundary')).status,409);
   await stop();
