@@ -275,7 +275,7 @@ export class PlayerStore {
       const id = player.id && player.id !== 'local-player' ? player.id : newPlayerId();
       const restored = { ...createDefaultPlayer(id), ...player, id };
       if (!this.isValidHousingSnapshot(restored.housing)) {
-        this.housingNeedsAuthoritativeBootstrap = true;
+        this.housingNeedsAuthoritativeBootstrap = this.api.enabled;
         restored.housing = createDefaultPlayer(id).housing;
       }
       return restored;
