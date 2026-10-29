@@ -214,3 +214,58 @@ test('a player can reuse their own placement ID while moving saved furniture', a
   ]);
   db.close();
 });
+
+
+test('a placement ID claimed after preflight returns conflict and rolls back the layout replacement', async () => {
+  const { db, adapter } = makeDb();
+  await ensurePlayer(adapter, 'race-owner-a', 'Race Owner A');
+  await ensurePlayer(adapter, 'race-owner-b', 'Race Owner B');
+  let injected = false;
+
+  const raceAdapter = {
+    prepare(sql: string) {
+      const statement = adapter.prepare(sql);
+      return {
+        bind(...params: unknown[]) {
+          const bound = statement.bind(...params);
+          if (sql.includes('SELECT id FROM housing_placements') && sql.includes('player_id <> ?')) {
+            return {
+              ...bound,
+              first: async () => {
+                const row = await bound.first();
+                if (!row && !injected) {
+                  db.prepare(`INSERT INTO housing_placements
+                    (id, player_id, furniture_key, grid_x, grid_y, rotation)
+                    VALUES (?, ?, 'starter-bed', 2, 2, 0)`)
+                    .run('racing-placement-id', 'race-owner-b');
+                  injected = true;
+                }
+                return row;
+              },
+            };
+          }
+          return bound;
+        },
+      };
+    },
+    batch: adapter.batch,
+  };
+
+  const response = await handleHousing(housingRequest('race-owner-a', [
+    { instanceId: 'racing-placement-id', furnitureId: 'starter-bed', x: 4, y: 3 },
+  ]), { DB: raceAdapter });
+
+  assert.equal(injected, true, 'the fixture must claim the ID after preflight');
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: 'Housing placement ID is already in use.' });
+  assert.deepEqual(db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements
+    WHERE player_id='race-owner-a'`).all(), [
+    { id: 'race-owner-a:starter-bed-placed', grid_x: 1, grid_y: 1 },
+  ], 'the failed batch must roll back the deletion of the original room');
+  assert.deepEqual(db.prepare(`SELECT id, grid_x, grid_y FROM housing_placements
+    WHERE player_id='race-owner-b' ORDER BY id`).all(), [
+    { id: 'race-owner-b:starter-bed-placed', grid_x: 1, grid_y: 1 },
+    { id: 'racing-placement-id', grid_x: 2, grid_y: 2 },
+  ], 'the concurrent owner and placement must remain intact');
+  db.close();
+});
