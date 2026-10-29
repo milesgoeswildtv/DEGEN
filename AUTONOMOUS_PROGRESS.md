@@ -1,3 +1,14 @@
+## Follow-up — 2026-10-29 (repair protocol-test execution model)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`; branch `automation/degen/reward-recovery-protocol-error-guard-v01`.
+- **Latest code/test head before this progress update:** `6c9827f42e3e2132d37a1d50fad5408b25d9ccf6`.
+- **Observed failure:** exact-head CI [40899415731](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40899415731) failed deterministic tests. The API test's direct ESM import hit Node's strip-only restriction on existing TypeScript parameter properties; the controller test also coupled the classifier assertion to startup sequencing.
+- **Correction:** `tests/api-response-protocol.test.ts` now uses the repository's existing `stripTypeScriptTypes({ mode: 'transform' })` + VM harness pattern to execute the real API module and exercise malformed JSON + malformed response shape. The controller regression invokes the discovery recovery method directly, isolating the retry classifier. Runtime behavior remains unchanged from the intended protocol-error guard.
+- **QA:** fresh exact-head CI is pending; no tests/build/browser/Worker pass is claimed yet. The prior failed run stopped at deterministic tests, so all downstream gates must rerun.
+- **One best next task:** verify the fresh exact-head CI, then update the PR and progress log only from observed results.
+
+---
+
 ## Follow-up — 2026-10-29 (correct protocol-test harness failures)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`; branch `automation/degen/reward-recovery-protocol-error-guard-v01`.
