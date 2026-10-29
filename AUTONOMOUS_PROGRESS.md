@@ -1,3 +1,18 @@
+## Latest run — 2026-10-29 (malformed start-response key retention regression)
+
+- **Authoritative main SHA:** `d1635033a276cb1a3bbf22d6686edf7aa2977ec1` (squash merge of PR #108).
+- **MERGED:** PR #108 `fix(client): recover safely from malformed battle responses` merged normally at `d1635033a276cb1a3bbf22d6686edf7aa2977ec1`. Exact-head CI [40931713309](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40931713309) passed all workflow stages: deterministic tests, Worker/D1 reward concurrency, transient D1 failure recovery, Underpass cycle/rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Wrangler validation. Post-merge main CI [40934797908](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40934797908) is still in progress; post-merge Pages preview [40934797987](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40934797987) passed. PR #108 changed client/API handling only, so no production Worker deployment is expected or claimed.
+- **PUSHED / PR pending creation:** `automation/degen/malformed-start-key-retention-test-v01`, based on the exact post-merge main SHA above; test commit `f0ae1c6065698d3f4c14ed0e1aadead27b3c7a4d`.
+- **Task / file changed:** `tests/battle-start-client.test.ts` now covers the recovery invariant specific to malformed successful battle-start responses: the API does not retry malformed 2xx JSON, preserves the per-player idempotency key in browser storage, and a fresh `GameApi` instance retries with the exact same request ID and successfully recovers the server permit. The VM harness explicitly injects the platform `SyntaxError` constructor so the real JSON parse failure is classified consistently across realms.
+- **QA boundary:** exact-head CI for the new test branch is pending; no local-shell run is claimed. The test asserts one request on malformed response, retained durable key, same-key recovery, and matching recovered permit ID.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic insufficient-cost rejection, exact deduction, zero-cost use at zero, killing-blow/defeat behavior, cost-aware controls, no monster Mana, and no Mana-triggered reversion remain intact. Tracked `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 owns battle permits and state, action CAS, terminal outcomes/history, audited receipts, progression, inventory, currency, and reward recovery. The new regression protects client recovery of the authoritative permit identity; it does not award rewards or change server authority.
+- **D1 / migration assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft auth PR #14 `0007_player_sessions.sql` numbering collision remains unresolved. Production Discord/Telegram identity/session verification and approved legacy identity-collision policy remain release gates.
+- **Miles blocker:** none for this regression test. Do not bypass the migration/auth gates for schema-backed Shield/status or platform identity release work.
+- **One best next task:** open the test PR, verify exact-head CI, and separately verify post-merge main CI. No new runtime/schema/deployment configuration change.
+
+---
+
 ## Latest run — 2026-10-29 (PR #108 exact-head CI verified)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
