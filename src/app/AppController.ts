@@ -36,7 +36,23 @@ export class AppController {
     this.render();
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
-      for (const permitId of this.pendingRewardPermits(playerId)) void this.queueRewardCompletion(permitId, playerId);
+      const localPending = new Set(this.pendingRewardPermits(playerId));
+      for (const permitId of localPending) void this.queueRewardCompletion(permitId, playerId);
+
+      // Browser storage is a best-effort hint, not the source of truth for
+      // unfinished victories. Discover server-owned pending receipts so a reload
+      // or unavailable localStorage cannot permanently lose the retry identifier.
+      const discovery = this.api.getPendingBattleRewards?.(playerId);
+      if (discovery) {
+        void discovery.then((permitIds) => {
+          if (this.store.snapshot.id !== playerId) return;
+          for (const permitId of permitIds) {
+            if (!localPending.has(permitId)) void this.queueRewardCompletion(permitId, playerId);
+          }
+        }).catch((error) => {
+          console.warn('Unable to discover pending server battle rewards.', error);
+        });
+      }
     }
     this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
   }
