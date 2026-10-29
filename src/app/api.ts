@@ -71,8 +71,8 @@ const isFurniturePlacementArray = (
     && entry.instanceId.length > 0
     && typeof entry.furnitureId === 'string'
     && entry.furnitureId.length > 0
-    && isBoundedSafeInteger(entry.x, 0, Number.MAX_SAFE_INTEGER)
-    && isBoundedSafeInteger(entry.y, 0, Number.MAX_SAFE_INTEGER));
+    && isBoundedSafeInteger(entry.x, 0, 7)
+    && isBoundedSafeInteger(entry.y, 0, 5));
 
 // Player snapshots from the Worker are account and persistence authority. Validate
 // them before bootstrap or completion can replace client state; never repair malformed
