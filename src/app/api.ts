@@ -478,6 +478,15 @@ export class GameApi {
       throw new GameApiError(response.status, payload, `DEGEN API ${response.status}: ${detail || response.statusText}`);
     }
     if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+    try {
+      return await response.json() as T;
+    } catch (error) {
+      // Invalid JSON is a protocol/integrity failure. Transport/stream failures
+      // retain their original error so callers can still retry transient faults.
+      if (error instanceof SyntaxError) {
+        throw new GameApiProtocolError('Malformed JSON response from DEGEN API.');
+      }
+      throw error;
+    }
   }
 }
