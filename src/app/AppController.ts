@@ -10,6 +10,23 @@ import { GameApi, GameApiError, isAuthoritativeBattleActionState } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
 
+const shouldRetryBattleRecovery = (error: unknown): boolean => {
+  if (!(error instanceof GameApiError)) return true;
+  if (error.status >= 500 || error.status === 404 || error.status === 429) return true;
+  if (error.status !== 409) return false;
+
+  const payload = error.payload;
+  const message = typeof payload === 'object' && payload !== null && 'error' in payload
+    ? (payload as { error?: unknown }).error
+    : undefined;
+  // These Worker 409 responses explicitly describe a race that can settle or
+  // become recoverable after a claim lease expires. Other 409s are invariant
+  // violations or invalid requests and must not create an endless retry loop.
+  return message === 'Battle reward is already being claimed, or the permit expired.'
+    || message === 'Reward claim changed; retry.'
+    || message === 'Concurrent reward updates; retry completion.';
+};
+
 export class AppController {
   private route: RouteKey = 'map';
   private selectedFurniture?: string;
@@ -454,11 +471,7 @@ export class AppController {
       console.warn('Unable to discover pending server battle rewards.', error);
       // Retry transient failures while the app stays open. A reload also repeats
       // discovery, so recovery does not depend on browser storage surviving.
-      const definitiveClientRejection = error instanceof GameApiError
-        && error.status < 500
-        && error.status !== 404
-        && error.status !== 429;
-      if (this.store.snapshot.id === playerId && !definitiveClientRejection) {
+      if (this.store.snapshot.id === playerId && shouldRetryBattleRecovery(error)) {
         window.setTimeout(() => {
           if (this.store.snapshot.id === playerId && this.api.enabled) {
             void this.discoverPendingBattleRewards(playerId);
@@ -524,8 +537,12 @@ export class AppController {
           this.render();
         }
       } catch (error) {
-        console.warn('Server reward verification failed; retaining permit for retry.', error);
-        window.setTimeout(() => void this.queueRewardCompletion(permitId, playerId), 15_000);
+        console.warn('Server reward verification failed; retaining permit for recovery.', error);
+        // Keep the permit ID for a later reload/server-discovery pass, but only
+        // poll automatically when the failure can plausibly resolve without data repair.
+        if (shouldRetryBattleRecovery(error)) {
+          window.setTimeout(() => void this.queueRewardCompletion(permitId, playerId), 15_000);
+        }
       }
     });
     return this.rewardResolution;
