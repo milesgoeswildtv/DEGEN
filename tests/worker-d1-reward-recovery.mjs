@@ -108,14 +108,14 @@ async function act(permitId, abilityId = 'slash', expectedTurnCount = 0) {
   try { body = raw ? JSON.parse(raw) : undefined; } catch { body = { raw: raw.slice(0, 300) }; }
   return { status: response.status, body };
 }
-async function startBattle(requestId) {
+async function startBattle(requestId, playerId = 'qa-player', cycleId = 'qa-start-marker-cycle') {
   const response = await fetch(origin + '/api/battle/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      playerId: 'qa-player',
+      playerId,
       eventKey: 'underpass',
-      cycleId: 'qa-cycle',
+      cycleId,
       encounterKey: 'tunnel-maw',
       requestId,
     }),
@@ -135,11 +135,13 @@ try {
     PRAGMA foreign_keys = ON;
     INSERT INTO players(id, display_name) VALUES
       ('qa-player', 'Reward Recovery QA'),
-      ('qa-marker-owner', 'Conflicting History Marker Owner');
+      ('qa-marker-owner', 'Conflicting History Marker Owner'),
+      ('qa-start-orphan-player', 'Start Orphan Marker QA');
     INSERT INTO characters(player_id, level, xp, currency, degen_key)
       VALUES ('qa-player', 1, 0, 0, 'test-degen');
     INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at)
       VALUES
+        ('qa-start-marker-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+2 hours')),
         ('qa-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-legacy-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
         ('qa-reservation-cycle', 'underpass', datetime('now', '-1 hour'), datetime('now', '+1 hour')),
@@ -279,9 +281,9 @@ try {
       id, player_id, event_key, cycle_id, encounter_key, expires_at,
       player_hp, player_mana, enemy_hp, battle_status, turn_count
     ) VALUES
-      ('00000000-0000-4000-8000-000000000101', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+      ('00000000-0000-4000-8000-000000000101', 'qa-player', 'underpass', 'qa-start-marker-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0),
-      ('00000000-0000-4000-8000-000000000102', 'qa-player', 'underpass', 'qa-cycle', 'tunnel-maw',
+      ('00000000-0000-4000-8000-000000000102', 'qa-player', 'underpass', 'qa-start-marker-cycle', 'tunnel-maw',
         datetime('now', '+20 minutes'), 80, 12, 92, 'active', 0);
     INSERT INTO battle_history(id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded)
       VALUES
@@ -348,7 +350,9 @@ try {
       FROM battle_permits WHERE id = '${permitId}'`), before,
       'rejecting a poisoned start replay must not mutate the persisted battle');
   }
-  const orphanMarkerStart = await startBattle('00000000-0000-4000-8000-000000000103');
+  const orphanMarkerStart = await startBattle(
+    '00000000-0000-4000-8000-000000000103', 'qa-start-orphan-player',
+  );
   assert.equal(orphanMarkerStart.status, 409, JSON.stringify(orphanMarkerStart.body));
   assert.equal('initialState' in (orphanMarkerStart.body ?? {}), false,
     'a request ID colliding with an orphan terminal marker must not issue a permit');
