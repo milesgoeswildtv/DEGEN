@@ -2077,3 +2077,20 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 / release gates:** `wrangler.toml` and `db/migrations` remain unchanged. Migration `0006_backfill_active_battle_mana.sql` is tracked; the `0007` numbering conflict and platform-auth credentials/session/identity-policy gates remain unresolved. Shield and housing merge/deploy remain gated; no bypass.
 
 - **One best next task:** trigger and verify exact-head CI for PR #105, including the real Chromium mobile vertical slice. Fix only demonstrated failures, then make the PR review-ready only if all checks pass.
+
+
+---
+
+## Follow-up — 2026-10-28 (CI caught missing Mana validators in isolated controller harness)
+
+- **Authoritative main base:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`.
+
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`. Exact-head CI run [40792393348](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40792393348) failed at deterministic tests: 12 controller recovery cases raised `ReferenceError: isValidManaState is not defined`. The tests execute `AppController.ts` in an isolated VM after stripping imports, so its new shared validator dependencies must be injected into that harness. Fixed `tests/client-battle-conflict-recovery.test.ts` to import and provide `isValidManaCost` and `isValidManaState` in the VM scope at commit `018b54735f41eb86ce3671eb003dfbab33957f3d`. This continuity commit creates a newer head; trigger and inspect fresh exact-head CI again.
+
+- **Task / files changed:** the shared validation path is now consistent across `src/game/combat/rules.ts`, `src/ui/views.ts`, and `src/app/AppController.ts`. The controller's `finally` path no longer re-enables a malformed-cost button after `updateBattleDom()` disabled it. Test harnesses updated: `tests/battle-mana-cost-ui.test.ts`, `tests/battle-mana-ui.test.ts`, and `tests/client-battle-conflict-recovery.test.ts`. Running-app mobile regression remains in `tests/browser-battle-vertical-slice.mjs`. No Worker, damage math, reward/economy, D1 schema/migration, or content-canon changes.
+
+- **QA status:** the failed deterministic run is evidence-backed and the missing VM dependencies are fixed; the corrected code has not yet passed a complete exact-head run. Other concurrent runs may refer to older branch heads and do not count as final-head proof. Local shell cannot resolve `github.com`; no local test/build/Worker/browser result is claimed. No deployment or D1 operation.
+
+- **Mana / authority / D1:** Mana remains COMPLETE / MERGED on main; this client guard does not change combat outcomes or reward authority. Tracked migration `0006_backfill_active_battle_mana.sql` and `wrangler.toml` migration ordering remain unchanged. The `0007` numbering conflict, platform-auth credentials/session/identity-policy gates, and the release gates for Shield/housing remain unresolved and untouched.
+
+- **One best next task:** rerun exact-head CI for PR #105 after this harness fix. If deterministic tests pass, continue through Worker/D1 recovery/concurrency, production build, Chromium mobile vertical slice, and Worker validation; do not mark ready until all pass.
