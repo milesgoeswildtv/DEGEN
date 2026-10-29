@@ -2058,3 +2058,22 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blocker:** none for this narrow UI guard. Do not bypass the existing auth/migration release gate for Shield or housing merge/deploy.
 
 - **One best next task:** verify exact-head CI for PR #105; if all required checks pass and mergeability is clean, mark it ready for review through the normal PR path. Then continue non-blocked reliability/readability work; do not start Shield until the documented migration/auth gates are reconciled.
+
+
+---
+
+## Follow-up — 2026-10-28 (guard the controller's post-action re-enable path)
+
+- **Main base remains:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`.
+
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`. The previous head `be28a4f3dedbaff1c67d1f46b8e9615e8a27f83f` had deterministic tests pass in CI run [40791877106](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40791877106) up through the Worker/D1 reward-concurrency stage; the full run was still in progress. Further inspection found that `AppController.setAbilityButtonsDisabled()` could re-enable a malformed-cost button in its post-action `finally` path even though `updateBattleDom()` had disabled it. The implementation/test head is now `d614233876ca78d75a59b68db613c431d9813b51`; this continuity commit creates a newer head, so the full CI must be triggered and checked again.
+
+- **Task / files changed:** `src/game/combat/rules.ts` now exports shared `isValidManaCost` and `isValidManaState` predicates, and the deterministic resolver reuses the same Mana validation. `src/ui/views.ts` and `src/app/AppController.ts` both use those predicates so the UI refresh and the controller's post-action re-enable path agree. `tests/battle-mana-cost-ui.test.ts` and `tests/battle-mana-ui.test.ts` inject the shared predicates into their isolated view harnesses. `tests/browser-battle-vertical-slice.mjs` exercises the malformed cost in a running Chromium battle and checks the move remains disabled after the authoritative response and controller cleanup. No Worker, damage/retaliation math, rewards/economy, D1 schema/migration, or content-canon changes.
+
+- **QA status:** CI for the prior UI-only head passed the deterministic game-test step but had not completed the Worker/D1 concurrency stage when last checked. The shared-validator/controller fix has not yet had a complete exact-head run. Local shell cannot resolve `github.com`; no local `npm test`, build, Worker check, or browser run is claimed. No deployment or D1 operation.
+
+- **Mana / authority:** Mana remains COMPLETE / MERGED on main. This follow-up closes a client presentation race only; Worker/D1 remains authoritative for battle state and rewards. Zero-cost moves remain usable at valid zero Mana; invalid current/max Mana or invalid costs fail closed. No monster Mana or zero-Mana reversion was introduced.
+
+- **D1 / release gates:** `wrangler.toml` and `db/migrations` remain unchanged. Migration `0006_backfill_active_battle_mana.sql` is tracked; the `0007` numbering conflict and platform-auth credentials/session/identity-policy gates remain unresolved. Shield and housing merge/deploy remain gated; no bypass.
+
+- **One best next task:** trigger and verify exact-head CI for PR #105, including the real Chromium mobile vertical slice. Fix only demonstrated failures, then make the PR review-ready only if all checks pass.
