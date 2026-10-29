@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { canUseAbility, isValidManaCost, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 class TestGameApiError extends Error {
   readonly status: number;
@@ -78,6 +78,8 @@ const scope = {
   TUNNEL_MAW,
   BattleEngine,
   GameApiError: TestGameApiError,
+  isValidManaCost,
+  isValidManaState,
   isAuthoritativeBattleActionState,
   createBattleGame: () => ({ destroy: () => {} }),
   underpassRewardForClear: () => ({ xp: 0, currency: 0, items: [] }),
