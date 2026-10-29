@@ -589,7 +589,10 @@ test('corrupt active housing state cannot be edited or saved before bootstrap', 
   store.removeFurnitureAt(1, 1);
   await flush();
   assert.equal(saved.length, 0, 'malformed local state must never be submitted to the Worker');
-  assert.deepEqual(store.snapshot.housing.placements, corruptedPlacements,
+  assert.deepEqual(store.snapshot.housing.placements, [
+    { instanceId: 'starter-bed-placed', furnitureId: 'starter-bed', x: 1, y: 1 },
+  ], 'corrupt persisted placements are replaced with a safe placeholder');
+  assert.notDeepEqual(store.snapshot.housing.placements, corruptedPlacements,
     'housing edits remain blocked until an authoritative bootstrap repairs the layout');
 
   await store.initialize({ displayName: 'Player' });
@@ -602,4 +605,48 @@ test('corrupt active housing state cannot be edited or saved before bootstrap', 
   assert.deepEqual(store.snapshot.housing.placements, serverPlacements,
     'the server layout replaces corrupt local state when no valid outbox exists');
   assert.equal(saved.length, 0);
+});
+
+
+test('null persisted housing cannot crash the home view or save before bootstrap', async () => {
+  const playerId = 'corrupt-null-housing';
+  const values = new Map<string, string>();
+  const saved: unknown[] = [];
+  values.set('degen.prototype.player.v2', JSON.stringify({
+    id: playerId,
+    displayName: 'Player',
+    level: 1,
+    xp: 0,
+    currency: 0,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: ['home', 'downtown', 'underpass'],
+    housing: null,
+    defeatedBosses: [],
+  }));
+  const store = makeStore(async (_id, housing) => {
+    saved.push(structuredClone(housing));
+  }, [], values);
+
+  assert.doesNotThrow(() => structuredClone(store.snapshot.housing),
+    'the store must expose a structurally safe room even before bootstrap');
+  assert.ok(Array.isArray(store.snapshot.housing.inventory));
+  assert.ok(Array.isArray(store.snapshot.housing.placements));
+  store.placeFurniture('starter-chair', 2, 2);
+  store.removeFurnitureAt(1, 1);
+  await flush();
+  assert.equal(saved.length, 0, 'the placeholder must not overwrite server-owned housing');
+
+  const serverPlacements = [
+    { instanceId: 'server-chair', furnitureId: 'starter-chair', x: 3, y: 3 },
+  ];
+  store.replaceFromServer({
+    ...store.snapshot,
+    housing: { inventory: ['starter-bed', 'starter-chair'], placements: serverPlacements },
+  });
+  assert.deepEqual(store.snapshot.housing.placements, serverPlacements);
+  store.placeFurniture('starter-chair', 4, 4);
+  await flush();
+  assert.equal(saved.length, 1, 'housing edits resume after authoritative bootstrap');
+  assert.ok((saved[0] as any).placements.some((p: any) => p.x === 4 && p.y === 4));
 });
