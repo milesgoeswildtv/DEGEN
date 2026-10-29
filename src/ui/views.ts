@@ -169,7 +169,7 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot, h
   const clears = event && !backendOffline ? `${Math.min(event.fullRewardClears, event.fullRewardLimit)}/${event.fullRewardLimit}` : '—';
   const actionButton = hasRecoverableEncounter
     ? '<button class="primary-action" type="button" data-resume-battle>RESUME ACTIVE ENCOUNTER</button>'
-    : `<button class="primary-action" type="button" data-start-battle ${isOpen ? '' : 'disabled'}>${isOpen ? 'ENTER UNDERPASS' : 'UNDERPASS SEALED'}</button>`;
+    : `<button class="primary-action" type="button" data-start-battle ${isOpen ? '' : 'disabled'}>${backendOffline ? 'SERVER UNAVAILABLE' : isOpen ? 'ENTER UNDERPASS' : 'UNDERPASS SEALED'}</button>`;
   return appShell(player, `
     <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-route="district">CENTRAL</button></div>
     <section class="hero-block danger underpass-hero ${status.className}">
