@@ -502,3 +502,104 @@ test('failed housing outbox survives reload and retries after server bootstrap',
   assert.deepEqual(settledStorage.__housingOutbox, {},
     'outbox entry should clear only after the server confirms the save');
 });
+
+
+test('corrupt active housing state cannot override a valid queued snapshot during bootstrap', async () => {
+  const playerId = 'corrupt-active-housing-with-valid-outbox';
+  const inventory = ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'];
+  const corruptedPlacements = [
+    { instanceId: 'duplicate-id', furnitureId: 'starter-bed', x: 1, y: 1 },
+    { instanceId: 'duplicate-id', furnitureId: 'starter-chair', x: 2, y: 2 },
+  ];
+  const queuedHousing = {
+    inventory,
+    placements: [
+      { instanceId: 'queued-bed', furnitureId: 'starter-bed', x: 1, y: 1 },
+      { instanceId: 'queued-chair', furnitureId: 'starter-chair', x: 2, y: 2 },
+    ],
+  };
+  const values = new Map<string, string>();
+  const saved: Array<{ playerId: string; housing: any }> = [];
+  const localPlayer = {
+    id: playerId,
+    displayName: 'Player',
+    level: 1,
+    xp: 0,
+    currency: 0,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: ['home', 'downtown', 'underpass'],
+    housing: { inventory, placements: corruptedPlacements },
+    defeatedBosses: [],
+  };
+  values.set('degen.prototype.player.v2', JSON.stringify({
+    ...localPlayer,
+    __housingOutbox: { [playerId]: queuedHousing },
+  }));
+  const serverPlayer = {
+    ...localPlayer,
+    housing: { inventory, placements: [
+      { instanceId: 'server-bed', furnitureId: 'starter-bed', x: 4, y: 4 },
+    ] },
+  };
+  const store = makeStore(async (id, housing) => {
+    saved.push({ playerId: id, housing: structuredClone(housing) });
+  }, [], values, async (id) => ({ ...serverPlayer, id }));
+
+  await store.initialize({ displayName: 'Player' });
+  await flush();
+
+  assert.deepEqual(store.snapshot.housing.placements, queuedHousing.placements,
+    'only the structurally valid queued snapshot may preserve unsaved edits');
+  assert.equal(saved.length, 1, 'the valid queued snapshot should be retried once');
+  assert.equal(saved[0]!.playerId, playerId);
+  assert.deepEqual(saved[0]!.housing.placements, queuedHousing.placements);
+});
+
+test('corrupt active housing state cannot be edited or saved before bootstrap', async () => {
+  const playerId = 'corrupt-active-housing-no-outbox';
+  const inventory = ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'];
+  const corruptedPlacements = [
+    { instanceId: 'duplicate-cell-a', furnitureId: 'starter-bed', x: 1, y: 1 },
+    { instanceId: 'duplicate-cell-b', furnitureId: 'starter-chair', x: 1, y: 1 },
+  ];
+  const values = new Map<string, string>();
+  const saved: unknown[] = [];
+  const localPlayer = {
+    id: playerId,
+    displayName: 'Player',
+    level: 1,
+    xp: 0,
+    currency: 0,
+    degenId: 'test-degen',
+    inventory: [],
+    unlockedLocations: ['home', 'downtown', 'underpass'],
+    housing: { inventory, placements: corruptedPlacements },
+    defeatedBosses: [],
+  };
+  values.set('degen.prototype.player.v2', JSON.stringify(localPlayer));
+  const serverPlacements = [
+    { instanceId: 'server-chair', furnitureId: 'starter-chair', x: 3, y: 3 },
+  ];
+  const store = makeStore(async (_id, housing) => {
+    saved.push(structuredClone(housing));
+  }, [], values);
+
+  store.placeFurniture('starter-lamp', 2, 2);
+  store.removeFurnitureAt(1, 1);
+  await flush();
+  assert.equal(saved.length, 0, 'malformed local state must never be submitted to the Worker');
+  assert.deepEqual(store.snapshot.housing.placements, corruptedPlacements,
+    'housing edits remain blocked until an authoritative bootstrap repairs the layout');
+
+  await store.initialize({ displayName: 'Player' });
+  // The default bootstrap mock returns undefined, so install server state through
+  // the same public reconciliation method used by the real API response.
+  store.replaceFromServer({
+    ...localPlayer,
+    housing: { inventory, placements: serverPlacements },
+  } as any);
+  assert.deepEqual(store.snapshot.housing.placements, serverPlacements,
+    'the server layout replaces corrupt local state when no valid outbox exists');
+  assert.equal(saved.length, 0);
+});
