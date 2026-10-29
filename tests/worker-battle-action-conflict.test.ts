@@ -186,6 +186,9 @@ test('replayed action after reward settlement returns the persisted victory snap
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
+    victory_history_marker_count: 1,
+    defeat_history_marker_count: 0,
+    valid_victory_history_marker_count: 1,
   };
   const reads: string[] = [];
   const db = {
@@ -505,6 +508,9 @@ test('replayed action after reward settlement projects display Mana for a legacy
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
+    victory_history_marker_count: 1,
+    defeat_history_marker_count: 0,
+    valid_victory_history_marker_count: 1,
   };
   const reads: string[] = [];
   const db = {
