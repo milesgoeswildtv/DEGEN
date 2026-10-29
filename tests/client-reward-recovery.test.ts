@@ -101,6 +101,44 @@ test('failed Worker completion retains the permit and persists retry across cont
   assert.equal(fixture.store.localRewards, 0);
 });
 
+test('definitive reward rejection retains the permit without an endless retry timer', async () => {
+  const fixture = setup(true, async () => {
+    throw new TestGameApiError(
+      409,
+      { error: 'Battle terminal history marker conflicts with reward settlement.' },
+      'Battle terminal history marker conflicts with reward settlement.',
+    );
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-poisoned' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await controller.finishBattle('victory');
+
+  assert.equal(controller.battlePermit?.permitId, 'permit-poisoned',
+    'do not discard the permit when a definitive conflict needs data repair');
+  assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:test-player'), '["permit-poisoned"]',
+    'retain the identifier for a future reload or server-discovery pass');
+  assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000).length, 0,
+    'a permanent terminal-history conflict must not schedule a retry loop');
+  assert.equal(fixture.store.localRewards, 0, 'the client never fabricates a reward');
+});
+
+test('retryable reward claim conflicts still schedule recovery', async () => {
+  const fixture = setup(true, async () => {
+    throw new TestGameApiError(409, { error: 'Reward claim changed; retry.' }, 'Reward claim changed; retry.');
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-retryable-claim' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await controller.finishBattle('victory');
+
+  assert.ok(fixture.timers.some((timer) => timer.delay === 15_000),
+    'a Worker conflict explicitly marked retryable must continue bounded recovery');
+  assert.equal(fixture.store.localRewards, 0);
+});
+
 test('server-discovered victory recovery retries a not-yet-deployed endpoint without localStorage', async () => {
   let attempts = 0;
   let discoveries = 0;
