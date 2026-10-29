@@ -43,6 +43,40 @@ test('malformed JSON from a successful API response is a protocol error', async 
   );
 });
 
+test('malformed JSON battle-action response is a protocol error without retry', async () => {
+  let requests = 0;
+  const api = new apiModule.GameApi('https://example.test', async () => {
+    requests += 1;
+    return new Response('{', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+
+  await assert.rejects(
+    api.actUnderpass('player-1', 'permit-1', 'slash', 0),
+    apiModule.GameApiProtocolError,
+  );
+  assert.equal(requests, 1, 'invalid JSON is not a transient action transport failure');
+});
+
+test('malformed JSON battle-completion response is a protocol error without retry', async () => {
+  let requests = 0;
+  const api = new apiModule.GameApi('https://example.test', async () => {
+    requests += 1;
+    return new Response('{', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+
+  await assert.rejects(
+    api.completeUnderpass('player-1', 'permit-1'),
+    apiModule.GameApiProtocolError,
+  );
+  assert.equal(requests, 1, 'invalid JSON must not trigger a second completion request');
+});
+
 test('malformed pending-reward payload shape is a protocol error', async () => {
   const api = new apiModule.GameApi('https://example.test', async () =>
     new Response(JSON.stringify({ permitIds: ['valid-permit', 17] }), {

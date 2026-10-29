@@ -420,6 +420,7 @@ export class GameApi {
     try {
       result = await sendAction();
     } catch (error) {
+      if (error instanceof GameApiProtocolError) throw error;
       if (error instanceof GameApiError && error.status < 500) throw error;
       // Includes timeout/transport failures. Reuse the same turn precondition once;
       // the Worker compare-and-swap makes a committed-but-unanswered action safe.
@@ -447,6 +448,7 @@ export class GameApi {
     try {
       result = await sendCompletion();
     } catch (error) {
+      if (error instanceof GameApiProtocolError) throw error;
       if (error instanceof GameApiError && error.status < 500) throw error;
       result = await sendCompletion();
     }
