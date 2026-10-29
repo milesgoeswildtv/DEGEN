@@ -196,7 +196,7 @@ test('malformed Mana costs and snapshots fail closed in battle controls', () => 
     querySelectorAll: (_selector: string) => buttons,
   };
   const boundUi = runInNewContext(
-    stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ updateBattleDom });',
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
     { document: fakeDocument },
   ) as {
     updateBattleDom: (snapshot: {
