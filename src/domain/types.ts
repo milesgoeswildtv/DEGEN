@@ -1,4 +1,5 @@
-export type RouteKey = 'map' | 'home' | 'underpass' | 'battle';
+export type RouteKey = 'map' | 'district' | 'location' | 'home' | 'underpass' | 'battle';
+export type LocationRouteKey = 'location' | 'home' | 'underpass';
 
 export type PlatformName = 'browser' | 'discord' | 'telegram';
 export type WorldEventPhase = 'sealed' | 'warning' | 'open';
@@ -41,7 +42,7 @@ export interface LocationDefinition {
   id: string;
   name: string;
   description: string;
-  route: RouteKey;
+  route: LocationRouteKey;
   district: string;
   initiallyUnlocked: boolean;
   kind: 'home' | 'social' | 'combat' | 'shop' | 'story';
