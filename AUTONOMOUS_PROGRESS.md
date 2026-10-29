@@ -1,3 +1,18 @@
+## Latest run — 2026-10-29 (PR #108 exact-head CI verified)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
+- **PUSHED / PR #108 OPEN, not merged:** `automation/degen/reward-recovery-protocol-error-guard-v01`, branch head `c939e2ab00151a44134446f2a1ccf25d56915d69`; code/test head `71bc637e1db9f3ac3222c96dbc4195708e868789`.
+- **QA verified on the pre-continuity heads:** exact-head CI [40923451975](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40923451975) passed all workflow stages on `c939e2a`; code/test CI [40923146520](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40923146520) also passed on `71bc637`. Verified steps include deterministic tests, isolated Worker/D1 reward concurrency, transient D1 failure recovery, Underpass cycle and rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice with local Worker/D1, and Wrangler Worker validation. This progress update creates a new PR head, so its own exact-head CI must finish green before merge.
+- **Task / files in PR #108:** client API/controller protocol-integrity handling and regressions for malformed successful JSON/snapshots; pending reward IDs with surrounding whitespace are rejected; malformed authoritative responses do not enter transport retry loops or fabricate client rewards. The browser test refreshes through the Worker replay path before checking zero-Mana affordances, preserving same-turn snapshot integrity.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, killing-blow/defeat handling, cost-aware controls, no monster Mana, and no zero-Mana reversion remain intact. Tracked `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 owns action compare-and-swap, terminal outcomes/history, audited receipts, progression, inventory, currency, and reward recovery. This PR changes client protocol handling only; it does not transfer reward/economy authority.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft auth PR #14 `0007_player_sessions.sql` numbering collision remains unresolved. Production Discord/Telegram identity/session verification and legacy identity-collision policy remain release gates. No schema/migration/config changes, production D1 operation, or production deployment occurred in this PR.
+- **Old Mana branch inspection:** `sidekick/degen-mana-foundation-v01` remains divergent (11 ahead / 96 behind main). Its `0003_degen_mana.sql` is the same migration as main, but its Worker/combat implementation lacks later main validation and recovery guards; it is superseded and was not revived.
+- **Miles blocker:** none for PR #108's scoped client integrity fix; auth/migration gates still block schema-backed Shield/status and platform identity release work.
+- **One best next task:** run exact-head CI on this progress update; if green, merge PR #108 normally, then verify post-merge main CI and the deployment workflow without claiming a deployment unless its run succeeds.
+
+---
+
 ## Latest run — 2026-10-29 (malformed battle-start handling + browser QA correction)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
