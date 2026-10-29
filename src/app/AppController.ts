@@ -6,11 +6,13 @@ import { BattleEngine } from '../game/combat/engine';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
 import { battleView, homeView, mapView, underpassView, updateBattleDom } from '../ui/views';
-import { GameApi, GameApiError, isAuthoritativeBattleActionState } from './api';
+import { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
 
 const shouldRetryBattleRecovery = (error: unknown): boolean => {
+  // Malformed authoritative payloads are protocol/integrity failures, not transient transport errors.
+  if (error instanceof GameApiProtocolError) return false;
   if (!(error instanceof GameApiError)) return true;
   if (error.status >= 500 || error.status === 404 || error.status === 429) return true;
   if (error.status !== 409) return false;
@@ -403,7 +405,9 @@ export class AppController {
         }
       }
       if (!synchronized) {
-        if (error instanceof GameApiError && error.status < 500) {
+        if (error instanceof GameApiProtocolError) {
+          this.setBattleActionStatus('The server returned an unreadable battle response. Your move may have reached the server. Tap the same move again to safely resync; the server prevents duplicate turns.');
+        } else if (error instanceof GameApiError && error.status < 500) {
           const payload = error.payload && typeof error.payload === 'object'
             ? error.payload as { error?: unknown }
             : undefined;

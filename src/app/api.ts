@@ -108,6 +108,13 @@ const isAuthoritativeBattleCompletionResult = (
     && isAuthoritativeWorldEventSnapshot(worldEvent);
 };
 
+export class GameApiProtocolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GameApiProtocolError';
+  }
+}
+
 export class GameApiError extends Error {
   constructor(readonly status: number, readonly payload: unknown, message: string) {
     super(message);
@@ -279,7 +286,7 @@ export class GameApi {
       `/api/world/underpass?playerId=${encodeURIComponent(playerId)}`,
     );
     if (!isAuthoritativeWorldEventSnapshot(snapshot)) {
-      throw new Error('Malformed authoritative Underpass snapshot.');
+      throw new GameApiProtocolError('Malformed authoritative Underpass snapshot.');
     }
     return snapshot;
   }
@@ -295,8 +302,8 @@ export class GameApi {
       || !Array.isArray(response.permitIds)
       || response.permitIds.length > 10_000
       || !response.permitIds.every((permitId) =>
-        typeof permitId === 'string' && permitId.trim().length > 0 && permitId.length <= 256)) {
-      throw new Error('Malformed pending battle reward response.');
+        typeof permitId === 'string' && permitId.trim().length > 0 && permitId === permitId.trim() && permitId.length <= 256)) {
+      throw new GameApiProtocolError('Malformed pending battle reward response.');
     }
     return [...new Set(response.permitIds as string[])];
   }
@@ -339,6 +346,7 @@ export class GameApi {
     try {
       permit = await sendStart();
     } catch (error) {
+      if (error instanceof GameApiProtocolError) throw error;
       if (error instanceof GameApiError && error.status < 500) {
         clearBattleStartRequestKey(playerId, requestId);
         throw error;
@@ -363,7 +371,7 @@ export class GameApi {
       || !isAuthoritativeBattleStartState(permit.initialState, permit.permitId)) {
       // Do not discard the key on a malformed 2xx response: the Worker may
       // have committed the permit, so a later retry must remain idempotent.
-      throw new Error('Missing or malformed authoritative battle start state.');
+      throw new GameApiProtocolError('Missing or malformed authoritative battle start state.');
     }
     // Keep the one correlation record through the encounter; the controller
     // marks it active and clears it only after authoritative reward completion.
@@ -413,13 +421,14 @@ export class GameApi {
     try {
       result = await sendAction();
     } catch (error) {
+      if (error instanceof GameApiProtocolError) throw error;
       if (error instanceof GameApiError && error.status < 500) throw error;
       // Includes timeout/transport failures. Reuse the same turn precondition once;
       // the Worker compare-and-swap makes a committed-but-unanswered action safe.
       result = await sendAction();
     }
     if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
-      throw new Error('Malformed authoritative battle action response.');
+      throw new GameApiProtocolError('Malformed authoritative battle action response.');
     }
     return result;
   }
@@ -440,11 +449,12 @@ export class GameApi {
     try {
       result = await sendCompletion();
     } catch (error) {
+      if (error instanceof GameApiProtocolError) throw error;
       if (error instanceof GameApiError && error.status < 500) throw error;
       result = await sendCompletion();
     }
     if (!isAuthoritativeBattleCompletionResult(result, playerId)) {
-      throw new Error('Malformed authoritative battle completion response.');
+      throw new GameApiProtocolError('Malformed authoritative battle completion response.');
     }
     return result;
   }
@@ -471,6 +481,15 @@ export class GameApi {
       throw new GameApiError(response.status, payload, `DEGEN API ${response.status}: ${detail || response.statusText}`);
     }
     if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+    try {
+      return await response.json() as T;
+    } catch (error) {
+      // Invalid JSON is a protocol/integrity failure. Transport/stream failures
+      // retain their original error so callers can still retry transient faults.
+      if (error instanceof SyntaxError) {
+        throw new GameApiProtocolError('Malformed JSON response from DEGEN API.');
+      }
+      throw error;
+    }
   }
 }

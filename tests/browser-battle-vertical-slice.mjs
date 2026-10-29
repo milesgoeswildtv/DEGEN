@@ -159,6 +159,8 @@ try {
       window.__degenStartRequestIds = [];
       window.__degenSimulateLostActionResponse = false;
       window.__degenLostActionResponses = 0;
+      window.__degenSimulateMalformedActionResponse = false;
+      window.__degenMalformedActionResponses = 0;
       window.__degenSimulateTimedOutActionResponse = false;
       window.__degenTimedOutActionResponses = 0;
       window.__degenSimulateTimedOutCompletionResponse = false;
@@ -182,6 +184,16 @@ try {
           window.__degenLostStartResponses += 1;
           await response.body?.cancel();
           throw new TypeError('simulated lost response after Worker permit issue');
+        }
+        if (window.__degenSimulateMalformedActionResponse && requestPath === '/api/battle/action') {
+          // The Worker commits the action and returns 200, but the browser receives
+          // malformed JSON. This verifies the visible recovery message and safe
+          // same-turn retry against the real compare-and-swap path.
+          window.__degenSimulateMalformedActionResponse = false;
+          window.__degenMalformedActionResponses += 1;
+          if (!response.ok) return response;
+          await response.text();
+          return new Response('{', { status: response.status, headers: { 'content-type': 'application/json' } });
         }
         if (window.__degenSimulateTimedOutActionResponse && requestPath === '/api/battle/action') {
           // The Worker has already committed this turn. Withhold its response until
@@ -440,21 +452,56 @@ try {
   const affordabilityPermit = sql("SELECT id FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL AND battle_status='active' ORDER BY started_at DESC LIMIT 1")[0];
   assert.ok(affordabilityPermit?.id, 'the affordability scenario must use a real Worker-issued local permit');
   assert.notEqual(affordabilityPermit.id, permitId, 'the affordability scenario must not reuse the awarded permit');
-  // Seed a valid later authoritative snapshot to model server state changing
-  // before this tab refreshes; no new combat source or resource is introduced.
-  sql("UPDATE battle_permits SET player_hp=110, player_mana=0, enemy_hp=57, battle_status='active', turn_count=1 WHERE id='" + affordabilityPermit.id + "' AND player_id='" + playerId + "' AND completed_at IS NULL");
+  // Corrupt only the response body after the real Worker has committed a paid
+  // action. The UI must retain its old snapshot and clearly ask for a safe retry;
+  // that same-turn retry must recover the committed state without double-spending.
+  await cdp.evaluate('window.__degenSimulateMalformedActionResponse = true');
   await tap("[data-ability=crack]");
-  await until('disabled paid move explains its Mana shortfall', () => cdp.evaluate(`(() => {
+  await until('visible recovery message after malformed Worker response', () => cdp.evaluate(`(() =>
+    window.__degenMalformedActionResponses === 1
+    && document.querySelector("#battle-action-status")?.textContent.includes("unreadable battle response")
+  )()`));
+  const clientAfterMalformed = await cdp.evaluate(`(() => ({
+    hud: document.querySelector("#battle-accessible-hud")?.textContent ?? "",
+    status: document.querySelector("#battle-action-status")?.textContent ?? ""
+  }))()`);
+  assert.match(clientAfterMalformed.hud, /Mana 12 of 12.*Turn 0\./,
+    'the client must not apply a turn when the response cannot be parsed');
+  assert.match(clientAfterMalformed.status, /same move again to safely resync/i);
+  const committedMalformedTurn = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + affordabilityPermit.id + "'");
+  assert.deepEqual(committedMalformedTurn, [{
+    player_hp: 110, player_mana: 8, enemy_hp: 57, battle_status: 'active', turn_count: 1,
+  }], 'the test must prove the Worker committed exactly one turn before the malformed response');
+
+  await tap("[data-ability=crack]");
+  await until('safe same-turn retry resynchronizes from the Worker', () => cdp.evaluate(`(() => {
+    const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
+    const status = document.querySelector("#battle-action-status")?.textContent ?? "";
+    return status === "Battle state refreshed from the server. Choose your next move."
+      && hud.includes("Mana 8 of 12") && hud.includes("Turn 1.");
+  })()`));
+  assert.deepEqual(sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + affordabilityPermit.id + "'"), committedMalformedTurn,
+    'safe retry must recover the committed turn without applying damage or Mana twice');
+
+  // Model a recovered encounter after its persisted Mana snapshot has changed.
+  // Leave and resume through the real Worker start/replay path so the client reads
+  // the authoritative zero-Mana state instead of accepting conflicting same-turn data.
+  sql("UPDATE battle_permits SET player_mana=0 WHERE id='" + affordabilityPermit.id + "' AND player_id='" + playerId + "' AND completed_at IS NULL");
+  await tap("[data-route=underpass]");
+  await until('Underpass exposes the active encounter for recovery', () => cdp.evaluate(`(() => {
+    const resume = document.querySelector("[data-resume-battle]");
+    return !!resume && !resume.disabled;
+  })()`));
+  await tap("[data-resume-battle]");
+  await until('resumed authoritative zero-Mana snapshot disables the paid move', () => cdp.evaluate(`(() => {
     const paid = document.querySelector("[data-ability=crack]");
     const free = document.querySelector("[data-ability=slash]");
     const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? "";
-    const status = document.querySelector("#battle-action-status")?.textContent ?? "";
     return paid?.disabled === true
       && paid.querySelector("small")?.textContent === "NEED 4 MANA"
       && free?.disabled === false
       && free.querySelector("small")?.textContent === "NO MANA"
-      && hud.includes("Mana 0 of 12") && hud.includes("Turn 1.")
-      && status === "Battle state refreshed from the server. Choose your next move.";
+      && hud.includes("Mana 0 of 12") && hud.includes("Turn 1.");
   })()`));
   await assertFitsMobile('Mana-starved battle');
   await assertFitsCompact('Mana-starved battle');
