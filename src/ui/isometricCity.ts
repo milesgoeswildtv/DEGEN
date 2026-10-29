@@ -160,7 +160,7 @@ export const renderIsometricDistrict = (
     const eventLabel = location.id === 'underpass' ? ` · ${escapeHtml(underpassLabel)}` : '';
     const accessibleLabel = location.id === 'underpass' ? `, ${escapeHtml(underpassLabel)}` : '';
     return `<button class="district-iso-pin" type="button" data-location="${escapeHtml(location.id)}"
-      style="--district-pin-x:${index % 2 ? 65 : 35}%;--district-pin-y:${index % 2 ? 73 : 30}%;"
+      style="--district-pin-x:${index % 2 ? 75 : 25}%;--district-pin-y:${index % 2 ? 73 : 30}%;"
       ${accessible ? '' : 'disabled'} aria-label="${escapeHtml(location.name)}${accessibleLabel}${accessible ? '' : ', locked'}">
       <strong>${escapeHtml(location.name)}</strong><small>${accessible ? 'ENTER' : 'LOCKED'}${eventLabel}</small>
     </button>`;
