@@ -213,13 +213,13 @@ test('malformed Mana costs and snapshots fail closed in battle controls', () => 
       log: string[];
     }) => void;
   };
-  const snapshot = (playerMana: number) => ({
+  const snapshot = (playerMana: number, playerMaxMana = 12) => ({
     status: 'active' as const,
     playerName: 'TEST_DEGEN',
     playerHp: 80,
     playerMaxHp: 120,
     playerMana,
-    playerMaxMana: 12,
+    playerMaxMana,
     enemyName: 'Tunnel Maw',
     enemyHp: 50,
     enemyMaxHp: 92,
@@ -240,6 +240,15 @@ test('malformed Mana costs and snapshots fail closed in battle controls', () => 
     boundUi.updateBattleDom(snapshot(invalidMana));
     assert.ok(buttons.every((button) => button.disabled),
       `invalid player Mana ${invalidMana} must disable every ability`);
+    assert.ok(buttons.every((button) => button.costLabel.textContent === 'UNAVAILABLE'));
+    assert.match(accessibleHud.textContent, /Mana unavailable/);
+  }
+
+  for (const invalidMaximum of [-1, 0.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    buttons.forEach((button) => { button.disabled = false; });
+    boundUi.updateBattleDom(snapshot(0, invalidMaximum));
+    assert.ok(buttons.every((button) => button.disabled),
+      `invalid maximum Mana ${invalidMaximum} must disable every ability`);
     assert.ok(buttons.every((button) => button.costLabel.textContent === 'UNAVAILABLE'));
     assert.match(accessibleHud.textContent, /Mana unavailable/);
   }
