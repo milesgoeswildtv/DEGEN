@@ -1,4 +1,5 @@
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
+import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
 
@@ -136,9 +137,6 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot, h
   `);
 };
 
-const isValidManaCost = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-
 export const battleView = (player: PlayerState, degen: DegenDefinition): string => appShell(player, `
   <section class="battle-layout">
     <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
@@ -165,9 +163,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
 `);
 
 export const updateBattleDom = (snapshot: BattleSnapshot): void => {
-  const validManaState = isValidManaCost(snapshot.playerMana)
-    && isValidManaCost(snapshot.playerMaxMana)
-    && snapshot.playerMana <= snapshot.playerMaxMana;
+  const validManaState = isValidManaState(snapshot.playerMana, snapshot.playerMaxMana);
 
   // Phaser renders to canvas, which does not expose changing combat values to
   // assistive technology. Keep a compact DOM projection of the same snapshot.
