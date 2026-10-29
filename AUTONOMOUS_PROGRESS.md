@@ -1,3 +1,13 @@
+## Post-merge verification — 2026-10-29 (main CI and Worker deployment green)
+
+- **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448`.
+- **Main CI — PASS:** [run 40898054254](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054254) completed successfully after the PR #106 merge. It includes deterministic tests, isolated Worker/D1 reward concurrency and recovery, Underpass cycle/rollover concurrency, atomic defeat history, production build, Chromium mobile battle vertical slice, and Wrangler validation.
+- **Worker deployment — PASS:** [run 40898054039](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054039) completed successfully. Logs show schema application processed 17 queries, tracked migration runner reported “No migrations to apply,” and deployed Worker version `514affa6-6550-48d7-82b6-f81e5ea82429` at the configured Worker URL. Pages preview [run 40898054082](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40898054082) also succeeded. No direct HTTP health probe or separate local-shell run is claimed.
+- **D1 assumptions unchanged:** no new migration was introduced; `0006_backfill_active_battle_mana.sql` remains tracked. The `0007` inventory-guard / player-session migration-number conflict remains unresolved and must not be bypassed.
+- **One best next task:** verify the exact-head CI for the in-progress reward-recovery protocol guard PR, then update continuity from its final observed result.
+
+---
+
 ## Latest run — 2026-10-29 (terminal battle reward recovery merged)
 
 - **Authoritative main SHA:** `08a01c250cd07d81ffdaba0a5a26912bb0c41448` (normal squash merge of PR #106). No direct-main write.
