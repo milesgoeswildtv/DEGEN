@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN } from '../src/data/combatPrototype.ts';
+import { isValidManaCost, isValidManaState } from '../src/game/combat/rules.ts';
 
 const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
@@ -21,7 +22,7 @@ const buttonWithCostLabel = (manaCost: string | undefined, label: string) => {
 
 const ui = runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ battleView, updateBattleDom });',
-  { document: undefined },
+  { document: undefined, isValidManaCost, isValidManaState },
 ) as {
   battleView: (player: { displayName: string; level: number; currency: number }, degen: typeof TEST_DEGEN) => string;
   updateBattleDom: (snapshot: {
@@ -56,7 +57,7 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
 
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument },
+    { document: fakeDocument, isValidManaCost, isValidManaState },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
@@ -123,7 +124,7 @@ test('battle terminal outcomes announce defeat/victory and disable every ability
   };
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument },
+    { document: fakeDocument, isValidManaCost, isValidManaState },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
@@ -197,7 +198,7 @@ test('malformed Mana costs and snapshots fail closed in battle controls', () => 
   };
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument },
+    { document: fakeDocument, isValidManaCost, isValidManaState },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
