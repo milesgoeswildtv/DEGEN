@@ -148,16 +148,16 @@ try {
   // exists while the permit row says active, a killing blow must not mutate it
   // into an unclaimable victory or spend resources.
   seed('poisoned-victory-marker');
-  sql("UPDATE battle_permits SET player_hp=80,player_mana=0,enemy_hp=1 WHERE id='poisoned-victory-marker'");
+  sql("UPDATE battle_permits SET player_hp=80,player_mana=4,enemy_hp=1 WHERE id='poisoned-victory-marker'");
   sql(`INSERT INTO battle_history (
     id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded
   ) VALUES ('poisoned-victory-marker:victory','qa-player','different-encounter','defeat',99,999,999)`);
   await start();
-  const poisonedVictory = await act('poisoned-victory-marker', 'slash');
+  const poisonedVictory = await act('poisoned-victory-marker', 'crack');
   assert.equal(poisonedVictory.status,409,JSON.stringify(poisonedVictory.body));
   await stop();
   assert.deepEqual(sql("SELECT player_hp,player_mana,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='poisoned-victory-marker'"),
-    [{player_hp:80,player_mana:0,enemy_hp:1,turn_count:0,battle_status:'active'}],
+    [{player_hp:80,player_mana:4,enemy_hp:1,turn_count:0,battle_status:'active'}],
     'a conflicting victory marker must block the killing blow without HP/Mana/turn mutation');
   assert.deepEqual(sql("SELECT id,player_id,encounter_key,result,player_level,xp_awarded,currency_awarded FROM battle_history WHERE id='poisoned-victory-marker:victory'"),
     [{id:'poisoned-victory-marker:victory',player_id:'qa-player',encounter_key:'different-encounter',result:'defeat',player_level:99,xp_awarded:999,currency_awarded:999}],
