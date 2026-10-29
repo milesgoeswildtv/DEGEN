@@ -108,6 +108,13 @@ const isAuthoritativeBattleCompletionResult = (
     && isAuthoritativeWorldEventSnapshot(worldEvent);
 };
 
+export class GameApiProtocolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GameApiProtocolError';
+  }
+}
+
 export class GameApiError extends Error {
   constructor(readonly status: number, readonly payload: unknown, message: string) {
     super(message);
@@ -279,7 +286,7 @@ export class GameApi {
       `/api/world/underpass?playerId=${encodeURIComponent(playerId)}`,
     );
     if (!isAuthoritativeWorldEventSnapshot(snapshot)) {
-      throw new Error('Malformed authoritative Underpass snapshot.');
+      throw new GameApiProtocolError('Malformed authoritative Underpass snapshot.');
     }
     return snapshot;
   }
@@ -296,7 +303,7 @@ export class GameApi {
       || response.permitIds.length > 10_000
       || !response.permitIds.every((permitId) =>
         typeof permitId === 'string' && permitId.trim().length > 0 && permitId.length <= 256)) {
-      throw new Error('Malformed pending battle reward response.');
+      throw new GameApiProtocolError('Malformed pending battle reward response.');
     }
     return [...new Set(response.permitIds as string[])];
   }
@@ -419,7 +426,7 @@ export class GameApi {
       result = await sendAction();
     }
     if (!isAuthoritativeBattleActionState(result, permitId) || result.turnCount !== expectedTurnCount + 1) {
-      throw new Error('Malformed authoritative battle action response.');
+      throw new GameApiProtocolError('Malformed authoritative battle action response.');
     }
     return result;
   }
@@ -444,7 +451,7 @@ export class GameApi {
       result = await sendCompletion();
     }
     if (!isAuthoritativeBattleCompletionResult(result, playerId)) {
-      throw new Error('Malformed authoritative battle completion response.');
+      throw new GameApiProtocolError('Malformed authoritative battle completion response.');
     }
     return result;
   }
