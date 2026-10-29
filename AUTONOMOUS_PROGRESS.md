@@ -2147,3 +2147,18 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blockers:** none for this UI validation slice. Production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling remain blockers for auth-dependent release work; Shield/housing must not bypass the documented migration/auth release gates.
 
 - **One best next task:** verify exact-head CI after this continuity-only commit; if green, mark PR #105 ready for review. Then continue the next non-blocked reliability gap without starting Shield ahead of migration/auth coordination.
+
+
+---
+
+## Latest run — 2026-10-28 (reject over-cap Mana in deterministic combat)
+
+- **Authoritative main SHA:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`. The Mana foundation remains merged on main. The existing Mana UI branch is the coherent in-progress slice; no duplicate branch was created.
+- **PUSHED candidate for PR #105:** `automation/degen/battle-mana-ui-fail-closed-v01`, based on parent head `6ddf5c1379b121a611ff5a8fa78dafdded31364b`. This follow-up closes a consistency gap: `isValidManaState` validates the UI, but deterministic `resolveCombatTurn` only checked that current Mana was a non-negative safe integer. It now rejects current Mana above the Degen's `maxMana`; `BattleEngine.useAbility` also fails closed without spending resources, changing HP/enemy HP/turn count, or resolving the encounter when an invalid over-cap snapshot is supplied.
+- **Files changed:** `src/game/combat/rules.ts`, `src/game/combat/engine.ts`, `tests/combat-progression.test.ts`, and this log. Added deterministic tests for over-cap state rejection and unchanged battle state. No Worker runtime, reward/economy, schema/migration, prototype balance, monster resource, or content-canon change.
+- **QA:** the previous continuity head `6ddf5c1379b121a611ff5a8fa78dafdded31364b` had CI run [40801863353](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40801863353) in progress at mutation time. This code commit creates a new exact head; require fresh exact-head CI for deterministic tests, isolated Worker/D1 recovery/concurrency, production build, Chromium vertical slice, and `npm run check:worker`. No local shell result is claimed.
+- **Mana / authority:** Degen-only Mana remains COMPLETE / MERGED on main. Valid zero-cost actions remain usable at 0 Mana; this guard only rejects malformed over-cap state and never triggers reversion. Worker/D1 remains authoritative for permits, combat state, and rewards.
+- **D1 assumptions / deployment:** `0006_backfill_active_battle_mana.sql` is tracked; deploy order remains schema → tracked migrations → Worker. Last verified Worker deployment run [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) succeeded on `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`, including schema, migration, and Worker deployment steps. Comparing that SHA to current main `d34b791` shows only client/tests/docs changed; no newer Worker deployment is claimed. The `0007` auth migration-number conflict remains unresolved and must not be bypassed.
+- **Miles blockers:** none for this validation fix. Production platform-auth credentials/identity-policy gates and the Shield/housing release gates remain.
+- **One best next task:** verify the new exact-head CI; if green, update PR #105 evidence and mark it ready for review without merging or deploying.
+

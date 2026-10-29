@@ -40,7 +40,7 @@ export const resolveCombatTurn = ({
   if (!isValidManaCost(ability.manaCost)) {
     throw new RangeError(`Invalid Mana cost for ${ability.name}`);
   }
-  if (!isValidManaCost(playerMana)) {
+  if (!isValidManaState(playerMana, degen.maxMana)) {
     throw new RangeError('Invalid player Mana');
   }
   if (!canUseAbility(playerMana, ability)) {
