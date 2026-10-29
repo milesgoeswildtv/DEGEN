@@ -2035,3 +2035,26 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blockers:** no blocker for this presentation-only slice. Production Discord/Telegram credentials, controlled identity/session verification, and the approved legacy identity-collision policy remain blockers for auth-dependent release work. Shield PR #20 and housing merge/deploy remain gated by the documented auth/migration coordination; do not bypass those gates.
 
 - **One best next task:** verify the latest exact-head CI for PR #103 and fix only any demonstrated failure. After it is green, continue the next non-blocked reliability/readability slice; do not start Shield until the migration/auth release gates are reconciled.
+
+
+---
+
+## Latest run — 2026-10-28 (battle Mana UI malformed-data fail-closed)
+
+- **Authoritative main SHA at start:** `d34b791090ddab43a960369d50f026dc8fcbe5dd`. Degen-only Mana remains COMPLETE / MERGED on main; the current main commit records the prior Mana-affordability UI slice's exact-head CI pass. This run does not claim a separate post-merge main CI or production Worker deployment result.
+
+- **PUSHED / PR #105 OPEN (draft):** `automation/degen/battle-mana-ui-fail-closed-v01`, created from the exact main SHA above. Initial implementation/test head was `48e766daeabd238e693457c287d20ebaecff1759`; this progress commit creates a new exact head, so verify CI for the refreshed head before review readiness. No direct-main write.
+
+- **Task / files changed:** `src/ui/views.ts` now validates ability Mana costs before rendering and updating controls. Invalid, negative, fractional, unsafe, empty, or missing cost values render as `UNAVAILABLE` and remain disabled. An invalid Mana snapshot (negative, fractional, unsafe, or above its maximum) fails closed for all abilities, including zero-cost controls; a valid zero-Mana snapshot still allows zero-cost abilities. `tests/battle-mana-cost-ui.test.ts` covers initial markup, live affordability controls, malformed costs, invalid Mana snapshots, and the preserved zero-cost-at-zero behavior. No Worker, combat math, reward/economy, D1 schema/migration, or content-canon changes.
+
+- **QA status:** exact-head CI is pending for the refreshed PR head. This environment cannot resolve `github.com` from the local shell, so no local `npm test`, build, Worker dry-run, or browser run is claimed. PR CI must verify the deterministic tests, Worker/D1 concurrency and recovery, production build, Chromium mobile vertical slice, and `check:worker`. No preview, production deployment, or D1 operation is claimed.
+
+- **Mana status:** COMPLETE / MERGED on main. This is a presentation/configuration-validation guard only; authoritative Degen Mana, bespoke ability costs, persisted `player_mana`, rejection without turn/damage mutation, exact deduction, zero-cost actions at zero, terminal outcomes, no monster Mana, and no zero-Mana reversion are unchanged.
+
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, turn compare-and-swap, terminal outcomes, audited receipts, retry recovery, and exactly-once XP/currency/inventory/history. This UI branch cannot award rewards or advance server combat state.
+
+- **D1 / migration assumptions:** `wrangler.toml` remains the source for `DB` → `DEGEN` and `db/migrations`; the deployment workflow still applies base schema, then tracked migrations, then Worker code. `0006_backfill_active_battle_mana.sql` remains tracked. The `0007_player_inventory_quantity_guards.sql` versus draft auth PR #14's `0007_player_sessions.sql` numbering conflict, production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain unresolved. No migration or deployment change was made.
+
+- **Miles blocker:** none for this narrow UI guard. Do not bypass the existing auth/migration release gate for Shield or housing merge/deploy.
+
+- **One best next task:** verify exact-head CI for PR #105; if all required checks pass and mergeability is clean, mark it ready for review through the normal PR path. Then continue non-blocked reliability/readability work; do not start Shield until the documented migration/auth gates are reconciled.
