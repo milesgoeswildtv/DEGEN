@@ -165,9 +165,10 @@ try {
     width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
   });
   await cdp.send('Page.navigate', { url: origin });
-  await until('browser bootstrap', async () => {
-    const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
-    return text.includes('Where are you going?') ? text : null;
+  await until('city map and permanent Home navigation', async () => {
+    return await cdp.evaluate("Boolean(document.querySelector('[data-district=\"Central\"]') && document.querySelector('[data-route=\"home\"]'))")
+      ? true
+      : null;
   });
 
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
