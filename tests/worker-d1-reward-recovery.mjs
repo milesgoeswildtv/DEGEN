@@ -266,6 +266,26 @@ try {
     BEGIN SELECT RAISE(ABORT, 'QA_TRANSIENT_REWARD_FAILURE'); END`);
   await start();
 
+  // Server discovery is the recovery path when localStorage lost a permit ID.
+  // Only valid, recoverable Worker-owned victories are returned; no reward data
+  // is exposed, and active/live-claim/corrupt/awarded permits are not candidates.
+  const pendingResponse = await fetch(origin + '/api/battle/pending-rewards?playerId=qa-player');
+  const pendingBody = await pendingResponse.json();
+  assert.equal(pendingResponse.status, 200, JSON.stringify(pendingBody));
+  assert.deepEqual(Object.keys(pendingBody), ['permitIds']);
+  assert.ok(Array.isArray(pendingBody.permitIds));
+  const pendingPermitIds = new Set(pendingBody.permitIds);
+  for (const permitId of ['permit-recovery', 'permit-legacy-recovery', 'permit-stale-claim', 'permit-stale-race']) {
+    assert.ok(pendingPermitIds.has(permitId), `recoverable victory ${permitId} should be discoverable`);
+  }
+  for (const permitId of [
+    'permit-live-claim', 'permit-missing-claim-time', 'permit-invalid-claim-time',
+    'permit-nonnormalized-claim-time', 'permit-completed-claim', 'permit-action-complete-race',
+    'permit-history-conflict', 'permit-defeat-history-conflict', 'permit-completed-poisoned-reservation',
+  ]) {
+    assert.equal(pendingPermitIds.has(permitId), false, `ineligible victory ${permitId} must not be discovered`);
+  }
+
   // A pre-existing deterministic victory key is not a valid pending receipt.
   // Reject it before clear reservation or progression/inventory mutation.
   const conflictPermitBefore = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
