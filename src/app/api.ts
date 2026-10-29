@@ -284,6 +284,21 @@ export class GameApi {
     return snapshot;
   }
 
+  async getPendingBattleRewards(playerId: string): Promise<string[]> {
+    if (!this.enabled) return [];
+    const response = await this.request<unknown>(
+      `/api/battle/pending-rewards?playerId=${encodeURIComponent(playerId)}`,
+    );
+    if (!isRecord(response)
+      || !Array.isArray(response.permitIds)
+      || response.permitIds.length > 10_000
+      || !response.permitIds.every((permitId) =>
+        typeof permitId === 'string' && permitId.trim().length > 0 && permitId.length <= 256)) {
+      throw new Error('Malformed pending battle reward response.');
+    }
+    return [...new Set(response.permitIds as string[])];
+  }
+
   async startUnderpass(playerId: string, cycleId: string, requestIdOverride?: string): Promise<BattlePermit | undefined> {
     if (!this.enabled) return undefined;
     // Keep one player-scoped correlation record through pending and active
