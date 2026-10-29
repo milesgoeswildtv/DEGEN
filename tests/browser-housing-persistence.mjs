@@ -165,11 +165,11 @@ try {
     width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
   });
   await cdp.send('Page.navigate', { url: origin });
-  await until('city map and permanent Home navigation', async () => {
-    return await cdp.evaluate("Boolean(document.querySelector('[data-district=\"Central\"]') && document.querySelector('[data-route=\"home\"]'))")
-      ? true
-      : null;
-  });
+  const cityMapReady = async () => await cdp.evaluate(
+    "Boolean(document.querySelector('[data-district=\"Central\"]') && document.querySelector('[data-route=\"home\"]'))",
+  );
+  await until('city map and permanent Home navigation', async () =>
+    await cityMapReady() ? true : null);
 
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
   assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
@@ -196,10 +196,8 @@ try {
       "' AND furniture_key='starter-chair' AND grid_x=3 AND grid_y=2")[0]?.n === 1 ? true : null);
 
   await cdp.send('Page.navigate', { url: origin });
-  await until('map after browser reload', async () => {
-    const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
-    return text.includes('Where are you going?') ? text : null;
-  });
+  await until('city map after browser reload', async () =>
+    await cityMapReady() ? true : null);
   await click('[data-route="home"]');
   await until('persisted chair after browser reload', async () => {
     const label = await cdp.evaluate("document.querySelector('[data-room-x=\"3\"][data-room-y=\"2\"]')?.getAttribute('aria-label') || ''");
@@ -217,10 +215,8 @@ try {
     sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + playerId + "'")[0]?.n === 0 ? true : null);
 
   await cdp.send('Page.navigate', { url: origin });
-  await until('map after empty-room reload', async () => {
-    const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
-    return text.includes('Where are you going?') ? text : null;
-  });
+  await until('city map after empty-room reload', async () =>
+    await cityMapReady() ? true : null);
   await click('[data-route="home"]');
   await until('empty room remains empty after bootstrap', async () =>
     await cdp.evaluate("document.querySelectorAll('.room-cell.occupied').length") === 0 ? true : null);
