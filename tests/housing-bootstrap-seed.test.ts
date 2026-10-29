@@ -186,7 +186,8 @@ test('cross-player placement ID collision rolls back replacement and preserves b
   assert.equal((await save('owner-b', shared)).status, 204);
 
   const collision = await save('owner-a', { ...shared, x: 4, y: 3 });
-  assert.equal(collision.status, 500, 'global primary-key collision must fail the atomic replacement');
+  assert.equal(collision.status, 409, 'a placement ID owned by another player is a client conflict');
+  assert.deepEqual(await collision.json(), { error: 'Housing placement ID is already in use.' });
 
   const ownerA = db.prepare("SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='owner-a'").all();
   const ownerB = db.prepare("SELECT id, grid_x, grid_y FROM housing_placements WHERE player_id='owner-b'").all();
