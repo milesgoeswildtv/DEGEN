@@ -35,6 +35,9 @@ export class PlayerStore {
   private pendingHousingSaves = new Map<string, PlayerState['housing']>();
   // Accounts reactivated during an in-flight save get one retry if that save fails.
   private reactivatedHousingPlayers = new Set<string>();
+  // A malformed saved room is replaced with a safe placeholder until server bootstrap.
+  // Never let that placeholder become an outbound save or override a valid outbox snapshot.
+  private housingNeedsAuthoritativeBootstrap = false;
 
   constructor(private readonly api: GameApi) {
     this.state = this.load();
@@ -85,7 +88,9 @@ export class PlayerStore {
     const wasActive = this.state.id === player.id;
     const pending = this.pendingHousingSaves.get(player.id);
     const inFlight = this.housingSavePlayerId === player.id ? this.housingSaveSnapshot : undefined;
-    const localHousing = this.isValidHousingSnapshot(this.state.housing) ? this.state.housing : undefined;
+    const localHousing = !this.housingNeedsAuthoritativeBootstrap && this.isValidHousingSnapshot(this.state.housing)
+      ? this.state.housing
+      : undefined;
     const unsavedHousing = pending && this.isValidHousingSnapshot(pending)
       ? pending
       : inFlight && this.isValidHousingSnapshot(inFlight)
@@ -97,6 +102,7 @@ export class PlayerStore {
         : unsavedHousing.placements)
       : undefined;
     this.state = placements ? { ...player, housing: { ...player.housing, placements } } : player;
+    this.housingNeedsAuthoritativeBootstrap = false;
     this.commitLocal();
 
     // Retry a queued layout on reactivation. If only an in-flight snapshot exists,
@@ -131,7 +137,7 @@ export class PlayerStore {
   placeFurniture(furnitureId: string, x: number, y: number): void {
     // Corrupt persisted layouts must not be mutated into a new invalid save before
     // the authoritative bootstrap has a chance to replace them.
-    if (!this.isValidHousingSnapshot(this.state.housing)) return;
+    if (this.housingNeedsAuthoritativeBootstrap || !this.isValidHousingSnapshot(this.state.housing)) return;
     if (!this.state.housing.inventory.includes(furnitureId)) return;
     if (x < 0 || x > 7 || y < 0 || y > 5) return;
 
@@ -153,7 +159,7 @@ export class PlayerStore {
   }
 
   removeFurnitureAt(x: number, y: number): void {
-    if (!this.isValidHousingSnapshot(this.state.housing)) return;
+    if (this.housingNeedsAuthoritativeBootstrap || !this.isValidHousingSnapshot(this.state.housing)) return;
     this.state.housing.placements = this.state.housing.placements.filter(
       (item) => item.x !== x || item.y !== y,
     );
@@ -267,7 +273,12 @@ export class PlayerStore {
       const { __housingOutbox: _outbox, ...player } = parsed;
       void _outbox;
       const id = player.id && player.id !== 'local-player' ? player.id : newPlayerId();
-      return { ...createDefaultPlayer(id), ...player, id };
+      const restored = { ...createDefaultPlayer(id), ...player, id };
+      if (!this.isValidHousingSnapshot(restored.housing)) {
+        this.housingNeedsAuthoritativeBootstrap = true;
+        restored.housing = createDefaultPlayer(id).housing;
+      }
+      return restored;
     } catch {
       return createDefaultPlayer();
     }
