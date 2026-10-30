@@ -114,7 +114,15 @@ export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undef
   root.querySelectorAll<HTMLButtonElement>('[data-city-zoom]').forEach(button => {
     button.addEventListener('click', () => zoom(button.dataset.cityZoom === 'in' ? 1.2 : 1 / 1.2));
   });
-  root.querySelector<HTMLButtonElement>('[data-city-reset]')?.addEventListener('click', reset);
+  const resetButton = root.querySelector<HTMLButtonElement>('[data-city-reset]');
+  // Touch pointerup is the reliable activation boundary after a captured map
+  // drag; some mobile Chromium sequences suppress the synthesized click when
+  // the previous pointer was captured by the viewport. Keep click for mouse
+  // and keyboard activation. Reset is idempotent if both events are delivered.
+  resetButton?.addEventListener('pointerup', (event) => {
+    if (event.pointerType === 'touch') reset();
+  });
+  resetButton?.addEventListener('click', reset);
   const resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => render());
   resizeObserver?.observe(viewport);
   render();

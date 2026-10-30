@@ -24,10 +24,14 @@ const makeMap = (width = 380, height = 420) => {
   const pin = { style: {} as Record<string, string> };
   const zoomIn = { dataset: { cityZoom: 'in' }, disabled: false, addEventListener: (_: string, fn: () => void) => { zoomInClick = fn; } };
   const zoomOut = { dataset: { cityZoom: 'out' }, disabled: false, addEventListener: (_: string, fn: () => void) => { zoomOutClick = fn; } };
-  const reset = { addEventListener: (_: string, fn: () => void) => { resetClick = fn; } };
+  const reset = { addEventListener: (name: string, fn: (event?: any) => void) => {
+    if (name === 'click') resetClick = fn as () => void;
+    if (name === 'pointerup') resetPointerUp = fn as (event: any) => void;
+  } };
   let zoomInClick = () => {};
   let zoomOutClick = () => {};
   let resetClick = () => {};
+  let resetPointerUp = (_event: any) => {};
   const root = {
     querySelector: (selector: string) =>
       selector === '[data-city-viewport]' ? viewport :
@@ -43,7 +47,7 @@ const makeMap = (width = 380, height = 420) => {
       target: { closest: () => null }, key: '', preventDefault: () => {},
       ...overrides,
     });
-  return { viewport, world, pin, event, hasCapture: (id: number) => captured.has(id), zoomIn: () => zoomInClick(), zoomOut: () => zoomOutClick(), reset: () => resetClick(), camera: () => current };
+  return { viewport, world, pin, event, hasCapture: (id: number) => captured.has(id), zoomIn: () => zoomInClick(), zoomOut: () => zoomOutClick(), reset: () => resetClick(), touchReset: () => resetPointerUp({ pointerType: 'touch' }), camera: () => current };
 };
 
 test('camera zoom is bounded and does not pan off the connected metropolis', () => {
@@ -71,6 +75,16 @@ test('touch drag pans the camera and zoom controls remain bounded', () => {
   assert.equal(map.camera().scale, 0.8);
   assert.equal(map.camera().x, 0);
   assert.equal(map.camera().y, 0);
+});
+
+test('touch reset control restores the camera after a captured drag', () => {
+  const map = makeMap();
+  map.event('pointerdown', { pointerId: 11, clientX: 100, clientY: 100 });
+  map.event('pointermove', { pointerId: 11, clientX: 145, clientY: 122 });
+  assert.notEqual(map.camera().x, 0);
+  map.event('pointerup', { pointerId: 11 });
+  map.touchReset();
+  assert.deepEqual(map.camera(), { x: 0, y: 0, scale: 0.8 });
 });
 
 test('pointerup and pointercancel release capture before the next navigation touch', () => {

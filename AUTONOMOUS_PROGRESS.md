@@ -1,3 +1,17 @@
+## Latest run — 2026-10-29 (mobile touch reset activation after map drag)
+
+- **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
+- **PUSHED / PR #113 OPEN, draft and unmerged:** `automation/degen/city-navigation-current-v01`, based on exact main. Previous head `99a9a28c40c13e99de9a23cfd179bbcdcb041d50`; this follow-up adds a touch-specific pointer-up activation path for the city reset control while preserving click activation for mouse and keyboard.
+- **Task / files changed:** `src/ui/cityViewport.ts` resets on touch `pointerup` as well as click; `tests/city-viewport.test.ts` verifies reset after a captured pan; this progress entry records the evidence. No gameplay, combat, Worker API, D1 schema/migration, binding, economy, or content canon changed.
+- **Failure evidence:** exact-head CI [40985252246](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40985252246) passed deterministic tests, Worker/D1 reward concurrency and recovery, Underpass cycle/rollover concurrency, defeat history, housing persistence, and production build, then failed Chromium at `tests/browser-battle-vertical-slice.mjs:293`: `Timeout waiting for city camera reset after touch drag`. The current `99a9a28` run [40985286570](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40985286570) is still running; its deterministic tests and Worker/D1 reward-concurrency stage passed at last check. This new code/test head requires its own exact-head CI. No green claim yet.
+- **Mana:** COMPLETE / MERGED on main. The extant `sidekick/degen-mana-foundation-v01` branch is 11 ahead / 100 behind main (merge base `dc92764dee3b9a7e8c59828d2d4f5113c42d9c9b`). Its `0003_degen_mana.sql` matches main, while its engine/rules/Worker/AppController are older snapshots missing later validation, turn-count, recovery, and authority hardening; it is not unique unfinished Mana work. Main retains authoritative Degen-only `maxMana`, bespoke `manaCost`, persisted `player_mana`, atomic rejection/deduction, zero-cost-at-zero, terminal-state handling, and no monster Mana or zero-Mana reversion.
+- **Battle authority / reward idempotency:** unchanged; Worker/D1 owns permits, HP/Mana/turn CAS, terminal outcomes/history, reward receipts and recovery, progression, currency, inventory, and housing persistence. Prior exact-head suites passed these integration gates on this branch.
+- **D1 / migration assumptions:** no schema or migration change. `wrangler.toml` still binds `DB` to `DEGEN` and `db/migrations`; latest verified main deployment applied schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft auth `0007_player_sessions.sql` collision remains unresolved; no renumbering or bypass.
+- **Miles blocker:** none for this UI reliability fix. Production Discord/Telegram identity verification and legacy identity-collision policy remain separate auth release gates.
+- **One best next task:** verify exact-head CI for this touch-reset follow-up; if green, mark PR #113 ready for review. If Chromium still fails, inspect emitted pointer/click trace rather than layering another speculative gesture workaround.
+
+---
+
 ## Latest run — 2026-10-29 (real-browser city pan QA)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
