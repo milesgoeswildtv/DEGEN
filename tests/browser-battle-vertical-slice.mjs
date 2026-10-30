@@ -145,6 +145,10 @@ try {
     assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true });
   };
+  const loadedPhaserResources = () => cdp.evaluate(`performance.getEntriesByType('resource').filter(entry => {
+    try { return new URL(entry.name).pathname.toLowerCase().includes('phaser'); }
+    catch { return false; }
+  }).map(entry => new URL(entry.name).pathname)`);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   // Observe the actual Phaser text canvas so the browser test proves the HUD follows
@@ -258,6 +262,8 @@ try {
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  assert.deepEqual(await loadedPhaserResources(), [],
+    'the initial Map route must not download Phaser before a battle is entered');
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
   assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
@@ -370,6 +376,7 @@ try {
     'a persisted uncertain start must offer resume, not mint a second permit');
   await tap("[data-resume-battle]");
   await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
+  await until('Phaser runtime loads only after entering battle', async () => (await loadedPhaserResources()).length > 0);
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
   assert.equal(initialAccessibleHud,
