@@ -74,7 +74,11 @@ function cdpClient(url) {
   };
   const evaluate = async expression => {
     const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw Error(result.exceptionDetails.text);
+    if (result.exceptionDetails) {
+      const details = result.exceptionDetails;
+      const description = details.exception?.description ?? details.exception?.value ?? details.text;
+      throw Error('Runtime.evaluate failed: ' + description);
+    }
     return result.result.value;
   };
   return { ws, send, evaluate };
@@ -107,7 +111,10 @@ try {
   });
   const cdp = cdpClient(target.webSocketDebuggerUrl);
   socket = cdp.ws;
-  // Use actual mobile touch events, not DOM click simulation.
+  // Use actual mobile touch events, not DOM click simulation. Give each tap
+  // its own touch identifier and a short active interval so Chromium emits a
+  // complete pointerdown/pointerup/click sequence after a preceding drag.
+  let nextTouchId = 2;
   const tap = async (selector) => {
     const point = await cdp.evaluate(`(() => {
       const element = document.querySelector(${JSON.stringify(selector)});
@@ -121,7 +128,9 @@ try {
     })()`);
     assert.ok(point && point.x >= 0 && point.x < 390 && point.y >= 0 && point.y < 844,
       'Touch target must be visible and unobstructed: ' + selector);
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+    const touchId = nextTouchId++ % 10;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, id: touchId }] });
+    await sleep(80);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
   const assertFitsMobile = async route => {
@@ -248,19 +257,87 @@ try {
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
-  await until('Map', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
+  await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
   assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
   await assertFitsCompact('Map');
+  const initialCityScale = await cdp.evaluate('Number(document.querySelector("[data-city-viewport]")?.dataset.cityScale)');
+  await tap("[data-city-zoom=in]");
+  const zoomedCityScale = await cdp.evaluate('Number(document.querySelector("[data-city-viewport]")?.dataset.cityScale)');
+  assert.ok(zoomedCityScale > initialCityScale, 'map zoom control must enlarge the city');
+  await tap("[data-city-reset]");
+  assert.equal(await cdp.evaluate('Number(document.querySelector("[data-city-viewport]")?.dataset.cityScale)'), initialCityScale,
+    'map reset must restore the current mobile scale');
+
+  // Verify that the visible map responds to a real Chromium touch drag, not
+  // only to the pure camera helper tests or the zoom buttons. Capture the actual
+  // browser pointerId rather than assuming CDP touch ids equal pointer ids.
+  await cdp.evaluate(`(() => {
+    window.__degenCityPointerId = null;
+    document.querySelector('[data-city-viewport]').addEventListener('pointerdown', event => {
+      window.__degenCityPointerId = event.pointerId;
+    }, { once: true });
+  })()`);
+  const panPoint = await cdp.evaluate(`(() => {
+    const rect = document.querySelector('[data-city-viewport]').getBoundingClientRect();
+    return { id: 1, x: rect.left + rect.width / 2, y: rect.top + rect.height * 0.8 };
+  })()`);
+  const cityTransformBeforePan = await cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform ?? ""');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [panPoint] });
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ ...panPoint, x: panPoint.x + 36, y: panPoint.y + 18 }],
+  });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const cityTransformAfterPan = await cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform ?? ""');
+  assert.notEqual(cityTransformAfterPan, cityTransformBeforePan,
+    'a real mobile touch drag must pan the city camera');
+  const captureAfterPan = await cdp.evaluate(`(() => {
+    const viewport = document.querySelector('[data-city-viewport]');
+    const pointerId = window.__degenCityPointerId;
+    return { pointerId, captured: pointerId !== null && viewport.hasPointerCapture(pointerId) };
+  })()`);
+  assert.notEqual(captureAfterPan.pointerId, null, 'the real touch drag must produce a pointerdown');
+  assert.equal(captureAfterPan.captured, false, 'the viewport must release the touch pointer before the next control tap');
+  // Let the completed drag's pointerup/capture-release cycle settle, then
+  // keep reset and Home navigation on real touch input.
+  await sleep(100);
+  await tap("[data-city-reset]");
+  await until('city camera reset after touch drag', () =>
+    cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform.includes("translate(0px, 0px)") ?? false'));
+  await sleep(100);
   await tap("[data-route=home]");
   await until('Home grid', () => cdp.evaluate('!!document.querySelector(".room-grid")'));
   await assertFitsMobile('Home');
   await assertFitsCompact('Home');
   await tap("[data-route=map]");
-  await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
-  await tap("[data-route=underpass]");
+  await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap("[data-district=Central]");
+  await until('Central district destinations', () => cdp.evaluate('!!document.querySelector("[data-location=downtown]") && !!document.querySelector("[data-location=underpass]")'));
+  await assertFitsMobile('Central district');
+  await assertFitsCompact('Central district');
+  await tap("[data-location=downtown]");
+  await until('Downtown location scene', () => cdp.evaluate('!!document.querySelector(".location-scene") && document.querySelector(".location-scene")?.textContent.includes("Downtown")'));
+  await assertFitsMobile('Downtown location');
+  await assertFitsCompact('Downtown location');
+  assert.equal(await cdp.evaluate('document.querySelector(".location-scene-status")?.textContent'), 'ACCESSIBLE // ACTIVITIES IN DEVELOPMENT');
+  await tap("[data-route=district]");
+  await until('Central district return', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  await tap("[data-route=map]");
+  await until('Map before Residential', () => cdp.evaluate('!!document.querySelector("[data-district=Residential]")'));
+  await tap("[data-district=Residential]");
+  await until('Residential district Home destination', () => cdp.evaluate('!!document.querySelector("[data-location=home]")'));
+  await tap("[data-location=home]");
+  await until('Home reached through Residential district', () => cdp.evaluate('!!document.querySelector(".room-grid")'));
+  await assertFitsMobile('Home through district');
+  await assertFitsCompact('Home through district');
+  await tap("[data-route=map]");
+  await until('Map before Underpass', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap("[data-district=Central]");
+  await until('Central district before Underpass', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  await tap("[data-location=underpass]");
   await until('Worker-authorized Underpass entry', () => cdp.evaluate('document.querySelector("[data-start-battle]")?.disabled === false'));
   await cdp.evaluate('window.__degenLostStartResponsesRemaining = 2');
   await tap("[data-start-battle]");
@@ -281,11 +358,13 @@ try {
   // Reload the actual browser page. localStorage must retain the uncertain key,
   // allowing a fresh GameApi instance to recover the already-issued permit.
   await cdp.send('Page.reload');
-  await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
+  await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   assert.equal(await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''"), playerId,
     'the same test player must survive the reload');
   await assertFitsMobile('Map after reload');
-  await tap("[data-route=underpass]");
+  await tap("[data-district=Central]");
+  await until('Central district after reload', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  await tap("[data-location=underpass]");
   await until('Recoverable Underpass encounter after reload', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-start-battle]")'), false,
     'a persisted uncertain start must offer resume, not mint a second permit');
@@ -413,6 +492,23 @@ try {
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
+
+  // The earned trophy must be usable as actual housing furniture, not only
+  // present in inventory. Place it, then reload through the real Worker/D1
+  // bootstrap path and prove the room snapshot restores that display.
+  await tap('[data-furniture="tunnel-trophy"]');
+  await until('earned trophy selected for display', () => cdp.evaluate(
+    'document.querySelector("[data-furniture=tunnel-trophy]")?.classList.contains("selected") === true',
+  ));
+  await tap('[data-room-x="4"][data-room-y="2"]');
+  const earnedTrophyCellSelector = '[data-room-x="4"][data-room-y="2"]';
+  await until('earned trophy placed in the room', () => cdp.evaluate(
+    'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+  ));
+  await until('earned trophy saved to local D1', () =>
+    sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count === 1 ? true : null);
+  assert.equal(sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count, 1,
+    'the earned trophy must persist at the selected room cell');
   const finalPermit = sql("SELECT battle_status, reward_state, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
   assert.equal(finalPermit?.battle_status, 'victory');
   assert.equal(finalPermit?.reward_state, 'awarded');
@@ -438,13 +534,26 @@ try {
   assert.equal(victoryHistory?.count, 1,
     'recovering the lost killing-blow and reward responses must settle exactly one victory-history row');
 
+  // Reload only after checking the response-loss counters above: a new document
+  // installs fresh browser instrumentation. The persisted trophy must still render.
+  await cdp.send('Page.reload');
+  await until('Map after trophy placement reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap('[data-route=home]');
+  await until('persisted trophy displayed after reload', () => cdp.evaluate(
+    'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+  ));
+  await assertFitsMobile('Home with earned trophy');
+  await assertFitsCompact('Home with earned trophy');
+
   // Exercise the actual running UI with an authoritative active snapshot at zero
   // Mana. The local D1 fixture models a valid Worker-owned zero-Mana snapshot
   // for UI QA; it does not add or name a Mana-drain mechanic or monster resource.
   sql("UPDATE world_event_cycles SET opens_at = datetime('now','-10 minutes'), closes_at = datetime('now','+90 minutes') WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)");
   await tap("[data-route=map]");
-  await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-route=underpass]")'));
-  await tap("[data-route=underpass]");
+  await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap("[data-district=Central]");
+  await until('Central district for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  await tap("[data-location=underpass]");
   await until('Open Underpass for Mana affordability check', () => cdp.evaluate('(() => { const button = document.querySelector("[data-start-battle]"); return !!button && !button.disabled; })()'));
   await tap("[data-start-battle]");
   await until('second manifested battle for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]") && document.querySelector("#battle-accessible-hud")?.textContent.includes("Mana 12 of 12")'));
@@ -530,7 +639,7 @@ try {
     return mana >= 0 && rendered.lastIndexOf("MANIFESTED") > mana;
   })()`));
 
-  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > Home > Underpass > Degen battle > Worker reward > Home trophy, plus zero-Mana affordability feedback and free-action continuation');
+  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback and free-action continuation');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
   for (const [name, output] of logs) console.error(name + ' logs:\n' + output);
