@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (defer Phaser until the first Degen battle)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **LOCAL/PUSHED feature branch:** `automation/degen/lazy-load-phaser-battle-v01`; implementation commit `c5ec9f26e98f0d20ea08e26424e528a739a4be26`, browser-regression commit `bc6c00cd23331b351be721b948933d8f88592d93`. PR creation and exact-head CI are pending.
+- **Task / files changed:** `src/app/AppController.ts` no longer statically imports the Phaser renderer. The battle mount now dynamically imports `createBattleGame` only after the Degen battle route is entered, protects against a stale async mount after leaving the encounter, prevents duplicate mounts, and reports a renderer-load failure without accepting actions. `tests/browser-battle-vertical-slice.mjs` asserts the Map route has not downloaded Phaser and that the Phaser runtime is fetched after resuming a real Worker-backed encounter.
+- **QA:** no local-shell `npm test`, `npm run build`, or `npm run check:worker` was available in this run. The browser regression and full CI are pending on the final branch head; do not claim the initial bundle is smaller or the browser flow passes until exact-head CI completes.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware controls, client/Worker math consistency, no monster Mana/equivalent resource, and no Mana-triggered reversion remain intact. `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain tracked. All inspected Mana-named branches are stale/diverged or superseded; no duplicate Mana branch or cherry-pick was made.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit ownership, HP/Mana/enemy HP/turn state, compare-and-swap, terminal outcomes/history, receipts, XP/currency/inventory, and recoverable exactly-once settlement. This client loading change does not move combat or economy authority.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007_player_inventory_quantity_guards.sql` / draft auth PR #14 `0007_player_sessions.sql` collision remains unresolved. PR #114's preflight guard detects it; do not renumber, bypass, or apply migrations without Miles approval. No D1/schema/Worker deployment change in this slice.
+- **Miles blockers:** explicit `0007` sequencing decision, production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy. Shield PR #20 remains gated. The exact current Monster Log v0.11 content source was not available in the accessible Library search, so no monster names, archetypes, signatures, or loadouts were invented or integrated.
+- **One best next task:** run exact-head CI for the lazy-Phaser branch; confirm the Map route avoids the Phaser download and the Worker/D1 battle still mounts/settles correctly, then deliver the PR for review.
+
+---
+
 ## Latest run — 2026-10-30 (PR #113 exact-head verification and review delivery)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
