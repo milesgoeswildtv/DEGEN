@@ -502,13 +502,6 @@ try {
   ));
   assert.equal(sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count, 1,
     'the earned trophy must persist at the selected room cell');
-  await cdp.send('Page.reload');
-  await until('Map after trophy placement reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
-  await tap('[data-route=home]');
-  await until('persisted trophy displayed after reload', () => cdp.evaluate(
-    'document.querySelector("[data-room-x=4][data-room-y=2]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
-  ));
-
   const finalPermit = sql("SELECT battle_status, reward_state, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
   assert.equal(finalPermit?.battle_status, 'victory');
   assert.equal(finalPermit?.reward_state, 'awarded');
@@ -533,6 +526,15 @@ try {
   const victoryHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='" + playerId + "' AND encounter_key='tunnel-maw' AND result='victory'")[0];
   assert.equal(victoryHistory?.count, 1,
     'recovering the lost killing-blow and reward responses must settle exactly one victory-history row');
+
+  // Reload only after checking the response-loss counters above: a new document
+  // installs fresh browser instrumentation. The persisted trophy must still render.
+  await cdp.send('Page.reload');
+  await until('Map after trophy placement reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap('[data-route=home]');
+  await until('persisted trophy displayed after reload', () => cdp.evaluate(
+    'document.querySelector("[data-room-x=4][data-room-y=2]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+  ));
 
   // Exercise the actual running UI with an authoritative active snapshot at zero
   // Mana. The local D1 fixture models a valid Worker-owned zero-Mana snapshot
