@@ -124,7 +124,7 @@ export class AppController {
     }
 
     if (this.rewardNotice?.playerId === player.id) {
-      this.root.querySelector('.topbar')?.insertAdjacentHTML('afterend', rewardReceiptView(
+      this.root.querySelector?.('.topbar')?.insertAdjacentHTML('afterend', rewardReceiptView(
         this.rewardNotice.reward,
         this.rewardNotice.previousLevel,
         this.rewardNotice.currentLevel,
@@ -148,10 +148,10 @@ export class AppController {
         if (route) this.navigate(route);
       });
     });
-    this.root.querySelector<HTMLButtonElement>('[data-dismiss-reward]')?.addEventListener('click', () => {
+    this.root.querySelector?.('[data-dismiss-reward]')?.addEventListener('click', () => {
       if (this.rewardNotice?.playerId !== this.store.snapshot.id) return;
       this.rewardNotice = undefined;
-      this.root.querySelector('[data-battle-reward-receipt]')?.remove();
+      this.root.querySelector?.('[data-battle-reward-receipt]')?.remove();
     });
   }
 
