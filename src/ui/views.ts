@@ -37,6 +37,13 @@ const worldConnectionNotice = (backendOffline: boolean): string =>
     ? '<p class="world-connection-error" role="status">LIVE WORLD UNAVAILABLE — The game cannot reach its server. New Underpass entry is disabled; an existing server-issued encounter can still be recovered when its permit service is reachable.</p>'
     : '';
 
+const worldStatusAnnouncement = (
+  status: { label: string; detail: string },
+  backendOffline: boolean,
+): string => backendOffline
+  ? ''
+  : `<p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">UNDERPASS STATUS: ${escapeHtml(status.label)}. ${escapeHtml(status.detail)}</p>`;
+
 export const appShell = (player: PlayerState, content: string): string => `
   <header class="topbar">
     <button class="brand" type="button" data-route="map">DEGEN</button>
@@ -61,6 +68,7 @@ export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot, bac
       <h1>Choose your district.</h1>
       <p>Explore the connected metropolis. Tap a district to reveal its locations. Home is always one tap away.</p>
     </section>
+    ${worldStatusAnnouncement(status, backendOffline)}
     <section class="city-overview" aria-label="City map">
       <div class="city-map-header"><span>DEGEN // CITY GRID</span><span>SELECT A DISTRICT</span></div>
       ${renderIsometricCity(WORLD_LOCATIONS, player.unlockedLocations, status.label)}
@@ -92,6 +100,7 @@ export const districtView = (player: PlayerState, district: string, underpass?: 
     <section class="district-hero ${district === 'Central' ? 'central' : 'residential'}"><span class="eyebrow">CITY DISTRICT</span><h1>${escapeHtml(district)}</h1>
       <p>Select a location to enter.</p>
     </section>
+    ${worldStatusAnnouncement(status, backendOffline)}
     ${renderIsometricDistrict(district, locations, player.unlockedLocations, status.label)}
     ${worldConnectionNotice(backendOffline)}
     <section class="district-locations" aria-label="${escapeHtml(district)} locations">${cards}</section>

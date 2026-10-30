@@ -290,8 +290,12 @@ try {
   await until('Map renders before live world snapshot resolves', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   assert.ok(await cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // SYNCING") === true'),
     'the first Map render must show a safe syncing state while live world data is pending');
+  assert.ok(await cdp.evaluate('document.querySelector("[role=status][aria-live=polite]")?.textContent.includes("UNDERPASS STATUS: SYNCING") === true'),
+    'the initial syncing state must be announced to assistive technology');
   await cdp.evaluate('window.__degenReleaseWorldSnapshot?.()');
   await until('Map reflects authoritative world snapshot', () => cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // OPEN") === true'));
+  assert.ok(await cdp.evaluate('document.querySelector("[role=status][aria-live=polite]")?.textContent.includes("UNDERPASS STATUS: OPEN") === true'),
+    'the authoritative world state must replace the syncing announcement');
   assert.deepEqual(await loadedPhaserResources(), [],
     'the initial Map route must not download Phaser before a battle is entered');
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");

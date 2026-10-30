@@ -59,6 +59,25 @@ test('city map derives only existing districts and routes through district selec
   assert.match(html, /&lt;Player&gt;/);
 });
 
+test('map and district politely announce the current Underpass state', () => {
+  const syncing = views.mapView(player);
+  assert.match(syncing, /<p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">UNDERPASS STATUS: SYNCING\. Checking city activity…<\/p>/);
+
+  const openEvent = {
+    phase: 'open',
+    closesAt: new Date(Date.now() + 600_000).toISOString(),
+  };
+  const map = views.mapView(player, openEvent);
+  assert.match(map, /UNDERPASS STATUS: OPEN\./);
+  const district = views.districtView(player, 'Central', openEvent);
+  assert.match(district, /UNDERPASS STATUS: OPEN\./);
+
+  const offline = views.mapView(player, openEvent, true);
+  assert.match(offline, /LIVE WORLD UNAVAILABLE/);
+  assert.equal((offline.match(/role="status"/g) ?? []).length, 1,
+    'offline mode should announce its connection error once rather than duplicate the hidden world status');
+});
+
 test('district view exposes the existing Central destinations and Underpass live state', () => {
   const html = views.districtView(player, 'Central', {
     phase: 'sealed', opensAt: new Date(Date.now() + 600_000).toISOString(),
