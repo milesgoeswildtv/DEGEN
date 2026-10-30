@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (render Map before live world synchronization)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED / PR #116 OPEN, unmerged:** `automation/degen/lazy-load-phaser-battle-v01`. Previous head `b44cf59c813147966f25c2c1894c44f678ce3a0a`; this follow-up adds a non-blocking first Map render and a browser regression. The new exact-head CI is required; no pass is claimed yet.
+- **Task / files changed:** `src/app/AppController.ts` now renders the Map synchronously before requesting the live Underpass snapshot, then re-renders the current Map/district/Underpass route when the Worker snapshot resolves. Until then, the existing `SYNCING` state is shown and Underpass entry remains disabled. `tests/browser-battle-vertical-slice.mjs` holds the real local Worker world-snapshot response, proves the Map appears with `UNDERPASS // SYNCING`, releases the response, and proves the same Map updates to the authoritative open state. The existing lazy-Phaser and full battle/reward/trophy scenario remains in the same browser test.
+- **QA:** source/test changes are pushed; exact-head CI is pending. No local-shell test/build, browser execution, physical iPhone test, production D1 operation, or production deployment is claimed in this entry.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, authoritative persisted player_mana, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, killing-blow/defeat behavior, cost-aware controls, no monster Mana, and no zero-Mana reversion remain verified by main's regression suite. The legacy sidekick Mana branch is 11 ahead / 101 behind and superseded; no cherry-pick.
+- **Battle authority / reward idempotency:** Worker/D1 continues to own permits, player HP/Mana, enemy HP, turn CAS, terminal outcomes/history, reward receipts, XP/currency/inventory, and recoverable exactly-once settlement. This follow-up changes only initial rendering timing and its browser regression; no client reward authority changes.
+- **D1 / migration assumptions:** `wrangler.toml` remains the source of truth for DB → DEGEN and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Mana migrations `0003` and `0006` are tracked. The `0007_player_inventory_quantity_guards.sql` / draft auth PR #14 `0007_player_sessions.sql` collision remains unresolved; do not renumber or bypass it. No migration, schema, DB binding, or deployment configuration changed.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, approved legacy identity-collision policy, and the explicit `0007` sequencing decision remain unresolved. Shield PR #20 stays gated. The requested Monster Log v0.11 is not present in the accessible indexed Library evidence; no monster or status canon was invented.
+- **One best next task:** verify exact-head CI for PR #116; if the delayed-world-sync browser check and the existing mobile Worker/D1 vertical slice pass, refresh the PR description with exact current-head evidence and leave it open for review.
+
+---
+
 ## QA follow-up — 2026-10-30 (keep lazy-import interception polling bounded)
 
 - **Branch / PR:** `automation/degen/lazy-load-phaser-battle-v01`, PR #116; parent head `e5424264fe105cda5269449c38454b0303f89f9e`.
