@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (Mana branch reconciliation and city-navigation exact-head QA)
+
+- **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
+- **PUSHED / PR #113 OPEN, currently DRAFT:** `automation/degen/city-navigation-current-v01`. Verified code head `ec9b299c39030a4b9c507e97b40885a1dfda386c`; exact-head CI [41016189169](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41016189169) completed SUCCESS on that SHA. This continuity-only progress commit will create a new head and requires its own exact-head CI before review readiness.
+- **Task / files changed this run:** repository authority audit only; this commit updates `AUTONOMOUS_PROGRESS.md`. No game source, tests, schema, migration, Worker code, or deployment configuration changed in this run.
+- **Exact-head QA on code head `ec9b299` — PASS:** deterministic game tests; isolated Worker/D1 reward concurrency; transient D1 reward recovery; Underpass cycle concurrency; Underpass rollover concurrency; atomic defeat history; mobile browser housing persistence; production build; Chromium mobile battle vertical slice; Wrangler Worker validation. Every job step in CI run 41016189169 completed successfully. No local-shell run or production player-data smoke test is claimed.
+- **Mana:** COMPLETE / MERGED on main. Main contains Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, killing-blow/defeat handling, cost-aware controls, no monster Mana, and no Mana-triggered reversion. The old `sidekick/degen-mana-foundation-v01` still exists at `e1ec782773728e94805c4e653ead62338a7ff9d1`, but compare-to-main reports 11 commits ahead / 100 behind. Its diff is the initial Mana slice across the same migration/client/domain/engine/rules/UI/Worker/test files now superseded by main. Do not cherry-pick or revive this divergent branch.
+- **Battle authority / reward idempotency:** current main owns permit/action state, turn compare-and-swap, terminal outcomes/history, audited reward receipts, progression, inventory, currency, and recovery. The exact-head CI above re-exercised Worker/D1 reward concurrency and transient-failure recovery; no reward/economy authority moved to the client.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft PR #14 still carries a separate `0007_player_sessions.sql` migration-number collision; do not renumber or bypass it without Miles approval. Shield PR #20 is stale (36 behind / 171 ahead) and explicitly not mergeable; its `0008_degen_shield.sql` remains gated on the session/auth release work. No D1 operation, migration edit, Worker deployment, or production configuration change occurred in this run.
+- **Miles blocker:** no blocker for the already-tested city-navigation slice. The Shield/session migration and platform identity verification gates remain unresolved; do not port or deploy Shield until those are reconciled.
+- **One best next task:** finish PR #113 review delivery on a fresh exact-head green check; then reconcile the session/auth migration gate before any Shield release work.
+
+---
+
 ## Latest run — 2026-10-30 (keep city-map keyboard shortcuts off focused destination buttons)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
