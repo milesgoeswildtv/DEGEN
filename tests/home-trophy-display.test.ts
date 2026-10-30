@@ -102,11 +102,11 @@ test('authoritative reward receipt shows loot, currency, XP, and the server leve
     tier: 'full',
   }, 1, 2);
   assert.match(html, /FULL CLEAR/);
-  assert.match(html, /\\+75 XP/);
-  assert.match(html, /\\+30 CR/);
+  assert.match(html, /\+75 XP/);
+  assert.match(html, /\+30 CR/);
   assert.match(html, /UNDERPASS SCRAP/);
   assert.match(html, /Underpass Trophy/);
-  assert.match(html, /LEVEL UP · LV\\.1 → LV\\.2/);
+  assert.match(html, /LEVEL UP · LV\.1 → LV\.2/);
   assert.match(html, /data-dismiss-reward/);
 });
 
@@ -119,7 +119,7 @@ test('reduced reward receipt escapes item keys and does not invent a level-up', 
     tier: 'reduced',
   }, 2, 2);
   assert.match(html, /REDUCED CLEAR/);
-  assert.match(html, /&lt;IMG SRC=X ONERROR=ALERT\\(1\\)&gt;/);
+  assert.match(html, /&lt;IMG SRC=X ONERROR=ALERT\(1\)&gt;/);
   assert.doesNotMatch(html, /<img src=x/i);
   assert.doesNotMatch(html, /LEVEL UP/);
 });
