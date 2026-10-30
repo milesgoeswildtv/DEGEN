@@ -187,6 +187,9 @@ try {
       window.__degenLostStartResponsesRemaining = 0;
       window.__degenLostStartResponses = 0;
       window.__degenStartRequestIds = [];
+      window.__degenHoldWorldSnapshot = true;
+      window.__degenWorldSnapshotResponseHeld = false;
+      window.__degenReleaseWorldSnapshot = null;
       window.__degenSimulateLostActionResponse = false;
       window.__degenLostActionResponses = 0;
       window.__degenSimulateMalformedActionResponse = false;
@@ -199,6 +202,11 @@ try {
         const response = await originalFetch(input, init);
         const requestUrl = input instanceof Request ? input.url : String(input);
         const requestPath = new URL(requestUrl, window.location.href).pathname;
+        if (window.__degenHoldWorldSnapshot && requestPath === '/api/world/underpass') {
+          window.__degenHoldWorldSnapshot = false;
+          window.__degenWorldSnapshotResponseHeld = true;
+          await new Promise(resolve => { window.__degenReleaseWorldSnapshot = resolve; });
+        }
         if (requestPath === '/api/battle/start') {
           try { window.__degenStartRequestIds.push(JSON.parse(String(init?.body ?? '{}')).requestId); }
           catch { window.__degenStartRequestIds.push(undefined); }
@@ -278,7 +286,12 @@ try {
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
-  await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await until('initial world snapshot response held', () => cdp.evaluate('window.__degenWorldSnapshotResponseHeld === true'));
+  await until('Map renders before live world snapshot resolves', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  assert.ok(await cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // SYNCING") === true'),
+    'the first Map render must show a safe syncing state while live world data is pending');
+  await cdp.evaluate('window.__degenReleaseWorldSnapshot?.()');
+  await until('Map reflects authoritative world snapshot', () => cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // OPEN") === true'));
   assert.deepEqual(await loadedPhaserResources(), [],
     'the initial Map route must not download Phaser before a battle is entered');
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
