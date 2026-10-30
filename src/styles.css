@@ -42,6 +42,19 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 .location-card em { margin-top: auto; font-style: normal; font-size: 12px; letter-spacing: .12em; }
 .location-card:disabled { opacity: .45; cursor: not-allowed; }
 .housing-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
+.battle-reward-receipt { display: grid; gap: 10px; margin: 12px 16px 0; padding: 14px 16px; border: 1px solid #3b3b46; border-radius: 12px; background: #111117; }
+.battle-reward-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.battle-reward-heading > div { display: grid; gap: 4px; }
+.battle-reward-heading > div > strong { color: #f4f4f5; font: 900 14px ui-monospace, monospace; letter-spacing: .08em; }
+.battle-reward-dismiss { width: 40px; height: 40px; border: 1px solid #3b3b46; border-radius: 9px; background: #22222b; color: #f4f4f5; cursor: pointer; font-size: 22px; }
+.battle-reward-totals { display: flex; flex-wrap: wrap; gap: 8px; }
+.battle-reward-totals span { padding: 8px 10px; border: 1px solid #30303a; border-radius: 8px; color: #e4e4e7; font: 800 12px ui-monospace, monospace; }
+.battle-reward-level-up { margin: 0; color: #f4f4f5; font: 900 13px ui-monospace, monospace; letter-spacing: .04em; }
+.battle-reward-loot { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.battle-reward-loot li { display: grid; gap: 4px; min-width: 120px; max-width: 100%; padding: 8px 10px; border: 1px solid #30303a; border-radius: 8px; overflow-wrap: anywhere; }
+.battle-reward-loot small { color: #71717a; font: 700 10px ui-monospace, monospace; letter-spacing: .08em; }
+.battle-reward-loot strong { color: #e4e4e7; font-size: 12px; }
+.battle-reward-empty { margin: 0; color: #a1a1aa; font-size: 12px; }
 .trophy-display { display: grid; gap: 12px; margin-bottom: 18px; padding: 16px; border: 1px solid #34343e; border-radius: 14px; background: #111117; }
 .trophy-display-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .trophy-display-heading h2 { margin: 4px 0 0; font-size: 18px; }
@@ -91,5 +104,6 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
   .trophy-card { grid-template-columns: 44px minmax(0, 1fr); }
   .trophy-icon { width: 44px; height: 44px; }
   .trophy-select { grid-column: 2; justify-self: start; }
+  .battle-reward-receipt { margin-inline: 12px; padding: 12px; }
   .screen { padding-inline: 12px; }
 }
