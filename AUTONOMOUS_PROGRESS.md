@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (announce authoritative Underpass status on Map and District)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED / PR #116 OPEN, unmerged:** `automation/degen/lazy-load-phaser-battle-v01`. Code/test commit `874563a82d1bcb37a01dc91e503bf025499bb7fc`; exact-head CI is pending for the new commit. PR #116 remains 14 commits ahead / 0 behind main; no direct-main write.
+- **Task / files changed:** `src/ui/views.ts` adds one visually-hidden polite live region to Map and District views so assistive technology hears the Underpass state while the live world snapshot is syncing and when the Worker state replaces it. Offline mode keeps its existing single connection-error announcement rather than emitting a duplicate. `tests/city-navigation.test.ts` covers syncing/open/offline announcement output. `tests/browser-battle-vertical-slice.mjs` checks the live region before and after releasing the delayed real Worker world snapshot in the 390×844 Chromium vertical slice. No combat, Worker, D1, rewards, economy, migration, or deployment configuration changed.
+- **QA:** source/test changes are PUSHED; exact-head CI is pending. No local-shell `npm test`, `npm run build`, or `npm run check:worker` result is claimed. The browser assertion is part of the existing real Chromium + local Worker/D1 CI vertical slice; no physical iPhone or production player-data smoke test is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, killing-blow/defeat handling, cost-aware controls, client/Worker math consistency, no monster Mana, and no Mana-triggered reversion remain intact. The original sidekick branch and inspected Mana-named successors are divergent/superseded; no cherry-pick.
+- **Battle authority / reward idempotency:** unchanged. Worker/D1 owns permits, player HP/Mana, enemy HP, turn CAS, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. The PR browser suite continues to exercise the existing vertical slice; this UI-only change moves no reward or combat authority to the client.
+- **Verified D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Mana migrations `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain tracked. Main's `0007_player_inventory_quantity_guards.sql` still conflicts by version with draft auth PR #14's `0007_player_sessions.sql`; PR #114 detects but does not resolve it. No D1 operation or migration change occurred.
+- **Miles blockers:** explicit `0007` sequencing decision; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling; the specifically required Monster Log v0.11 is still not present in the accessible Library search. No monster/status mechanics or balance were invented. Shield PR #20 remains gated.
+- **One best next task:** verify exact-head CI for PR #116, fix only demonstrated failures, then leave the PR for normal review. Keep Shield/auth deployment blocked until the migration and platform-identity gates are explicitly resolved.
+
+---
+
 ## Latest run — 2026-10-30 (PR #116 repeated-resume regression fixed; exact-head CI green)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
