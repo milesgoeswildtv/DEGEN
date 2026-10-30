@@ -12,7 +12,10 @@
     "deploy:worker": "wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply DEGEN --remote",
     "test": "node --experimental-strip-types --test tests/**/*.test.ts",
-    "check:migrations": "node --experimental-strip-types --test tests/d1-migration-order.test.ts"
+    "check:migrations": "node --experimental-strip-types --test tests/d1-migration-order.test.ts",
+    "predb:apply": "npm run check:migrations",
+    "predb:migrate": "npm run check:migrations",
+    "predeploy:worker": "npm run check:migrations"
   },
   "dependencies": {
     "phaser": "^4.2.1"

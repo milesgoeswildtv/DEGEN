@@ -54,3 +54,17 @@ test('Worker deployment checks migration versions before any remote D1 or Worker
   assert.ok(schemaApply < migrationApply, 'D1 schema must be applied before tracked migrations');
   assert.ok(migrationApply < workerDeploy, 'tracked migrations must finish before Worker deployment');
 });
+
+test('manual package commands guard every remote D1 and Worker write', () => {
+  const packageJson = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  ) as { scripts?: Record<string, string> };
+  const scripts = packageJson.scripts ?? {};
+
+  assert.equal(scripts['predb:apply'], 'npm run check:migrations',
+    'npm run db:apply must validate migration versions before remote schema writes');
+  assert.equal(scripts['predb:migrate'], 'npm run check:migrations',
+    'npm run db:migrate must validate migration versions before applying migrations');
+  assert.equal(scripts['predeploy:worker'], 'npm run check:migrations',
+    'npm run deploy:worker must validate migration versions before deploying Worker code');
+});
