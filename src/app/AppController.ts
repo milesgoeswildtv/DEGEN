@@ -2,12 +2,12 @@ import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
 import { WORLD_LOCATIONS } from '../data/world';
 import { bindCityViewport, type CityCamera } from '../ui/cityViewport';
-import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
+import type { BattleActionResult, BattlePermit, BattleReward, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
-import { battleView, districtView, homeView, locationView, mapView, underpassView, updateBattleDom } from '../ui/views';
+import { battleView, districtView, homeView, locationView, mapView, rewardReceiptView, underpassView, updateBattleDom } from '../ui/views';
 import { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
@@ -31,6 +31,14 @@ const shouldRetryBattleRecovery = (error: unknown): boolean => {
     || message === 'Concurrent reward updates; retry completion.';
 };
 
+type RewardNotice = {
+  playerId: string;
+  permitId: string;
+  reward: BattleReward;
+  previousLevel: number;
+  currentLevel: number;
+};
+
 export class AppController {
   private route: RouteKey = 'map';
   private selectedDistrict = 'Central';
@@ -52,6 +60,8 @@ export class AppController {
   private rewardResolution: Promise<void> = Promise.resolve();
   private rewardCompletionInFlight = new Map<string, Promise<void>>();
   private rewardRetryTimers = new Map<string, number>();
+  private rewardNotice?: RewardNotice;
+  private displayedRewardPermits = new Set<string>();
 
   constructor(
     private readonly root: HTMLElement,
@@ -113,6 +123,14 @@ export class AppController {
         break;
     }
 
+    if (this.rewardNotice?.playerId === player.id) {
+      this.root.querySelector('.topbar')?.insertAdjacentHTML('afterend', rewardReceiptView(
+        this.rewardNotice.reward,
+        this.rewardNotice.previousLevel,
+        this.rewardNotice.currentLevel,
+      ));
+    }
+
     this.bindCommonNavigation();
     this.bindCityNavigation();
     if (this.route === 'map') {
@@ -129,6 +147,11 @@ export class AppController {
         const route = button.dataset.route as RouteKey | undefined;
         if (route) this.navigate(route);
       });
+    });
+    this.root.querySelector<HTMLButtonElement>('[data-dismiss-reward]')?.addEventListener('click', () => {
+      if (this.rewardNotice?.playerId !== this.store.snapshot.id) return;
+      this.rewardNotice = undefined;
+      this.root.querySelector('[data-battle-reward-receipt]')?.remove();
     });
   }
 
@@ -597,8 +620,19 @@ export class AppController {
         const result = await this.api.completeUnderpass(playerId, permitId);
         if (!result) throw new Error('Missing authoritative battle completion response.');
         this.clearRewardCompletionRetry(key);
-        const isCurrentPlayer = this.store.snapshot.id === playerId;
+        const currentPlayer = this.store.snapshot;
+        const isCurrentPlayer = currentPlayer.id === playerId;
         if (isCurrentPlayer) {
+          if (!this.displayedRewardPermits.has(permitId)) {
+            this.rewardNotice = {
+              playerId,
+              permitId,
+              reward: result.reward,
+              previousLevel: currentPlayer.level,
+              currentLevel: result.player.level,
+            };
+            this.displayedRewardPermits.add(permitId);
+          }
           this.store.replaceFromServer(result.player);
           this.underpassEvent = result.worldEvent;
         }
@@ -643,7 +677,18 @@ export class AppController {
         clearsBeforeThisFight + 1,
         this.underpassEvent?.fullRewardLimit,
       );
+      const playerBeforeReward = this.store.snapshot;
+      const permitId = this.battlePermit.permitId;
       this.store.applyReward(previewReward);
+      const playerAfterReward = this.store.snapshot;
+      this.rewardNotice = {
+        playerId: playerAfterReward.id,
+        permitId,
+        reward: previewReward,
+        previousLevel: playerBeforeReward.level,
+        currentLevel: playerAfterReward.level,
+      };
+      this.displayedRewardPermits.add(permitId);
       this.store.markBossDefeated(TUNNEL_MAW.id);
       this.underpassEvent = getPreviewUnderpass();
     }
