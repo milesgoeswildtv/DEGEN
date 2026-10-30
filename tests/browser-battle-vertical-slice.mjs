@@ -501,8 +501,9 @@ try {
     'document.querySelector("[data-furniture=tunnel-trophy]")?.classList.contains("selected") === true',
   ));
   await tap('[data-room-x="4"][data-room-y="2"]');
+  const earnedTrophyCellSelector = '[data-room-x="4"][data-room-y="2"]';
   await until('earned trophy placed in the room', () => cdp.evaluate(
-    'document.querySelector("[data-room-x=\"4\"][data-room-y=\"2\"]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+    'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
   ));
   await until('earned trophy saved to local D1', () =>
     sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count === 1 ? true : null);
