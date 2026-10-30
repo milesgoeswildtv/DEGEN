@@ -500,6 +500,8 @@ try {
   await until('earned trophy placed in the room', () => cdp.evaluate(
     'document.querySelector("[data-room-x=4][data-room-y=2]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
   ));
+  await until('earned trophy saved to local D1', () =>
+    sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count === 1 ? true : null);
   assert.equal(sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count, 1,
     'the earned trophy must persist at the selected room cell');
   const finalPermit = sql("SELECT battle_status, reward_state, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
@@ -535,6 +537,8 @@ try {
   await until('persisted trophy displayed after reload', () => cdp.evaluate(
     'document.querySelector("[data-room-x=4][data-room-y=2]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
   ));
+  await assertFitsMobile('Home with earned trophy');
+  await assertFitsCompact('Home with earned trophy');
 
   // Exercise the actual running UI with an authoritative active snapshot at zero
   // Mana. The local D1 fixture models a valid Worker-owned zero-Mana snapshot
