@@ -236,10 +236,10 @@ try {
   });
   await click('.trophy-select[data-furniture="tunnel-trophy"]');
   await until('trophy selection', async () =>
-    await cdp.evaluate("Boolean(document.querySelector('.trophy-select[data-furniture=\\"tunnel-trophy\\\"].selected'))") ? true : null);
+    await cdp.evaluate("Boolean(document.querySelector('.trophy-select[data-furniture=\"tunnel-trophy\\"].selected'))") ? true : null);
   await click('[data-room-x="6"][data-room-y="4"]');
   await until('trophy rendered in the selected room cell', async () => {
-    const label = await cdp.evaluate("document.querySelector('[data-room-x=\\"6\\"][data-room-y=\\"4\\"]')?.getAttribute('aria-label') || ''");
+    const label = await cdp.evaluate("document.querySelector('[data-room-x=\"6\"][data-room-y=\"4\"]')?.getAttribute('aria-label') || ''");
     return label.includes('Underpass Trophy') ? label : null;
   });
   await until('trophy saved to local D1', async () =>
@@ -253,7 +253,7 @@ try {
     const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
     return text.includes('DISPLAYED · ROOM CELL 7, 5') ? text : null;
   });
-  const trophyCell = await cdp.evaluate("document.querySelector('[data-room-x=\\"6\\"][data-room-y=\\"4\\"]')?.getAttribute('aria-label') || ''");
+  const trophyCell = await cdp.evaluate("document.querySelector('[data-room-x=\"6\"][data-room-y=\"4\"]')?.getAttribute('aria-label') || ''");
   assert.match(trophyCell, /Underpass Trophy/, 'placed trophy must remain visible after reload');
 
   console.log('PASS real Chromium mobile viewport + Vite + local Worker/D1: housing placement persists after reload, empty room remains empty, and the earned Underpass Trophy can be selected, displayed, and recovered after reload');
