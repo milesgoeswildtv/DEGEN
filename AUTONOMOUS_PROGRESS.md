@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (lazy Phaser import abandonment/resume race coverage)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838` (main CI [41049131022](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049131022) passed).
+- **PUSHED candidate / PR #116:** `automation/degen/lazy-load-phaser-battle-v01`; pre-change head `e509a2441b1fabb45c254023f2f6e1f7483a0525`; this change adds a real-browser regression and continuity record. Not merged or deployed.
+- **Task / files changed:** `tests/browser-battle-vertical-slice.mjs` extends its CDP client to handle protocol events, deliberately holds the lazy `createBattleGame` module request, abandons the encounter before Phaser mounts, resumes the same server permit, releases the pending import, and asserts exactly one canvas mounts in the current battle view. It verifies the stale async mount cannot attach to a departed view while the resumed encounter remains playable. No combat, Worker, D1, reward, economy, or deployment code changes.
+- **QA:** this is new browser-test code. Exact-head CI is REQUIRED and pending after push; do not treat prior PR #116 CI on `c7dd9bc` as proof for this regression. Baseline PR #116 CI [41108208277](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41108208277) passed 259/259 deterministic tests, Worker/D1 concurrency/recovery, Underpass cycle/rollover, atomic defeat, housing persistence, build, Chromium vertical slice, and Wrangler validation. No local-shell run or physical iPhone test is claimed.
+- **Mana:** COMPLETE / MERGED on main: Degen-only maxMana/manaCost, persisted authoritative player_mana, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal behavior, cost-aware UI, client/Worker parity, no monster Mana, and no reversion at zero remain covered by main.
+- **Battle authority / reward idempotency:** Worker/D1 owns permit state, action CAS, terminal outcomes/history, completion receipts, and recoverable exactly-once settlement. This browser-only regression exercises abandonment/resume without changing authority or client reward trust.
+- **D1 / migration assumptions:** `wrangler.toml` remains authoritative for DB → DEGEN and `db/migrations`; deployment order is base schema → tracked migrations → Worker. Mana migrations `0003` and `0006` remain tracked. The duplicate `0007` inventory-guard/auth-session migration number remains unresolved; do not renumber or bypass it without Miles approval. No D1 operation or Worker deployment.
+- **Miles blockers:** explicit `0007` sequencing decision and production Discord/Telegram credentials, identity/session verification, and legacy identity-collision policy. Canonical Monster Log v0.11 is not present in the searched Library results (latest indexed Monster Log found was v0.9); do not replace TEST_DEGEN/Tunnel Maw from stale or guessed content.
+- **One best next task:** verify exact-head CI for this browser race regression; after green, continue a non-gated mobile reliability slice while keeping Shield/auth/migration and canonical monster-content gates intact.
+
+---
+
 ## Latest run — 2026-10-30 (defer Phaser until the first Degen battle)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`. Main CI [41049131022](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049131022) passed.
