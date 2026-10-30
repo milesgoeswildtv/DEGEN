@@ -59,8 +59,9 @@ export class AppController {
   ) {}
 
   async start(): Promise<void> {
-    await this.refreshWorld();
+    // Render the Map immediately; live world state can synchronize in the background.
     this.render();
+    void this.refreshWorld(true);
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
       const localPending = new Set(this.pendingRewardPermits(playerId));
