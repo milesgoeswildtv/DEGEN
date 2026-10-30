@@ -2,7 +2,7 @@ import { renderIsometricCity, renderIsometricDistrict } from './isometricCity';
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import type { BattleSnapshot } from '../game/combat/engine';
-import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
+import type { BattleReward, DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>'\"]/g, (char) => ({
@@ -52,6 +52,29 @@ export const appShell = (player: PlayerState, content: string): string => `
     <button type="button" data-route="home">HOME</button>
   </nav>
 `;
+
+const rewardItemLabel = (key: string): string => key.replace(/[-_]+/g, ' ').toUpperCase();
+
+export const rewardReceiptView = (reward: BattleReward, previousLevel: number, currentLevel: number): string => {
+  const tierLabel = reward.tier === 'full' ? 'FULL CLEAR' : reward.tier === 'reduced' ? 'REDUCED CLEAR' : 'BATTLE REWARD';
+  const loot = [
+    ...reward.items.map((item) => `<li><small>ITEM</small><strong>${escapeHtml(rewardItemLabel(item))}</strong></li>`),
+    ...(reward.furniture ?? []).map((item) => `<li><small>FURNITURE</small><strong>${escapeHtml(getFurniture(item)?.name ?? rewardItemLabel(item))}</strong></li>`),
+  ];
+  const levelUp = currentLevel > previousLevel
+    ? `<p class="battle-reward-level-up">LEVEL UP · LV.${previousLevel} → LV.${currentLevel}</p>`
+    : '';
+
+  return `<aside class="battle-reward-receipt" data-battle-reward-receipt role="status" aria-live="polite" aria-atomic="true">
+    <div class="battle-reward-heading">
+      <div><span class="eyebrow">UNDERPASS // REWARD RECEIPT</span><strong>${tierLabel}</strong></div>
+      <button class="battle-reward-dismiss" type="button" data-dismiss-reward aria-label="Dismiss battle reward receipt">×</button>
+    </div>
+    <div class="battle-reward-totals"><span>+${reward.xp} XP</span><span>+${reward.currency} CR</span></div>
+    ${levelUp}
+    ${loot.length ? `<ul class="battle-reward-loot">${loot.join('')}</ul>` : '<p class="battle-reward-empty">No item drops this clear.</p>'}
+  </aside>`;
+};
 
 export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot, backendOffline = false): string => {
   const status = worldStatus(underpass, backendOffline);
