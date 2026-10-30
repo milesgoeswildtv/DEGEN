@@ -678,7 +678,6 @@ export class AppController {
         this.underpassEvent?.fullRewardLimit,
       );
       const playerBeforeReward = this.store.snapshot;
-      const permitId = this.battlePermit.permitId;
       this.store.applyReward(previewReward);
       const playerAfterReward = this.store.snapshot;
       this.rewardNotice = {
