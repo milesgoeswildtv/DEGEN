@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (enforce migration-number guard before deployment)
+
+- **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
+- **PUSHED / PR #114 OPEN, unmerged:** `automation/degen/d1-migration-number-guard-v01`. Previous head `91b7849547d4bf673ce170a5a06e8718f8db624d` passed exact-head CI [41034955217](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41034955217) across deterministic tests, Worker/D1 concurrency and recovery, Underpass cycle/rollover races, defeat history, housing persistence browser QA, production build, Chromium battle vertical slice, and Wrangler validation. This follow-up changes the guard and deployment workflow; its new head requires fresh exact-head CI.
+- **Task / files changed:** `tests/d1-migration-order.test.ts` now also asserts the deploy workflow runs the migration-version check before any remote D1 operation, then applies schema, tracked migrations, and Worker code in that order. `package.json` exposes the focused `check:migrations` command. `.github/workflows/deploy-worker.yml` executes it immediately after install and before remote schema/migration commands. This prevents a manual workflow dispatch from bypassing the duplicate-version guard.
+- **QA boundary:** the prior PR head is fully green as noted above. The new implementation/test head has not yet run CI. No local-shell result, remote D1 operation, or deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, killing-blow/defeat handling, cost-aware controls, no monster Mana, and no zero-Mana reversion remain on main. The legacy `sidekick/degen-mana-foundation-v01` was inspected first: 11 commits ahead / 100 behind main; its Mana slice is superseded by later main validation/recovery work and was not cherry-picked.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, player HP/Mana, enemy HP, turn compare-and-swap, terminal outcome/history, audited reward receipts, XP/currency/inventory, and recoverable exactly-once settlement. This guard does not change combat or economy authority.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment now checks unique four-digit migration versions before schema apply, then applies schema → tracked migrations → Worker. Main still contains `0007_player_inventory_quantity_guards.sql`; draft auth PR #14 still proposes a conflicting `0007_player_sessions.sql`. No migration was renumbered, applied, or deleted.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, legacy identity-collision handling, and the explicit `0007` migration sequencing decision remain unresolved. Shield PR #20 remains stale/unmergeable and gated; no migration or auth bypass was attempted.
+- **One best next task:** get fresh exact-head CI for this deployment guard; then reconcile the auth/session migration numbering and production identity gate before rebuilding Shield on current main.
+
+---
+
 ## Latest run — 2026-10-30 (guard duplicate D1 migration versions)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
