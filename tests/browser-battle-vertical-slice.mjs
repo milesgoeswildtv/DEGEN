@@ -255,9 +255,29 @@ try {
     width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true,
   });
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await cdp.send('Emulation.setSafeAreaInsetsOverride', {
+    insets: { top: 30, right: 0, bottom: 24, left: 0 },
+  });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  const safeAreaLayout = await cdp.evaluate(`(() => {
+    const topbar = document.querySelector('.topbar');
+    const bottomNav = document.querySelector('.bottom-nav');
+    const viewport = document.querySelector('meta[name="viewport"]')?.content ?? '';
+    return {
+      viewportFitCover: viewport.includes('viewport-fit=cover'),
+      topPadding: Number.parseFloat(getComputedStyle(topbar).paddingTop),
+      bottomPadding: Number.parseFloat(getComputedStyle(bottomNav).paddingBottom),
+      appMinHeight: Number.parseFloat(getComputedStyle(document.querySelector('#app')).minHeight),
+      viewportHeight: window.innerHeight,
+    };
+  })()`);
+  assert.equal(safeAreaLayout.viewportFitCover, true, 'mobile viewport must expose device safe-area insets');
+  assert.ok(safeAreaLayout.topPadding >= 30, 'sticky topbar content must clear the emulated notch');
+  assert.ok(safeAreaLayout.bottomPadding >= 24, 'sticky bottom navigation must clear the emulated home indicator');
+  assert.ok(safeAreaLayout.appMinHeight >= safeAreaLayout.viewportHeight - 1,
+    'the app shell must use the dynamic mobile viewport height');
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
   assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);

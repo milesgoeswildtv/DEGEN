@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (iOS safe-area and dynamic viewport protection)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`. Main CI [41049131022](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049131022) passed; main's latest merge is the City Map → District → Location slice. The legacy `sidekick/degen-mana-foundation-v01` branch was inspected first at `e1ec782773728e94805c4e653ead62338a7ff9d1`; compare is 11 ahead / 101 behind and its initial Mana diff is superseded. No cherry-pick or competing Mana branch was created.
+- **LOCAL / BRANCH:** created `automation/degen/ios-safe-area-layout-v01` from the exact main SHA above. This run adds iOS safe-area padding for the sticky topbar/bottom navigation and uses dynamic viewport height with a `100vh` fallback. The HTML already declares `viewport-fit=cover`; it remains unchanged.
+- **Files changed:** `src/styles.css` adds `env(safe-area-inset-top/bottom)` padding to sticky navigation and `100dvh` fallbacks for the body/app shell. `tests/browser-battle-vertical-slice.mjs` emulates a 30px top inset and 24px bottom inset in Chromium mobile, then asserts the rendered sticky navigation clears both insets and the app shell tracks the dynamic viewport.
+- **QA boundary:** implementation is not yet pushed/PR or green. The branch requires exact-head CI, including the real Chromium mobile Worker/D1 battle vertical slice. No local-shell `npm test`, build, Wrangler run, physical iPhone test, production D1 operation, or production deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main. Current main retains Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, battle-start initialization, reject-without-mutation, exact deduction, zero-cost-at-zero, killing-blow/defeat handling, cost-aware controls, no monster Mana, and no Mana-triggered reversion.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, action compare-and-swap, HP/Mana/enemy HP/turn count, terminal outcomes/history, audited reward receipts, XP/currency/inventory, and transient-failure recovery. This UI-only slice changes no combat, permit, reward, or economy authority.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` and `db/migrations`. Main's tracked versions include `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a duplicate `0007_player_sessions.sql`; PR #114's migration-number preflight is open and exact-head CI passed on `82267055b2399340087ceba8e5268dde13393876` (run [41073488433](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41073488433)). No migration was renumbered or applied.
+- **Miles blockers:** explicit `0007` sequencing decision, production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling. Shield PR #20 remains gated; no Shield/status schema work was started.
+- **One best next task:** verify this branch's exact-head CI and inspect the Chromium safe-area assertions; then continue mobile/readability reliability without bypassing the migration/auth gate.
+
+---
+
 ## Latest run — 2026-10-30 (PR #113 exact-head verification and review delivery)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
