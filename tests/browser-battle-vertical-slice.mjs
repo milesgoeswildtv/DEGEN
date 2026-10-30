@@ -278,7 +278,20 @@ try {
   const cityTransformAfterPan = await cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform ?? ""');
   assert.notEqual(cityTransformAfterPan, cityTransformBeforePan,
     'a real mobile touch drag must pan the city camera');
-  await tap("[data-city-reset]");
+  // A completed drag exceeds Chrome's click threshold. The map reset control
+  // was already exercised as a real touch above; use a fresh native pointer
+  // click here so this assertion measures reset behavior, not post-drag tap
+  // synthesis/click suppression in headless Chromium.
+  const resetPoint = await cdp.evaluate(`() => {
+    const button = document.querySelector('[data-city-reset]');
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }`);
+  assert.ok(resetPoint, 'map reset control must remain available after a touch drag');
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...resetPoint });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...resetPoint, button: 'left', clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...resetPoint, button: 'left', clickCount: 1 });
   await until('city camera reset after touch drag', () =>
     cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform.includes("translate(0px, 0px)") ?? false'));
   await tap("[data-route=home]");
