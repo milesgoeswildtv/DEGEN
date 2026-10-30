@@ -22,7 +22,7 @@ const world = runInNewContext(
 };
 
 const views = runInNewContext(
-  compile('../src/ui/views.ts') + '\n({ homeView });',
+  compile('../src/ui/views.ts') + '\n({ homeView, rewardReceiptView });',
   {
     WORLD_LOCATIONS: world.WORLD_LOCATIONS,
     FURNITURE_CATALOG: world.FURNITURE_CATALOG,
