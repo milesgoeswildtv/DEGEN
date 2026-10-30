@@ -81,6 +81,9 @@ const createFixture = (includeDuplicate: boolean): Fixture => {
   delete env.npm_package_json;
   delete env.npm_config_local_prefix;
   delete env.npm_command;
+  // Node's test runner marks child processes so nested `node --test` calls skip.
+  // Clear that marker so the migration preflight really executes in this fixture.
+  delete env.NODE_TEST_CONTEXT;
   return { root, marker, env };
 };
 
