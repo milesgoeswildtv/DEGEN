@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (guard duplicate D1 migration versions)
+
+- **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
+- **PUSHED / PR #114 OPEN, unmerged:** `automation/degen/d1-migration-number-guard-v01`. Current code/test head: `1e8d791b91a598e0dc662ceeaf16eb80c087985e`. Exact-head CI is pending; no local-shell result is claimed.
+- **Task / files changed:** `tests/d1-migration-order.test.ts` validates the tracked migration filename format and rejects duplicate four-digit versions. A fixture explicitly proves that `0007_player_inventory_quantity_guards.sql` and `0007_player_sessions.sql` cannot coexist under the same D1 migration version. `AUTONOMOUS_PROGRESS.md` records this run. No runtime, schema, migration, Worker, Wrangler, binding, database ID, secret, or deployment workflow changed.
+- **QA:** the new test is committed and the PR is open. GitHub Actions exact-head CI has not yet completed; no passing test/build/Worker/browser claim is made for this head. Require the full CI matrix before considering the guard green.
+- **Mana:** COMPLETE / MERGED on main. Current main retains Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, atomic insufficient-Mana rejection, exact deduction, zero-cost use at zero, killing-blow/defeat behavior, cost-aware controls, no monster Mana, and no zero-Mana reversion. `sidekick/degen-mana-foundation-v01` remains superseded (11 ahead / 100 behind); its migration is identical to main while its runtime/Worker files are older. Mana-named successor branches were inspected; their deltas are superseded by current main. No cherry-pick or duplicate Mana branch.
+- **Battle authority / reward idempotency:** main Worker/D1 still owns permit state, player HP/Mana, enemy HP, turn compare-and-swap, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. Existing CI includes Worker/D1 action/completion concurrency and transient reward recovery; this PR changes no authority or reward behavior.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. Main currently has unique versions `0002` through `0007`. The open draft auth PR #14 still proposes a second `0007_player_sessions.sql`, colliding with main's `0007_player_inventory_quantity_guards.sql`. PR #114 adds a CI guard only; it does not renumber, apply, or otherwise mutate migrations. Shield PR #20 remains stale/unmergeable and gated; do not bypass the migration/auth sequence.
+- **Miles blockers:** approved production Discord/Telegram credentials, controlled identity/session verification, legacy identity-collision handling, and an explicit migration-numbering decision remain unresolved. No approval to renumber or apply migrations was assumed.
+- **One best next task:** verify exact-head CI for PR #114. If green, leave the guard for normal review; obtain the explicit session/auth migration sequence and production identity gate before rebuilding or releasing Shield.
+
+---
+
 ## Latest run — 2026-10-29 (housing reliability rebuilt on current main)
 
 - **Authoritative main SHA at branch start:** `66806acc10f303ce60e32f1fac848b0e9f0034d2`.
