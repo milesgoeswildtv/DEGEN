@@ -282,12 +282,12 @@ try {
   // was already exercised as a real touch above; use a fresh native pointer
   // click here so this assertion measures reset behavior, not post-drag tap
   // synthesis/click suppression in headless Chromium.
-  const resetPoint = await cdp.evaluate(`() => {
+  const resetPoint = await cdp.evaluate(`(() => {
     const button = document.querySelector('[data-city-reset]');
     if (!button) return null;
     const rect = button.getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  }`);
+  })()`);
   assert.ok(resetPoint, 'map reset control must remain available after a touch drag');
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...resetPoint });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...resetPoint, button: 'left', clickCount: 1 });
