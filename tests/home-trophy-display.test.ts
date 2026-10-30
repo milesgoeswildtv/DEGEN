@@ -32,7 +32,10 @@ const views = runInNewContext(
     isValidManaCost: (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0,
     isValidManaState: () => true,
   },
-) as { homeView: (player: unknown, selectedFurniture?: string) => string };
+) as {
+  homeView: (player: unknown, selectedFurniture?: string) => string;
+  rewardReceiptView: (reward: { xp: number; currency: number; items: string[]; furniture?: string[]; tier?: 'full' | 'reduced' }, previousLevel: number, currentLevel: number) => string;
+};
 
 const basePlayer = {
   id: 'trophy-test',
@@ -87,4 +90,36 @@ test('a placed trophy reports its saved room cell and selected state', () => {
   assert.match(html, /aria-pressed="true"/);
   assert.match(html, /SELECTED/);
   assert.match(html, /Room cell 7, 5: Underpass Trophy/);
+});
+
+
+test('authoritative reward receipt shows loot, currency, XP, and the server level transition', () => {
+  const html = views.rewardReceiptView({
+    xp: 75,
+    currency: 30,
+    items: ['underpass-scrap'],
+    furniture: ['tunnel-trophy'],
+    tier: 'full',
+  }, 1, 2);
+  assert.match(html, /FULL CLEAR/);
+  assert.match(html, /\\+75 XP/);
+  assert.match(html, /\\+30 CR/);
+  assert.match(html, /UNDERPASS SCRAP/);
+  assert.match(html, /Underpass Trophy/);
+  assert.match(html, /LEVEL UP · LV\\.1 → LV\\.2/);
+  assert.match(html, /data-dismiss-reward/);
+});
+
+test('reduced reward receipt escapes item keys and does not invent a level-up', () => {
+  const html = views.rewardReceiptView({
+    xp: 10,
+    currency: 3,
+    items: ['<img src=x onerror=alert(1)>'],
+    furniture: [],
+    tier: 'reduced',
+  }, 2, 2);
+  assert.match(html, /REDUCED CLEAR/);
+  assert.match(html, /&lt;IMG SRC=X ONERROR=ALERT\\(1\\)&gt;/);
+  assert.doesNotMatch(html, /<img src=x/i);
+  assert.doesNotMatch(html, /LEVEL UP/);
 });
