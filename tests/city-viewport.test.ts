@@ -157,6 +157,17 @@ test('keyboard arrows pan and keyboard zoom controls prevent page scrolling', ()
   assert.equal(map.event('keydown', { key: 'Tab' }), false, 'unhandled keys retain normal browser behavior');
 });
 
+test('keyboard map shortcuts do not hijack a focused destination button', () => {
+  const map = makeMap();
+  const destinationButton = {
+    closest: (selector: string) => selector.includes('button') ? {} : null,
+  };
+  assert.equal(map.event('keydown', { key: 'ArrowLeft', target: destinationButton }), false);
+  assert.equal(map.camera().x, 0, 'focused destination buttons keep their keyboard interaction');
+  assert.equal(map.event('keydown', { key: '+', target: destinationButton }), false);
+  assert.equal(map.camera().scale, 0.8, 'map shortcuts only run when the viewport itself has focus');
+});
+
 test('pinch zoom responds to two independent pointers', () => {
   const map = makeMap();
   map.event('pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });

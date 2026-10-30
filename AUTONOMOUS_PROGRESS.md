@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (keep city-map keyboard shortcuts off focused destination buttons)
+
+- **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
+- **PUSHED / PR #113 OPEN, DRAFT pending exact-head CI:** `automation/degen/city-navigation-current-v01`. Starting head `4b17f5291f80ae1df2dd16889928fb2344a519bd`; this follow-up stays on the existing city-navigation branch. No direct-main write.
+- **Task / files changed:** `src/ui/cityViewport.ts` now ignores map pan/zoom shortcuts when a key event bubbles from a focused button, link, form control, editable region, or custom button. This prevents the viewport from consuming keyboard/assistive-technology navigation intended for a destination control. `tests/city-viewport.test.ts` adds a regression proving a focused district button neither pans nor zooms the map. The prior follow-up in the same PR also adds labelled control-group semantics and arrow/+/-/0 keyboard tests.
+- **QA:** CI [41015961903](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41015961903) was running on the previous head `4b17f5291f80ae1df2dd16889928fb2344a519bd`; its deterministic game tests passed, while the isolated Worker/D1 reward-concurrency stage was still in progress at this update. This new head requires its own exact-head CI. Container-side clone remained unavailable because outbound DNS to GitHub failed; no local-shell `npm test`, build, or Wrangler result is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware controls, no monster Mana, and no Mana-triggered reversion remain intact. The old `sidekick/degen-mana-foundation-v01` is superseded (11 ahead / 100 behind); no cherry-pick.
+- **Battle authority / reward idempotency:** main Worker/D1 remains authoritative for permit state, turn compare-and-swap, terminal outcomes, audited reward receipts, progression, inventory, currency, and recovery. This is client input handling plus deterministic regression coverage; no reward authority moved to the client.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` and `db/migrations`; schema → tracked migrations → Worker remains the deploy order. Main's `0007_player_inventory_quantity_guards.sql` still conflicts by number with draft auth PR #14's `0007_player_sessions.sql`; Shield PR #20 remains gated with its draft `0008_degen_shield.sql`. No D1 schema or migration changed.
+- **Miles blockers:** production platform credentials, controlled Discord/Telegram identity/session verification, and legacy identity-collision policy remain release gates. The current Monster Log v0.11 source was not found in the accessible Library; the available Design Bible v0.12 still leaves exact status durations/stacking/resistance unresolved. No content canon was invented.
+- **One best next task:** verify exact-head CI for this focused keyboard-input guard. If green, mark PR #113 ready for review; leave Shield/status persistence blocked until the migration/auth sequence is resolved.
+
+---
+
 ## Latest run — 2026-10-30 (keyboard-accessible city-map controls)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.

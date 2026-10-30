@@ -101,6 +101,8 @@ export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undef
     zoom(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - rect.left, event.clientY - rect.top);
   }, { passive: false });
   viewport.addEventListener('keydown', event => {
+    const target = event.target as Element | null;
+    if (target?.closest?.('button, a, input, select, textarea, [contenteditable="true"], [role="button"]')) return;
     if (event.key === 'ArrowLeft') camera.x += 48;
     else if (event.key === 'ArrowRight') camera.x -= 48;
     else if (event.key === 'ArrowUp') camera.y += 48;
