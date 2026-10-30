@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (move keyboard and assistive-technology focus on route changes)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED candidate / PR #116:** `automation/degen/lazy-load-phaser-battle-v01`; starting head `2a320200285f78bafe6912d533f1de9afe4177af`. This follow-up stays on the existing mobile-startup/accessibility branch; no direct-main write.
+- **Task / files changed:** `src/app/AppController.ts` moves focus to the newly rendered `main.screen` landmark after an actual route navigation, but leaves background/world-sync rerenders alone. `src/ui/views.ts` makes that landmark programmatically focusable with `tabindex="-1"`. `tests/city-navigation.test.ts` covers focus-on-navigation and no focus-steal on ordinary rerender. `tests/browser-battle-vertical-slice.mjs` asserts the real Chromium Map → District → Location transitions focus the new main landmark. This improves SPA keyboard/screen-reader orientation without changing navigation, combat, or game canon.
+- **QA:** code and regression tests are committed to the feature branch. Exact-head CI is required; no result for this new head is claimed yet. No physical iPhone test or production player-data smoke test is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain covered. The legacy sidekick Mana branch is 11 ahead / 101 behind and divergent; its remaining diff is the superseded original Mana slice, so no cherry-pick is appropriate.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, HP/Mana, enemy HP, action turn-CAS, terminal outcome/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. This is focus/UI behavior only; no client reward authority changed.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` are tracked. The `0007_player_inventory_quantity_guards.sql` / draft auth `0007_player_sessions.sql` collision remains unresolved; PR #114 only detects it. No D1 operation or migration edit occurred.
+- **Miles blockers:** explicit `0007` sequence decision; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy. Shield PR #20 remains gated; no status/monster canon was invented.
+- **One best next task:** inspect exact-head CI for this focus-management regression, correct only demonstrated failures, then leave PR #116 open for review.
+
+---
+
 ## Latest run — 2026-10-30 (announce authoritative Underpass status on Map and District)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.

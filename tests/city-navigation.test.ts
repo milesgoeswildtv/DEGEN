@@ -56,6 +56,7 @@ test('city map derives only existing districts and routes through district selec
   assert.match(html, /--pin-x:40%/);
   assert.match(html, /--pin-x:60%/);
   assert.match(html, /tabindex="0"/);
+  assert.match(html, /<main class="screen" tabindex="-1">/);
   assert.match(html, /&lt;Player&gt;/);
 });
 
@@ -182,6 +183,41 @@ test('controller follows map to district to location and rejects locked navigati
   controller.navigate('district');
   locationButton.click();
   assert.equal(controller.route, 'district');
+});
+
+test('controller moves focus to main content after navigation but not ordinary rerenders', () => {
+  const focused: unknown[] = [];
+  const main = { focus: (options?: unknown) => focused.push(options) };
+  const root = {
+    innerHTML: '',
+    querySelectorAll: () => [],
+    querySelector: (selector: string) => selector === 'main.screen' ? main : null,
+  };
+  const Controller = runInNewContext(
+    compile('../src/app/AppController.ts') + '\nAppController;',
+    {
+      WORLD_LOCATIONS,
+      bindCityViewport: () => {},
+      mapView: () => 'map', districtView: () => 'district', locationView: () => 'location',
+      homeView: () => 'home', underpassView: () => 'underpass', battleView: () => 'battle',
+    },
+  ) as new (root: unknown, store: unknown, api: unknown) => {
+    render(): void;
+    navigate(route: string): void;
+  };
+  const controller = new Controller(root, { snapshot: player }, { enabled: false });
+
+  controller.navigate('district');
+  assert.equal(root.innerHTML, 'district');
+  assert.equal(focused.length, 1, 'route navigation should move focus to the new main landmark');
+  assert.equal(focused[0], undefined, 'native focus should bring the main landmark into view');
+
+  controller.render();
+  assert.equal(focused.length, 1, 'background refresh renders must not steal focus');
+
+  controller.navigate('home');
+  assert.equal(root.innerHTML, 'home');
+  assert.equal(focused.length, 2, 'each user-visible route change should focus the new main landmark');
 });
 
 test('Underpass retains a breadcrumb back to its Central district', () => {

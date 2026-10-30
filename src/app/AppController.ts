@@ -79,6 +79,11 @@ export class AppController {
     if (route !== 'battle') this.destroyBattle();
     this.route = route;
     this.render();
+    this.focusRouteContent();
+  }
+
+  private focusRouteContent(): void {
+    this.root.querySelector<HTMLElement>('main.screen')?.focus();
   }
 
   private render(): void {

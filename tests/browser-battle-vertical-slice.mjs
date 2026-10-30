@@ -356,10 +356,14 @@ try {
   await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   await tap("[data-district=Central]");
   await until('Central district destinations', () => cdp.evaluate('!!document.querySelector("[data-location=downtown]") && !!document.querySelector("[data-location=underpass]")'));
+  assert.equal(await cdp.evaluate('document.activeElement?.matches("main.screen") === true'), true,
+    'Map → District navigation must move focus to the new main content landmark');
   await assertFitsMobile('Central district');
   await assertFitsCompact('Central district');
   await tap("[data-location=downtown]");
   await until('Downtown location scene', () => cdp.evaluate('!!document.querySelector(".location-scene") && document.querySelector(".location-scene")?.textContent.includes("Downtown")'));
+  assert.equal(await cdp.evaluate('document.activeElement?.matches("main.screen") === true'), true,
+    'District → Location navigation must move focus to the new main content landmark');
   await assertFitsMobile('Downtown location');
   await assertFitsCompact('Downtown location');
   assert.equal(await cdp.evaluate('document.querySelector(".location-scene-status")?.textContent'), 'ACCESSIBLE // ACTIVITIES IN DEVELOPMENT');

@@ -53,7 +53,7 @@ export const appShell = (player: PlayerState, content: string): string => `
       <span>${player.currency} cr</span>
     </div>
   </header>
-  <main class="screen">${content}</main>
+  <main class="screen" tabindex="-1">${content}</main>
   <nav class="bottom-nav" aria-label="Primary">
     <button type="button" data-route="map">MAP</button>
     <button type="button" data-route="home">HOME</button>
