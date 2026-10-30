@@ -283,6 +283,9 @@ try {
   const cityTransformAfterPan = await cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform ?? ""');
   assert.notEqual(cityTransformAfterPan, cityTransformBeforePan,
     'a real mobile touch drag must pan the city camera');
+  const captureAfterPan = await cdp.evaluate(
+    'document.querySelector("[data-city-viewport]")?.hasPointerCapture(1) ?? false');
+  assert.equal(captureAfterPan, false, 'the viewport must release the touch pointer before the next control tap');
   // Let the completed drag's pointerup/capture-release cycle settle, then
   // keep reset and Home navigation on real touch input.
   await sleep(100);
