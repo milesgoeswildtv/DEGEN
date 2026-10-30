@@ -74,7 +74,11 @@ function cdpClient(url) {
   };
   const evaluate = async expression => {
     const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw Error(result.exceptionDetails.text);
+    if (result.exceptionDetails) {
+      const details = result.exceptionDetails;
+      const description = details.exception?.description ?? details.exception?.value ?? details.text;
+      throw Error('Runtime.evaluate failed: ' + description);
+    }
     return result.result.value;
   };
   return { ws, send, evaluate };
@@ -498,7 +502,7 @@ try {
   ));
   await tap('[data-room-x="4"][data-room-y="2"]');
   await until('earned trophy placed in the room', () => cdp.evaluate(
-    'document.querySelector("[data-room-x=4][data-room-y=2]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+    'document.querySelector("[data-room-x=\"4\"][data-room-y=\"2\"]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
   ));
   await until('earned trophy saved to local D1', () =>
     sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count === 1 ? true : null);
