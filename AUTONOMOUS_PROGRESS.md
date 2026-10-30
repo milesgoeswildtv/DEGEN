@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (correct repeated-resume browser assertion on PR #116)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED / PR #116 OPEN, unmerged:** `automation/degen/lazy-load-phaser-battle-v01`. Test-fix commit: `f657fc99295a8e27fbb355a3eec7a3081766b69b`; this continuity update follows it. No direct-main write.
+- **Task / files changed:** `tests/browser-battle-vertical-slice.mjs` only for runtime/test behavior. The exact-head CI failure on `81ea14280c222612fd5e555bb96e65bcf97406bc` was a stale assertion, not a duplicate-permit defect: the browser scenario explicitly resumes once to exercise lazy-import abandonment, then resumes the same permit a second time. The test counted both valid `/api/battle/start` replay requests but incorrectly expected one. It now asserts one request immediately after the first reload resume, then asserts the second explicit resume reuses the identical persisted request ID; the existing D1 assertion still requires exactly one permit.
+- **QA:** CI run [41114206422](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41114206422) failed only at the Chromium browser assertion (`2 !== 1`) after **259/259** deterministic tests passed, isolated Worker/D1 reward concurrency and transient recovery passed, Underpass cycle/rollover concurrency passed, atomic defeat passed, housing persistence passed, and production build passed. Wrangler was skipped because the browser step exited nonzero. The new test-fix head has not yet run CI; do not claim the browser fix or full suite green until exact-head CI completes. The CI failure log showed two successful Worker start responses for the two deliberate resume actions and only one persisted permit.
+- **Mana:** COMPLETE / MERGED on main. Player-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic insufficient-Mana rejection, exact deduction, zero-cost use at zero, killing-blow/defeat behavior, cost-aware controls, client/Worker consistency, no monster Mana, and no Mana-triggered reversion remain covered by main.
+- **Battle authority / reward idempotency:** Worker/D1 owns permits, player HP/Mana, enemy HP, turn CAS, terminal outcomes/history, audited reward receipts, XP/currency/inventory, and recoverable exactly-once settlement. The failed exact-head CI's isolated reward concurrency and transient-recovery suites passed; this test-only fix changes no authority or economy path.
+- **D1 / migration assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Mana migrations `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` remain tracked. Main's `0007_player_inventory_quantity_guards.sql` conflicts by version with draft auth PR #14's `0007_player_sessions.sql`; PR #114 detects but does not resolve the collision. No migration, schema, D1 binding, or deployment configuration changed.
+- **Miles blockers:** the `0007` migration sequence, production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain unresolved. Shield PR #20 remains gated. No content canon or migration ordering was invented.
+- **One best next task:** run and inspect exact-head CI for PR #116; if green, refresh its PR evidence and leave it open for review.
+
+---
+
 ## Latest run — 2026-10-30 (render Map before live world synchronization)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
