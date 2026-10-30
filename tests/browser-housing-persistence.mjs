@@ -236,7 +236,7 @@ try {
   });
   await click('.trophy-select[data-furniture="tunnel-trophy"]');
   await until('trophy selection', async () =>
-    await cdp.evaluate("Boolean(document.querySelector('.trophy-select[data-furniture=\"tunnel-trophy\\"].selected'))") ? true : null);
+    await cdp.evaluate("Boolean(document.querySelector('.trophy-select[data-furniture=\"tunnel-trophy\"].selected'))") ? true : null);
   await click('[data-room-x="6"][data-room-y="4"]');
   await until('trophy rendered in the selected room cell', async () => {
     const label = await cdp.evaluate("document.querySelector('[data-room-x=\"6\"][data-room-y=\"4\"]')?.getAttribute('aria-label') || ''");
