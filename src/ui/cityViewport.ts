@@ -82,6 +82,19 @@ export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undef
   viewport.addEventListener('pointerup', end);
   viewport.addEventListener('pointercancel', end);
   viewport.addEventListener('lostpointercapture', end);
+  // Some touch-input environments can deliver touchend after pointer capture
+  // cleanup has been deferred or cancelled. Treat the completed touch sequence
+  // as a final release boundary so a stale viewport capture cannot swallow the
+  // next tap on a control outside the map.
+  const finishTouchSequence = () => {
+    for (const pointerId of [...pointers.keys()]) {
+      pointers.delete(pointerId);
+      if (viewport.hasPointerCapture(pointerId)) viewport.releasePointerCapture(pointerId);
+    }
+    lastPinch = 0;
+  };
+  viewport.addEventListener('touchend', finishTouchSequence, { passive: true });
+  viewport.addEventListener('touchcancel', finishTouchSequence, { passive: true });
   viewport.addEventListener('wheel', event => {
     event.preventDefault();
     const rect = viewport.getBoundingClientRect();
