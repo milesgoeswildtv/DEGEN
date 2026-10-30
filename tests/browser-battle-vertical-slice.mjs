@@ -427,6 +427,11 @@ try {
   await tap("[data-resume-battle]");
   await until('Manifested Degen controls while the renderer request is held', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
   await until('lazy Phaser module request is intercepted', () => pausedBattleModuleRequest !== undefined);
+  const firstReloadStartRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
+  assert.equal(firstReloadStartRequestIds.length, 1,
+    'the first resume after reload should issue one request to recover the permit');
+  assert.equal(firstReloadStartRequestIds[0], firstStartRequestIds[0],
+    'the first reload resume must reuse the persisted request ID');
   assert.ok(pausedBattleModuleRequest, 'the battle renderer module request must be held before it can mount');
   await tap('[data-route=underpass]');
   await until('Underpass after abandoning before renderer load', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
@@ -454,9 +459,10 @@ try {
   assert.equal(await cdp.evaluate('window.__degenLostStartResponses'), 0,
     'the successful post-reload recovery should not lose another response');
   const startRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
-  assert.equal(startRequestIds.length, 1, 'the reloaded page should issue one request to recover the permit');
-  assert.equal(startRequestIds[0], firstStartRequestIds[0],
-    'the reloaded page must reuse the persisted request ID from both failed attempts');
+  assert.equal(startRequestIds.length, 2,
+    'the reloaded page should issue one request for each of its two explicit resumes');
+  assert.deepEqual(startRequestIds, [firstStartRequestIds[0], firstStartRequestIds[0]],
+    'both resumes must reuse the same persisted request ID rather than minting a second permit');
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
     'recovery after reload must not create a duplicate permit');
   const startStorageKey = 'degen:battle-start:' + encodeURIComponent(playerId);
