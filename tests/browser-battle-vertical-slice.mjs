@@ -256,7 +256,7 @@ try {
   });
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   await cdp.send('Emulation.setSafeAreaInsetsOverride', {
-    insets: { top: 30, right: 0, bottom: 24, left: 0 },
+    insets: { top: 30, right: 20, bottom: 24, left: 20 },
   });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
@@ -269,6 +269,10 @@ try {
       viewportFitCover: viewport.includes('viewport-fit=cover'),
       topPadding: Number.parseFloat(getComputedStyle(topbar).paddingTop),
       bottomPadding: Number.parseFloat(getComputedStyle(bottomNav).paddingBottom),
+      topLeftPadding: Number.parseFloat(getComputedStyle(topbar).paddingLeft),
+      topRightPadding: Number.parseFloat(getComputedStyle(topbar).paddingRight),
+      bottomLeftPadding: Number.parseFloat(getComputedStyle(bottomNav).paddingLeft),
+      bottomRightPadding: Number.parseFloat(getComputedStyle(bottomNav).paddingRight),
       appMinHeight: Number.parseFloat(getComputedStyle(document.querySelector('#app')).minHeight),
       viewportHeight: window.innerHeight,
     };
@@ -276,6 +280,10 @@ try {
   assert.equal(safeAreaLayout.viewportFitCover, true, 'mobile viewport must expose device safe-area insets');
   assert.ok(safeAreaLayout.topPadding >= 30, 'sticky topbar content must clear the emulated notch');
   assert.ok(safeAreaLayout.bottomPadding >= 24, 'sticky bottom navigation must clear the emulated home indicator');
+  assert.ok(safeAreaLayout.topLeftPadding >= 20, 'sticky topbar content must clear the left landscape inset');
+  assert.ok(safeAreaLayout.topRightPadding >= 20, 'sticky topbar content must clear the right landscape inset');
+  assert.ok(safeAreaLayout.bottomLeftPadding >= 20, 'sticky bottom navigation must clear the left landscape inset');
+  assert.ok(safeAreaLayout.bottomRightPadding >= 20, 'sticky bottom navigation must clear the right landscape inset');
   assert.ok(safeAreaLayout.appMinHeight >= safeAreaLayout.viewportHeight - 1,
     'the app shell must use the dynamic mobile viewport height');
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
