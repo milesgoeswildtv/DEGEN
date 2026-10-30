@@ -61,10 +61,10 @@ test('manual package commands guard every remote D1 and Worker write', () => {
   ) as { scripts?: Record<string, string> };
   const scripts = packageJson.scripts ?? {};
 
-  assert.equal(scripts['predb:apply'], 'npm run check:migrations',
-    'npm run db:apply must validate migration versions before remote schema writes');
-  assert.equal(scripts['predb:migrate'], 'npm run check:migrations',
-    'npm run db:migrate must validate migration versions before applying migrations');
-  assert.equal(scripts['predeploy:worker'], 'npm run check:migrations',
-    'npm run deploy:worker must validate migration versions before deploying Worker code');
+  assert.equal(scripts['db:apply'], 'npm run check:migrations && wrangler d1 execute DEGEN --remote --file=db/schema.sql',
+    'npm run db:apply must run the migration guard before remote schema writes');
+  assert.equal(scripts['db:migrate'], 'npm run check:migrations && wrangler d1 migrations apply DEGEN --remote',
+    'npm run db:migrate must run the migration guard before applying migrations');
+  assert.equal(scripts['deploy:worker'], 'npm run check:migrations && wrangler deploy',
+    'npm run deploy:worker must run the migration guard before deploying Worker code');
 });
