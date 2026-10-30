@@ -32,7 +32,7 @@ test('Worker deployment applies the tracked D1 schema and migrations before Work
     'schema and tracked migrations must run before Worker deployment',
   );
 
-  assert.equal(packageJson.scripts?.['db:migrate'], 'wrangler d1 migrations apply DEGEN --remote');
+  assert.equal(packageJson.scripts?.['db:migrate'], 'npm run check:migrations && wrangler d1 migrations apply DEGEN --remote');
   assert.match(wrangler, /migrations_dir = "db\/migrations"/);
   assert.match(manaBackfill, /UPDATE battle_permits[\s\S]*SET player_mana = 12/);
 });
