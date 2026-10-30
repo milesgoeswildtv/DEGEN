@@ -488,6 +488,27 @@ try {
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
+
+  // The earned trophy must be usable as actual housing furniture, not only
+  // present in inventory. Place it, then reload through the real Worker/D1
+  // bootstrap path and prove the room snapshot restores that display.
+  await tap('[data-furniture="tunnel-trophy"]');
+  await until('earned trophy selected for display', () => cdp.evaluate(
+    'document.querySelector("[data-furniture=tunnel-trophy]")?.classList.contains("selected") === true',
+  ));
+  await tap('[data-room-x="4"][data-room-y="2"]');
+  await until('earned trophy placed in the room', () => cdp.evaluate(
+    'document.querySelector("[data-room-x=4][data-room-y=2]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+  ));
+  assert.equal(sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count, 1,
+    'the earned trophy must persist at the selected room cell');
+  await cdp.send('Page.reload');
+  await until('Map after trophy placement reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await tap('[data-route=home]');
+  await until('persisted trophy displayed after reload', () => cdp.evaluate(
+    'document.querySelector("[data-room-x=4][data-room-y=2]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+  ));
+
   const finalPermit = sql("SELECT battle_status, reward_state, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
   assert.equal(finalPermit?.battle_status, 'victory');
   assert.equal(finalPermit?.reward_state, 'awarded');
