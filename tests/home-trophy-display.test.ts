@@ -6,14 +6,14 @@ import { runInNewContext } from 'node:vm';
 
 const compile = (file: string): string => stripTypeScriptTypes(
   readFileSync(new URL(file, import.meta.url), 'utf8')
-    .replace(/^import .*;\\n/gm, '')
+    .replace(/^import .*;\n/gm, '')
     .replace(/^export const /gm, 'const ')
     .replace(/^export class /gm, 'class '),
   { mode: 'transform' },
 );
 
 const world = runInNewContext(
-  compile('../src/data/world.ts') + '\\n({ WORLD_LOCATIONS, FURNITURE_CATALOG, getFurniture });',
+  compile('../src/data/world.ts') + '\n({ WORLD_LOCATIONS, FURNITURE_CATALOG, getFurniture });',
   {},
 ) as {
   WORLD_LOCATIONS: unknown[];
@@ -22,7 +22,7 @@ const world = runInNewContext(
 };
 
 const views = runInNewContext(
-  compile('../src/ui/views.ts') + '\\n({ homeView });',
+  compile('../src/ui/views.ts') + '\n({ homeView });',
   {
     WORLD_LOCATIONS: world.WORLD_LOCATIONS,
     FURNITURE_CATALOG: world.FURNITURE_CATALOG,
