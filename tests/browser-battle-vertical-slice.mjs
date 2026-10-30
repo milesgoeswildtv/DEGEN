@@ -268,7 +268,14 @@ try {
     'map reset must restore the current mobile scale');
 
   // Verify that the visible map responds to a real Chromium touch drag, not
-  // only to the pure camera helper tests or the zoom buttons.
+  // only to the pure camera helper tests or the zoom buttons. Capture the actual
+  // browser pointerId rather than assuming CDP touch ids equal pointer ids.
+  await cdp.evaluate(`(() => {
+    window.__degenCityPointerId = null;
+    document.querySelector('[data-city-viewport]').addEventListener('pointerdown', event => {
+      window.__degenCityPointerId = event.pointerId;
+    }, { once: true });
+  })()`);
   const panPoint = await cdp.evaluate(`(() => {
     const rect = document.querySelector('[data-city-viewport]').getBoundingClientRect();
     return { id: 1, x: rect.left + rect.width / 2, y: rect.top + rect.height * 0.8 };
@@ -283,9 +290,13 @@ try {
   const cityTransformAfterPan = await cdp.evaluate('document.querySelector("[data-city-world]")?.style.transform ?? ""');
   assert.notEqual(cityTransformAfterPan, cityTransformBeforePan,
     'a real mobile touch drag must pan the city camera');
-  const captureAfterPan = await cdp.evaluate(
-    'document.querySelector("[data-city-viewport]")?.hasPointerCapture(1) ?? false');
-  assert.equal(captureAfterPan, false, 'the viewport must release the touch pointer before the next control tap');
+  const captureAfterPan = await cdp.evaluate(`(() => {
+    const viewport = document.querySelector('[data-city-viewport]');
+    const pointerId = window.__degenCityPointerId;
+    return { pointerId, captured: pointerId !== null && viewport.hasPointerCapture(pointerId) };
+  })()`);
+  assert.notEqual(captureAfterPan.pointerId, null, 'the real touch drag must produce a pointerdown');
+  assert.equal(captureAfterPan.captured, false, 'the viewport must release the touch pointer before the next control tap');
   // Let the completed drag's pointerup/capture-release cycle settle, then
   // keep reset and Home navigation on real touch input.
   await sleep(100);
