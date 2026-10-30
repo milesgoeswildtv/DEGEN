@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const migrationDirectory = new URL('../db/migrations/', import.meta.url);
 const migrationVersion = (filename: string): string => {
-  const match = /^(\\d{4})_[a-z0-9][a-z0-9_-]*\\.sql$/i.exec(filename);
+  const match = /^(\d{4})_[a-z0-9][a-z0-9_-]*\.sql$/i.exec(filename);
   assert.ok(match, `invalid tracked D1 migration filename: ${filename}`);
   return match[1]!;
 };
