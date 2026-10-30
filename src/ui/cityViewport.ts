@@ -70,6 +70,12 @@ export const bindCityViewport = (root: HTMLElement, previous: CityCamera | undef
   });
   const end = (event: PointerEvent) => {
     pointers.delete(event.pointerId);
+    // Release explicitly on pointerup/cancel instead of relying only on the
+    // browser's implicit release. This keeps the next touch free to target
+    // navigation controls after a drag that captured the viewport.
+    if (event.type !== 'lostpointercapture' && viewport.hasPointerCapture(event.pointerId)) {
+      viewport.releasePointerCapture(event.pointerId);
+    }
     lastPinch = 0;
     if (pointers.size === 2) { const p = pinch(); lastPinch = p.distance; lastCenter = p.center; }
   };

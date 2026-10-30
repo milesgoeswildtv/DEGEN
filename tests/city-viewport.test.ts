@@ -4,11 +4,20 @@ import { constrainCityCamera, bindCityViewport, MAX_CITY_ZOOM, MIN_CITY_ZOOM } f
 
 const makeMap = (width = 380, height = 420) => {
   const events = new Map<string, (event: any) => void>();
+  const captured = new Set<number>();
   const viewport = {
     clientWidth: width, clientHeight: height,
     style: {} as Record<string, string>, dataset: {} as Record<string, string>,
     addEventListener: (name: string, fn: (event: any) => void) => events.set(name, fn),
-    setPointerCapture: (_id: number) => {},
+    setPointerCapture: (id: number) => { captured.add(id); },
+    hasPointerCapture: (id: number) => captured.has(id),
+    releasePointerCapture: (id: number) => {
+      if (!captured.delete(id)) return;
+      events.get('lostpointercapture')?.({
+        type: 'lostpointercapture', pointerId: id, clientX: 100, clientY: 100,
+        target: { closest: () => null }, key: '', preventDefault: () => {},
+      });
+    },
     getBoundingClientRect: () => ({ left: 0, top: 0 }),
   };
   const world = { style: {} as Record<string, string> };
@@ -30,11 +39,11 @@ const makeMap = (width = 380, height = 420) => {
   bindCityViewport(root as unknown as HTMLElement, undefined, (camera) => { current = camera; });
   const event = (name: string, overrides: Record<string, unknown> = {}) =>
     events.get(name)?.({
-      pointerId: 1, clientX: 100, clientY: 100,
+      type: name, pointerId: 1, clientX: 100, clientY: 100,
       target: { closest: () => null }, key: '', preventDefault: () => {},
       ...overrides,
     });
-  return { viewport, world, pin, event, zoomIn: () => zoomInClick(), zoomOut: () => zoomOutClick(), reset: () => resetClick(), camera: () => current };
+  return { viewport, world, pin, event, hasCapture: (id: number) => captured.has(id), zoomIn: () => zoomInClick(), zoomOut: () => zoomOutClick(), reset: () => resetClick(), camera: () => current };
 };
 
 test('camera zoom is bounded and does not pan off the connected metropolis', () => {
@@ -62,6 +71,19 @@ test('touch drag pans the camera and zoom controls remain bounded', () => {
   assert.equal(map.camera().scale, 0.8);
   assert.equal(map.camera().x, 0);
   assert.equal(map.camera().y, 0);
+});
+
+test('pointerup and pointercancel release capture before the next navigation touch', () => {
+  const map = makeMap();
+  map.event('pointerdown', { pointerId: 7 });
+  assert.equal(map.hasCapture(7), true);
+  map.event('pointerup', { pointerId: 7 });
+  assert.equal(map.hasCapture(7), false);
+
+  map.event('pointerdown', { pointerId: 8 });
+  assert.equal(map.hasCapture(8), true);
+  map.event('pointercancel', { pointerId: 8 });
+  assert.equal(map.hasCapture(8), false);
 });
 
 test('wheel and keyboard zoom update the same camera, and drag ignores district buttons', () => {
