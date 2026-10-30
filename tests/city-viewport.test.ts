@@ -86,6 +86,21 @@ test('pointerup and pointercancel release capture before the next navigation tou
   assert.equal(map.hasCapture(8), false);
 });
 
+test('touchend and touchcancel clear any stale captured viewport pointer', () => {
+  const map = makeMap();
+  map.event('pointerdown', { pointerId: 9 });
+  assert.equal(map.hasCapture(9), true);
+  map.event('touchend', { pointerId: 9 });
+  assert.equal(map.hasCapture(9), false);
+  map.event('pointermove', { pointerId: 9, clientX: 240 });
+  assert.equal(map.camera().x, 0);
+
+  map.event('pointerdown', { pointerId: 10 });
+  assert.equal(map.hasCapture(10), true);
+  map.event('touchcancel', { pointerId: 10 });
+  assert.equal(map.hasCapture(10), false);
+});
+
 test('wheel and keyboard zoom update the same camera, and drag ignores district buttons', () => {
   const map = makeMap();
   map.event('pointerdown', { target: { closest: () => ({}) } });
