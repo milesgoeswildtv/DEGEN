@@ -143,28 +143,28 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
       </button>
     `).join('');
 
-  const trophies = FURNITURE_CATALOG
-    .filter((item) => item.id.endsWith('-trophy') && player.housing.inventory.includes(item.id))
-    .map((item) => {
-      const placement = player.housing.placements.find((entry) => entry.furnitureId === item.id);
-      const selected = selectedFurniture === item.id;
-      const status = placement
-        ? `DISPLAYED · ROOM CELL ${placement.x + 1}, ${placement.y + 1}`
-        : 'READY TO DISPLAY';
-      const action = selected ? 'SELECTED' : placement ? 'MOVE TROPHY' : 'PLACE TROPHY';
-      return `
-        <article class="trophy-card">
-          <span class="trophy-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
-          <div class="trophy-copy">
-            <strong>${escapeHtml(item.name)}</strong>
-            <small>${status}</small>
-          </div>
-          <button class="trophy-select ${selected ? 'selected' : ''}" type="button"
-            data-furniture="${escapeHtml(item.id)}" aria-pressed="${selected ? 'true' : 'false'}"
-            aria-label="${action} ${escapeHtml(item.name)}">${action}</button>
-        </article>
-      `;
-    }).join('');
+  const trophyItems = FURNITURE_CATALOG
+    .filter((item) => item.id.endsWith('-trophy') && player.housing.inventory.includes(item.id));
+  const trophies = trophyItems.map((item) => {
+    const placement = player.housing.placements.find((entry) => entry.furnitureId === item.id);
+    const selected = selectedFurniture === item.id;
+    const status = placement
+      ? `DISPLAYED · ROOM CELL ${placement.x + 1}, ${placement.y + 1}`
+      : 'READY TO DISPLAY';
+    const action = selected ? 'SELECTED' : placement ? 'MOVE TROPHY' : 'PLACE TROPHY';
+    return `
+      <article class="trophy-card">
+        <span class="trophy-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
+        <div class="trophy-copy">
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>${status}</small>
+        </div>
+        <button class="trophy-select ${selected ? 'selected' : ''}" type="button"
+          data-furniture="${escapeHtml(item.id)}" aria-pressed="${selected ? 'true' : 'false'}"
+          aria-label="${action} ${escapeHtml(item.name)}">${action}</button>
+      </article>
+    `;
+  }).join('');
   const trophyContent = trophies || `
     <p class="trophy-empty">
       <strong>No trophies yet.</strong>
@@ -181,8 +181,8 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
     </section>
     <section class="trophy-display" aria-labelledby="trophy-display-title">
       <div class="trophy-display-heading">
-        <div><span class="eyebrow">HOME // COLLECTION</span><h2 id="trophy-display-title">Trophy display</h2></div>
-        <span class="trophy-count">${trophies.length} EARNED</span>
+        <div><span class="eyebrow">HOME // COLLECTION</span><h2 id="trophy-display-title">TROPHY DISPLAY</h2></div>
+        <span class="trophy-count">${trophyItems.length} EARNED</span>
       </div>
       <div class="trophy-list">${trophyContent}</div>
     </section>
