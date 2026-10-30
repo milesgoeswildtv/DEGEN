@@ -42,6 +42,20 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 .location-card em { margin-top: auto; font-style: normal; font-size: 12px; letter-spacing: .12em; }
 .location-card:disabled { opacity: .45; cursor: not-allowed; }
 .housing-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
+.trophy-display { display: grid; gap: 12px; margin-bottom: 18px; padding: 16px; border: 1px solid #34343e; border-radius: 14px; background: #111117; }
+.trophy-display-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.trophy-display-heading h2 { margin: 4px 0 0; font-size: 18px; }
+.trophy-count { color: #a1a1aa; font: 700 11px ui-monospace, monospace; letter-spacing: .08em; }
+.trophy-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.trophy-card { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid #30303a; border-radius: 12px; background: #17171f; }
+.trophy-icon { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid #3b3b46; border-radius: 10px; color: #f4f4f5; font: 900 15px ui-monospace, monospace; }
+.trophy-copy { min-width: 0; display: grid; gap: 5px; }
+.trophy-copy strong { color: #f4f4f5; font-size: 14px; }
+.trophy-copy small { color: #a1a1aa; font: 700 10px ui-monospace, monospace; letter-spacing: .04em; }
+.trophy-select { min-height: 44px; padding: 0 12px; border: 1px solid #3b3b46; border-radius: 9px; background: #22222b; color: #f4f4f5; cursor: pointer; font-size: 11px; font-weight: 800; }
+.trophy-select.selected { border-color: #f4f4f5; background: #30303b; }
+.trophy-empty { display: grid; gap: 5px; margin: 0; padding: 12px; border: 1px dashed #3b3b46; border-radius: 10px; color: #a1a1aa; }
+.trophy-empty strong { color: #e4e4e7; }
 .room-grid { display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 4 / 3; border: 1px solid #34343e; border-radius: 16px; overflow: hidden; background: #121219; }
 .room-cell { min-width: 0; border: 1px solid #202028; background: #111117; color: #f4f4f5; padding: 3px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; }
 .room-cell.occupied { background: #20202a; }
@@ -74,5 +88,8 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
   .furniture-panel { order: -1; }
   .furniture-list { grid-template-columns: repeat(4, minmax(90px, 1fr)); overflow-x: auto; }
   .room-cell small { display: none; }
+  .trophy-card { grid-template-columns: 44px minmax(0, 1fr); }
+  .trophy-icon { width: 44px; height: 44px; }
+  .trophy-select { grid-column: 2; justify-self: start; }
   .screen { padding-inline: 12px; }
 }
