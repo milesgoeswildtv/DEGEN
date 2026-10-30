@@ -41,12 +41,15 @@ const makeMap = (width = 380, height = 420) => {
   };
   let current = { x: 0, y: 0, scale: 1 };
   bindCityViewport(root as unknown as HTMLElement, undefined, (camera) => { current = camera; });
-  const event = (name: string, overrides: Record<string, unknown> = {}) =>
+  const event = (name: string, overrides: Record<string, unknown> = {}) => {
+    let defaultPrevented = false;
     events.get(name)?.({
       type: name, pointerId: 1, clientX: 100, clientY: 100,
-      target: { closest: () => null }, key: '', preventDefault: () => {},
-      ...overrides,
+      target: { closest: () => null }, key: '', ...overrides,
+      preventDefault: () => { defaultPrevented = true; },
     });
+    return defaultPrevented;
+  };
   return { viewport, world, pin, event, hasCapture: (id: number) => captured.has(id), zoomIn: () => zoomInClick(), zoomOut: () => zoomOutClick(), reset: () => resetClick(), touchReset: () => resetPointerUp({ pointerType: 'touch' }), camera: () => current };
 };
 
@@ -126,6 +129,32 @@ test('wheel and keyboard zoom update the same camera, and drag ignores district 
   assert.equal(map.camera().scale, 0.8);
   assert.ok(map.pin.style.transform.endsWith('scale(1.25)'));
   assert.match(map.world.style.transform, /scale\(0\.8\)/);
+});
+
+test('keyboard arrows pan and keyboard zoom controls prevent page scrolling', () => {
+  const map = makeMap(380, 300);
+  assert.equal(map.event('keydown', { key: 'ArrowLeft' }), true);
+  const left = map.camera().x;
+  assert.ok(left > 0, 'ArrowLeft pans the map rightward');
+  assert.equal(map.event('keydown', { key: 'ArrowRight' }), true);
+  assert.equal(map.camera().x, 0, 'ArrowRight reverses the horizontal pan');
+
+  assert.equal(map.event('keydown', { key: 'ArrowUp' }), true);
+  const up = map.camera().y;
+  assert.ok(up > 0, 'ArrowUp pans the map downward');
+  assert.equal(map.event('keydown', { key: 'ArrowDown' }), true);
+  assert.equal(map.camera().y, 0, 'ArrowDown reverses the vertical pan');
+
+  const initialScale = map.camera().scale;
+  assert.equal(map.event('keydown', { key: '+' }), true);
+  const zoomedScale = map.camera().scale;
+  assert.ok(zoomedScale > initialScale, 'plus zooms in');
+  assert.equal(map.event('keydown', { key: '-' }), true);
+  assert.ok(map.camera().scale < zoomedScale, 'minus zooms out');
+  assert.equal(map.event('keydown', { key: '0' }), true);
+  assert.equal(map.camera().scale, 0.8, 'zero resets to the mobile default zoom');
+
+  assert.equal(map.event('keydown', { key: 'Tab' }), false, 'unhandled keys retain normal browser behavior');
 });
 
 test('pinch zoom responds to two independent pointers', () => {

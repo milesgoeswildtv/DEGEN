@@ -139,7 +139,7 @@ export const renderIsometricCity = (
   return `<div class="city-viewport" data-city-viewport role="region" tabindex="0" aria-label="Pan and zoom city map">
     <div class="city-world" data-city-world>${cityArt}${pins}</div>
   </div>
-  <div class="city-map-controls" aria-label="Map zoom controls">
+  <div class="city-map-controls" role="group" aria-label="Map zoom controls">
     <span>DRAG TO PAN · PINCH TO ZOOM</span>
     <button type="button" data-city-zoom="out" aria-label="Zoom out">−</button>
     <button type="button" data-city-reset aria-label="Reset map view">⌖</button>
