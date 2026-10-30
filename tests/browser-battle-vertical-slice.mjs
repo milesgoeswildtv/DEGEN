@@ -395,15 +395,12 @@ try {
   // resumes the same Worker permit. The old mount must not attach to the new view.
   let pausedBattleModuleRequest;
   let releasePausedBattleModule;
-  let resolvePausedBattleModule;
-  const pausedBattleModule = new Promise(resolve => { resolvePausedBattleModule = resolve; });
   let holdNextBattleModule = true;
   cdp.on('Fetch.requestPaused', async params => {
     try {
       if (holdNextBattleModule && params.resourceType === 'Script') {
         holdNextBattleModule = false;
         pausedBattleModuleRequest = params.requestId;
-        resolvePausedBattleModule();
         await new Promise(resolve => { releasePausedBattleModule = resolve; });
       }
       await cdp.send('Fetch.continueRequest', { requestId: params.requestId });
@@ -416,7 +413,7 @@ try {
   });
   await tap("[data-resume-battle]");
   await until('Manifested Degen controls while the renderer request is held', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
-  await until('lazy Phaser module request is intercepted', () => pausedBattleModule.then(() => pausedBattleModuleRequest));
+  await until('lazy Phaser module request is intercepted', () => pausedBattleModuleRequest !== undefined);
   assert.ok(pausedBattleModuleRequest, 'the battle renderer module request must be held before it can mount');
   await tap('[data-route=underpass]');
   await until('Underpass after abandoning before renderer load', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));

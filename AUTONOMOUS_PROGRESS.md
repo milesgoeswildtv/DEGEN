@@ -1,3 +1,13 @@
+## QA follow-up — 2026-10-30 (keep lazy-import interception polling bounded)
+
+- **Branch / PR:** `automation/degen/lazy-load-phaser-battle-v01`, PR #116; parent head `e5424264fe105cda5269449c38454b0303f89f9e`.
+- **Correction:** the browser test's interception wait now polls the captured request ID rather than awaiting a never-resolving promise inside the polling helper. This preserves the helper's 30-second timeout if Chromium does not emit the expected CDP event; no runtime behavior changed.
+- **Files:** `tests/browser-battle-vertical-slice.mjs`, `AUTONOMOUS_PROGRESS.md`.
+- **QA:** the new exact-head CI from the previous test commit was queued; this correction creates a new head and requires its own full CI. No test/build/browser pass is claimed for either new head yet.
+- **One best next task:** verify exact-head CI for the final browser-test head and fix only observed failures.
+
+---
+
 ## Latest run — 2026-10-30 (lazy Phaser import abandonment/resume race coverage)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838` (main CI [41049131022](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049131022) passed).
