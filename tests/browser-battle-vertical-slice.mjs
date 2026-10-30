@@ -540,7 +540,7 @@ try {
   await until('Map after trophy placement reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   await tap('[data-route=home]');
   await until('persisted trophy displayed after reload', () => cdp.evaluate(
-    'document.querySelector("[data-room-x=4][data-room-y=2]")?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+    'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
   ));
   await assertFitsMobile('Home with earned trophy');
   await assertFitsCompact('Home with earned trophy');
