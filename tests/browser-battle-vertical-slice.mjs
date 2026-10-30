@@ -260,6 +260,9 @@ try {
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
   assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
+  // Seed the isolated Worker-owned character just below the existing level threshold
+  // so this real reward receipt proves the server-provided level transition.
+  sql("UPDATE characters SET xp=50 WHERE player_id='" + playerId + "'");
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
   await assertFitsCompact('Map');
@@ -490,7 +493,19 @@ try {
     }
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
+  await until('authoritative reward receipt shows loot and level-up', () => cdp.evaluate(`(() => {
+    const receipt = document.querySelector('[data-battle-reward-receipt]');
+    const text = receipt?.textContent ?? '';
+    return !!receipt && text.includes('FULL CLEAR') && text.includes('+75 XP')
+      && text.includes('+30 CR') && text.includes('UNDERPASS SCRAP')
+      && text.includes('Underpass Trophy') && text.includes('LEVEL UP · LV.1 → LV.2');
+  })()`));
+  assert.equal(await cdp.evaluate('document.querySelector(".player-chip strong")?.textContent'), 'LV.2',
+    'the player chip must reflect the Worker-authoritative level after reward settlement');
+  await assertFitsMobile('Underpass reward receipt');
+  await assertFitsCompact('Underpass reward receipt');
   await tap("[data-route=home]");
+  await until('reward receipt remains visible on Home', () => cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'));
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
 
   // The earned trophy must be usable as actual housing furniture, not only
@@ -509,6 +524,9 @@ try {
     sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count === 1 ? true : null);
   assert.equal(sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count, 1,
     'the earned trophy must persist at the selected room cell');
+  await tap('[data-dismiss-reward]');
+  assert.equal(await cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'), false,
+    'the reward receipt can be dismissed without altering the awarded player state');
   const finalPermit = sql("SELECT battle_status, reward_state, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
   assert.equal(finalPermit?.battle_status, 'victory');
   assert.equal(finalPermit?.reward_state, 'awarded');
@@ -523,8 +541,9 @@ try {
     'a committed turn whose response times out must reconcile through the same-turn CAS retry');
   assert.equal(await cdp.evaluate('window.__degenTimedOutCompletionResponses'), 1,
     'a settled reward whose response times out must recover through the identical completion retry');
-  const awardedCharacter = sql("SELECT xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
-  assert.equal(awardedCharacter?.xp, 75, 'the recovered completion must award XP exactly once');
+  const awardedCharacter = sql("SELECT level, xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
+  assert.equal(awardedCharacter?.level, 2, 'the Worker must persist the level-up earned by the reward');
+  assert.equal(awardedCharacter?.xp, 25, 'the recovered completion must award XP exactly once across the level threshold');
   assert.equal(awardedCharacter?.currency, 30, 'the recovered completion must award currency exactly once');
   const awardedScrap = sql("SELECT quantity FROM player_inventory WHERE player_id='" + playerId + "' AND item_key='underpass-scrap' AND item_type='item'")[0];
   assert.equal(awardedScrap?.quantity, 1, 'the recovered completion must add one scrap, not duplicate inventory');
