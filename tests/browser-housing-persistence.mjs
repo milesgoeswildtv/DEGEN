@@ -223,7 +223,40 @@ try {
   assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + playerId + "'")[0]?.n, 0,
     'bootstrap must not reseed furniture after an explicit room clear');
 
-  console.log('PASS real Chromium mobile viewport + Vite + local Worker/D1: housing placement persists after reload, empty room remains empty, and room cells remain tappable');
+  // A full Underpass clear awards this existing furniture item. Seed the local D1
+  // inventory row to exercise the real trophy-selection and room-placement path.
+  sql("INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES ('" +
+    playerId + ":furniture:tunnel-trophy', '" + playerId + "', 'tunnel-trophy', 'furniture', 1)");
+  await cdp.send('Page.navigate', { url: origin });
+  await until('city map after trophy reward', async () => await cityMapReady() ? true : null);
+  await click('[data-route="home"]');
+  await until('earned trophy appears in the display panel', async () => {
+    const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
+    return text.includes('TROPHY DISPLAY') && text.includes('READY TO DISPLAY') ? text : null;
+  });
+  await click('.trophy-select[data-furniture="tunnel-trophy"]');
+  await until('trophy selection', async () =>
+    await cdp.evaluate("Boolean(document.querySelector('.trophy-select[data-furniture=\\"tunnel-trophy\\\"].selected'))") ? true : null);
+  await click('[data-room-x="6"][data-room-y="4"]');
+  await until('trophy rendered in the selected room cell', async () => {
+    const label = await cdp.evaluate("document.querySelector('[data-room-x=\\"6\\"][data-room-y=\\"4\\"]')?.getAttribute('aria-label') || ''");
+    return label.includes('Underpass Trophy') ? label : null;
+  });
+  await until('trophy saved to local D1', async () =>
+    sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + playerId +
+      "' AND furniture_key='tunnel-trophy' AND grid_x=6 AND grid_y=4")[0]?.n === 1 ? true : null);
+
+  await cdp.send('Page.navigate', { url: origin });
+  await until('city map after trophy placement reload', async () => await cityMapReady() ? true : null);
+  await click('[data-route="home"]');
+  await until('trophy display reflects persisted room placement', async () => {
+    const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
+    return text.includes('DISPLAYED · ROOM CELL 7, 5') ? text : null;
+  });
+  const trophyCell = await cdp.evaluate("document.querySelector('[data-room-x=\\"6\\"][data-room-y=\\"4\\"]')?.getAttribute('aria-label') || ''");
+  assert.match(trophyCell, /Underpass Trophy/, 'placed trophy must remain visible after reload');
+
+  console.log('PASS real Chromium mobile viewport + Vite + local Worker/D1: housing placement persists after reload, empty room remains empty, and the earned Underpass Trophy can be selected, displayed, and recovered after reload');
 } finally {
   if (cdp) cdp.ws.close();
   await stopAll();
