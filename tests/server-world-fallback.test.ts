@@ -160,6 +160,63 @@ test('a stale previous-player response awaits a fail-closed refresh for the acti
   assert.equal(loaded.previewCalls(), 0, 'an active-player failure must never fall back to preview state');
 });
 
+test('an older player refresh cannot overwrite or restart while the active player refresh is pending', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let playerOneReads = 0;
+  let resolveOlder!: (event: EventSnapshot) => void;
+  let resolveCurrent!: (event: EventSnapshot) => void;
+  const initialEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-initial-cycle', source: 'server',
+  };
+  const staleEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-stale-cycle', source: 'server',
+  };
+  const currentEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-current-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        playerOneReads += 1;
+        return playerOneReads === 1
+          ? Promise.resolve(initialEvent)
+          : new Promise<EventSnapshot>((resolve) => { resolveOlder = resolve; });
+      }
+      return new Promise<EventSnapshot>((resolve) => { resolveCurrent = resolve; });
+    },
+  });
+
+  await controller.refreshWorld();
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-initial-cycle');
+
+  const olderRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  const activeRefresh = controller.refreshWorld(true);
+
+  assert.deepEqual(requests, ['player-1', 'player-1', 'player-2']);
+  assert.equal(controller.underpassEvent, undefined,
+    'the previous account event must be cleared while the active account is syncing');
+
+  resolveOlder(staleEvent);
+  await olderRefresh;
+
+  assert.deepEqual(requests, ['player-1', 'player-1', 'player-2'],
+    'a superseded stale request must not start a duplicate active-player read');
+  assert.equal(controller.underpassEvent, undefined,
+    'a stale response must not repopulate the previous account event while the active read is pending');
+
+  resolveCurrent(currentEvent);
+  await activeRefresh;
+
+  assert.equal(controller.underpassEvent?.cycleId, 'player-2-current-cycle');
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(loaded.previewCalls(), 0);
+});
+
 test('an older overlapping world read cannot replace a newer snapshot for the same player', async () => {
   const loaded = loadController(previewEvent);
   let resolveOlder!: (event: EventSnapshot) => void;
