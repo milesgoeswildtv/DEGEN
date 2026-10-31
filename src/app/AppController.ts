@@ -61,7 +61,7 @@ export class AppController {
   private rewardResolution: Promise<void> = Promise.resolve();
   private rewardCompletionInFlight = new Map<string, Promise<void>>();
   private rewardRetryTimers = new Map<string, number>();
-  private rewardNotice?: RewardNotice;
+  private rewardNotices = new Map<string, RewardNotice>();
   private displayedRewardPermits = new Set<string>();
 
   constructor(
@@ -125,11 +125,12 @@ export class AppController {
         break;
     }
 
-    if (this.rewardNotice?.playerId === player.id) {
+    const rewardNotice = this.rewardNotices.get(player.id);
+    if (rewardNotice) {
       this.root.querySelector?.('.topbar')?.insertAdjacentHTML('afterend', rewardReceiptView(
-        this.rewardNotice.reward,
-        this.rewardNotice.previousLevel,
-        this.rewardNotice.currentLevel,
+        rewardNotice.reward,
+        rewardNotice.previousLevel,
+        rewardNotice.currentLevel,
       ));
     }
 
@@ -151,8 +152,7 @@ export class AppController {
       });
     });
     this.root.querySelector?.('[data-dismiss-reward]')?.addEventListener('click', () => {
-      if (this.rewardNotice?.playerId !== this.store.snapshot.id) return;
-      this.rewardNotice = undefined;
+      this.rewardNotices.delete(this.store.snapshot.id);
       this.root.querySelector?.('[data-battle-reward-receipt]')?.remove();
     });
   }
@@ -664,17 +664,19 @@ export class AppController {
         this.clearRewardCompletionRetry(key);
         const currentPlayer = this.store.snapshot;
         const isCurrentPlayer = currentPlayer.id === playerId;
+        if (!this.displayedRewardPermits.has(permitId)) {
+          this.rewardNotices.set(playerId, {
+            playerId,
+            permitId,
+            reward: result.reward,
+            // If another account is active, its level is not valid history for this receipt.
+            // Use the authoritative result level rather than inventing a transition.
+            previousLevel: isCurrentPlayer ? currentPlayer.level : result.player.level,
+            currentLevel: result.player.level,
+          });
+          this.displayedRewardPermits.add(permitId);
+        }
         if (isCurrentPlayer) {
-          if (!this.displayedRewardPermits.has(permitId)) {
-            this.rewardNotice = {
-              playerId,
-              permitId,
-              reward: result.reward,
-              previousLevel: currentPlayer.level,
-              currentLevel: result.player.level,
-            };
-            this.displayedRewardPermits.add(permitId);
-          }
           this.store.replaceFromServer(result.player);
           this.underpassEvent = result.worldEvent;
         }
@@ -722,13 +724,13 @@ export class AppController {
       const playerBeforeReward = this.store.snapshot;
       this.store.applyReward(previewReward);
       const playerAfterReward = this.store.snapshot;
-      this.rewardNotice = {
+      this.rewardNotices.set(playerAfterReward.id, {
         playerId: playerAfterReward.id,
         permitId,
         reward: previewReward,
         previousLevel: playerBeforeReward.level,
         currentLevel: playerAfterReward.level,
-      };
+      });
       this.displayedRewardPermits.add(permitId);
       this.store.markBossDefeated(TUNNEL_MAW.id);
       this.underpassEvent = getPreviewUnderpass();
