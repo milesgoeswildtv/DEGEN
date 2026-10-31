@@ -1,3 +1,17 @@
+## Latest run — 2026-10-31 (bounded retry for transient local D1 read locks)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED / PR #119 OPEN, DRAFT, unmerged:** `automation/degen/d1-sqlite-busy-read-retry-v01`. Code commit `0cf86535edbf223bc7b5c10c885fd981429ceb6f`; exact-head CI is pending. No direct-main write, merge, force-push, or history rewrite.
+- **Task / files changed:** `tests/worker-d1-concurrency.mjs` adds bounded backoff to the read-only `queryRows` helper for transient local SQLite `SQLITE_BUSY` / `database is locked` errors only. Non-lock errors still fail immediately. D1 mutations are never retried after ambiguous outcomes.
+- **QA evidence:** PR #118's exact code/test head `7aa3173` passed all 267 deterministic tests and all substantive CI stages in run [41197395407](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41197395407). Its later continuity-only head `685980e` passed 267/267 deterministic tests but the first attempt of run [41198813622](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41198813622) failed at `tests/worker-d1-concurrency.mjs:2415` while a read-only D1 assertion encountered `database is locked: SQLITE_BUSY`; subsequent stages were skipped. The failed job was rerun and is still in progress at this update. PR #119's own exact-head CI is pending. A local clone attempt failed because this container cannot resolve `github.com`; no local `npm test`, build, or Wrangler result is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, terminal handling, cost-aware controls, no monster Mana, and no Mana-triggered reversion are unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit/action state, turn compare-and-swap, terminal outcomes/history, audited reward receipts, progression, inventory, currency, and recoverable exactly-once settlement. This PR changes only local integration-test read retries; it does not alter combat, reward logic, or client authority.
+- **Verified D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a colliding `0007_player_sessions.sql`; the duplicate-version guard in PR #114 does not choose a resolution. No remote D1 operation, migration apply, schema change, or Worker deployment occurred.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain release gates. The requested Monster Log v0.11 was not found in the accessible Library (only v0.9 surfaced); status durations/stacking/resistance and GLITCHRAT exact damage/Mana values remain unresolved. No Shield/status or monster content was invented.
+- **One best next task:** verify exact-head CI for PR #119 and the rerun of PR #118's transient D1-lock failure; then keep Shield gated until the `0007` auth-migration sequence and identity policy are explicitly resolved.
+
+---
+
 ## Latest run — 2026-10-30 (PR #113 exact-head verification and review delivery)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
