@@ -33,7 +33,7 @@ const views = runInNewContext(
     isValidManaState: () => true,
   },
 ) as {
-  homeView: (player: unknown, selectedFurniture?: string) => string;
+  homeView: (player: unknown, selectedFurniture?: string, housingAnnouncement?: string) => string;
   rewardReceiptView: (reward: { xp: number; currency: number; items: string[]; furniture?: string[]; tier?: 'full' | 'reduced' }, previousLevel: number, currentLevel: number) => string;
 };
 
@@ -122,4 +122,17 @@ test('reduced reward receipt escapes item keys and does not invent a level-up', 
   assert.match(html, /&lt;IMG SRC=X ONERROR=ALERT\(1\)&gt;/);
   assert.doesNotMatch(html, /<img src=x/i);
   assert.doesNotMatch(html, /LEVEL UP/);
+});
+
+test('housing controls expose grouped semantics, selection state, and live placement feedback', () => {
+  const html = views.homeView(basePlayer, 'starter-chair', 'Plastic Chair selected. Choose a room cell.');
+  assert.match(html, /class="room-grid" role="group" aria-label="Housing placement grid"/);
+  assert.match(html, /class="furniture-list" role="group" aria-label="Available furniture"/);
+  assert.match(html, /data-furniture="starter-chair" aria-pressed="true"/);
+  assert.match(html, /data-housing-status role="status" aria-live="polite" aria-atomic="true"/);
+  assert.match(html, /Plastic Chair selected\. Choose a room cell\./);
+
+  const cleared = views.homeView(basePlayer, undefined, 'Furniture selection cleared.');
+  assert.match(cleared, /data-furniture="starter-chair" aria-pressed="false"/);
+  assert.match(cleared, /Furniture selection cleared\./);
 });

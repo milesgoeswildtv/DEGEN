@@ -70,6 +70,8 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 .trophy-empty { display: grid; gap: 5px; margin: 0; padding: 12px; border: 1px dashed #3b3b46; border-radius: 10px; color: #a1a1aa; }
 .trophy-empty strong { color: #e4e4e7; }
 .room-grid { display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 4 / 3; border: 1px solid #34343e; border-radius: 16px; overflow: hidden; background: #121219; }
+.housing-action-status { margin: 12px 0 0; padding: 10px 12px; border: 1px solid #30303a; border-radius: 8px; background: #111117; color: #d4d4d8; font-size: 13px; line-height: 1.45; }
+.housing-action-status[hidden] { display: none; }
 .room-cell { min-width: 0; border: 1px solid #202028; background: #111117; color: #f4f4f5; padding: 3px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; }
 .room-cell.occupied { background: #20202a; }
 .room-cell span { font: 800 13px ui-monospace, monospace; }

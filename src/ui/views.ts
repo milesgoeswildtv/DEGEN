@@ -144,7 +144,7 @@ export const locationView = (player: PlayerState, locationId: string): string =>
   `);
 };
 
-export const homeView = (player: PlayerState, selectedFurniture?: string): string => {
+export const homeView = (player: PlayerState, selectedFurniture?: string, housingAnnouncement = ''): string => {
   const cells = Array.from({ length: 48 }, (_, index) => {
     const x = index % 8;
     const y = Math.floor(index / 8);
@@ -160,7 +160,7 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
   const furnitureButtons = FURNITURE_CATALOG
     .filter((item) => player.housing.inventory.includes(item.id))
     .map((item) => `
-      <button class="inventory-item ${selectedFurniture === item.id ? 'selected' : ''}" type="button" data-furniture="${escapeHtml(item.id)}">
+      <button class="inventory-item ${selectedFurniture === item.id ? 'selected' : ''}" type="button" data-furniture="${escapeHtml(item.id)}" aria-pressed="${selectedFurniture === item.id ? 'true' : 'false'}">
         <span>${escapeHtml(item.icon)}</span>
         <small>${escapeHtml(item.name)}</small>
       </button>
@@ -210,15 +210,16 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
       <div class="trophy-list">${trophyContent}</div>
     </section>
     <section class="housing-layout">
-      <div class="room-grid" aria-label="Housing placement grid">${cells}</div>
+      <div class="room-grid" role="group" aria-label="Housing placement grid">${cells}</div>
       <aside class="furniture-panel">
         <div class="panel-heading">
           <strong>FURNITURE</strong>
           <button type="button" data-clear-selection>CLEAR</button>
         </div>
-        <div class="furniture-list">${furnitureButtons}</div>
+        <div class="furniture-list" role="group" aria-label="Available furniture">${furnitureButtons}</div>
       </aside>
     </section>
+    <p class="housing-action-status" data-housing-status role="status" aria-live="polite" aria-atomic="true" ${housingAnnouncement ? '' : 'hidden'}>${escapeHtml(housingAnnouncement)}</p>
   `);
 };
 
