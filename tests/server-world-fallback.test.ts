@@ -267,3 +267,64 @@ test('offline preview still uses its local Underpass cycle when no Worker is con
   assert.equal(controller.underpassEvent, previewEvent);
   assert.equal(loaded.previewCalls(), 1);
 });
+
+test('rapid account switches cannot let an intermediate player response overwrite the newest account', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let resolveIntermediate!: (event: EventSnapshot) => void;
+  let resolveNewest!: (event: EventSnapshot) => void;
+  const firstEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
+  };
+  const intermediateEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
+  };
+  const newestEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-3-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') return Promise.resolve(firstEvent);
+      if (playerId === 'player-2') {
+        return new Promise<EventSnapshot>((resolve) => { resolveIntermediate = resolve; });
+      }
+      if (playerId === 'player-3') {
+        return new Promise<EventSnapshot>((resolve) => { resolveNewest = resolve; });
+      }
+      throw new Error(`Unexpected player refresh: ${playerId}`);
+    },
+  });
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
+
+  await controller.refreshWorld();
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-cycle');
+
+  store.snapshot.id = 'player-2';
+  const intermediateRefresh = controller.refreshWorld(true);
+  assert.equal(controller.underpassEvent, undefined,
+    'switching accounts clears the previous event before the next read settles');
+
+  store.snapshot.id = 'player-3';
+  const newestRefresh = controller.refreshWorld(true);
+  assert.deepEqual(requests, ['player-1', 'player-2', 'player-3']);
+  assert.equal(controller.underpassEvent, undefined);
+
+  resolveIntermediate(intermediateEvent);
+  await intermediateRefresh;
+  assert.deepEqual(requests, ['player-1', 'player-2', 'player-3'],
+    'an intermediate stale response must not start another refresh for the newest account');
+  assert.equal(controller.underpassEvent, undefined,
+    'the intermediate account must not repopulate world state while the newest account is pending');
+
+  resolveNewest(newestEvent);
+  await newestRefresh;
+  assert.equal(controller.underpassEvent?.cycleId, 'player-3-cycle');
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(renderCount, 2,
+    'the previous account is cleared once and the newest account renders after its response');
+});
+
