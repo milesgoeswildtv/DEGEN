@@ -1,13 +1,13 @@
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
-import { WORLD_LOCATIONS } from '../data/world';
+import { getFurniture, WORLD_LOCATIONS } from '../data/world';
 import { bindCityViewport, type CityCamera } from '../ui/cityViewport';
-import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
+import type { BattleActionResult, BattlePermit, BattleReward, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
-import { battleView, districtView, homeView, locationView, mapView, underpassView, updateBattleDom } from '../ui/views';
+import { battleView, districtView, homeView, locationView, mapView, rewardReceiptView, underpassView, updateBattleDom } from '../ui/views';
 import { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
@@ -31,6 +31,14 @@ const shouldRetryBattleRecovery = (error: unknown): boolean => {
     || message === 'Concurrent reward updates; retry completion.';
 };
 
+type RewardNotice = {
+  playerId: string;
+  permitId: string;
+  reward: BattleReward;
+  previousLevel: number;
+  currentLevel: number;
+};
+
 export class AppController {
   private route: RouteKey = 'map';
   private selectedDistrict = 'Central';
@@ -39,6 +47,7 @@ export class AppController {
   private releaseCityViewport?: () => void;
   private worldSyncFailed = false;
   private selectedFurniture?: string;
+  private housingAnnouncement = '';
   private battleGame?: Phaser.Game;
   private battleEngine?: BattleEngine;
   private battleReturnTimer?: number;
@@ -52,6 +61,8 @@ export class AppController {
   private rewardResolution: Promise<void> = Promise.resolve();
   private rewardCompletionInFlight = new Map<string, Promise<void>>();
   private rewardRetryTimers = new Map<string, number>();
+  private rewardNotices = new Map<string, RewardNotice>();
+  private displayedRewardPermits = new Set<string>();
 
   constructor(
     private readonly root: HTMLElement,
@@ -72,6 +83,7 @@ export class AppController {
   }
 
   private navigate(route: RouteKey): void {
+    if (route !== 'home') this.housingAnnouncement = '';
     if (this.route === 'underpass' && route !== 'underpass') {
       this.battleResumeAttempt += 1;
       this.battleResumePending = false;
@@ -94,7 +106,7 @@ export class AppController {
         this.root.innerHTML = locationView(player, this.selectedLocationId);
         break;
       case 'home':
-        this.root.innerHTML = homeView(player, this.selectedFurniture);
+        this.root.innerHTML = homeView(player, this.selectedFurniture, this.housingAnnouncement);
         break;
       case 'underpass': {
         const hasRecoverableEncounter = this.api.enabled && (
@@ -113,6 +125,15 @@ export class AppController {
         break;
     }
 
+    const rewardNotice = this.rewardNotices.get(player.id);
+    if (rewardNotice) {
+      this.root.querySelector?.('.topbar')?.insertAdjacentHTML('afterend', rewardReceiptView(
+        rewardNotice.reward,
+        rewardNotice.previousLevel,
+        rewardNotice.currentLevel,
+      ));
+    }
+
     this.bindCommonNavigation();
     this.bindCityNavigation();
     if (this.route === 'map') {
@@ -129,6 +150,10 @@ export class AppController {
         const route = button.dataset.route as RouteKey | undefined;
         if (route) this.navigate(route);
       });
+    });
+    this.root.querySelector?.('[data-dismiss-reward]')?.addEventListener('click', () => {
+      this.rewardNotices.delete(this.store.snapshot.id);
+      this.root.querySelector?.('[data-battle-reward-receipt]')?.remove();
     });
   }
 
@@ -157,25 +182,65 @@ export class AppController {
   private bindHousing(): void {
     this.root.querySelectorAll<HTMLButtonElement>('[data-furniture]').forEach((button) => {
       button.addEventListener('click', () => {
-        this.selectedFurniture = button.dataset.furniture;
+        const furnitureId = button.dataset.furniture;
+        if (!furnitureId) return;
+        this.selectedFurniture = furnitureId;
+        const name = getFurniture(furnitureId)?.name ?? 'Furniture';
+        this.housingAnnouncement = `${name} selected. Choose a room cell.`;
         this.render();
+        const buttonSelector = button.classList.contains('trophy-select') ? '.trophy-select' : '.inventory-item';
+        Array.from(this.root.querySelectorAll<HTMLButtonElement>(`${buttonSelector}[data-furniture]`))
+          .find((candidate) => candidate.dataset.furniture === furnitureId)
+          ?.focus();
       });
     });
 
     this.root.querySelector<HTMLButtonElement>('[data-clear-selection]')?.addEventListener('click', () => {
       this.selectedFurniture = undefined;
+      this.housingAnnouncement = 'Furniture selection cleared.';
       this.render();
+      this.root.querySelector<HTMLButtonElement>('[data-clear-selection]')?.focus();
     });
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-room-x][data-room-y]').forEach((cell) => {
       cell.addEventListener('click', () => {
         const x = Number(cell.dataset.roomX);
         const y = Number(cell.dataset.roomY);
-        if (!Number.isInteger(x) || !Number.isInteger(y)) return;
+        if (!Number.isInteger(x) || x < 0 || x > 7 || !Number.isInteger(y) || y < 0 || y > 5) return;
 
-        if (this.selectedFurniture) this.store.placeFurniture(this.selectedFurniture, x, y);
-        else this.store.removeFurnitureAt(x, y);
+        const player = this.store.snapshot;
+        const placement = player.housing.placements.find((item) => item.x === x && item.y === y);
+        if (this.selectedFurniture) {
+          const furnitureId = this.selectedFurniture;
+          if (!player.housing.inventory.includes(furnitureId)) {
+            this.selectedFurniture = undefined;
+            this.housingAnnouncement = 'Selected furniture is no longer available.';
+            this.render();
+            this.root.querySelector<HTMLButtonElement>('[data-clear-selection]')?.focus();
+            return;
+          }
+          const name = getFurniture(furnitureId)?.name ?? 'Furniture';
+          const alreadyPlaced = player.housing.placements.some((item) => item.furnitureId === furnitureId);
+          this.store.placeFurniture(furnitureId, x, y);
+          const placed = this.store.snapshot.housing.placements.some(
+            (item) => item.furnitureId === furnitureId && item.x === x && item.y === y,
+          );
+          this.housingAnnouncement = placed
+            ? `${name} ${alreadyPlaced ? 'moved' : 'placed'} in room cell ${x + 1}, ${y + 1}.`
+            : 'Your room is still syncing. Try placing furniture again in a moment.';
+        } else if (placement) {
+          const name = getFurniture(placement.furnitureId)?.name ?? 'Furniture';
+          this.store.removeFurnitureAt(x, y);
+          const removed = !this.store.snapshot.housing.placements.some((item) => item.x === x && item.y === y);
+          this.housingAnnouncement = removed
+            ? `${name} removed from room cell ${x + 1}, ${y + 1}.`
+            : 'Your room is still syncing. Try removing furniture again in a moment.';
+        } else {
+          this.housingAnnouncement = `Room cell ${x + 1}, ${y + 1} is empty. Select furniture to place it.`;
+        }
+
         this.render();
+        this.root.querySelector<HTMLButtonElement>(`[data-room-x="${x}"][data-room-y="${y}"]`)?.focus();
       });
     });
   }
@@ -597,7 +662,20 @@ export class AppController {
         const result = await this.api.completeUnderpass(playerId, permitId);
         if (!result) throw new Error('Missing authoritative battle completion response.');
         this.clearRewardCompletionRetry(key);
-        const isCurrentPlayer = this.store.snapshot.id === playerId;
+        const currentPlayer = this.store.snapshot;
+        const isCurrentPlayer = currentPlayer.id === playerId;
+        if (!this.displayedRewardPermits.has(permitId)) {
+          this.rewardNotices.set(playerId, {
+            playerId,
+            permitId,
+            reward: result.reward,
+            // If another account is active, its level is not valid history for this receipt.
+            // Use the authoritative result level rather than inventing a transition.
+            previousLevel: isCurrentPlayer ? currentPlayer.level : result.player.level,
+            currentLevel: result.player.level,
+          });
+          this.displayedRewardPermits.add(permitId);
+        }
         if (isCurrentPlayer) {
           this.store.replaceFromServer(result.player);
           this.underpassEvent = result.worldEvent;
@@ -643,7 +721,17 @@ export class AppController {
         clearsBeforeThisFight + 1,
         this.underpassEvent?.fullRewardLimit,
       );
+      const playerBeforeReward = this.store.snapshot;
       this.store.applyReward(previewReward);
+      const playerAfterReward = this.store.snapshot;
+      this.rewardNotices.set(playerAfterReward.id, {
+        playerId: playerAfterReward.id,
+        permitId,
+        reward: previewReward,
+        previousLevel: playerBeforeReward.level,
+        currentLevel: playerAfterReward.level,
+      });
+      this.displayedRewardPermits.add(permitId);
       this.store.markBossDefeated(TUNNEL_MAW.id);
       this.underpassEvent = getPreviewUnderpass();
     }

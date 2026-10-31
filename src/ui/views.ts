@@ -2,7 +2,7 @@ import { renderIsometricCity, renderIsometricDistrict } from './isometricCity';
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import type { BattleSnapshot } from '../game/combat/engine';
-import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
+import type { BattleReward, DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>'\"]/g, (char) => ({
@@ -52,6 +52,29 @@ export const appShell = (player: PlayerState, content: string): string => `
     <button type="button" data-route="home">HOME</button>
   </nav>
 `;
+
+const rewardItemLabel = (key: string): string => key.replace(/[-_]+/g, ' ').toUpperCase();
+
+export const rewardReceiptView = (reward: BattleReward, previousLevel: number, currentLevel: number): string => {
+  const tierLabel = reward.tier === 'full' ? 'FULL CLEAR' : reward.tier === 'reduced' ? 'REDUCED CLEAR' : 'BATTLE REWARD';
+  const loot = [
+    ...reward.items.map((item) => `<li><small>ITEM</small><strong>${escapeHtml(rewardItemLabel(item))}</strong></li>`),
+    ...(reward.furniture ?? []).map((item) => `<li><small>FURNITURE</small><strong>${escapeHtml(getFurniture(item)?.name ?? rewardItemLabel(item))}</strong></li>`),
+  ];
+  const levelUp = currentLevel > previousLevel
+    ? `<p class="battle-reward-level-up">LEVEL UP · LV.${previousLevel} → LV.${currentLevel}</p>`
+    : '';
+
+  return `<aside class="battle-reward-receipt" data-battle-reward-receipt role="status" aria-live="polite" aria-atomic="true">
+    <div class="battle-reward-heading">
+      <div><span class="eyebrow">UNDERPASS // REWARD RECEIPT</span><strong>${tierLabel}</strong></div>
+      <button class="battle-reward-dismiss" type="button" data-dismiss-reward aria-label="Dismiss battle reward receipt">×</button>
+    </div>
+    <div class="battle-reward-totals"><span>+${reward.xp} XP</span><span>+${reward.currency} CR</span></div>
+    ${levelUp}
+    ${loot.length ? `<ul class="battle-reward-loot">${loot.join('')}</ul>` : '<p class="battle-reward-empty">No item drops this clear.</p>'}
+  </aside>`;
+};
 
 export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot, backendOffline = false): string => {
   const status = worldStatus(underpass, backendOffline);
@@ -121,7 +144,7 @@ export const locationView = (player: PlayerState, locationId: string): string =>
   `);
 };
 
-export const homeView = (player: PlayerState, selectedFurniture?: string): string => {
+export const homeView = (player: PlayerState, selectedFurniture?: string, housingAnnouncement = ''): string => {
   const cells = Array.from({ length: 48 }, (_, index) => {
     const x = index % 8;
     const y = Math.floor(index / 8);
@@ -137,11 +160,40 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
   const furnitureButtons = FURNITURE_CATALOG
     .filter((item) => player.housing.inventory.includes(item.id))
     .map((item) => `
-      <button class="inventory-item ${selectedFurniture === item.id ? 'selected' : ''}" type="button" data-furniture="${item.id}">
+      <button class="inventory-item ${selectedFurniture === item.id ? 'selected' : ''}" type="button" data-furniture="${escapeHtml(item.id)}" aria-pressed="${selectedFurniture === item.id ? 'true' : 'false'}">
         <span>${escapeHtml(item.icon)}</span>
         <small>${escapeHtml(item.name)}</small>
       </button>
     `).join('');
+
+  const trophyItems = FURNITURE_CATALOG
+    .filter((item) => item.id.endsWith('-trophy') && player.housing.inventory.includes(item.id));
+  const trophies = trophyItems.map((item) => {
+    const placement = player.housing.placements.find((entry) => entry.furnitureId === item.id);
+    const selected = selectedFurniture === item.id;
+    const status = placement
+      ? `DISPLAYED · ROOM CELL ${placement.x + 1}, ${placement.y + 1}`
+      : 'READY TO DISPLAY';
+    const action = selected ? 'SELECTED' : placement ? 'MOVE TROPHY' : 'PLACE TROPHY';
+    return `
+      <article class="trophy-card">
+        <span class="trophy-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
+        <div class="trophy-copy">
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>${status}</small>
+        </div>
+        <button class="trophy-select ${selected ? 'selected' : ''}" type="button"
+          data-furniture="${escapeHtml(item.id)}" aria-pressed="${selected ? 'true' : 'false'}"
+          aria-label="${action} ${escapeHtml(item.name)}">${action}</button>
+      </article>
+    `;
+  }).join('');
+  const trophyContent = trophies || `
+    <p class="trophy-empty">
+      <strong>No trophies yet.</strong>
+      <span>A full Underpass clear awards the first display piece.</span>
+    </p>
+  `;
 
   return appShell(player, `
     <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-district="Residential">RESIDENTIAL</button><span>/</span><strong>HOME</strong></div>
@@ -150,16 +202,24 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
       <h1>Make it yours.</h1>
       <p>Select furniture, then tap a room cell to place or move it. With nothing selected, tapping occupied furniture removes it.</p>
     </section>
+    <section class="trophy-display" aria-labelledby="trophy-display-title">
+      <div class="trophy-display-heading">
+        <div><span class="eyebrow">HOME // COLLECTION</span><h2 id="trophy-display-title">TROPHY DISPLAY</h2></div>
+        <span class="trophy-count">${trophyItems.length} EARNED</span>
+      </div>
+      <div class="trophy-list">${trophyContent}</div>
+    </section>
     <section class="housing-layout">
-      <div class="room-grid" aria-label="Housing placement grid">${cells}</div>
+      <div class="room-grid" role="group" aria-label="Housing placement grid">${cells}</div>
       <aside class="furniture-panel">
         <div class="panel-heading">
           <strong>FURNITURE</strong>
           <button type="button" data-clear-selection>CLEAR</button>
         </div>
-        <div class="furniture-list">${furnitureButtons}</div>
+        <div class="furniture-list" role="group" aria-label="Available furniture">${furnitureButtons}</div>
       </aside>
     </section>
+    <p class="housing-action-status" data-housing-status role="status" aria-live="polite" aria-atomic="true" ${housingAnnouncement ? '' : 'hidden'}>${escapeHtml(housingAnnouncement)}</p>
   `);
 };
 

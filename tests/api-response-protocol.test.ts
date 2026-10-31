@@ -210,6 +210,79 @@ test('completion receipt rejects duplicate housing cells before client state rep
   assert.equal(requests, 1, 'a malformed completion snapshot must not be accepted or retried');
 });
 
+const validCompletionReceipt = () => ({
+  player: validPlayerSnapshot(),
+  reward: {
+    xp: 75,
+    currency: 30,
+    items: ['underpass-scrap'],
+    furniture: ['tunnel-trophy'],
+    tier: 'full',
+  },
+  worldEvent: {
+    eventKey: 'underpass',
+    cycleId: 'cycle-1',
+    phase: 'open',
+    opensAt: '2026-10-29T00:00:00.000Z',
+    closesAt: '2026-10-30T00:00:00.000Z',
+    fullRewardClears: 0,
+    fullRewardLimit: 3,
+    source: 'server',
+  },
+});
+
+test('valid Worker completion receipt is accepted with the exact reward fields used by the UI', async () => {
+  let requests = 0;
+  const receipt = validCompletionReceipt();
+  const api = new apiModule.GameApi('https://example.test', async () => {
+    requests += 1;
+    return new Response(JSON.stringify(receipt), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+
+  const result = await api.completeUnderpass('player-1', 'permit-1') as any;
+  assert.equal(result.player.id, 'player-1');
+  assert.equal(result.reward.xp, 75);
+  assert.equal(result.reward.currency, 30);
+  assert.equal(result.reward.items[0], 'underpass-scrap');
+  assert.equal(result.reward.furniture[0], 'tunnel-trophy');
+  assert.equal(result.reward.tier, 'full');
+  assert.equal(requests, 1);
+});
+
+test('completion rejects malformed Worker reward fields before they reach the receipt UI', async () => {
+  const invalidRewards: Array<{ label: string; mutate: (reward: any) => void }> = [
+    { label: 'negative XP', mutate: reward => { reward.xp = -1; } },
+    { label: 'fractional currency', mutate: reward => { reward.currency = 1.5; } },
+    { label: 'non-string item key', mutate: reward => { reward.items = ['underpass-scrap', 7]; } },
+    { label: 'non-array furniture', mutate: reward => { reward.furniture = 'tunnel-trophy'; } },
+    { label: 'missing furniture array', mutate: reward => { delete reward.furniture; } },
+    { label: 'unknown reward tier', mutate: reward => { reward.tier = 'bonus'; } },
+  ];
+
+  for (const { label, mutate } of invalidRewards) {
+    const receipt = validCompletionReceipt() as any;
+    mutate(receipt.reward);
+    let requests = 0;
+    const api = new apiModule.GameApi('https://example.test', async () => {
+      requests += 1;
+      return new Response(JSON.stringify(receipt), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    await assert.rejects(
+      api.completeUnderpass('player-1', 'permit-1'),
+      apiModule.GameApiProtocolError,
+      label,
+    );
+    assert.equal(requests, 1, `${label} must fail closed without a completion retry`);
+  }
+});
+
 test('malformed JSON from a successful API response is a protocol error', async () => {
   const api = new apiModule.GameApi('https://example.test', async () =>
     new Response('{', { status: 200, headers: { 'content-type': 'application/json' } }),

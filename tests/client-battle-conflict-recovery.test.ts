@@ -145,6 +145,7 @@ const AppController = runInNewContext(
   battlePermit?: { permitId: string; cycleId?: string; initialState?: unknown };
   battlePermitOwnerId?: string;
   battleEngine?: BattleEngineInstance;
+  rewardNotices: Map<string, { playerId: string; permitId: string; reward: unknown; previousLevel: number; currentLevel: number }>;
   underpassEvent?: { phase: string; cycleId: string };
   useBattleAbility(abilityId: string): Promise<void>;
   resumeUnderpass(): Promise<void>;
@@ -588,6 +589,13 @@ test('late victory after an account switch settles under the issuing player with
   assert.equal(completionPermitId, 'permit-player-1');
   assert.equal(store.snapshot.id, 'player-2');
   assert.equal(store.replaced, 0, 'an old account completion must not overwrite the active player snapshot');
+  assert.equal(controller.rewardNotices.get('player-1')?.permitId, 'permit-player-1',
+    'a verified receipt must remain available to the issuing player after an account switch');
+  assert.equal(controller.rewardNotices.get('player-1')?.currentLevel, 2);
+  assert.equal(controller.rewardNotices.get('player-1')?.previousLevel, 2,
+    'the active second account must never supply the first account’s prior level');
+  assert.equal(controller.rewardNotices.has('player-2'), false,
+    'a receipt must never be rebound to the currently active account');
   assert.equal(store.localRewards, 0, 'the client must never grant local rewards for a server-backed battle');
   assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), '[]',
     'the original player’s pending permit is cleared only after authoritative completion');
