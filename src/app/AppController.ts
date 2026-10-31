@@ -61,7 +61,7 @@ export class AppController {
   private rewardResolution: Promise<void> = Promise.resolve();
   private rewardCompletionInFlight = new Map<string, Promise<void>>();
   private rewardRetryTimers = new Map<string, number>();
-  private rewardNotices = new Map<string, RewardNotice>();
+  private rewardNotices = new Map<string, RewardNotice[]>();
   private displayedRewardPermits = new Set<string>();
 
   constructor(
@@ -125,15 +125,7 @@ export class AppController {
         break;
     }
 
-    const rewardNotice = this.rewardNotices.get(player.id);
-    if (rewardNotice) {
-      this.root.querySelector?.('.topbar')?.insertAdjacentHTML('afterend', rewardReceiptView(
-        rewardNotice.reward,
-        rewardNotice.previousLevel,
-        rewardNotice.currentLevel,
-      ));
-    }
-
+    this.renderRewardNotice();
     this.bindCommonNavigation();
     this.bindCityNavigation();
     if (this.route === 'map') {
@@ -144,6 +136,35 @@ export class AppController {
     if (this.route === 'battle') this.mountBattle();
   }
 
+  private renderRewardNotice(): void {
+    const playerId = this.store.snapshot.id;
+    const notice = this.rewardNotices.get(playerId)?.[0];
+    if (!notice) return;
+
+    const topbar = this.root.querySelector?.('.topbar');
+    if (!topbar) return;
+    topbar.insertAdjacentHTML('afterend', rewardReceiptView(
+      notice.reward,
+      notice.previousLevel,
+      notice.currentLevel,
+      notice.permitId,
+    ));
+    this.root.querySelector?.('[data-dismiss-reward]')?.addEventListener('click', () => {
+      this.dismissRewardNotice(playerId, notice.permitId);
+    });
+  }
+
+  private dismissRewardNotice(playerId: string, permitId: string): void {
+    if (this.store.snapshot.id !== playerId) return;
+    const notices = this.rewardNotices.get(playerId);
+    if (!notices || notices[0]?.permitId !== permitId) return;
+
+    notices.shift();
+    if (notices.length === 0) this.rewardNotices.delete(playerId);
+    this.root.querySelector?.('[data-battle-reward-receipt]')?.remove();
+    this.renderRewardNotice();
+  }
+
   private bindCommonNavigation(): void {
     this.root.querySelectorAll<HTMLButtonElement>('[data-route]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -151,11 +172,7 @@ export class AppController {
         if (route) this.navigate(route);
       });
     });
-    this.root.querySelector?.('[data-dismiss-reward]')?.addEventListener('click', () => {
-      this.rewardNotices.delete(this.store.snapshot.id);
-      this.root.querySelector?.('[data-battle-reward-receipt]')?.remove();
-    });
-  }
+   }
 
   private bindCityNavigation(): void {
     this.root.querySelectorAll<HTMLButtonElement>('[data-district]').forEach((button) => {
@@ -665,7 +682,8 @@ export class AppController {
         const currentPlayer = this.store.snapshot;
         const isCurrentPlayer = currentPlayer.id === playerId;
         if (!this.displayedRewardPermits.has(permitId)) {
-          this.rewardNotices.set(playerId, {
+          const notices = this.rewardNotices.get(playerId) ?? [];
+          notices.push({
             playerId,
             permitId,
             reward: result.reward,
@@ -674,6 +692,7 @@ export class AppController {
             previousLevel: isCurrentPlayer ? currentPlayer.level : result.player.level,
             currentLevel: result.player.level,
           });
+          this.rewardNotices.set(playerId, notices);
           this.displayedRewardPermits.add(permitId);
         }
         if (isCurrentPlayer) {
@@ -724,13 +743,15 @@ export class AppController {
       const playerBeforeReward = this.store.snapshot;
       this.store.applyReward(previewReward);
       const playerAfterReward = this.store.snapshot;
-      this.rewardNotices.set(playerAfterReward.id, {
+      const notices = this.rewardNotices.get(playerAfterReward.id) ?? [];
+      notices.push({
         playerId: playerAfterReward.id,
         permitId,
         reward: previewReward,
         previousLevel: playerBeforeReward.level,
         currentLevel: playerAfterReward.level,
       });
+      this.rewardNotices.set(playerAfterReward.id, notices);
       this.displayedRewardPermits.add(permitId);
       this.store.markBossDefeated(TUNNEL_MAW.id);
       this.underpassEvent = getPreviewUnderpass();
