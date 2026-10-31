@@ -125,7 +125,8 @@ export class AppController {
         break;
     }
 
-    this.renderRewardNotice();
+    // Never overlay a new encounter with a receipt from an earlier battle.
+    if (this.route !== 'battle') this.renderRewardNotice();
     this.bindCommonNavigation();
     this.bindCityNavigation();
     if (this.route === 'map') {
@@ -172,7 +173,7 @@ export class AppController {
         if (route) this.navigate(route);
       });
     });
-   }
+  }
 
   private bindCityNavigation(): void {
     this.root.querySelectorAll<HTMLButtonElement>('[data-district]').forEach((button) => {
