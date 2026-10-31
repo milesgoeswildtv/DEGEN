@@ -666,14 +666,18 @@ export class AppController {
   private async refreshWorld(rerender = false): Promise<void> {
     const playerId = this.store.snapshot.id;
     const generation = ++this.worldRefreshGeneration;
-    const accountChanged = this.worldRefreshPlayerId !== playerId;
-    if (accountChanged) {
+    const previousPlayerId = this.worldRefreshPlayerId;
+    const accountChanged = previousPlayerId !== undefined && previousPlayerId !== playerId;
+    if (previousPlayerId !== playerId) {
       const hadPreviousWorldState = this.underpassEvent !== undefined || this.worldSyncFailed;
       this.worldRefreshPlayerId = playerId;
       this.underpassEvent = undefined;
       this.worldSyncFailed = false;
-      if (rerender && hadPreviousWorldState
+      if (accountChanged && hadPreviousWorldState
         && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) {
+        // Clear the prior account's per-player event state even when the caller
+        // will not perform its own post-refresh render (for example, a stale
+        // battle request that exits early after an account switch).
         this.render();
       }
     }
@@ -715,7 +719,8 @@ export class AppController {
       await refreshAfterAccountChange();
       return;
     }
-    if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
+    if ((rerender || accountChanged)
+      && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 
   private destroyBattle(): void {
