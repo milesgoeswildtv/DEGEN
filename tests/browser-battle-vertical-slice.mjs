@@ -10,6 +10,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'degen-browser-'));
 const persist = join(scratch, 'd1');
+const seededPlayerId = 'browser-00000000-0000-4000-8000-000000000117';
+const pendingPermitId = 'browser-pending-receipt';
 const wrangler = resolve(root, 'node_modules/.bin/wrangler');
 const vite = resolve(root, 'node_modules/.bin/vite');
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
@@ -87,7 +89,12 @@ try {
   command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   command(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
   const seed = join(scratch, 'seed.sql');
-  writeFileSync(seed, "INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('browser-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));\n");
+  writeFileSync(seed, [
+    "INSERT INTO players(id, display_name) VALUES('" + seededPlayerId + "', 'Browser QA');",
+    "INSERT INTO characters(player_id, level, xp, currency, degen_key) VALUES('" + seededPlayerId + "', 1, 50, 0, 'test-degen');",
+    "INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at) VALUES('browser-cycle', 'underpass', datetime('now', '-10 minutes'), datetime('now', '+90 minutes'));",
+    "INSERT INTO battle_permits(id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at, completed_at, player_hp, player_mana, enemy_hp, battle_status, turn_count, reward_state) VALUES('" + pendingPermitId + "', '" + seededPlayerId + "', 'underpass', 'browser-cycle', 'tunnel-maw', datetime('now', '-5 minutes'), datetime('now', '+15 minutes'), NULL, 120, 0, 0, 'victory', 3, 'pending');",
+  ].join('\n'));
   command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   launch('worker', wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789']);
   await until('local Worker', async () => (await fetch('http://127.0.0.1:8789/api/health', { signal: AbortSignal.timeout(800) })).ok);
@@ -151,7 +158,25 @@ try {
   // Worker-confirmed Mana and keeps the Degen manifested at zero, not just D1 state.
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `(() => {
-      const rendered = [];
+      const storageKey = 'degen.prototype.player.v2';
+      if (window.location.origin === 'http://localhost:5173' && !localStorage.getItem(storageKey)) {
+        localStorage.setItem(storageKey, JSON.stringify({
+          id: 'browser-00000000-0000-4000-8000-000000000117',
+          displayName: 'Browser QA',
+          level: 1,
+          xp: 50,
+          currency: 0,
+          degenId: 'test-degen',
+          inventory: [],
+          unlockedLocations: ['home', 'downtown', 'underpass'],
+          housing: {
+            inventory: ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'],
+            placements: [{ instanceId: 'starter-bed-placed', furnitureId: 'starter-bed', x: 1, y: 1 }],
+          },
+          defeatedBosses: [],
+        }));
+      }
+      const rendered = []
       Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
@@ -259,10 +284,14 @@ try {
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
-  assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
-  // Seed the isolated Worker-owned character just below the existing level threshold
-  // so this real reward receipt proves the server-provided level transition.
-  sql("UPDATE characters SET xp=50 WHERE player_id='" + playerId + "'");
+  assert.equal(playerId, seededPlayerId, 'browser bootstrap must use the pre-seeded isolated player');
+  await until('server-discovered pending victory receipt', () => cdp.evaluate(
+    'document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId === ' + JSON.stringify(pendingPermitId),
+  ));
+  const firstAwardedCharacter = sql("SELECT level, xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
+  assert.deepEqual(firstAwardedCharacter, { level: 2, xp: 25, currency: 30 },
+    'the pending Worker victory must recover and level the player before the live encounter');
+  assert.equal(await cdp.evaluate('document.querySelector(".player-chip strong")?.textContent'), 'LV.2');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
   await assertFitsCompact('Map');
@@ -504,46 +533,13 @@ try {
     'the player chip must reflect the Worker-authoritative level after reward settlement');
   await assertFitsMobile('Underpass reward receipt');
   await assertFitsCompact('Underpass reward receipt');
-  assert.equal(await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId'), permitId,
-    'the first visible receipt must be tied to the first completed permit');
+  assert.equal(await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId'), pendingPermitId,
+    'the first visible receipt must be the earlier D1-recovered permit');
 
-  // Settle another real Worker-backed encounter before dismissing the first receipt.
-  // Both rewards remain Worker/D1-owned; the client only queues their validated receipts.
-  const firstAwardedCharacter = sql("SELECT level, xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
-  assert.deepEqual(firstAwardedCharacter, { level: 2, xp: 25, currency: 30 },
-    'the first reward must be persisted before starting the next encounter');
-  await tap("[data-start-battle]");
-  await until('second manifested battle with the first receipt retained', () => cdp.evaluate(
-    '!!document.querySelector("[data-ability=crack]") && document.querySelector("#battle-accessible-hud")?.textContent.includes("Mana 12 of 12")',
-  ));
-  const secondPermitRow = await until('second Worker-issued battle permit', () => sql(
-    "SELECT id FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL AND battle_status='active' AND id<>'" + permitId + "' ORDER BY started_at DESC LIMIT 1",
-  )[0]);
-  const secondPermitId = secondPermitRow.id;
-  assert.notEqual(secondPermitId, permitId, 'the second encounter must receive its own permit');
-  assert.equal(await cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'), false,
-    'older receipts stay queued but never cover the active battle controls');
-  await assertFitsMobile('Second battle with an older receipt queued');
-
-  for (let turn = 1; turn <= 3; turn++) {
-    await until('second battle Crack ready ' + turn, () => cdp.evaluate(
-      'document.querySelector("[data-ability=crack]")?.disabled === false',
-    ));
-    await tap("[data-ability=crack]");
-    await until('second battle turn ' + turn + ' persisted', () => {
-      const row = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + secondPermitId + "'")[0];
-      return row?.turn_count === turn && row?.battle_status === (turn === 3 ? 'victory' : 'active') ? row : null;
-    });
-  }
-  const secondSettledPermit = await until('second battle reward settled', () => {
-    const row = sql("SELECT battle_status, reward_state, reward_tier, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + secondPermitId + "'")[0];
-    return row?.battle_status === 'victory' && row?.reward_state === 'awarded' && row?.completed_at ? row : null;
-  });
-  assert.equal(secondSettledPermit.reward_tier, 'full');
-  await until('Underpass returned after the second victory', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'));
-  assert.equal(await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId'), permitId,
-    'the older receipt must stay at the front while the second reward settles');
-
+  // The first receipt was recovered from D1 before this live battle. The
+  // killing-blow receipt must queue behind it rather than overwrite it.
+  assert.equal(await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId'), pendingPermitId,
+    'the older recovered receipt must stay at the front after the live victory');
   await tap("[data-route=home]");
   await until('reward receipt remains visible on Home', () => cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'));
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
@@ -565,16 +561,16 @@ try {
   assert.equal(sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count, 1,
     'the earned trophy must persist at the selected room cell');
   await tap('[data-dismiss-reward]');
-  await until('second recovered receipt advances after first dismissal', () => cdp.evaluate(
-    'document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId === ' + JSON.stringify(secondPermitId),
+  await until('live battle receipt advances after recovered receipt dismissal', () => cdp.evaluate(
+    'document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId === ' + JSON.stringify(permitId),
   ));
-  const secondReceiptText = await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.textContent ?? ""');
-  assert.match(secondReceiptText, /FULL CLEAR/);
-  assert.match(secondReceiptText, /\+75 XP/);
-  assert.match(secondReceiptText, /\+30 CR/);
-  assert.doesNotMatch(secondReceiptText, /LEVEL UP/,
-    'the second receipt must not reuse the first encounter level-up transition');
-  await assertFitsMobile('Second queued reward receipt');
+  const liveReceiptText = await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.textContent ?? ""');
+  assert.match(liveReceiptText, /FULL CLEAR/);
+  assert.match(liveReceiptText, /\+75 XP/);
+  assert.match(liveReceiptText, /\+30 CR/);
+  assert.doesNotMatch(liveReceiptText, /LEVEL UP/,
+    'the live receipt must not reuse the earlier recovered level-up transition');
+  await assertFitsMobile('Live battle receipt after recovered receipt dismissal');
   await tap('[data-dismiss-reward]');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'), false,
     'each recovered receipt can be dismissed without altering awarded player state');
@@ -603,13 +599,13 @@ try {
   const victoryHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='" + playerId + "' AND encounter_key='tunnel-maw' AND result='victory'")[0];
   assert.equal(victoryHistory?.count, 2,
     'both completed encounters must settle exactly one victory-history row each');
-  const secondFinalPermit = sql("SELECT battle_status, reward_state, reward_tier, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + secondPermitId + "'")[0];
-  assert.equal(secondFinalPermit?.battle_status, 'victory');
-  assert.equal(secondFinalPermit?.reward_state, 'awarded');
-  assert.equal(secondFinalPermit?.reward_tier, 'full');
-  assert.equal(secondFinalPermit?.player_mana, 0);
-  assert.equal(secondFinalPermit?.turn_count, 3);
-  assert.ok(secondFinalPermit?.completed_at, 'the second server-owned victory must be settled before its receipt is dismissed');
+  const recoveredFinalPermit = sql("SELECT battle_status, reward_state, reward_tier, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + pendingPermitId + "'")[0];
+  assert.equal(recoveredFinalPermit?.battle_status, 'victory');
+  assert.equal(recoveredFinalPermit?.reward_state, 'awarded');
+  assert.equal(recoveredFinalPermit?.reward_tier, 'full');
+  assert.equal(recoveredFinalPermit?.player_mana, 0);
+  assert.equal(recoveredFinalPermit?.turn_count, 3);
+  assert.ok(recoveredFinalPermit?.completed_at, 'the pre-existing Worker victory must be settled before its receipt is dismissed');
 
   // Reload only after checking the response-loss counters above: a new document
   // installs fresh browser instrumentation. The persisted trophy must still render.
