@@ -2668,6 +2668,96 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-malformed-expiry' AND reward_state='pending' AND reward_clear_number IS NULL AND reward_claim_token IS NULL AND reward_claimed_at IS NULL AND completed_at IS NULL"), 1,
     'a malformed expiry must not reserve a reward claim or clear slot');
 
+  // Housing writes are exercised against this isolated Worker/D1 instance, never production.
+  // A new character receives its starter bed once; a later explicit empty save is a durable choice.
+  const housingPlayerId = 'housing-integration-player';
+  const housingOtherId = 'housing-other-player';
+  const housingBootstrap = async (playerId) => {
+    const response = await fetch(base + '/api/player/bootstrap', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId, displayName: playerId }),
+    });
+    assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    return (await response.json()).housing.placements;
+  };
+  const housingSave = (playerId, housing) => fetch(base + '/api/player/housing', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId, housing }),
+  });
+  const housingStarterRoom = await housingBootstrap(housingPlayerId);
+  assert.deepEqual(housingStarterRoom.map(item => [item.instanceId, item.furnitureId, item.x, item.y]), [
+    [housingPlayerId + ':starter-bed-placed', 'starter-bed', 1, 1],
+  ], 'a genuinely new character receives exactly one starter bed');
+  const clearHousing = await housingSave(housingPlayerId, { placements: [] });
+  assert.equal(clearHousing.status, 204);
+  assert.equal(clearHousing.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await housingBootstrap(housingPlayerId), [],
+    'an intentionally empty room must not be reseeded during bootstrap');
+
+  const housingBed = {
+    instanceId: 'housing-integration-bed',
+    furnitureId: 'starter-bed',
+    x: 3,
+    y: 2,
+  };
+  const validHousingSave = await housingSave(housingPlayerId, { placements: [housingBed] });
+  assert.equal(validHousingSave.status, 204);
+  assert.equal(validHousingSave.headers.get('cache-control'), 'no-store');
+  const housingExpected = await housingBootstrap(housingPlayerId);
+  assert.deepEqual(housingExpected.map(item => [item.instanceId, item.furnitureId, item.x, item.y]), [
+    ['housing-integration-bed', 'starter-bed', 3, 2],
+  ], 'a valid placement must persist through Worker/D1 bootstrap');
+
+  const invalidHousingLayouts = [
+    {},
+    { placements: [housingBed, { ...housingBed, instanceId: 'housing-extra-bed', x: 4 }] },
+    { placements: [{ ...housingBed, furnitureId: 'unowned-furniture' }], inventory: ['unowned-furniture'] },
+    { placements: [housingBed, { instanceId: 'housing-duplicate-cell', furnitureId: 'starter-chair', x: 3, y: 2 }] },
+    { placements: [{ ...housingBed, x: 8 }] },
+    { placements: [{ ...housingBed, rotation: 0.5 }] },
+  ];
+  for (const invalidLayout of invalidHousingLayouts) {
+    const rejected = await housingSave(housingPlayerId, invalidLayout);
+    assert.equal(rejected.status, 400, 'malformed, unowned, over-quantity, duplicate, or out-of-bounds layout must reject');
+    assert.equal(rejected.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await housingBootstrap(housingPlayerId), housingExpected,
+      'a rejected housing save must preserve the previously committed layout');
+  }
+
+  const housingOtherStarterRoom = await housingBootstrap(housingOtherId);
+  assert.equal(housingOtherStarterRoom.length, 1, 'a second new character receives its own starter bed');
+  const housingCollision = {
+    instanceId: 'housing-shared-global-id',
+    furnitureId: 'starter-bed',
+    x: 1,
+    y: 1,
+  };
+  const otherHousingSave = await housingSave(housingOtherId, { placements: [housingCollision] });
+  assert.equal(otherHousingSave.status, 204);
+  const collidedHousingSave = await housingSave(housingPlayerId, {
+    placements: [{ ...housingBed, instanceId: housingCollision.instanceId, x: 4, y: 3 }],
+  });
+  assert.equal(collidedHousingSave.status, 409,
+    'a globally owned placement ID must be rejected as a conflict before replacement');
+  assert.equal(collidedHousingSave.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await housingBootstrap(housingPlayerId), housingExpected,
+    'a cross-player ID collision must preserve the first player room');
+  assert.deepEqual((await housingBootstrap(housingOtherId)).map(item => item.instanceId),
+    [housingCollision.instanceId], 'a cross-player ID collision must preserve the owning room');
+
+  const finalEmptySave = await housingSave(housingPlayerId, { placements: [] });
+  assert.equal(finalEmptySave.status, 204);
+  assert.deepEqual(await housingBootstrap(housingPlayerId), [],
+    'the player can intentionally clear the room and retain that choice');
+  const otherEmptySave = await housingSave(housingOtherId, { placements: [] });
+  assert.equal(otherEmptySave.status, 204);
+  assert.deepEqual(await housingBootstrap(housingOtherId), [],
+    'empty-room persistence is isolated per player');
+  console.log('PASS isolated Worker/D1 HTTP housing: starter seed, empty-room persistence, valid save, invalid no-mutation rejection, cross-player ID collision isolation');
+
   console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, inclusive-open/exclusive-close permit boundaries, malformed start/expiry/cycle timestamps, future start rejection, permit survives event closure');
 } finally {
   if (server && server.exitCode === null) {
