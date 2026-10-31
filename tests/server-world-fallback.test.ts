@@ -70,8 +70,6 @@ test('a world refresh from a previous player cannot overwrite the active player 
   const loaded = loadController(previewEvent);
   const requests: string[] = [];
   let resolvePrevious!: (event: EventSnapshot) => void;
-  let resolveCurrent!: () => void;
-  const currentLoaded = new Promise<void>((resolve) => { resolveCurrent = resolve; });
   const previousEvent: EventSnapshot = {
     ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
   };
@@ -86,10 +84,7 @@ test('a world refresh from a previous player cannot overwrite the active player 
       if (playerId === 'player-1') {
         return new Promise<EventSnapshot>((resolve) => { resolvePrevious = resolve; });
       }
-      return Promise.resolve(currentEvent).then((event) => {
-        resolveCurrent();
-        return event;
-      });
+      return Promise.resolve(currentEvent);
     },
   });
 
@@ -99,7 +94,6 @@ test('a world refresh from a previous player cannot overwrite the active player 
   store.snapshot.id = 'player-2';
   resolvePrevious(previousEvent);
   await previousRefresh;
-  await currentLoaded;
 
   assert.deepEqual(requests, ['player-1', 'player-2']);
   assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
@@ -111,8 +105,6 @@ test('a stale previous-player world failure cannot mark the active player offlin
   const loaded = loadController(previewEvent);
   const requests: string[] = [];
   let rejectPrevious!: (error: Error) => void;
-  let resolveCurrent!: () => void;
-  const currentLoaded = new Promise<void>((resolve) => { resolveCurrent = resolve; });
   const currentEvent: EventSnapshot = {
     ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
   };
@@ -124,10 +116,7 @@ test('a stale previous-player world failure cannot mark the active player offlin
       if (playerId === 'player-1') {
         return new Promise<EventSnapshot>((_resolve, reject) => { rejectPrevious = reject; });
       }
-      return Promise.resolve(currentEvent).then((event) => {
-        resolveCurrent();
-        return event;
-      });
+      return Promise.resolve(currentEvent);
     },
   });
 
@@ -136,7 +125,6 @@ test('a stale previous-player world failure cannot mark the active player offlin
   store.snapshot.id = 'player-2';
   rejectPrevious(new Error('stale player session expired'));
   await previousRefresh;
-  await currentLoaded;
 
   assert.deepEqual(requests, ['player-1', 'player-2']);
   assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
