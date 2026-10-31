@@ -131,6 +131,7 @@ test('a stale previous-player world failure cannot mark the active player offlin
     },
   });
 
+  controller.render = () => {};
   const previousRefresh = controller.refreshWorld();
   store.snapshot.id = 'player-2';
   rejectPrevious(new Error('stale player session expired'));
