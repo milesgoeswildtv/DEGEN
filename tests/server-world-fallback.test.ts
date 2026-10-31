@@ -167,13 +167,13 @@ test('an older player refresh cannot overwrite or restart while the active playe
   let resolveOlder!: (event: EventSnapshot) => void;
   let resolveCurrent!: (event: EventSnapshot) => void;
   const initialEvent: EventSnapshot = {
-    ...previewEvent, cycleId: 'player-1-initial-cycle', source: 'server',
+    ...previewEvent, cycleId: 'player-1-initial-cycle', fullRewardClears: 2, source: 'server',
   };
   const staleEvent: EventSnapshot = {
-    ...previewEvent, cycleId: 'player-1-stale-cycle', source: 'server',
+    ...previewEvent, cycleId: 'player-1-stale-cycle', fullRewardClears: 3, source: 'server',
   };
   const currentEvent: EventSnapshot = {
-    ...previewEvent, cycleId: 'player-2-current-cycle', source: 'server',
+    ...previewEvent, cycleId: 'player-2-current-cycle', fullRewardClears: 1, source: 'server',
   };
   const store = { snapshot: { id: 'player-1' } };
   const controller = new loaded.AppController({}, store, {
@@ -189,11 +189,17 @@ test('an older player refresh cannot overwrite or restart while the active playe
       return new Promise<EventSnapshot>((resolve) => { resolveCurrent = resolve; });
     },
   });
+  Object.assign(controller, { route: 'underpass' });
+  const renderedFullRewardClears: Array<number | undefined> = [];
   let renderCount = 0;
-  controller.render = () => { renderCount += 1; };
+  controller.render = () => {
+    renderCount += 1;
+    renderedFullRewardClears.push(controller.underpassEvent?.fullRewardClears);
+  };
 
   await controller.refreshWorld();
   assert.equal(controller.underpassEvent?.cycleId, 'player-1-initial-cycle');
+  assert.equal(controller.underpassEvent?.fullRewardClears, 2);
 
   const olderRefresh = controller.refreshWorld();
   store.snapshot.id = 'player-2';
@@ -216,9 +222,15 @@ test('an older player refresh cannot overwrite or restart while the active playe
   await activeRefresh;
 
   assert.equal(controller.underpassEvent?.cycleId, 'player-2-current-cycle');
+  assert.equal(controller.underpassEvent?.fullRewardClears, 1);
   assert.equal(controller.worldSyncFailed, false);
   assert.equal(loaded.previewCalls(), 0);
   assert.equal(renderCount, 2, 'the active player snapshot is rendered after its refresh settles');
+  assert.deepEqual(
+    renderedFullRewardClears,
+    [undefined, 1],
+    'the Underpass UI must render a cleared state, then only the active player clear count; the previous player count must never be shown',
+  );
 });
 
 test('an account switch renders fail-closed state after the new player refresh fails', async () => {
