@@ -384,8 +384,10 @@ try {
   assert.match(firstStartRequestIds[0], /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   assert.equal(firstStartRequestIds[0], firstStartRequestIds[1],
     'both lost responses must use the same request ID');
-  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
-    'both lost responses must still leave exactly one persisted permit');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE id='" + firstStartRequestIds[0] + "'")[0]?.count, 1,
+    'both lost responses must still leave exactly one permit for their shared request ID');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL AND battle_status='active'")[0]?.count, 1,
+    'the recovered pending receipt must not hide the single active encounter');
 
   // Reload the actual browser page. localStorage must retain the uncertain key,
   // allowing a fresh GameApi instance to recover the already-issued permit.
@@ -418,8 +420,8 @@ try {
   assert.equal(startRequestIds.length, 1, 'the reloaded page should issue one request to recover the permit');
   assert.equal(startRequestIds[0], firstStartRequestIds[0],
     'the reloaded page must reuse the persisted request ID from both failed attempts');
-  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
-    'recovery after reload must not create a duplicate permit');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE id='" + firstStartRequestIds[0] + "'")[0]?.count, 1,
+    'recovery after reload must not create a duplicate permit for the same request ID');
   const startStorageKey = 'degen:battle-start:' + encodeURIComponent(playerId);
   const activeStartKey = await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(startStorageKey) + ') || "null")');
   assert.deepEqual(activeStartKey, {
