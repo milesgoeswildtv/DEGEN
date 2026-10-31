@@ -134,6 +134,32 @@ test('a stale previous-player world failure cannot mark the active player offlin
 
 
 
+test('a stale previous-player response awaits a fail-closed refresh for the active player', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  const previousEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') return previousEvent;
+      throw new Error('active player session unavailable');
+    },
+  });
+
+  const previousRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  await previousRefresh;
+
+  assert.deepEqual(requests, ['player-1', 'player-2']);
+  assert.equal(controller.underpassEvent, undefined);
+  assert.equal(controller.worldSyncFailed, true);
+  assert.equal(loaded.previewCalls(), 0, 'an active-player failure must never fall back to preview state');
+});
+
 test('an older overlapping world read cannot replace a newer snapshot for the same player', async () => {
   const loaded = loadController(previewEvent);
   let resolveOlder!: (event: EventSnapshot) => void;
