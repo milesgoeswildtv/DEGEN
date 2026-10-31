@@ -50,8 +50,8 @@ function queryRows(query) {
   const statement = query.trim();
   // This helper retries only read-only assertions. Reject DML and multiple
   // statements before Wrangler runs so an ambiguous result can never replay a write.
-  assert.match(statement, /^SELECT\\b/i, 'queryRows only accepts read-only SELECT statements');
-  assert.doesNotMatch(statement.replace(/;\\s*$/, ''), /;/,
+  assert.match(statement, /^SELECT\b/i, 'queryRows only accepts read-only SELECT statements');
+  assert.doesNotMatch(statement.replace(/;\s*$/, ''), /;/,
     'queryRows only accepts one SELECT statement');
   let r;
   for (let attempt = 0; attempt <= queryBusyRetryDelaysMs.length; attempt += 1) {
@@ -59,7 +59,7 @@ function queryRows(query) {
       '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
     if (r.status === 0) break;
 
-    const details = [r.stderr, r.stdout, r.error?.message].filter(Boolean).join('\\n');
+    const details = [r.stderr, r.stdout, r.error?.message].filter(Boolean).join('\n');
     const transientSqliteLock = /SQLITE_BUSY|database is locked/i.test(details);
     if (!transientSqliteLock || attempt === queryBusyRetryDelaysMs.length) {
       assert.equal(r.status, 0, 'local D1 query failed: ' + details);
