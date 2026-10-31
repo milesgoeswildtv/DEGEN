@@ -2596,6 +2596,7 @@ try {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ playerId, displayName: playerId }),
+      signal: AbortSignal.timeout(30_000),
     });
     const payload = await response.json();
     assert.equal(response.status, 200, JSON.stringify(payload));
@@ -2608,6 +2609,7 @@ try {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ playerId, housing }),
+    signal: AbortSignal.timeout(30_000),
   });
   const housingStarterRoom = await housingBootstrap(housingPlayerId);
   assert.deepEqual(housingStarterRoom.map(item => [item.instanceId, item.furnitureId, item.x, item.y]), [
