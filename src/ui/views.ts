@@ -55,7 +55,7 @@ export const appShell = (player: PlayerState, content: string): string => `
 
 const rewardItemLabel = (key: string): string => key.replace(/[-_]+/g, ' ').toUpperCase();
 
-export const rewardReceiptView = (reward: BattleReward, previousLevel: number, currentLevel: number): string => {
+export const rewardReceiptView = (reward: BattleReward, previousLevel: number, currentLevel: number, permitId?: string): string => {
   const tierLabel = reward.tier === 'full' ? 'FULL CLEAR' : reward.tier === 'reduced' ? 'REDUCED CLEAR' : 'BATTLE REWARD';
   const loot = [
     ...reward.items.map((item) => `<li><small>ITEM</small><strong>${escapeHtml(rewardItemLabel(item))}</strong></li>`),
@@ -65,7 +65,7 @@ export const rewardReceiptView = (reward: BattleReward, previousLevel: number, c
     ? `<p class="battle-reward-level-up">LEVEL UP · LV.${previousLevel} → LV.${currentLevel}</p>`
     : '';
 
-  return `<aside class="battle-reward-receipt" data-battle-reward-receipt role="status" aria-live="polite" aria-atomic="true">
+  return `<aside class="battle-reward-receipt" data-battle-reward-receipt${permitId ? ` data-permit-id="${escapeHtml(permitId)}"` : ''} role="status" aria-live="polite" aria-atomic="true">
     <div class="battle-reward-heading">
       <div><span class="eyebrow">UNDERPASS // REWARD RECEIPT</span><strong>${tierLabel}</strong></div>
       <button class="battle-reward-dismiss" type="button" data-dismiss-reward aria-label="Dismiss battle reward receipt">×</button>
