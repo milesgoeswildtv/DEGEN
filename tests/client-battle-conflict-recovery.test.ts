@@ -1398,9 +1398,9 @@ test('multiple recovered battle receipts queue by permit and dismiss one at a ti
   await controller.queueRewardCompletion('permit-first', 'player-queue');
 
   const notices = controller.rewardNotices.get('player-queue') ?? [];
-  assert.deepEqual(notices.map((notice) => notice.permitId), ['permit-first', 'permit-second'],
+  assert.deepEqual(Array.from(notices, (notice) => notice.permitId), ['permit-first', 'permit-second'],
     'each recovered permit keeps one receipt in settlement order');
-  assert.deepEqual(notices.map((notice) => [notice.previousLevel, notice.currentLevel]), [[1, 2], [2, 2]],
+  assert.deepEqual(Array.from(notices, (notice) => [notice.previousLevel, notice.currentLevel]), [[1, 2], [2, 2]],
     'each receipt uses the level transition from its own authoritative settlement');
   assert.equal(completionCalls, 3, 'a replayed receipt may be fetched again without creating a duplicate notice');
   assert.equal(store.localRewards, 0, 'receipt recovery never grants client-side rewards');
