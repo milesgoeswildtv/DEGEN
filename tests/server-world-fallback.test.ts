@@ -372,3 +372,68 @@ test('rapid account switches cannot let an intermediate player response overwrit
     'the previous account is cleared once and the newest account renders after its response');
 });
 
+test('an A-to-B-to-A account switch cannot let the first A response overwrite the latest A snapshot', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let playerOneReads = 0;
+  let resolveOlderPlayerOne!: (event: EventSnapshot) => void;
+  let resolvePlayerTwo!: (event: EventSnapshot) => void;
+  const initialEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-initial-cycle', fullRewardClears: 1, source: 'server',
+  };
+  const stalePlayerOneEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-stale-cycle', fullRewardClears: 4, source: 'server',
+  };
+  const intermediatePlayerTwoEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-intermediate-cycle', fullRewardClears: 3, source: 'server',
+  };
+  const latestPlayerOneEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-latest-cycle', fullRewardClears: 2, source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        playerOneReads += 1;
+        if (playerOneReads === 1) return Promise.resolve(initialEvent);
+        if (playerOneReads === 2) {
+          return new Promise<EventSnapshot>((resolve) => { resolveOlderPlayerOne = resolve; });
+        }
+        return Promise.resolve(latestPlayerOneEvent);
+      }
+      if (playerId === 'player-2') {
+        return new Promise<EventSnapshot>((resolve) => { resolvePlayerTwo = resolve; });
+      }
+      throw new Error(`Unexpected player refresh: ${playerId}`);
+    },
+  });
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
+
+  await controller.refreshWorld();
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-initial-cycle');
+
+  const olderPlayerOneRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  const playerTwoRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-1';
+  const latestPlayerOneRefresh = controller.refreshWorld();
+
+  await latestPlayerOneRefresh;
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-latest-cycle');
+  assert.equal(controller.underpassEvent?.fullRewardClears, 2);
+
+  resolveOlderPlayerOne(stalePlayerOneEvent);
+  resolvePlayerTwo(intermediatePlayerTwoEvent);
+  await Promise.all([olderPlayerOneRefresh, playerTwoRefresh]);
+
+  assert.deepEqual(requests, ['player-1', 'player-1', 'player-2', 'player-1']);
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-latest-cycle',
+    'an older response from the same account ID must not win after an A-to-B-to-A switch');
+  assert.equal(controller.underpassEvent?.fullRewardClears, 2);
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(renderCount, 2, 'the cleared account state and latest A snapshot are each rendered once');
+  assert.equal(loaded.previewCalls(), 0);
+});
