@@ -34,7 +34,7 @@ const views = runInNewContext(
   },
 ) as {
   homeView: (player: unknown, selectedFurniture?: string, housingAnnouncement?: string) => string;
-  rewardReceiptView: (reward: { xp: number; currency: number; items: string[]; furniture?: string[]; tier?: 'full' | 'reduced' }, previousLevel: number, currentLevel: number) => string;
+  rewardReceiptView: (reward: { xp: number; currency: number; items: string[]; furniture?: string[]; tier?: 'full' | 'reduced' }, previousLevel: number, currentLevel: number, permitId?: string) => string;
 };
 
 const basePlayer = {
@@ -100,7 +100,7 @@ test('authoritative reward receipt shows loot, currency, XP, and the server leve
     items: ['underpass-scrap'],
     furniture: ['tunnel-trophy'],
     tier: 'full',
-  }, 1, 2);
+  }, 1, 2, 'permit-receipt-1');
   assert.match(html, /FULL CLEAR/);
   assert.match(html, /\+75 XP/);
   assert.match(html, /\+30 CR/);
@@ -108,6 +108,7 @@ test('authoritative reward receipt shows loot, currency, XP, and the server leve
   assert.match(html, /Underpass Trophy/);
   assert.match(html, /LEVEL UP · LV\.1 → LV\.2/);
   assert.match(html, /data-dismiss-reward/);
+  assert.match(html, /data-permit-id="permit-receipt-1"/);
 });
 
 test('reduced reward receipt escapes item keys and does not invent a level-up', () => {
