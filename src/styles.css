@@ -18,14 +18,14 @@
   white-space: nowrap;
   border: 0;
 }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: #08080b; }
+body { margin: 0; min-width: 320px; min-height: 100vh; min-height: 100dvh; background: #08080b; }
 button { font: inherit; }
 button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 
-#app { min-height: 100vh; display: flex; flex-direction: column; }
-.topbar, .bottom-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-color: #27272f; background: rgba(8, 8, 11, 0.96); }
-.topbar { border-bottom: 1px solid #27272f; position: sticky; top: 0; z-index: 10; }
-.bottom-nav { border-top: 1px solid #27272f; position: sticky; bottom: 0; z-index: 10; justify-content: center; }
+#app { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+.topbar, .bottom-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px)); border-color: #27272f; background: rgba(8, 8, 11, 0.96); }
+.topbar { border-bottom: 1px solid #27272f; position: sticky; top: 0; z-index: 10; padding-top: max(14px, env(safe-area-inset-top, 0px)); }
+.bottom-nav { border-top: 1px solid #27272f; position: sticky; bottom: 0; z-index: 10; justify-content: center; padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
 .brand, .bottom-nav button, .panel-heading button { color: #f4f4f5; background: transparent; border: 0; cursor: pointer; font-weight: 900; letter-spacing: .12em; }
 .player-chip { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; color: #a1a1aa; font-size: 13px; }
 .player-chip strong { color: #f4f4f5; }
