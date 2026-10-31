@@ -1,3 +1,25 @@
+## Latest run — 2026-10-31 (Mana authority recheck + housing D1 QA handoff)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`. Exact-main CI [41049131022](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049131022) and Deploy Preview [41049130995](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049130995) completed SUCCESS. The latest Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcb`; main's later `61da708` change is client-side city navigation and did not change Worker runtime. No production deployment is claimed for this run.
+
+- **PUSHED / PR #121 OPEN, READY FOR REVIEW, UNMERGED:** `automation/degen/housing-worker-d1-validation-v01`, head `f10caade5aa495b3482a73c856087259d3ba002a`, base `61da708`. Its exact-head CI [41227007484](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41227007484) completed SUCCESS: all 14 substantive stages passed, including 259 deterministic tests, isolated Worker/D1 housing validation and reward concurrency, transient reward recovery, Underpass cycle/rollover concurrency, atomic defeat history, mobile housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler validation. The PR description now records the completed evidence rather than the earlier in-progress state. Scope is the isolated Worker/D1 test harness only; no runtime, schema, migration, or production data changed.
+
+- **Task / files changed in this run:** repository authority audit and PR #121 review delivery; no repository source file changed by this run. PR #121's existing branch changes only `tests/worker-d1-concurrency.mjs`. This progress update is being added to the existing documentation branch PR #120, not to main.
+
+- **Mana:** COMPLETE / MERGED on main. Verified main contains `DegenDefinition.maxMana`, bespoke `AbilityDefinition.manaCost`, player-only `player_mana` in battle snapshots/permits, authoritative battle-start initialization, atomic unaffordable rejection before turn/HP/enemy changes, exact paid deduction, zero-cost use at zero, killing-blow/defeat behavior, cost-aware UI, shared client/Worker deterministic math, and no Mana-triggered reversion. `EnemyDefinition` has no Mana field and a regression test asserts the current monster definition exposes no Mana-equivalent property. The surviving `sidekick/degen-mana-foundation-v01` is 11 commits ahead / 101 behind main; its initial implementation is superseded. The inspected `active-permit-mana-invariant` and `mana-active-permit-backfill` successor snapshots are also heavily diverged and contain older Worker/client paths, not a coherent missing Mana slice. No cherry-pick or duplicate branch was created.
+
+- **Battle authority / reward idempotency:** main Worker/D1 remains authoritative for permit ownership, player HP/Mana, enemy HP, turn compare-and-swap, terminal victory/defeat history, receipt audit, clear numbering, XP/level-up, currency, inventory, and recoverable exactly-once settlement. The current main integration suite includes action/completion races, duplicate completion replay, invalid/expired and post-closure permits, reward-tier/clear-limit boundaries, level-up boundaries, injected atomic settlement rollback/recovery, and paid-Mana killing-blow concurrency. Client state remains presentation/recovery only; no reward or economy trust moved to the client.
+
+- **D1 / migration assumptions:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; deploy order is schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. PR #114's ready-for-review migration preflight rejects duplicate four-digit versions before schema/migration/Worker writes, but intentionally does not choose a renumbering for draft auth PR #14's conflicting `0007_player_sessions.sql`. No migration was renamed, applied, or remotely executed.
+
+- **Miles blockers:** explicit `0007` sequencing decision; production Discord/Telegram credentials and controlled identity/session verification; approved legacy identity-collision policy; and access to canonical Monster Log v0.11 before production monster integration. No Shield/status or monster canon was invented, and stale Shield PR #20 remains gated.
+
+- **Current PR #120 exact-head CI:** run [41228864186](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41228864186) on `116f4d57ab847e66fd18d2cd21a5f030476e2377` was `in_progress` when this entry was written; it is not claimed green. This new progress commit will require its own exact-head CI.
+
+- **One best next task:** keep the green housing D1 test PR #121 ready for normal review; resolve the explicit `0007` migration sequence and platform-auth policy before any Shield/session schema rollout. Do not revive stale Mana branches or deploy schema-backed work through the duplicate-version gate.
+
+---
+
 ## Latest run — 2026-10-31 (verify Mana completion, D1 integration, and PR sequencing)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
