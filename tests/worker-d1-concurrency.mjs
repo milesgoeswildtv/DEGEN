@@ -2590,14 +2590,37 @@ try {
   // All HTTP assertions are complete. Stop Miniflare before direct D1 writes and
   // final snapshots: using the CLI against the same local store while workerd is
   // serving can contend on SQLite or close its HTTP socket.
-  if (server && server.exitCode === null) {
+  if (server) {
     const worker = server;
-    worker.kill('SIGTERM');
-    await Promise.race([new Promise(r => worker.once('exit', r)), sleep(2000)]);
-    if (worker.exitCode === null) {
-      worker.kill('SIGKILL');
-      await Promise.race([new Promise(r => worker.once('exit', r)), sleep(1000)]);
+    const hasExited = () => worker.exitCode !== null || worker.signalCode !== null;
+    const waitForExit = (timeoutMs) => new Promise((resolve) => {
+      if (hasExited()) {
+        resolve(true);
+        return;
+      }
+      const onExit = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        worker.off('exit', onExit);
+        resolve(false);
+      }, timeoutMs);
+      worker.once('exit', onExit);
+    });
+
+    if (!hasExited()) {
+      worker.kill('SIGTERM');
+      if (!await waitForExit(2000)) {
+        worker.kill('SIGKILL');
+        assert.equal(
+          await waitForExit(5000),
+          true,
+          'Miniflare must exit before direct D1 writes',
+        );
+      }
     }
+    assert.ok(hasExited(), 'Miniflare must exit before direct D1 writes');
     server = undefined;
   }
 
