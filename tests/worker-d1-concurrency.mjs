@@ -43,13 +43,45 @@ async function eventuallyComplete(id, extraFields = {}, playerId = 'integration-
   }
   throw new Error('Reward retry exhausted for ' + id);
 }
+const queryBusyRetryDelaysMs = [50, 100, 200, 400, 800];
+const queryBusyWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+
 function queryRows(query) {
-  const r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
-  assert.equal(r.status, 0, 'local D1 query failed: ' + r.stderr);
+  const statement = query.trim();
+  // This helper retries only read-only assertions. Reject DML and multiple
+  // statements before Wrangler runs so an ambiguous result can never replay a write.
+  assert.match(statement, /^SELECT\b/i, 'queryRows only accepts read-only SELECT statements');
+  assert.doesNotMatch(statement.replace(/;\s*$/, ''), /;/,
+    'queryRows only accepts one SELECT statement');
+  let r;
+  for (let attempt = 0; attempt <= queryBusyRetryDelaysMs.length; attempt += 1) {
+    r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+      '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+    if (r.status === 0) break;
+
+    const details = [r.stderr, r.stdout, r.error?.message].filter(Boolean).join('\n');
+    const transientSqliteLock = /SQLITE_BUSY|database is locked/i.test(details);
+    if (!transientSqliteLock || attempt === queryBusyRetryDelaysMs.length) {
+      assert.equal(r.status, 0, 'local D1 query failed: ' + details);
+    }
+
+    // A completed Worker request can briefly leave the local SQLite file busy
+    // while workerd releases its connection. Retry read-only assertions only;
+    // never replay a D1 mutation after an ambiguous result.
+    Atomics.wait(queryBusyWaitBuffer, 0, 0, queryBusyRetryDelaysMs[attempt]);
+  }
+
   const result = JSON.parse(r.stdout);
   return Array.isArray(result) ? (result[0]?.results ?? []) : (result.results ?? []);
 }
+assert.throws(
+  () => queryRows("UPDATE battle_permits SET player_hp = 1 WHERE id = 'must-not-run'"),
+  /queryRows only accepts read-only SELECT statements/,
+);
+assert.throws(
+  () => queryRows("SELECT 1; DELETE FROM battle_permits"),
+  /queryRows only accepts one SELECT statement/,
+);
 function countRows(query) {
   return queryRows(query)[0]?.n;
 }
@@ -2555,8 +2587,23 @@ try {
       AND reward_clear_number IN (1,2)`), 2,
     'concurrent completions must retain distinct reserved clear numbers');
 
-  // Exercise the INSERT trigger independently: update coverage cannot prove that
-  // new inventory rows are protected from the same malformed quantities.
+  // All HTTP assertions are complete. Stop Miniflare before direct D1 writes and
+  // final snapshots: using the CLI against the same local store while workerd is
+  // serving can contend on SQLite or close its HTTP socket.
+  if (server && server.exitCode === null) {
+    const worker = server;
+    worker.kill('SIGTERM');
+    await Promise.race([new Promise(r => worker.once('exit', r)), sleep(2000)]);
+    if (worker.exitCode === null) {
+      worker.kill('SIGKILL');
+      await Promise.race([new Promise(r => worker.once('exit', r)), sleep(1000)]);
+    }
+    server = undefined;
+  }
+
+  // With workerd stopped, exercise the INSERT trigger independently. These
+  // direct local D1 writes must not contend with a live Worker; do not retry an
+  // ambiguous mutation just to hide a transient SQLite lock.
   expectInventoryGuardFailure(`INSERT INTO player_inventory
     (id, player_id, item_key, item_type, quantity)
     VALUES ('invalid-insert-zero', 'inventory-cap-player', 'probe', 'item', 0)`);
@@ -2572,20 +2619,6 @@ try {
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
     WHERE id LIKE 'invalid-insert-%'`), 0,
     'invalid insert attempts must not create inventory rows');
-
-  // All HTTP assertions are complete. Stop Miniflare before final D1 CLI snapshots:
-  // querying the same local persistence store while the Worker is serving can close
-  // its HTTP socket and make an otherwise valid integration run nondeterministic.
-  if (server && server.exitCode === null) {
-    const worker = server;
-    worker.kill('SIGTERM');
-    await Promise.race([new Promise(r => worker.once('exit', r)), sleep(2000)]);
-    if (worker.exitCode === null) {
-      worker.kill('SIGKILL');
-      await Promise.race([new Promise(r => worker.once('exit', r)), sleep(1000)]);
-    }
-    server = undefined;
-  }
 
   const openBoundaryPermitAfter = queryRows(`SELECT permit.started_at, cycle.opens_at, permit.battle_status,
     permit.player_hp, permit.player_mana, permit.enemy_hp, permit.turn_count, permit.reward_state,
