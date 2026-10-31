@@ -116,7 +116,7 @@ function cdpClient(url) {
 
 async function click(selector) {
   const expression = '(() => { const node = document.querySelector(' + JSON.stringify(selector) +
-    '); if (!node) return false; node.click(); return true; })()';
+    '); if (!node) return false; node.focus(); node.click(); return true; })()';
   assert.equal(await cdp.evaluate(expression), true, 'expected browser control: ' + selector);
 }
 
@@ -184,12 +184,14 @@ try {
     'housing cells should remain comfortably tappable at a 390px mobile viewport');
 
   await click('[data-furniture="starter-chair"]');
-  await until('chair selection', async () =>
-    await cdp.evaluate("Boolean(document.querySelector('[data-furniture=\"starter-chair\"].selected'))") ? true : null);
+  await until('chair selection is announced and keyboard focus is restored', async () => {
+    const state = await cdp.evaluate("(() => { const button = document.querySelector('[data-furniture=\"starter-chair\"].selected'); const status = document.querySelector('[data-housing-status]')?.textContent || ''; return { pressed: button?.getAttribute('aria-pressed'), focused: document.activeElement === button, status }; })()");
+    return state.pressed === 'true' && state.focused && state.status.includes('Plastic Chair selected') ? true : null;
+  });
   await click('[data-room-x="3"][data-room-y="2"]');
-  await until('chair rendered in the selected room cell', async () => {
-    const label = await cdp.evaluate("document.querySelector('[data-room-x=\"3\"][data-room-y=\"2\"]')?.getAttribute('aria-label') || ''");
-    return label.includes('Plastic Chair') ? label : null;
+  await until('chair placement is announced and cell focus is restored', async () => {
+    const state = await cdp.evaluate("(() => { const cell = document.querySelector('[data-room-x=\"3\"][data-room-y=\"2\"]'); return { label: cell?.getAttribute('aria-label') || '', focused: document.activeElement === cell, status: document.querySelector('[data-housing-status]')?.textContent || '' }; })()");
+    return state.label.includes('Plastic Chair') && state.focused && state.status.includes('Plastic Chair placed in room cell 4, 3.') ? true : null;
   });
   await until('chair saved to local D1', async () =>
     sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + playerId +
@@ -205,15 +207,20 @@ try {
   });
 
   await click('[data-clear-selection]');
+  await until('selection clear is announced and focus is restored', async () => {
+    const state = await cdp.evaluate("(() => ({ focused: document.activeElement === document.querySelector('[data-clear-selection]'), status: document.querySelector('[data-housing-status]')?.textContent || '' }))()");
+    return state.focused && state.status.includes('Furniture selection cleared.') ? true : null;
+  });
   await click('[data-room-x="3"][data-room-y="2"]');
-  await until('chair removed from room', async () => {
-    const label = await cdp.evaluate("document.querySelector('[data-room-x=\"3\"][data-room-y=\"2\"]')?.getAttribute('aria-label') || ''");
-    return label === 'Room cell 4, 3' ? label : null;
+  await until('chair removal is announced and cell focus is restored', async () => {
+    const state = await cdp.evaluate("(() => { const cell = document.querySelector('[data-room-x=\"3\"][data-room-y=\"2\"]'); return { label: cell?.getAttribute('aria-label') || '', focused: document.activeElement === cell, status: document.querySelector('[data-housing-status]')?.textContent || '' }; })()");
+    return state.label === 'Room cell 4, 3' && state.focused && state.status.includes('Plastic Chair removed from room cell 4, 3.') ? true : null;
   });
   await click('[data-room-x="1"][data-room-y="1"]');
+  await until('starter furniture removal is announced', async () =>
+    (await cdp.evaluate("document.querySelector('[data-housing-status]')?.textContent || ''")).includes('removed from room cell 2, 2') ? true : null);
   await until('empty room saved', async () =>
     sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + playerId + "'")[0]?.n === 0 ? true : null);
-
   await cdp.send('Page.navigate', { url: origin });
   await until('city map after empty-room reload', async () =>
     await cityMapReady() ? true : null);
@@ -223,7 +230,40 @@ try {
   assert.equal(sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + playerId + "'")[0]?.n, 0,
     'bootstrap must not reseed furniture after an explicit room clear');
 
-  console.log('PASS real Chromium mobile viewport + Vite + local Worker/D1: housing placement persists after reload, empty room remains empty, and room cells remain tappable');
+  // A full Underpass clear awards this existing furniture item. Seed the local D1
+  // inventory row to exercise the real trophy-selection and room-placement path.
+  sql("INSERT OR IGNORE INTO player_inventory (id, player_id, item_key, item_type, quantity) VALUES ('" +
+    playerId + ":furniture:tunnel-trophy', '" + playerId + "', 'tunnel-trophy', 'furniture', 1)");
+  await cdp.send('Page.navigate', { url: origin });
+  await until('city map after trophy reward', async () => await cityMapReady() ? true : null);
+  await click('[data-route="home"]');
+  await until('earned trophy appears in the display panel', async () => {
+    const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
+    return text.includes('TROPHY DISPLAY') && text.includes('READY TO DISPLAY') ? text : null;
+  });
+  await click('.trophy-select[data-furniture="tunnel-trophy"]');
+  await until('trophy selection keeps keyboard focus on the trophy control', async () =>
+    await cdp.evaluate("(() => { const button = document.querySelector('.trophy-select[data-furniture=\"tunnel-trophy\"]'); return button?.classList.contains('selected') && document.activeElement === button; })()") ? true : null);
+  await click('[data-room-x="6"][data-room-y="4"]');
+  await until('trophy rendered in the selected room cell', async () => {
+    const label = await cdp.evaluate("document.querySelector('[data-room-x=\"6\"][data-room-y=\"4\"]')?.getAttribute('aria-label') || ''");
+    return label.includes('Underpass Trophy') ? label : null;
+  });
+  await until('trophy saved to local D1', async () =>
+    sql("SELECT COUNT(*) AS n FROM housing_placements WHERE player_id='" + playerId +
+      "' AND furniture_key='tunnel-trophy' AND grid_x=6 AND grid_y=4")[0]?.n === 1 ? true : null);
+
+  await cdp.send('Page.navigate', { url: origin });
+  await until('city map after trophy placement reload', async () => await cityMapReady() ? true : null);
+  await click('[data-route="home"]');
+  await until('trophy display reflects persisted room placement', async () => {
+    const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
+    return text.includes('DISPLAYED · ROOM CELL 7, 5') ? text : null;
+  });
+  const trophyCell = await cdp.evaluate("document.querySelector('[data-room-x=\"6\"][data-room-y=\"4\"]')?.getAttribute('aria-label') || ''");
+  assert.match(trophyCell, /Underpass Trophy/, 'placed trophy must remain visible after reload');
+
+  console.log('PASS real Chromium mobile viewport + Vite + local Worker/D1: housing placement persists after reload, empty room remains empty, and the earned Underpass Trophy can be selected, displayed, and recovered after reload');
 } finally {
   if (cdp) cdp.ws.close();
   await stopAll();
