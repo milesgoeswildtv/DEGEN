@@ -197,7 +197,7 @@ test('an older player refresh cannot overwrite or restart while the active playe
 
   const olderRefresh = controller.refreshWorld();
   store.snapshot.id = 'player-2';
-  const activeRefresh = controller.refreshWorld(true);
+  const activeRefresh = controller.refreshWorld();
 
   assert.equal(renderCount, 1, 'the previous account snapshot is cleared and rerendered immediately');
   assert.deepEqual(requests, ['player-1', 'player-1', 'player-2']);
@@ -219,6 +219,38 @@ test('an older player refresh cannot overwrite or restart while the active playe
   assert.equal(controller.worldSyncFailed, false);
   assert.equal(loaded.previewCalls(), 0);
   assert.equal(renderCount, 2, 'the active player snapshot is rendered after its refresh settles');
+});
+
+test('an account switch renders fail-closed state after the new player refresh fails', async () => {
+  const loaded = loadController(previewEvent);
+  const previousEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => {
+      if (playerId === 'player-1') return previousEvent;
+      throw new Error('player-2 session unavailable');
+    },
+  });
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
+
+  await controller.refreshWorld();
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-cycle');
+
+  store.snapshot.id = 'player-2';
+  const refresh = controller.refreshWorld();
+  assert.equal(controller.underpassEvent, undefined,
+    'the previous account event is cleared before the new account request settles');
+  assert.equal(renderCount, 1, 'the previous account view is cleared immediately');
+
+  await refresh;
+  assert.equal(controller.underpassEvent, undefined);
+  assert.equal(controller.worldSyncFailed, true);
+  assert.equal(renderCount, 2, 'the active account failure is rendered without restoring prior-player state');
+  assert.equal(loaded.previewCalls(), 0);
 });
 
 test('an older overlapping world read cannot replace a newer snapshot for the same player', async () => {
