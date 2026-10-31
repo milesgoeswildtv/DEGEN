@@ -43,6 +43,8 @@ export class AppController {
   private battleEngine?: BattleEngine;
   private battleReturnTimer?: number;
   private worldRefreshTimer?: number;
+  private worldRefreshGeneration = 0;
+  private worldRefreshPlayerId?: string;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
   private battlePermitOwnerId?: string;
@@ -662,9 +664,36 @@ export class AppController {
   }
 
   private async refreshWorld(rerender = false): Promise<void> {
+    const playerId = this.store.snapshot.id;
+    const generation = ++this.worldRefreshGeneration;
+    const accountChanged = this.worldRefreshPlayerId !== playerId;
+    if (accountChanged) {
+      const hadPreviousWorldState = this.underpassEvent !== undefined || this.worldSyncFailed;
+      this.worldRefreshPlayerId = playerId;
+      this.underpassEvent = undefined;
+      this.worldSyncFailed = false;
+      if (rerender && hadPreviousWorldState
+        && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) {
+        this.render();
+      }
+    }
+
+    const isCurrentRequest = (): boolean =>
+      generation === this.worldRefreshGeneration && this.store.snapshot.id === playerId;
+    const refreshAfterAccountChange = (): void => {
+      // A newer refresh already owns the current player, or this response still
+      // belongs to the active account. Only the latest stale request may restart.
+      if (generation !== this.worldRefreshGeneration || this.store.snapshot.id === playerId) return;
+      void this.refreshWorld(rerender);
+    };
+
     try {
       if (this.api.enabled) {
-        const snapshot = await this.api.getUnderpass(this.store.snapshot.id);
+        const snapshot = await this.api.getUnderpass(playerId);
+        if (!isCurrentRequest()) {
+          refreshAfterAccountChange();
+          return;
+        }
         if (!snapshot) throw new Error('Missing authoritative world-event snapshot.');
         this.underpassEvent = snapshot;
       } else {
@@ -672,12 +701,20 @@ export class AppController {
       }
       this.worldSyncFailed = false;
     } catch (error) {
+      if (!isCurrentRequest()) {
+        refreshAfterAccountChange();
+        return;
+      }
       console.warn('World-event sync failed; server-backed combat is unavailable.', error);
       this.worldSyncFailed = this.api.enabled;
       // Never fabricate a preview cycle for a server-backed player.
       this.underpassEvent = this.api.enabled ? undefined : getPreviewUnderpass();
     }
 
+    if (!isCurrentRequest()) {
+      refreshAfterAccountChange();
+      return;
+    }
     if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 

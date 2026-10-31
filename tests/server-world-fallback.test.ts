@@ -65,6 +65,81 @@ test('server-backed world refresh failure never fabricates a local Underpass cyc
   assert.equal(loaded.previewCalls(), 0, 'server-backed mode must not call the local preview generator');
 });
 
+
+test('a world refresh from a previous player cannot overwrite the active player snapshot', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let resolvePrevious!: (event: EventSnapshot) => void;
+  let resolveCurrent!: () => void;
+  const currentLoaded = new Promise<void>((resolve) => { resolveCurrent = resolve; });
+  const previousEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
+  };
+  const currentEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        return new Promise<EventSnapshot>((resolve) => { resolvePrevious = resolve; });
+      }
+      return Promise.resolve(currentEvent).then((event) => {
+        resolveCurrent();
+        return event;
+      });
+    },
+  });
+
+  const previousRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  resolvePrevious(previousEvent);
+  await previousRefresh;
+  await currentLoaded;
+
+  assert.deepEqual(requests, ['player-1', 'player-2']);
+  assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
+  assert.equal(controller.worldSyncFailed, false);
+});
+
+test('a stale previous-player world failure cannot mark the active player offline', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let rejectPrevious!: (error: Error) => void;
+  let resolveCurrent!: () => void;
+  const currentLoaded = new Promise<void>((resolve) => { resolveCurrent = resolve; });
+  const currentEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        return new Promise<EventSnapshot>((_resolve, reject) => { rejectPrevious = reject; });
+      }
+      return Promise.resolve(currentEvent).then((event) => {
+        resolveCurrent();
+        return event;
+      });
+    },
+  });
+
+  const previousRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  rejectPrevious(new Error('stale player session expired'));
+  await previousRefresh;
+  await currentLoaded;
+
+  assert.deepEqual(requests, ['player-1', 'player-2']);
+  assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(loaded.previewCalls(), 0);
+});
+
 test('offline preview still uses its local Underpass cycle when no Worker is configured', async () => {
   const loaded = loadController(previewEvent);
   const controller = new loaded.AppController(

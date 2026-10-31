@@ -1,3 +1,17 @@
+## Latest run — 2026-10-30 (account-scoped Underpass world refresh)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED / PR pending:** feature branch `automation/degen/world-refresh-account-isolation-v01`, created from the exact current main SHA. No direct-main write.
+- **Task / files changed:** `src/app/AppController.ts` captures the player ID and refresh generation for every Underpass world read. Older overlapping reads are ignored; a response or failure that returns after an account switch cannot overwrite the active player's world snapshot or mark that player offline, and the controller immediately re-reads for the active player. A newly active player does not keep the previous account's event snapshot while syncing. `tests/server-world-fallback.test.ts` adds deferred-response and deferred-failure regressions proving both paths rebind to the active player without falling back to preview state.
+- **QA:** deterministic targeted tests are included in the normal CI suite. Exact-head CI is pending this pushed commit; no local-shell `npm test`, build, Worker/D1 integration, Chromium, or Wrangler result is claimed in this environment.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, terminal handling, cost-aware controls, no monster Mana/equivalent resource, and no Mana-triggered reversion remain intact. `sidekick/degen-mana-foundation-v01` is superseded (11 ahead / 101 behind current main); no cherry-pick.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, player HP/Mana, enemy HP, turn CAS, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. This change only scopes world-event reads to the active player; it does not alter combat, rewards, or economy authority.
+- **D1 / migration assumptions:** no schema, migration, D1 binding, or deployment workflow change. `wrangler.toml` continues to bind `DB` to `DEGEN` with `db/migrations`; the duplicate `0007` inventory/auth-session numbering conflict remains detected by PR #114 and unresolved. No production D1 operation or Worker deployment occurred.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, approved legacy identity-collision handling, and the explicit `0007` migration sequencing decision remain unresolved. Shield/status persistence remains gated; no new content or combat canon was introduced.
+- **One best next task:** obtain exact-head CI for this account-isolation fix, then keep the auth/migration sequencing decision as the gate before schema-backed Shield work.
+
+---
+
 ## Latest run — 2026-10-30 (PR #113 exact-head verification and review delivery)
 
 - **Authoritative main SHA:** `4cc3bcbced85c46674067f43825223b959269a66`.
