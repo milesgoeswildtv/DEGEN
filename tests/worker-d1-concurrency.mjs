@@ -2678,9 +2678,12 @@ try {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ playerId, displayName: playerId }),
     });
-    assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+    const payload = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(payload));
     assert.equal(response.headers.get('cache-control'), 'no-store');
-    return (await response.json()).housing.placements;
+    assert.ok(payload.housing && Array.isArray(payload.housing.placements),
+      'bootstrap must return a valid authoritative housing layout');
+    return payload.housing.placements;
   };
   const housingSave = (playerId, housing) => fetch(base + '/api/player/housing', {
     method: 'PUT',
@@ -2728,7 +2731,9 @@ try {
   }
 
   const housingOtherStarterRoom = await housingBootstrap(housingOtherId);
-  assert.equal(housingOtherStarterRoom.length, 1, 'a second new character receives its own starter bed');
+  assert.deepEqual(housingOtherStarterRoom.map(item => [item.instanceId, item.furnitureId, item.x, item.y]), [
+    [housingOtherId + ':starter-bed-placed', 'starter-bed', 1, 1],
+  ], 'a second new character receives its own starter bed');
   const housingCollision = {
     instanceId: 'housing-shared-global-id',
     furnitureId: 'starter-bed',
