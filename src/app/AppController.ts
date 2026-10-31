@@ -43,6 +43,8 @@ export class AppController {
   private battleEngine?: BattleEngine;
   private battleReturnTimer?: number;
   private worldRefreshTimer?: number;
+  private worldRefreshGeneration = 0;
+  private worldRefreshPlayerId?: string;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
   private battlePermitOwnerId?: string;
@@ -662,9 +664,40 @@ export class AppController {
   }
 
   private async refreshWorld(rerender = false): Promise<void> {
+    const playerId = this.store.snapshot.id;
+    const generation = ++this.worldRefreshGeneration;
+    const previousPlayerId = this.worldRefreshPlayerId;
+    const accountChanged = previousPlayerId !== undefined && previousPlayerId !== playerId;
+    if (previousPlayerId !== playerId) {
+      const hadPreviousWorldState = this.underpassEvent !== undefined || this.worldSyncFailed;
+      this.worldRefreshPlayerId = playerId;
+      this.underpassEvent = undefined;
+      this.worldSyncFailed = false;
+      if (accountChanged && hadPreviousWorldState
+        && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) {
+        // Clear the prior account's per-player event state even when the caller
+        // will not perform its own post-refresh render (for example, a stale
+        // battle request that exits early after an account switch).
+        this.render();
+      }
+    }
+
+    const isCurrentRequest = (): boolean =>
+      generation === this.worldRefreshGeneration && this.store.snapshot.id === playerId;
+    const refreshAfterAccountChange = async (): Promise<void> => {
+      // A newer refresh already owns the current player, or this response still
+      // belongs to the active account. Only the latest stale request may restart.
+      if (generation !== this.worldRefreshGeneration || this.store.snapshot.id === playerId) return;
+      await this.refreshWorld(true);
+    };
+
     try {
       if (this.api.enabled) {
-        const snapshot = await this.api.getUnderpass(this.store.snapshot.id);
+        const snapshot = await this.api.getUnderpass(playerId);
+        if (!isCurrentRequest()) {
+          await refreshAfterAccountChange();
+          return;
+        }
         if (!snapshot) throw new Error('Missing authoritative world-event snapshot.');
         this.underpassEvent = snapshot;
       } else {
@@ -672,13 +705,22 @@ export class AppController {
       }
       this.worldSyncFailed = false;
     } catch (error) {
+      if (!isCurrentRequest()) {
+        await refreshAfterAccountChange();
+        return;
+      }
       console.warn('World-event sync failed; server-backed combat is unavailable.', error);
       this.worldSyncFailed = this.api.enabled;
       // Never fabricate a preview cycle for a server-backed player.
       this.underpassEvent = this.api.enabled ? undefined : getPreviewUnderpass();
     }
 
-    if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
+    if (!isCurrentRequest()) {
+      await refreshAfterAccountChange();
+      return;
+    }
+    if ((rerender || accountChanged)
+      && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 
   private destroyBattle(): void {
