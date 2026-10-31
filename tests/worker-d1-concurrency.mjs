@@ -43,13 +43,45 @@ async function eventuallyComplete(id, extraFields = {}, playerId = 'integration-
   }
   throw new Error('Reward retry exhausted for ' + id);
 }
+const queryBusyRetryDelaysMs = [50, 100, 200, 400, 800];
+const queryBusyWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+
 function queryRows(query) {
-  const r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
-  assert.equal(r.status, 0, 'local D1 query failed: ' + r.stderr);
+  const statement = query.trim();
+  // This helper retries only read-only assertions. Reject DML and multiple
+  // statements before Wrangler runs so an ambiguous result can never replay a write.
+  assert.match(statement, /^SELECT\\b/i, 'queryRows only accepts read-only SELECT statements');
+  assert.doesNotMatch(statement.replace(/;\\s*$/, ''), /;/,
+    'queryRows only accepts one SELECT statement');
+  let r;
+  for (let attempt = 0; attempt <= queryBusyRetryDelaysMs.length; attempt += 1) {
+    r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+      '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+    if (r.status === 0) break;
+
+    const details = [r.stderr, r.stdout, r.error?.message].filter(Boolean).join('\\n');
+    const transientSqliteLock = /SQLITE_BUSY|database is locked/i.test(details);
+    if (!transientSqliteLock || attempt === queryBusyRetryDelaysMs.length) {
+      assert.equal(r.status, 0, 'local D1 query failed: ' + details);
+    }
+
+    // A completed Worker request can briefly leave the local SQLite file busy
+    // while workerd releases its connection. Retry read-only assertions only;
+    // never replay a D1 mutation after an ambiguous result.
+    Atomics.wait(queryBusyWaitBuffer, 0, 0, queryBusyRetryDelaysMs[attempt]);
+  }
+
   const result = JSON.parse(r.stdout);
   return Array.isArray(result) ? (result[0]?.results ?? []) : (result.results ?? []);
 }
+assert.throws(
+  () => queryRows("UPDATE battle_permits SET player_hp = 1 WHERE id = 'must-not-run'"),
+  /queryRows only accepts read-only SELECT statements/,
+);
+assert.throws(
+  () => queryRows("SELECT 1; DELETE FROM battle_permits"),
+  /queryRows only accepts one SELECT statement/,
+);
 function countRows(query) {
   return queryRows(query)[0]?.n;
 }
@@ -2555,24 +2587,6 @@ try {
       AND reward_clear_number IN (1,2)`), 2,
     'concurrent completions must retain distinct reserved clear numbers');
 
-  // Exercise the INSERT trigger independently: update coverage cannot prove that
-  // new inventory rows are protected from the same malformed quantities.
-  expectInventoryGuardFailure(`INSERT INTO player_inventory
-    (id, player_id, item_key, item_type, quantity)
-    VALUES ('invalid-insert-zero', 'inventory-cap-player', 'probe', 'item', 0)`);
-  expectInventoryGuardFailure(`INSERT INTO player_inventory
-    (id, player_id, item_key, item_type, quantity)
-    VALUES ('invalid-insert-negative', 'inventory-cap-player', 'probe', 'item', -1)`);
-  expectInventoryGuardFailure(`INSERT INTO player_inventory
-    (id, player_id, item_key, item_type, quantity)
-    VALUES ('invalid-insert-fractional', 'inventory-cap-player', 'probe', 'item', 1.5)`);
-  expectInventoryGuardFailure(`INSERT INTO player_inventory
-    (id, player_id, item_key, item_type, quantity)
-    VALUES ('invalid-insert-unsafe', 'inventory-cap-player', 'probe', 'item', 9007199254740992)`);
-  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
-    WHERE id LIKE 'invalid-insert-%'`), 0,
-    'invalid insert attempts must not create inventory rows');
-
   // Housing writes are exercised against this isolated Worker/D1 instance, never production.
   // A new character receives its starter bed once; a later explicit empty save is a durable choice.
   const housingPlayerId = 'housing-integration-player';
@@ -2668,19 +2682,60 @@ try {
     'empty-room persistence is isolated per player');
   console.log('PASS isolated Worker/D1 HTTP housing: starter seed, empty-room persistence, valid save, invalid no-mutation rejection, cross-player ID collision isolation');
 
-  // All HTTP assertions are complete. Stop Miniflare before final D1 CLI snapshots:
-  // querying the same local persistence store while the Worker is serving can close
-  // its HTTP socket and make an otherwise valid integration run nondeterministic.
-  if (server && server.exitCode === null) {
+  // All HTTP assertions are complete. Stop Miniflare before direct D1 writes/snapshots.
+  // A live workerd connection can close its HTTP socket when Wrangler opens the same SQLite store.
+  if (server) {
     const worker = server;
-    worker.kill('SIGTERM');
-    await Promise.race([new Promise(r => worker.once('exit', r)), sleep(2000)]);
-    if (worker.exitCode === null) {
-      worker.kill('SIGKILL');
-      await Promise.race([new Promise(r => worker.once('exit', r)), sleep(1000)]);
+    const hasExited = () => worker.exitCode !== null || worker.signalCode !== null;
+    const waitForExit = (timeoutMs) => new Promise((resolve) => {
+      if (hasExited()) {
+        resolve(true);
+        return;
+      }
+      const onExit = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        worker.off('exit', onExit);
+        resolve(false);
+      }, timeoutMs);
+      worker.once('exit', onExit);
+    });
+
+    if (!hasExited()) {
+      worker.kill('SIGTERM');
+      if (!await waitForExit(2000)) {
+        worker.kill('SIGKILL');
+        assert.equal(
+          await waitForExit(5000),
+          true,
+          'Miniflare must exit before direct D1 writes',
+        );
+      }
     }
+    assert.ok(hasExited(), 'Miniflare must exit before direct D1 writes');
     server = undefined;
   }
+
+  // Exercise the INSERT trigger independently: update coverage cannot prove that
+  // new inventory rows are protected from the same malformed quantities.
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-zero', 'inventory-cap-player', 'probe', 'item', 0)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-negative', 'inventory-cap-player', 'probe', 'item', -1)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-fractional', 'inventory-cap-player', 'probe', 'item', 1.5)`);
+  expectInventoryGuardFailure(`INSERT INTO player_inventory
+    (id, player_id, item_key, item_type, quantity)
+    VALUES ('invalid-insert-unsafe', 'inventory-cap-player', 'probe', 'item', 9007199254740992)`);
+  assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
+    WHERE id LIKE 'invalid-insert-%'`), 0,
+    'invalid insert attempts must not create inventory rows');
+
 
   const openBoundaryPermitAfter = queryRows(`SELECT permit.started_at, cycle.opens_at, permit.battle_status,
     permit.player_hp, permit.player_mana, permit.enemy_hp, permit.turn_count, permit.reward_state,
