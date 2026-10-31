@@ -189,6 +189,8 @@ test('an older player refresh cannot overwrite or restart while the active playe
       return new Promise<EventSnapshot>((resolve) => { resolveCurrent = resolve; });
     },
   });
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
 
   await controller.refreshWorld();
   assert.equal(controller.underpassEvent?.cycleId, 'player-1-initial-cycle');
@@ -197,6 +199,7 @@ test('an older player refresh cannot overwrite or restart while the active playe
   store.snapshot.id = 'player-2';
   const activeRefresh = controller.refreshWorld(true);
 
+  assert.equal(renderCount, 1, 'the previous account snapshot is cleared and rerendered immediately');
   assert.deepEqual(requests, ['player-1', 'player-1', 'player-2']);
   assert.equal(controller.underpassEvent, undefined,
     'the previous account event must be cleared while the active account is syncing');
@@ -215,6 +218,7 @@ test('an older player refresh cannot overwrite or restart while the active playe
   assert.equal(controller.underpassEvent?.cycleId, 'player-2-current-cycle');
   assert.equal(controller.worldSyncFailed, false);
   assert.equal(loaded.previewCalls(), 0);
+  assert.equal(renderCount, 2, 'the active player snapshot is rendered after its refresh settles');
 });
 
 test('an older overlapping world read cannot replace a newer snapshot for the same player', async () => {
