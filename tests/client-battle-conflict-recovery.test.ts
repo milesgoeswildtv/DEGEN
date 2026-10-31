@@ -1405,6 +1405,9 @@ test('multiple recovered battle receipts queue by permit and dismiss one at a ti
   assert.equal(completionCalls, 3, 'a replayed receipt may be fetched again without creating a duplicate notice');
   assert.equal(store.localRewards, 0, 'receipt recovery never grants client-side rewards');
 
+  controller.route = 'battle';
+  controller.render();
+  assert.equal(currentReceipt, '', 'queued receipts must stay off the active battle screen');
   controller.route = 'home';
   controller.render();
   assert.match(currentReceipt, /data-permit-id="permit-first"/);
