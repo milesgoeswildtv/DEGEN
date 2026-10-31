@@ -35,7 +35,7 @@ function loadController(preview: EventSnapshot) {
       root: unknown,
       store: { snapshot: { id: string } },
       api: { enabled: boolean; getUnderpass: (id: string) => Promise<EventSnapshot> },
-    ) => { refreshWorld: () => Promise<void>; underpassEvent?: EventSnapshot };
+    ) => { refreshWorld: () => Promise<void>; underpassEvent?: EventSnapshot; worldSyncFailed?: boolean; render: () => void };
   };
   return { AppController: loaded.AppController, previewCalls: () => previewCalls };
 }
@@ -93,6 +93,8 @@ test('a world refresh from a previous player cannot overwrite the active player 
     },
   });
 
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
   const previousRefresh = controller.refreshWorld();
   store.snapshot.id = 'player-2';
   resolvePrevious(previousEvent);
@@ -102,6 +104,7 @@ test('a world refresh from a previous player cannot overwrite the active player 
   assert.deepEqual(requests, ['player-1', 'player-2']);
   assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
   assert.equal(controller.worldSyncFailed, false);
+  assert.equal(renderCount, 1, 'the replacement account refresh must rerender even when the original refresh was non-rendering');
 });
 
 test('a stale previous-player world failure cannot mark the active player offline', async () => {
@@ -138,6 +141,41 @@ test('a stale previous-player world failure cannot mark the active player offlin
   assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
   assert.equal(controller.worldSyncFailed, false);
   assert.equal(loaded.previewCalls(), 0);
+});
+
+
+
+test('an older overlapping world read cannot replace a newer snapshot for the same player', async () => {
+  const loaded = loadController(previewEvent);
+  let resolveOlder!: (event: EventSnapshot) => void;
+  let requestCount = 0;
+  const olderEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'older-cycle', source: 'server',
+  };
+  const newerEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'newer-cycle', source: 'server',
+  };
+  const controller = new loaded.AppController(
+    {},
+    { snapshot: { id: 'player-1' } },
+    {
+      enabled: true,
+      getUnderpass: () => {
+        requestCount += 1;
+        return requestCount === 1
+          ? new Promise<EventSnapshot>((resolve) => { resolveOlder = resolve; })
+          : Promise.resolve(newerEvent);
+      },
+    },
+  );
+
+  const olderRefresh = controller.refreshWorld();
+  await controller.refreshWorld();
+  resolveOlder(olderEvent);
+  await olderRefresh;
+
+  assert.equal(requestCount, 2);
+  assert.equal(controller.underpassEvent?.cycleId, 'newer-cycle');
 });
 
 test('offline preview still uses its local Underpass cycle when no Worker is configured', async () => {

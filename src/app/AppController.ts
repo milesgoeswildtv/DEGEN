@@ -684,7 +684,7 @@ export class AppController {
       // A newer refresh already owns the current player, or this response still
       // belongs to the active account. Only the latest stale request may restart.
       if (generation !== this.worldRefreshGeneration || this.store.snapshot.id === playerId) return;
-      void this.refreshWorld(rerender);
+      void this.refreshWorld(true);
     };
 
     try {
