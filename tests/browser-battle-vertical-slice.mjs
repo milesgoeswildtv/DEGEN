@@ -521,9 +521,9 @@ try {
   )[0]);
   const secondPermitId = secondPermitRow.id;
   assert.notEqual(secondPermitId, permitId, 'the second encounter must receive its own permit');
-  assert.equal(await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId'), permitId,
-    'starting another encounter must not replace the first receipt');
-  await assertFitsMobile('Second battle with a queued receipt');
+  assert.equal(await cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'), false,
+    'older receipts stay queued but never cover the active battle controls');
+  await assertFitsMobile('Second battle with an older receipt queued');
 
   for (let turn = 1; turn <= 3; turn++) {
     await until('second battle Crack ready ' + turn, () => cdp.evaluate(
