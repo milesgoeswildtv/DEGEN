@@ -1,3 +1,17 @@
+## Latest run — 2026-10-31 (make transient D1 read retries structurally read-only)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED / PR #119 OPEN, ready for review, unmerged:** `automation/degen/d1-sqlite-busy-read-retry-v01`. Prior code/test head `b4f2c4d859a3462c0221ee635b29de66357c0397` passed exact-head CI [41199572007](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41199572007). This follow-up adds a guard and requires a fresh exact-head CI run. No direct-main write, merge, force-push, or history rewrite.
+- **Task / files changed:** `tests/worker-d1-concurrency.mjs` now rejects anything other than one SELECT statement before spawning Wrangler. Two regression assertions prove UPDATE and SELECT+DELETE inputs fail before any D1 command can execute. The 125 existing `queryRows` callsites were inspected and are single SELECT statements. The bounded SQLITE_BUSY backoff remains limited to this read-only helper; no D1 mutation is retried.
+- **QA boundary:** exact-head CI on the prior helper commit passed all 14 substantive stages, including 267 deterministic tests, Worker/D1 reward concurrency and transient recovery, Underpass cycle/rollover races, atomic defeat history, mobile housing persistence, production build, Chromium mobile Worker/D1 battle vertical slice, and Wrangler validation. The new guard has not yet run in CI. No local shell, production D1, production Worker deployment, or physical-iPhone QA is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, terminal handling, cost-aware controls, client/Worker math consistency, no monster Mana, and no Mana-triggered reversion remain covered.
+- **Battle authority / reward idempotency:** Worker/D1 owns permits, action turn-CAS, player HP/Mana, enemy HP, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. This change is test-harness-only and does not alter combat or reward authority.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes colliding `0007_player_sessions.sql`; PR #114 detects but does not resolve the sequence. No remote D1 operation, migration apply, or deployment occurred.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, approved legacy identity-collision handling, and the duplicate-`0007` migration decision remain release gates. Monster Log v0.11 and exact status duration/stacking/resistance are not available in the accessible Library; no Shield/status/monster canon was invented.
+- **One best next task:** verify exact-head CI for this read-only guard and keep schema-backed Shield/auth work gated until the migration sequence and identity policy are explicitly resolved.
+
+---
+
 ## Latest run — 2026-10-31 (bounded retry for transient local D1 read locks)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.

@@ -47,6 +47,12 @@ const queryBusyRetryDelaysMs = [50, 100, 200, 400, 800];
 const queryBusyWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
 
 function queryRows(query) {
+  const statement = query.trim();
+  // This helper retries only read-only assertions. Reject DML and multiple
+  // statements before Wrangler runs so an ambiguous result can never replay a write.
+  assert.match(statement, /^SELECT\\b/i, 'queryRows only accepts read-only SELECT statements');
+  assert.doesNotMatch(statement.replace(/;\\s*$/, ''), /;/,
+    'queryRows only accepts one SELECT statement');
   let r;
   for (let attempt = 0; attempt <= queryBusyRetryDelaysMs.length; attempt += 1) {
     r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
@@ -68,6 +74,14 @@ function queryRows(query) {
   const result = JSON.parse(r.stdout);
   return Array.isArray(result) ? (result[0]?.results ?? []) : (result.results ?? []);
 }
+assert.throws(
+  () => queryRows("UPDATE battle_permits SET player_hp = 1 WHERE id = 'must-not-run'"),
+  /queryRows only accepts read-only SELECT statements/,
+);
+assert.throws(
+  () => queryRows("SELECT 1; DELETE FROM battle_permits"),
+  /queryRows only accepts one SELECT statement/,
+);
 function countRows(query) {
   return queryRows(query)[0]?.n;
 }
