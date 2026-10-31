@@ -15,9 +15,82 @@ const base = 'http://127.0.0.1:8789';
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
 let server;
 let logs = '';
-function cli(args) {
-  const r = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
-  if (r.error || r.status !== 0) throw new Error(`wrangler ${args.join(' ')}: ${r.error ?? ''} ${r.stdout} ${r.stderr}`);
+async function stopWorker() {
+  if (!server) return;
+  const worker = server;
+  const hasExited = () => worker.exitCode !== null || worker.signalCode !== null;
+  const waitForExit = (timeoutMs) => new Promise((resolve) => {
+    if (hasExited()) {
+      resolve(true);
+      return;
+    }
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      worker.off('exit', onExit);
+      resolve(false);
+    }, timeoutMs);
+    worker.once('exit', onExit);
+  });
+
+  if (!hasExited()) {
+    worker.kill('SIGTERM');
+    if (!await waitForExit(2000)) {
+      worker.kill('SIGKILL');
+      assert.equal(
+        await waitForExit(5000),
+        true,
+        'Miniflare must exit before direct D1 CLI access',
+      );
+    }
+  }
+  assert.ok(hasExited(), 'Miniflare must exit before direct D1 CLI access');
+  server = undefined;
+}
+
+async function startWorker() {
+  if (server && server.exitCode === null && server.signalCode === null) return;
+  server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
+    cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  for (const stream of [server.stdout, server.stderr]) {
+    stream.on('data', data => { logs = (logs + data.toString()).slice(-10000); });
+  }
+
+  let ready = false;
+  for (let n = 0; n < 80; n++) {
+    if (server.exitCode !== null || server.signalCode !== null) throw new Error('Worker exited: ' + logs);
+    try {
+      const response = await fetch(base + '/api/health', { signal: AbortSignal.timeout(600) });
+      if (response.ok && (await response.json()).ok) {
+        ready = true;
+        break;
+      }
+    } catch { /* startup */ }
+    await sleep(250);
+  }
+  assert.ok(ready, 'Worker did not start: ' + logs);
+}
+
+// Wrangler D1 CLI opens its own local Miniflare connection to the same persisted
+// SQLite store. Pause the HTTP Worker around every direct CLI mutation, then
+// restart it against the same persistence directory before the next HTTP assertion.
+async function runD1Cli(args) {
+  const restartWorker = Boolean(server);
+  if (restartWorker) await stopWorker();
+
+  let result;
+  try {
+    result = spawnSync(wrangler, args, { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  } finally {
+    if (restartWorker) await startWorker();
+  }
+
+  if (result.error || result.status !== 0) {
+    throw new Error(`wrangler ${args.join(' ')}: ${result.error ?? ''} ${result.stdout} ${result.stderr}`);
+  }
 }
 async function complete(permitId, playerId = 'integration-player', extraFields = {}) {
   let r;
@@ -129,8 +202,8 @@ async function assertUnsupportedActionPermit(permitId, state) {
     'an unsupported permit must not reserve or claim a reward');
 }
 try {
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
-  cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
+  await runD1Cli(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
   const seed = join(scratch, 'seed.sql');
   writeFileSync(seed, `
     INSERT INTO players(id,display_name) VALUES
@@ -371,8 +444,8 @@ try {
       (id,player_id,encounter_key,result,player_level,xp_awarded,currency_awarded)
       VALUES('permit-counter-lag-peer:victory','integration-player','tunnel-maw','victory',2,75,30);
   `);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET started_at = CASE id " +
       "WHEN 'permit-start-before-open' THEN datetime('now','-20 minutes') " +
       "WHEN 'permit-start-after-close' THEN datetime('now','-5 minutes') END " +
@@ -380,7 +453,7 @@ try {
   // Close the cycle after that persisted entry time, before starting the Worker.
   // Opening a second Wrangler D1 CLI against the same persisted SQLite store while
   // Miniflare is serving requests can drop the Worker socket.
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='closed-after-entry-cycle'"]);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM world_event_cycles WHERE id='closed-after-entry-cycle' AND julianday(closes_at) < julianday('now')"), 1,
     'the Underpass cycle must be closed before the action is submitted');
@@ -447,22 +520,7 @@ try {
   const malformedExpiryInventoryBefore = queryRows("SELECT item_key, item_type, quantity FROM player_inventory WHERE player_id='malformed-expiry-player' ORDER BY item_type, item_key");
   const malformedExpiryClearsBefore = queryRows("SELECT cycle_id, full_reward_clears FROM world_event_clears WHERE player_id='malformed-expiry-player' ORDER BY cycle_id");
   const malformedExpiryHistoryBefore = queryRows("SELECT id, player_id, encounter_key, result, player_level, xp_awarded, currency_awarded FROM battle_history WHERE player_id='malformed-expiry-player' ORDER BY id");
-  server = spawn(wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789'], {
-    cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  for (const stream of [server.stdout, server.stderr]) {
-    stream.on('data', data => { logs = (logs + data.toString()).slice(-10000); });
-  }
-  let ready = false;
-  for (let n = 0; n < 80; n++) {
-    if (server.exitCode !== null) throw new Error('Worker exited: ' + logs);
-    try {
-      const r = await fetch(base + '/api/health', { signal: AbortSignal.timeout(600) });
-      if (r.ok && (await r.json()).ok) { ready = true; break; }
-    } catch { /* startup */ }
-    await sleep(250);
-  }
-  assert.ok(ready, 'Worker did not start: ' + logs);
+  await startWorker();
 
   // Invalid start times must not authorize actions or rewards. Keep these requests
   // adjacent to Worker startup so local D1 probes cannot disrupt HTTP.
@@ -749,7 +807,7 @@ try {
   for (const permitId of ['permit-unsupported-encounter', 'permit-unsupported-event', 'permit-cycle-mismatch']) {
     const clearNumber = permitId === 'permit-unsupported-encounter' ? 1
       : permitId === 'permit-unsupported-event' ? 2 : 3;
-    cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+    await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
       "--command=UPDATE battle_permits SET reward_state='awarded', reward_clear_number=" + clearNumber + ", reward_xp=25, reward_currency=10, reward_tier='full', completed_at=CURRENT_TIMESTAMP, reward_claim_token=NULL, reward_claimed_at=NULL WHERE id='" + permitId + "'"]);
     const replay = await complete(permitId, 'integration-player', {
       victory: true, xp: 999999, currency: 999999, items: ['forged-item'],
@@ -1163,7 +1221,7 @@ try {
     'a sequential distinct-key request must not create a second unresolved permit');
 
   // A terminal defeat is resolved combat, not an active encounter or reward claim.
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET battle_status='defeat' WHERE id='" + distinctAcceptedId + "'"]);
   const afterDefeatRequestId = '00000000-0000-4000-8000-000000000089';
   const afterDefeatResponse = await fetch(base + '/api/battle/start', {
@@ -1239,7 +1297,7 @@ try {
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('start-replay-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+3 hours'));
   `);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + startReplaySeed]);
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + startReplaySeed]);
   const startReplayBody = JSON.stringify({
     playerId: 'start-replay-player',
     eventKey: 'underpass',
@@ -1274,9 +1332,9 @@ try {
     turnCount: progressedStartReplay.turnCount,
   }, { status: 'active', playerHp: 110, playerMana: 8, enemyHp: 57, turnCount: 1 });
   assertPersistedPermitState(startReplayRequestId, progressedStartReplay);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET started_at=datetime('now','-2 minutes'), expires_at=datetime('now','+18 minutes') WHERE id='" + startReplayRequestId + "'"]);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='start-replay-cycle'"]);
   const recoveredStartReplayResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
@@ -1605,7 +1663,7 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-b' AND completed_at IS NOT NULL AND reward_state='awarded' AND battle_status='victory' AND turn_count=3"), 1,
     'retrying an action after settlement must not change the completed permit or receipt');
   // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET player_mana = 13 WHERE id = 'permit-a'"]);
   const replayResponse = await complete('permit-a', 'integration-player', {
     victory: false,
@@ -1634,7 +1692,7 @@ try {
 
   // An awarded receipt can still recover the original result if even the persisted
   // terminal status is later corrupted; the audited receipt must not award twice.
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET battle_status = 'active' WHERE id = 'permit-a'"]);
   const corruptedTerminalReplay = await complete('permit-a', 'integration-player', {
     status: 'victory', playerMana: 999, xp: 999999, currency: 999999,
@@ -1749,7 +1807,7 @@ try {
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('closure-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+4 hours'));
   `);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + closureSeed]);
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + closureSeed]);
 
   const closureStartResponse = await fetch(base + '/api/battle/start', {
     method: 'POST',
@@ -1784,9 +1842,9 @@ try {
   // Preserve the entry-before-close chronology for both issued permits. The
   // simulated close is moved into the past for a deterministic test, so backdate
   // their persisted start times first; neither permit should be retroactively invalidated.
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET started_at = datetime('now','-2 minutes') WHERE id IN ('" + closureStart.permitId + "','" + expiredClosureStart.permitId + "')"]);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE world_event_cycles SET closes_at = datetime('now','-1 minute') WHERE id = 'closure-cycle'"]);
 
   const closedCycleStartResponse = await fetch(base + '/api/battle/start', {
@@ -1804,7 +1862,7 @@ try {
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE cycle_id = 'closure-cycle'"), 2,
     'failed entry after closure must not create another permit');
 
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     `--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = '${expiredClosureStart.permitId}'`]);
 
   const expiredAfterClosureResponse = await fetch(base + '/api/battle/action', {
@@ -1885,7 +1943,7 @@ try {
   assertPersistedPermitState('permit-expired-victory', {
     status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
   });
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = 'permit-expired-victory'"]);
 
   const expiredVictoryActionReplayResponse = await fetch(base + '/api/battle/action', {
@@ -1939,7 +1997,7 @@ try {
   assertPersistedPermitState('permit-expired-defeat', {
     status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
   });
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE battle_permits SET expires_at = datetime('now','-1 minute') WHERE id = 'permit-expired-defeat'"]);
 
   const expiredDefeatReplayResponse = await fetch(base + '/api/battle/action', {
@@ -2074,7 +2132,7 @@ try {
       'victory', reward_level, reward_xp, reward_currency
     FROM battle_permits WHERE id='permit-awarded-duplicate-peer';
   `);
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + corruptReceiptSeed]);
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + corruptReceiptSeed]);
 
   for (const [permitId, expectedHistoryCount, expectedClearNumber] of [
     ['permit-corrupt-awarded-reward', 1, 1],
@@ -2358,7 +2416,7 @@ try {
     WHERE player_id='invalid-progression-player' AND event_key='underpass'
       AND cycle_id='invalid-progression-cycle'`), [{ full_reward_clears: 1 }]);
 
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     "--command=UPDATE characters SET level=2, xp=174, currency=0 WHERE player_id='invalid-progression-player'"]);
   const repairedRetry = await complete('permit-invalid-progression', 'invalid-progression-player');
   assert.equal(repairedRetry.status, 200, JSON.stringify(repairedRetry.data));
@@ -2479,7 +2537,7 @@ try {
       AND cycle_id = 'integration-cycle'`), [{ full_reward_clears: 1 }],
     'capacity rejection retains the reserved clear slot for a repair/retry');
 
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     `--command=UPDATE player_inventory SET quantity = 9999 WHERE id = 'inventory-cap-player:item:underpass-scrap'`]);
   const capRetry = await complete('permit-inventory-cap', 'inventory-cap-player');
   assert.equal(capRetry.status, 200, JSON.stringify(capRetry.data));
@@ -2496,7 +2554,7 @@ try {
   // Inject a failure after the character CAS, history insert, and clear reservation
   // have started. D1 batch atomicity must roll all settlement writes back; retrying
   // the same reserved permit after removing the injected fault must award once.
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     `--command=CREATE TRIGGER test_abort_inventory_award BEFORE UPDATE OF quantity ON player_inventory
       WHEN OLD.id = 'inventory-atomic-player:item:underpass-scrap'
       BEGIN SELECT RAISE(ABORT, 'injected inventory settlement failure'); END`]);
@@ -2529,7 +2587,7 @@ try {
     WHERE player_id = 'inventory-atomic-player' AND event_key = 'underpass'
       AND cycle_id = 'integration-cycle'`), [{ full_reward_clears: 1 }]);
 
-  cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+  await runD1Cli(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
     '--command=DROP TRIGGER test_abort_inventory_award']);
   const atomicRetry = await complete('permit-inventory-atomic', 'inventory-atomic-player');
   assert.equal(atomicRetry.status, 200, JSON.stringify(atomicRetry.data));
@@ -2685,40 +2743,7 @@ try {
   console.log('PASS isolated Worker/D1 HTTP housing: starter seed, empty-room persistence, valid save, invalid no-mutation rejection, cross-player ID collision isolation');
 
   // All HTTP assertions are complete. Stop Miniflare before direct D1 writes/snapshots.
-  // A live workerd connection can close its HTTP socket when Wrangler opens the same SQLite store.
-  if (server) {
-    const worker = server;
-    const hasExited = () => worker.exitCode !== null || worker.signalCode !== null;
-    const waitForExit = (timeoutMs) => new Promise((resolve) => {
-      if (hasExited()) {
-        resolve(true);
-        return;
-      }
-      const onExit = () => {
-        clearTimeout(timer);
-        resolve(true);
-      };
-      const timer = setTimeout(() => {
-        worker.off('exit', onExit);
-        resolve(false);
-      }, timeoutMs);
-      worker.once('exit', onExit);
-    });
-
-    if (!hasExited()) {
-      worker.kill('SIGTERM');
-      if (!await waitForExit(2000)) {
-        worker.kill('SIGKILL');
-        assert.equal(
-          await waitForExit(5000),
-          true,
-          'Miniflare must exit before direct D1 writes',
-        );
-      }
-    }
-    assert.ok(hasExited(), 'Miniflare must exit before direct D1 writes');
-    server = undefined;
-  }
+  await stopWorker();
 
   // Exercise the INSERT trigger independently: update coverage cannot prove that
   // new inventory rows are protected from the same malformed quantities.
@@ -2824,10 +2849,6 @@ try {
 
   console.log('PASS isolated Worker/D1: inventory quantity triggers, bounded inventory snapshots, capacity rejection/retry, injected atomic award rollback/recovery, concurrent full-clear capacity race, corrupt and post-award progression rejection, currency overflow rejection, legacy NULL-Mana victory recovery and defeat rejection, reward idempotency, receipt audit, safe clear-counter boundaries, action/completion race, expiry, reward tiers, level-up, inclusive-open/exclusive-close permit boundaries, malformed start/expiry/cycle timestamps, future start rejection, permit survives event closure');
 } finally {
-  if (server && server.exitCode === null) {
-    server.kill('SIGTERM');
-    await Promise.race([new Promise(r => server.once('exit', r)), sleep(2000)]);
-    if (server.exitCode === null) server.kill('SIGKILL');
-  }
+  await stopWorker();
   rmSync(scratch, { recursive: true, force: true });
 }
