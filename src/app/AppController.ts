@@ -680,18 +680,18 @@ export class AppController {
 
     const isCurrentRequest = (): boolean =>
       generation === this.worldRefreshGeneration && this.store.snapshot.id === playerId;
-    const refreshAfterAccountChange = (): void => {
+    const refreshAfterAccountChange = async (): Promise<void> => {
       // A newer refresh already owns the current player, or this response still
       // belongs to the active account. Only the latest stale request may restart.
       if (generation !== this.worldRefreshGeneration || this.store.snapshot.id === playerId) return;
-      void this.refreshWorld(true);
+      await this.refreshWorld(true);
     };
 
     try {
       if (this.api.enabled) {
         const snapshot = await this.api.getUnderpass(playerId);
         if (!isCurrentRequest()) {
-          refreshAfterAccountChange();
+          await refreshAfterAccountChange();
           return;
         }
         if (!snapshot) throw new Error('Missing authoritative world-event snapshot.');
@@ -702,7 +702,7 @@ export class AppController {
       this.worldSyncFailed = false;
     } catch (error) {
       if (!isCurrentRequest()) {
-        refreshAfterAccountChange();
+        await refreshAfterAccountChange();
         return;
       }
       console.warn('World-event sync failed; server-backed combat is unavailable.', error);
@@ -712,7 +712,7 @@ export class AppController {
     }
 
     if (!isCurrentRequest()) {
-      refreshAfterAccountChange();
+      await refreshAfterAccountChange();
       return;
     }
     if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
