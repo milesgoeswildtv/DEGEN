@@ -2587,8 +2587,23 @@ try {
       AND reward_clear_number IN (1,2)`), 2,
     'concurrent completions must retain distinct reserved clear numbers');
 
-  // Exercise the INSERT trigger independently: update coverage cannot prove that
-  // new inventory rows are protected from the same malformed quantities.
+  // All HTTP assertions are complete. Stop Miniflare before direct D1 writes and
+  // final snapshots: using the CLI against the same local store while workerd is
+  // serving can contend on SQLite or close its HTTP socket.
+  if (server && server.exitCode === null) {
+    const worker = server;
+    worker.kill('SIGTERM');
+    await Promise.race([new Promise(r => worker.once('exit', r)), sleep(2000)]);
+    if (worker.exitCode === null) {
+      worker.kill('SIGKILL');
+      await Promise.race([new Promise(r => worker.once('exit', r)), sleep(1000)]);
+    }
+    server = undefined;
+  }
+
+  // With workerd stopped, exercise the INSERT trigger independently. These
+  // direct local D1 writes must not contend with a live Worker; do not retry an
+  // ambiguous mutation just to hide a transient SQLite lock.
   expectInventoryGuardFailure(`INSERT INTO player_inventory
     (id, player_id, item_key, item_type, quantity)
     VALUES ('invalid-insert-zero', 'inventory-cap-player', 'probe', 'item', 0)`);
@@ -2604,20 +2619,6 @@ try {
   assert.equal(countRows(`SELECT COUNT(*) AS n FROM player_inventory
     WHERE id LIKE 'invalid-insert-%'`), 0,
     'invalid insert attempts must not create inventory rows');
-
-  // All HTTP assertions are complete. Stop Miniflare before final D1 CLI snapshots:
-  // querying the same local persistence store while the Worker is serving can close
-  // its HTTP socket and make an otherwise valid integration run nondeterministic.
-  if (server && server.exitCode === null) {
-    const worker = server;
-    worker.kill('SIGTERM');
-    await Promise.race([new Promise(r => worker.once('exit', r)), sleep(2000)]);
-    if (worker.exitCode === null) {
-      worker.kill('SIGKILL');
-      await Promise.race([new Promise(r => worker.once('exit', r)), sleep(1000)]);
-    }
-    server = undefined;
-  }
 
   const openBoundaryPermitAfter = queryRows(`SELECT permit.started_at, cycle.opens_at, permit.battle_status,
     permit.player_hp, permit.player_mana, permit.enemy_hp, permit.turn_count, permit.reward_state,
