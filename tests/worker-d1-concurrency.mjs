@@ -43,10 +43,28 @@ async function eventuallyComplete(id, extraFields = {}, playerId = 'integration-
   }
   throw new Error('Reward retry exhausted for ' + id);
 }
+const queryBusyRetryDelaysMs = [50, 100, 200, 400, 800];
+const queryBusyWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+
 function queryRows(query) {
-  const r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
-    '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
-  assert.equal(r.status, 0, 'local D1 query failed: ' + r.stderr);
+  let r;
+  for (let attempt = 0; attempt <= queryBusyRetryDelaysMs.length; attempt += 1) {
+    r = spawnSync(wrangler, ['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist,
+      '--command=' + query, '--json'], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+    if (r.status === 0) break;
+
+    const details = [r.stderr, r.stdout, r.error?.message].filter(Boolean).join('\n');
+    const transientSqliteLock = /SQLITE_BUSY|database is locked/i.test(details);
+    if (!transientSqliteLock || attempt === queryBusyRetryDelaysMs.length) {
+      assert.equal(r.status, 0, 'local D1 query failed: ' + details);
+    }
+
+    // A completed Worker request can briefly leave the local SQLite file busy
+    // while workerd releases its connection. Retry read-only assertions only;
+    // never replay a D1 mutation after an ambiguous result.
+    Atomics.wait(queryBusyWaitBuffer, 0, 0, queryBusyRetryDelaysMs[attempt]);
+  }
+
   const result = JSON.parse(r.stdout);
   return Array.isArray(result) ? (result[0]?.results ?? []) : (result.results ?? []);
 }
