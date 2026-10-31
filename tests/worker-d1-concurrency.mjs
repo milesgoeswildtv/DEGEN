@@ -50,8 +50,8 @@ function queryRows(query) {
   const statement = query.trim();
   // This helper retries only read-only assertions. Reject DML and multiple
   // statements before Wrangler runs so an ambiguous result can never replay a write.
-  assert.match(statement, /^SELECT\\b/i, 'queryRows only accepts read-only SELECT statements');
-  assert.doesNotMatch(statement.replace(/;\\s*$/, ''), /;/,
+  assert.match(statement, /^SELECT\b/i, 'queryRows only accepts read-only SELECT statements');
+  assert.doesNotMatch(statement.replace(/;\s*$/, ''), /;/,
     'queryRows only accepts one SELECT statement');
   let r;
   for (let attempt = 0; attempt <= queryBusyRetryDelaysMs.length; attempt += 1) {
