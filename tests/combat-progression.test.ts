@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
@@ -19,7 +19,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class /g, 'class ');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, isValidManaState, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,
@@ -294,6 +294,19 @@ test('monster definitions do not expose a Mana resource', () => {
   );
 });
 
+
+test('BattleEngine rejects a monster resource before exposing a battle snapshot', () => {
+  const invalidEnemy = {
+    ...TUNNEL_MAW,
+    signature: { resourceRegeneration: 1 },
+  } as typeof TUNNEL_MAW;
+
+  assert.throws(
+    () => new BattleEngine(TEST_DEGEN, invalidEnemy, () => {}),
+    (error: unknown) => error instanceof TypeError
+      && error.message.includes('universal action resource (signature.resourceRegeneration)'),
+  );
+});
 
 test('combat rules reject universal monster action-resource aliases before resolving damage', () => {
   const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
