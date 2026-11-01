@@ -184,6 +184,7 @@ test('completion receipt rejects duplicate housing cells before client state rep
   const receipt = {
     player,
     reward: { xp: 10, currency: 5, items: [], furniture: [], tier: 'full' },
+    levelTransition: { previousLevel: 1, currentLevel: 1 },
     worldEvent: {
       eventKey: 'underpass',
       cycleId: 'cycle-1',
@@ -211,7 +212,7 @@ test('completion receipt rejects duplicate housing cells before client state rep
 });
 
 const validCompletionReceipt = () => ({
-  player: validPlayerSnapshot(),
+  player: { ...validPlayerSnapshot(), level: 2 },
   reward: {
     xp: 75,
     currency: 30,
@@ -219,6 +220,7 @@ const validCompletionReceipt = () => ({
     furniture: ['tunnel-trophy'],
     tier: 'full',
   },
+  levelTransition: { previousLevel: 1, currentLevel: 2 },
   worldEvent: {
     eventKey: 'underpass',
     cycleId: 'cycle-1',
@@ -250,6 +252,25 @@ test('valid Worker completion receipt is accepted with the exact reward fields u
   assert.equal(result.reward.furniture[0], 'tunnel-trophy');
   assert.equal(result.reward.tier, 'full');
   assert.equal(requests, 1);
+});
+
+test('completion rejects malformed Worker reward level transitions before they reach the receipt UI', async () => {
+  const invalidTransitions = [
+    null,
+    { previousLevel: 0, currentLevel: 2 },
+    { previousLevel: 2, currentLevel: 1 },
+    { previousLevel: 1, currentLevel: 3 },
+    { previousLevel: 1.5, currentLevel: 2 },
+  ];
+  for (const levelTransition of invalidTransitions) {
+    const receipt = validCompletionReceipt() as any;
+    receipt.levelTransition = levelTransition;
+    const api = new apiModule.GameApi('https://example.test', async () => new Response(JSON.stringify(receipt), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    await assert.rejects(api.completeUnderpass('player-1', 'permit-1'), apiModule.GameApiProtocolError);
+  }
 });
 
 test('completion rejects malformed Worker reward fields before they reach the receipt UI', async () => {

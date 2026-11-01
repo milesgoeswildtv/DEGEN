@@ -285,12 +285,15 @@ try {
   await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
   assert.equal(playerId, seededPlayerId, 'browser bootstrap must use the pre-seeded isolated player');
+  const receiptStorageKey = 'degen.reward.receipts.v1:' + playerId;
   await until('server-discovered pending victory receipt', () => cdp.evaluate(
     'document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId === ' + JSON.stringify(pendingPermitId),
   ));
   const firstAwardedCharacter = sql("SELECT level, xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
   assert.deepEqual(firstAwardedCharacter, { level: 2, xp: 25, currency: 30 },
     'the pending Worker victory must recover and level the player before the live encounter');
+  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
+    [pendingPermitId], 'the client stores only the validated receipt permit ID for display recovery');
   assert.equal(await cdp.evaluate('document.querySelector(".player-chip strong")?.textContent'), 'LV.2');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
@@ -395,6 +398,16 @@ try {
   await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   assert.equal(await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''"), playerId,
     'the same test player must survive the reload');
+  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
+    [pendingPermitId], 'the presentation outbox persists only the earlier receipt permit ID');
+  await until('already-awarded receipt replayed from Worker after reload', () => cdp.evaluate(`(() => {
+    const receipt = document.querySelector('[data-battle-reward-receipt]');
+    const text = receipt?.textContent ?? '';
+    return receipt?.dataset.permitId === ${JSON.stringify(pendingPermitId)}
+      && text.includes('FULL CLEAR') && text.includes('+75 XP')
+      && text.includes('Underpass Trophy')
+      && text.includes('LEVEL UP · LV.1 → LV.2');
+  })()`));
   await assertFitsMobile('Map after reload');
   await tap("[data-district=Central]");
   await until('Central district after reload', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
@@ -563,6 +576,8 @@ try {
   assert.equal(sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count, 1,
     'the earned trophy must persist at the selected room cell');
   await tap('[data-dismiss-reward]');
+  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
+    [permitId], 'dismissing the earlier receipt preserves the later live receipt ID');
   await until('live battle receipt advances after recovered receipt dismissal', () => cdp.evaluate(
     'document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId === ' + JSON.stringify(permitId),
   ));
@@ -576,6 +591,8 @@ try {
   await tap('[data-dismiss-reward]');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'), false,
     'each recovered receipt can be dismissed without altering awarded player state');
+  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
+    [], 'the presentation outbox clears only after the player dismisses every receipt');
   const finalPermit = sql("SELECT battle_status, reward_state, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
   assert.equal(finalPermit?.battle_status, 'victory');
   assert.equal(finalPermit?.reward_state, 'awarded');
