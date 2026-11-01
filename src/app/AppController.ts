@@ -23,10 +23,11 @@ const shouldRetryBattleRecovery = (error: unknown): boolean => {
   const message = typeof payload === 'object' && payload !== null && 'error' in payload
     ? (payload as { error?: unknown }).error
     : undefined;
-  // These Worker 409 responses explicitly describe a race that can settle or
-  // become recoverable after a claim lease expires. Other 409s are invariant
-  // violations or invalid requests and must not create an endless retry loop.
-  return message === 'Battle reward is already being claimed, or the permit expired.'
+  // Only explicit lease/contention conflicts retry. Keep the old combined
+  // response temporarily for a rolling deployment where an older Worker may
+  // still serve this client; the current Worker separates permanent invalid state.
+  return message === 'Battle reward is already being claimed.'
+    || message === 'Battle reward is already being claimed, or the permit expired.'
     || message === 'Reward claim changed; retry.'
     || message === 'Concurrent reward updates; retry completion.';
 };
