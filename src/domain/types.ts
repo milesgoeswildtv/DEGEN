@@ -50,12 +50,39 @@ type KeysContainingMana<T> = T extends readonly (infer Item)[]
       }[keyof T]
     : never;
 
+type MonsterActionResourceAlphaNumericCharacter =
+  | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+  | 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm'
+  | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z'
+  | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M'
+  | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z';
+
 type NormalizeMonsterActionResourceKey<Key extends string> =
-  Key extends `${infer Prefix}_${infer Suffix}`
-    ? `${NormalizeMonsterActionResourceKey<Prefix>}${NormalizeMonsterActionResourceKey<Suffix>}`
-    : Key extends `${infer Prefix}-${infer Suffix}`
-      ? `${NormalizeMonsterActionResourceKey<Prefix>}${NormalizeMonsterActionResourceKey<Suffix>}`
-      : Lowercase<Key>;
+  Key extends `${infer Character}${infer Rest}`
+    ? Character extends MonsterActionResourceAlphaNumericCharacter
+      ? `${Lowercase<Character>}${NormalizeMonsterActionResourceKey<Rest>}`
+      : NormalizeMonsterActionResourceKey<Rest>
+    : '';
+
+type AssertMonsterResourceGuard<T extends true> = T;
+type _MonsterResourceDotSeparatorIsGuarded = AssertMonsterResourceGuard<
+  Extract<
+    KeysMatchingForbiddenMonsterActionResource<{ signature: { 'resource.amount': number } }>,
+    'resource.amount'
+  > extends never ? false : true
+>;
+type _MonsterResourceSpaceSeparatorIsGuarded = AssertMonsterResourceGuard<
+  Extract<
+    KeysMatchingForbiddenMonsterActionResource<{ signature: { 'resource amount': number } }>,
+    'resource amount'
+  > extends never ? false : true
+>;
+type _MonsterResourceSlashSeparatorIsGuarded = AssertMonsterResourceGuard<
+  Extract<
+    KeysMatchingForbiddenMonsterActionResource<{ signature: { 'resource/amount': number } }>,
+    'resource/amount'
+  > extends never ? false : true
+>;
 
 type ForbiddenNormalizedMonsterActionResourceField =
   // The whole generic resource namespace is reserved for Degen-only Mana.
