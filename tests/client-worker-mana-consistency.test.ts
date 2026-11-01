@@ -183,6 +183,9 @@ test('BattleEngine rejects invalid Worker-owned initial snapshots before exposin
     { ...valid, enemyHp: 0 },
     { ...valid, turnCount: Number.MAX_SAFE_INTEGER },
     { ...valid, permitId: '' },
+    { ...valid, permitId: '   ' },
+    { ...valid, permitId: 42 as never },
+    null as never,
   ];
 
   for (const initialState of invalidInitialStates) {
@@ -191,6 +194,25 @@ test('BattleEngine rejects invalid Worker-owned initial snapshots before exposin
       /Invalid authoritative battle start state/,
     );
   }
+});
+
+
+test('non-object authoritative action and recovery payloads fail closed without throwing', () => {
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+    permitId: 'permit-valid-snapshot',
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const before = engine.snapshot;
+
+  engine.applyAuthoritativeAction('slash', null as never);
+  engine.synchronizeAuthoritativeState(null as never);
+
+  assert.deepEqual(engine.snapshot, before,
+    'null action/recovery responses must not mutate or terminate a server-backed battle');
 });
 
 
