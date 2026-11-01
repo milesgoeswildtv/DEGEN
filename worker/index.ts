@@ -904,6 +904,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     completed_at: string | null;
     reward_claim_token: string | null;
     reward_claimed_at: string | null;
+    reward_claim_is_fresh: number;
     history_id: string | null;
     history_result: string | null;
     history_encounter_key: string | null;
@@ -918,6 +919,13 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       permit.reward_state, permit.reward_clear_number, permit.reward_xp, permit.reward_currency, permit.reward_tier,
       permit.reward_level, permit.reward_remaining_xp, permit.completed_at,
       permit.reward_claim_token, permit.reward_claimed_at,
+      CASE WHEN permit.reward_state = 'claiming' AND permit.completed_at IS NULL
+        AND typeof(permit.reward_claim_token) = 'text'
+        AND length(trim(permit.reward_claim_token)) > 0
+        AND strftime('%Y-%m-%d %H:%M:%S', permit.reward_claimed_at) = permit.reward_claimed_at
+        AND julianday(permit.reward_claimed_at) >= julianday('now', '-60 seconds')
+        AND julianday(permit.reward_claimed_at) <= julianday('now')
+        THEN 1 ELSE 0 END AS reward_claim_is_fresh,
       cycle.event_key AS cycle_event_key,
       CASE WHEN julianday(cycle.opens_at) <= julianday(permit.started_at)
         AND julianday(permit.started_at) <= julianday('now')
@@ -1097,7 +1105,22 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     ) RETURNING cycle_id, encounter_key, reward_clear_number`)
     .bind(token, input.permitId, input.playerId, TUNNEL_MAW.id, `${input.permitId}:victory`, `${input.permitId}:defeat`)
     .first<{ cycle_id: string; encounter_key: string; reward_clear_number: number | null }>();
-    if (!claim) return fail(request, env, 'Battle reward is already being claimed, or the permit expired.', 409);
+    if (!claim) {
+      // Another completion may have settled the receipt between our initial read
+      // and claim CAS. Replay that audited receipt instead of asking the client to
+      // poll a completed reward forever.
+      const current = await loadReceipt();
+      if (current?.reward_state === 'awarded') {
+        if (!isValidAwardedReceipt(current)) return fail(request, env, 'Battle reward receipt is invalid.', 409);
+        return respond(current);
+      }
+      // Only a well-formed, unexpired claim lease is transient. A malformed or
+      // otherwise unclaimable row is an integrity conflict, not a retry loop.
+      if (current?.reward_claim_is_fresh === 1) {
+        return fail(request, env, 'Battle reward is already being claimed.', 409);
+      }
+      return fail(request, env, 'Battle reward claim is not available.', 409);
+    }
 
   if (claim.reward_clear_number === null) {
     await env.DB.batch([
