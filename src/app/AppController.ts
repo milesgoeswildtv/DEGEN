@@ -298,9 +298,29 @@ export class AppController {
     const permit = this.battlePermit;
     if (!parent || !permit) return;
 
-    this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
-      void this.finishBattle(status);
-    }, this.api.enabled ? permit.initialState : undefined);
+    // A server-backed permit must never fall through to the offline preview
+    // initializer. Preserve the permit and return to Underpass so the player
+    // can resume from the Worker-owned snapshot instead of simulating locally.
+    if (this.api.enabled && !permit.initialState) {
+      this.navigate('underpass');
+      this.setUnderpassActionStatus(
+        'The server did not provide an authoritative battle snapshot. Resume this encounter to safely reconnect.',
+      );
+      return;
+    }
+
+    try {
+      this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+        void this.finishBattle(status);
+      }, this.api.enabled ? permit.initialState : undefined);
+    } catch {
+      if (!this.api.enabled) throw new Error('Unable to initialize offline battle.');
+      this.navigate('underpass');
+      this.setUnderpassActionStatus(
+        'The server battle snapshot was invalid. Resume this encounter to safely reconnect.',
+      );
+      return;
+    }
 
     this.battleEngine.subscribe(updateBattleDom);
     this.battleGame = createBattleGame(parent, this.battleEngine);
