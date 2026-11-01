@@ -22,10 +22,16 @@ const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = new Set([
   'resource',
   'resourcepool',
   'resourcecost',
+  'resourceamount',
+  'resourcemax',
   'actionresource',
   'actionpoints',
   'energy',
+  'maxenergy',
   'stamina',
+  'maxstamina',
+  'focus',
+  'maxfocus',
 ]);
 
 const normalizeMonsterActionResourceField = (field: string): string =>
