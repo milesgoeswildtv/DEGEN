@@ -61,10 +61,16 @@ type ForbiddenNormalizedMonsterActionResourceField =
   | 'resource'
   | 'resourcepool'
   | 'resourcecost'
+  | 'resourceamount'
+  | 'resourcemax'
   | 'actionresource'
   | 'actionpoints'
   | 'energy'
-  | 'stamina';
+  | 'maxenergy'
+  | 'stamina'
+  | 'maxstamina'
+  | 'focus'
+  | 'maxfocus';
 
 type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer Item)[]
   ? KeysMatchingForbiddenMonsterActionResource<Item>
