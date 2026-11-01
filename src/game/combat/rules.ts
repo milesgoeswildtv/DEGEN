@@ -18,6 +18,33 @@ export interface CombatTurnResult {
   retaliationDamage: number;
 }
 
+const FORBIDDEN_MONSTER_ACTION_RESOURCE_FIELDS = [
+  'mana',
+  'maxMana',
+  'currentMana',
+  'manaCost',
+  'manaPool',
+  'resource',
+  'resourcePool',
+  'resourceCost',
+  'actionResource',
+  'actionPoints',
+  'energy',
+  'stamina',
+] as const;
+
+const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
+  const record = enemy as unknown as Record<string, unknown>;
+  const forbiddenField = FORBIDDEN_MONSTER_ACTION_RESOURCE_FIELDS.find((field) =>
+    Object.prototype.hasOwnProperty.call(record, field));
+
+  if (forbiddenField) {
+    throw new TypeError(
+      `Monster definitions cannot expose a universal action resource (${forbiddenField}).`,
+    );
+  }
+};
+
 export const isValidManaCost = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
@@ -37,6 +64,8 @@ export const resolveCombatTurn = ({
   degen,
   enemy,
 }: CombatTurnInput): CombatTurnResult => {
+  assertNoMonsterActionResource(enemy);
+
   if (!isValidManaCost(ability.manaCost)) {
     throw new RangeError(`Invalid Mana cost for ${ability.name}`);
   }
