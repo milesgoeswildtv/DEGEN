@@ -26,7 +26,9 @@ const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = [
 ] as const;
 
 const normalizeMonsterActionResourceField = (field: string): string =>
-  field.toLowerCase().replace(/[^a-z0-9]/g, '');
+  // NFKC folds compatibility characters (for example full-width Latin letters)
+  // before separator removal, so visually disguised resource aliases fail closed.
+  field.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const findForbiddenMonsterActionResource = (
   value: unknown,
