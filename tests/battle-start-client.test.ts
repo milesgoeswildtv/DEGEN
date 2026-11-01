@@ -57,7 +57,9 @@ const enterUnderpass = runInNewContext(
 const mountBattleMethod = controllerSource.match(/private mountBattle\(\): void \{([\s\S]*?)\n  \}\n\n  private async useBattleAbility/);
 assert.ok(mountBattleMethod, 'AppController battle mount must remain available for the server-authority regression');
 const battleEngineCreations: unknown[][] = [];
+let rejectBattleEngineState = false;
 const TestBattleEngine = function (...args: unknown[]) {
+  if (rejectBattleEngineState) throw new Error('invalid authoritative state');
   battleEngineCreations.push(args);
   return { subscribe() {} };
 };
@@ -886,4 +888,72 @@ test('discarding an unrecoverable resume clears only the matching saved permit k
 
   api.discardUnrecoverableUnderpassStart('player-1', permit.permitId);
   assert.equal(startRequestStorage.size, 0, 'the definitive rejection clears the exact unrecoverable key');
+});
+
+
+test('server-backed battle without an authoritative start snapshot returns to Underpass without local simulation', () => {
+  battleEngineCreations.length = 0;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: { permitId: 'permit-1' },
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  mountBattle.call(controller);
+
+  assert.equal(controller.route, 'underpass');
+  assert.match(controller.statusMessage, /authoritative battle snapshot/i);
+  assert.equal(controller.battlePermit.permitId, 'permit-1', 'keep the permit so the player can resume');
+  assert.equal(battleEngineCreations.length, 0, 'a server-backed battle must not mount the offline preview engine');
+});
+
+test('server-backed battle with a rejected snapshot returns to Underpass and preserves the permit', () => {
+  battleEngineCreations.length = 0;
+  rejectBattleEngineState = true;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: {
+      permitId: 'permit-1',
+      initialState: { permitId: 'wrong-permit', status: 'active', playerHp: 100, playerMana: 0, enemyHp: 60, turnCount: 0 },
+    },
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  try {
+    mountBattle.call(controller);
+  } finally {
+    rejectBattleEngineState = false;
+  }
+
+  assert.equal(controller.route, 'underpass');
+  assert.match(controller.statusMessage, /snapshot was invalid/i);
+  assert.equal(controller.battlePermit.permitId, 'permit-1');
+  assert.equal(battleEngineCreations.length, 0);
+});
+
+test('offline preview still mounts without a server-owned initial snapshot', () => {
+  battleEngineCreations.length = 0;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: { permitId: 'preview-permit' },
+    api: { enabled: false },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  mountBattle.call(controller);
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(battleEngineCreations.length, 1);
+  assert.equal(battleEngineCreations[0]?.[3], undefined, 'offline preview keeps its local initializer');
 });
