@@ -293,3 +293,41 @@ test('monster definitions do not expose a Mana resource', () => {
     'monster combat state must not acquire a Mana-equivalent field',
   );
 });
+
+
+test('combat rules reject universal monster action-resource aliases before resolving damage', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  const forbiddenFields = [
+    'mana',
+    'maxMana',
+    'currentMana',
+    'manaCost',
+    'manaPool',
+    'resource',
+    'resourcePool',
+    'resourceCost',
+    'actionResource',
+    'actionPoints',
+    'energy',
+    'stamina',
+  ] as const;
+
+  for (const field of forbiddenFields) {
+    const invalidEnemy = { ...TUNNEL_MAW, [field]: 1 } as typeof TUNNEL_MAW;
+    assert.throws(
+      () => resolveCombatTurn({
+        playerHp: TEST_DEGEN.maxHp,
+        playerMana: TEST_DEGEN.maxMana,
+        enemyHp: TUNNEL_MAW.maxHp,
+        ability: free,
+        degen: TEST_DEGEN,
+        enemy: invalidEnemy,
+      }),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes(`universal action resource (${field})`),
+      `monster field ${field} must be rejected before combat resolves`,
+    );
+  }
+});
