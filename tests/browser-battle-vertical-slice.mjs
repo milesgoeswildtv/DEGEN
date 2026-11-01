@@ -674,6 +674,13 @@ try {
   ));
   await assertFitsMobile('Home with earned trophy');
   await assertFitsCompact('Home with earned trophy');
+  await sleep(750);
+  assert.equal(await cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'), false,
+    'dismissed awarded receipts must not be rediscovered after a fresh browser session');
+  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
+    [], 'the dismissed receipt outbox remains empty after reload');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "' AND reward_state='awarded' AND completed_at IS NOT NULL")[0]?.count, 2,
+    'dismissing presentation receipts must leave both Worker-owned awarded receipts intact');
 
   // Exercise the actual running UI with an authoritative active snapshot at zero
   // Mana. The local D1 fixture models a valid Worker-owned zero-Mana snapshot
