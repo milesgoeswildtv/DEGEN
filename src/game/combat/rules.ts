@@ -19,12 +19,6 @@ export interface CombatTurnResult {
 }
 
 const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = new Set([
-  'resource',
-  'resourcepool',
-  'resourcecost',
-  'resourceamount',
-  'resourcemax',
-  'actionresource',
   'actionpoints',
   'energy',
   'maxenergy',
@@ -47,8 +41,10 @@ const findForbiddenMonsterActionResource = (
 
   for (const [field, nestedValue] of Object.entries(value)) {
     const fieldPath = path ? `${path}.${field}` : field;
+    const normalizedField = normalizeMonsterActionResourceField(field);
     if (/mana/i.test(field)
-      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.has(normalizeMonsterActionResourceField(field))) {
+      || normalizedField.includes('resource')
+      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.has(normalizedField)) {
       return fieldPath;
     }
 
