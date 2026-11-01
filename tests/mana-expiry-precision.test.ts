@@ -153,8 +153,17 @@ test('newly settled rewards and idempotent replays share the full persisted rece
   assert.match(settlementBlock,
     /if \(settledReceipt\?\.reward_state === 'awarded'\)[\s\S]*if \(!isValidAwardedReceipt\(settledReceipt\)\)[\s\S]*return fail\(request, env, 'Battle reward receipt is invalid\.', 409\)[\s\S]*return respond\(settledReceipt\)/,
     'the first settlement response must apply the same full persisted receipt audit before returning rewards');
-  assert.equal((worker.match(/return respond\(/g) ?? []).length, 2,
-    'the only reward response paths are the audited replay and audited settlement branches');
+  const claimStart = worker.indexOf('const claim = await env.DB.prepare', replayStart);
+  const claimRaceStart = worker.indexOf('if (!claim) {', claimStart);
+  const claimRaceEnd = worker.indexOf('if (claim.reward_clear_number === null)', claimRaceStart);
+  assert.ok(claimStart > replayStart && claimRaceStart > claimStart && claimRaceEnd > claimRaceStart,
+    'a lost claim CAS must re-read the persisted receipt before deciding whether to retry');
+  const claimRaceBlock = worker.slice(claimRaceStart, claimRaceEnd);
+  assert.match(claimRaceBlock,
+    /const current = await loadReceipt\(\)[\s\S]*if \(current\?\.reward_state === 'awarded'\)[\s\S]*isValidAwardedReceipt\(current\)[\s\S]*return respond\(current\)/,
+    'a concurrently settled receipt must pass the same full audit before the losing request returns it');
+  assert.equal((worker.match(/return respond\(/g) ?? []).length, 3,
+    'the replay, claim-race recovery, and settlement response paths all return only audited receipts');
 });
 
 test('new clear allocation fails closed when the persisted counter trails a reserved sequence', () => {

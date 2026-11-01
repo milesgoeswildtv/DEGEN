@@ -93,6 +93,7 @@ const scope = {
   underpassRewardForClear: () => ({ xp: 0, currency: 0, items: [] }),
   battleView: () => '',
   homeView: () => '',
+  rewardReceiptView: (reward: { xp: number }, _previousLevel: number, _currentLevel: number, permitId?: string) => `<aside data-battle-reward-receipt data-permit-id="${permitId ?? ''}">+${reward.xp} XP</aside>`,
   mapView: () => '',
   underpassView: () => '',
   updateBattleDom: () => {},
@@ -138,13 +139,20 @@ const AppController = runInNewContext(
     } | undefined>;
     acknowledgeUnderpassStart?(playerId: string, cycleId: string, permitId: string): void;
     actUnderpass(...args: unknown[]): Promise<unknown>;
-    completeUnderpass(playerId: string, permitId: string): Promise<{ player: unknown; worldEvent: unknown }>;
+    completeUnderpass(playerId: string, permitId: string): Promise<{
+      player: unknown; reward: unknown;
+      levelTransition: { previousLevel: number; currentLevel: number };
+      worldEvent: unknown;
+    }>;
   },
 ) => {
   route: string;
   battlePermit?: { permitId: string; cycleId?: string; initialState?: unknown };
   battlePermitOwnerId?: string;
   battleEngine?: BattleEngineInstance;
+  rewardNotices: Map<string, Array<{ playerId: string; permitId: string; reward: unknown; previousLevel: number; currentLevel: number }>>;
+  queueRewardCompletion(permitId: string, playerId: string): Promise<void>;
+  render(): void;
   underpassEvent?: { phase: string; cycleId: string };
   useBattleAbility(abilityId: string): Promise<void>;
   resumeUnderpass(): Promise<void>;
@@ -186,7 +194,12 @@ test('lost action response followed by authoritative victory snapshot completes 
     async completeUnderpass(_playerId: string, permitId: string) {
       completionCalls += 1;
       assert.equal(permitId, 'permit-1');
-      return { player: { id: 'player-1', level: 2 }, worldEvent: { cycleId: 'cycle-1' } };
+      return {
+        player: { id: 'player-1', level: 2 },
+        reward: { xp: 75, currency: 30, items: ['underpass-scrap'], furniture: ['tunnel-trophy'], tier: 'full' },
+        levelTransition: { previousLevel: 1, currentLevel: 2 },
+        worldEvent: { cycleId: 'cycle-1' },
+      };
     },
   };
 
@@ -417,7 +430,12 @@ test('a confirmed victory still settles if the player abandons before the action
     async completeUnderpass(_playerId: string, permitId: string) {
       completionCalls += 1;
       assert.equal(permitId, 'permit-abandoned');
-      return { player: { id: 'player-1', level: 2 }, worldEvent: { cycleId: 'cycle-1' } };
+      return {
+        player: { id: 'player-1', level: 2 },
+        reward: { xp: 75, currency: 30, items: ['underpass-scrap'], furniture: ['tunnel-trophy'], tier: 'full' },
+        levelTransition: { previousLevel: 1, currentLevel: 2 },
+        worldEvent: { cycleId: 'cycle-1' },
+      };
     },
   };
 
@@ -486,7 +504,12 @@ test('a stale victory snapshot settles its original permit, not a newer encounte
     async completeUnderpass(_playerId: string, permitId: string) {
       completionCalls += 1;
       completionPermit = permitId;
-      return { player: { id: 'player-1', level: 2 }, worldEvent: { cycleId: 'cycle-1' } };
+      return {
+        player: { id: 'player-1', level: 2 },
+        reward: { xp: 75, currency: 30, items: ['underpass-scrap'], furniture: ['tunnel-trophy'], tier: 'full' },
+        levelTransition: { previousLevel: 1, currentLevel: 2 },
+        worldEvent: { cycleId: 'cycle-1' },
+      };
     },
   };
   const oldEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
@@ -556,7 +579,12 @@ test('late victory after an account switch settles under the issuing player with
     async completeUnderpass(playerId: string, permitId: string) {
       completionPlayerId = playerId;
       completionPermitId = permitId;
-      return { player: { id: 'player-1', level: 2 }, worldEvent: { cycleId: 'cycle-1' } };
+      return {
+        player: { id: 'player-1', level: 2 },
+        reward: { xp: 75, currency: 30, items: ['underpass-scrap'], furniture: ['tunnel-trophy'], tier: 'full' },
+        levelTransition: { previousLevel: 1, currentLevel: 2 },
+        worldEvent: { cycleId: 'cycle-1' },
+      };
     },
   };
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
@@ -588,9 +616,18 @@ test('late victory after an account switch settles under the issuing player with
   assert.equal(completionPermitId, 'permit-player-1');
   assert.equal(store.snapshot.id, 'player-2');
   assert.equal(store.replaced, 0, 'an old account completion must not overwrite the active player snapshot');
+  assert.equal(controller.rewardNotices.get('player-1')?.[0]?.permitId, 'permit-player-1',
+    'a verified receipt must remain available to the issuing player after an account switch');
+  assert.equal(controller.rewardNotices.get('player-1')?.[0]?.currentLevel, 2);
+  assert.equal(controller.rewardNotices.get('player-1')?.[0]?.previousLevel, 1,
+    'the original transition comes from the Worker receipt, not the currently active account');
+  assert.equal(controller.rewardNotices.has('player-2'), false,
+    'a receipt must never be rebound to the currently active account');
   assert.equal(store.localRewards, 0, 'the client must never grant local rewards for a server-backed battle');
   assert.equal(storage.get('degen.pending.reward-permits.v1:player-1'), '[]',
     'the original player’s pending permit is cleared only after authoritative completion');
+  assert.deepEqual(JSON.parse(storage.get('degen.reward.receipts.v1:player-1') ?? '[]'), ['permit-player-1'],
+    'the validated receipt remains queued for its issuing player until explicitly dismissed');
   assert.equal(storage.get('degen.pending.reward-permits.v1:player-2'), undefined,
     'the old permit must never be written into the new player’s retry queue');
   assert.equal(controller.battlePermit, undefined);
@@ -1325,4 +1362,100 @@ test('unknown or authentication resume errors retain the permit and saved key', 
     assert.equal(controller.route, 'underpass');
     assert.equal(store.localRewards, 0);
   }
+});
+
+
+test('multiple recovered battle receipts queue by permit and dismiss one at a time', async () => {
+  timers.length = 0;
+  storage.clear();
+
+  const store = {
+    snapshot: { id: 'player-queue', level: 1 },
+    localRewards: 0,
+    replaceFromServer(player: unknown) {
+      this.snapshot = player as { id: string; level: number };
+    },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  let completionCalls = 0;
+  const api = {
+    enabled: true,
+    async completeUnderpass(playerId: string, permitId: string) {
+      completionCalls += 1;
+      const first = permitId === 'permit-first';
+      return {
+        player: { id: playerId, level: 2 },
+        reward: {
+          xp: first ? 75 : 10,
+          currency: first ? 30 : 3,
+          items: first ? ['underpass-scrap'] : [],
+          furniture: first ? ['tunnel-trophy'] : [],
+          tier: first ? 'full' as const : 'reduced' as const,
+        },
+        levelTransition: { previousLevel: first ? 1 : 2, currentLevel: 2 },
+        worldEvent: { eventKey: 'underpass', cycleId: 'cycle-queue', phase: 'open', opensAt: '2026-10-31T00:00:00Z', closesAt: '2026-11-01T00:00:00Z', fullRewardClears: 1, fullRewardLimit: 3, source: 'server' },
+      };
+    },
+  };
+
+  let currentReceipt = '';
+  const dismissHandlers: Array<() => void> = [];
+  const rewardRoot = {
+    innerHTML: '',
+    querySelector(selector: string) {
+      if (selector === '.topbar') {
+        return { insertAdjacentHTML: (_position: string, html: string) => { currentReceipt = html; } };
+      }
+      if (selector === '[data-dismiss-reward]') {
+        return { addEventListener: (_event: string, handler: () => void) => { dismissHandlers.push(handler); } };
+      }
+      if (selector === '[data-battle-reward-receipt]') {
+        return { remove: () => { currentReceipt = ''; } };
+      }
+      return null;
+    },
+    querySelectorAll: (_selector: string) => [],
+  };
+
+  const controller = new AppController(rewardRoot as unknown as typeof root, store, api);
+  controller.route = 'battle';
+  await controller.queueRewardCompletion('permit-first', 'player-queue');
+  await controller.queueRewardCompletion('permit-second', 'player-queue');
+  await controller.queueRewardCompletion('permit-first', 'player-queue');
+
+  const notices = controller.rewardNotices.get('player-queue') ?? [];
+  assert.deepEqual(Array.from(notices, (notice) => notice.permitId), ['permit-first', 'permit-second'],
+    'each recovered permit keeps one receipt in settlement order');
+  assert.deepEqual(Array.from(notices, (notice) => [notice.previousLevel, notice.currentLevel]), [[1, 2], [2, 2]],
+    'each receipt uses the level transition from its own authoritative settlement');
+  const receiptKey = 'degen.reward.receipts.v1:player-queue';
+  assert.deepEqual(JSON.parse(storage.get(receiptKey) ?? '[]'), ['permit-first', 'permit-second'],
+    'local storage contains only ordered permit IDs, never reward or progression data');
+  assert.equal(completionCalls, 3, 'a replayed receipt may be fetched again without creating a duplicate notice');
+  assert.equal(store.localRewards, 0, 'receipt recovery never grants client-side rewards');
+
+  controller.route = 'battle';
+  controller.render();
+  assert.equal(currentReceipt, '', 'queued receipts must stay off the active battle screen');
+  controller.route = 'home';
+  controller.render();
+  assert.match(currentReceipt, /data-permit-id="permit-first"/);
+  assert.match(currentReceipt, /\+75 XP/);
+  assert.equal(dismissHandlers.length, 1);
+
+  dismissHandlers.shift()?.();
+  assert.deepEqual(JSON.parse(storage.get(receiptKey) ?? '[]'), ['permit-second'],
+    'dismissing one receipt removes only its permit ID');
+  assert.match(currentReceipt, /data-permit-id="permit-second"/,
+    'dismissing the first receipt must advance to the next recovered receipt');
+  assert.match(currentReceipt, /\+10 XP/);
+  assert.doesNotMatch(currentReceipt, /\+75 XP/);
+  assert.equal(dismissHandlers.length, 1);
+
+  dismissHandlers.shift()?.();
+  assert.equal(currentReceipt, '', 'the final dismissal removes the receipt without rerendering the route');
+  assert.equal(controller.rewardNotices.has('player-queue'), false);
+  assert.deepEqual(JSON.parse(storage.get(receiptKey) ?? '[]'), [],
+    'dismissing the final receipt clears the presentation queue');
 });

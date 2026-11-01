@@ -1,3 +1,159 @@
+## Latest run — 2026-11-01 (player-scoped reward receipt deduplication)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`. Main CI [41244799185](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799185) and Pages preview [41244799278](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799278) passed on that SHA. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`; no Worker deploy or production D1 operation occurred in this run.
+- **PUSHED / PR #117 OPEN, ready for review, unmerged:** continuing `automation/degen/home-trophy-display-v01`. Code/test head: `d51043e5a385489f970295321896cfb60cf62a26` (66 commits ahead / 0 behind main). Code commit `be82f635b928b991db703cd9a712031c18c9e669`; regression-test commit `d51043e5a385489f970295321896cfb60cf62a26`. This entry is a continuity-only follow-up; no direct-main write, merge, force-push, or history rewrite.
+- **Task / files changed:** `src/app/AppController.ts` now keys the in-memory displayed-receipt deduplication set by the same composite `[playerId, permitId]` identity already used for completion-in-flight requests. Worker-backed and offline-preview notices use that key, so one player's receipt cannot suppress another player's notice if identifiers are ever reused/collide. `tests/client-reward-recovery.test.ts` keeps one controller alive across an account switch and verifies the same permit identifier can produce one notice per player without granting any client-side reward. No reward calculations, Worker authority, or economic state changed.
+- **Tests / QA:** exact-head CI [41347695885](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41347695885) is still IN PROGRESS on code/test head `d51043e`. GitHub Actions reports deterministic game tests SUCCESS (including the new regression); isolated Worker/D1 reward-concurrency stage is still running. Transient recovery, Underpass cycle/rollover concurrency, atomic defeat, Chromium housing persistence, build, Chromium mobile battle vertical slice, and Wrangler validation have not yet completed. Do not call this code/test head green until every stage succeeds. No local-shell test/build or physical-iPhone QA is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `DegenDefinition.maxMana` / bespoke `AbilityDefinition.manaCost`, persisted Worker-owned `player_mana`, authoritative start initialization, atomic unaffordable rejection, exact deduction, zero-cost use at zero, killing-blow/defeat, cost-aware controls, shared client/Worker rules, no monster Mana/equivalent resource, and no Mana-triggered reversion remain intact. The original `sidekick/degen-mana-foundation-v01` is divergent (11 ahead / 102 behind) and superseded; sampled Mana successors are stale/diverged or behind main. No cherry-pick or duplicate Mana branch.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, player HP/Mana, enemy HP, turn compare-and-swap, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. Existing isolated CI covers invalid/expired permits, event-close continuity, duplicate/concurrent action and completion, reward tiers, level-up math, and transient D1 recovery. This change affects presentation deduplication only; the client stores permit IDs as hints and never computes or awards rewards.
+- **Verified D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. Main tracks `0002`–`0007_player_inventory_quantity_guards.sql`, including `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql`. Draft auth PR #14 still proposes conflicting `0007_player_sessions.sql`; PR #114's fail-closed duplicate-version guard detects but does not resolve the numbering choice. No migration renumbering, production D1 operation, or Worker deployment occurred.
+- **Miles blockers:** duplicate-`0007` migration sequencing; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy. Shield/auth schema work remains gated. Canonical Monster Log v0.11 and approved status rules are not available in the inspected repo/Library sources; no monster, status, Shield, or balance canon was invented.
+- **One best next task:** finish exact-head CI for the receipt-dedup code/test commit; then keep PR #117 ready for normal review and resolve the explicit migration/auth decisions before schema-backed Shield work.
+
+---
+
+## Latest run — 2026-11-01 (dismissed reward receipt remains dismissed after reload)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`. Main CI [41244799185](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799185) and Pages preview [41244799278](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799278) passed on that SHA. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcb`; no production Worker deployment is claimed for this run.
+- **PUSHED / PR #117 OPEN, ready for review, unmerged:** continuing `automation/degen/home-trophy-display-v01`. Code/test commit `89933efef8b79e012674d8967501804d35952bac`; this continuity update is documentation-only. No direct-main write, merge, force-push, or history rewrite.
+- **Task / files changed:** `tests/browser-battle-vertical-slice.mjs` adds a real Chromium reload check after both Worker-owned reward receipts are dismissed. It verifies no receipt is rediscovered, the per-player presentation outbox stays empty, and both D1 receipts remain awarded/completed. `AUTONOMOUS_PROGRESS.md` records this run. No production app, Worker, economy, schema, migration, or deployment code changed.
+- **Exact-head QA:** CI [41307509157](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41307509157) is still IN PROGRESS on code/test commit `89933ef`. `npm test` / deterministic game tests passed; isolated Worker/D1 reward concurrency is still running; transient reward recovery, Underpass cycle/rollover concurrency, atomic defeat, Chromium housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler validation are pending. Prior full CI [41301007643](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41301007643) passed on the previous head only and is not transferred to this commit. No local-shell test/build, production D1 operation, production Worker deployment, or physical-iPhone QA is claimed.
+- **Mana:** COMPLETE / MERGED on main. Verified Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, Worker-owned battle start/action compare-and-swap, reject-before-mutation for unaffordable abilities, exact deduction, zero-cost use at zero, killing-blow/defeat, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion. The original `sidekick/degen-mana-foundation-v01` is divergent (11 ahead / 102 behind) and superseded; all 17 Mana-named branches inspected are stale/diverged snapshots, not an unfinished coherent slice. No duplicate Mana branch or cherry-pick was created.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit ownership, player HP/Mana, enemy HP, turn compare-and-swap, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. This run adds presentation-dismissal regression coverage only; browser storage still carries permit IDs, never reward values or economy state.
+- **D1 / migration assumptions:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; deploy order is schema → tracked migrations → Worker. Main tracks `0002_authoritative_battle_state.sql`, `0003_degen_mana.sql`, `0004_reward_receipt.sql`, `0005_reward_claim_character_guard.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a conflicting `0007_player_sessions.sql`; PR #114's duplicate-version preflight is open/unmerged and blocks unsafe writes without choosing/renumbering. No schema/migration/config change or remote D1 operation occurred.
+- **Miles blockers:** explicit duplicate-`0007` migration sequencing; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy. PR #20 Shield remains draft/diverged and migration-gated. Canonical Monster Log v0.11 / approved status rules are not present in accessible repo sources; no monster, status, Shield values, or balance were invented.
+- **One best next task:** finish exact-head CI for `89933ef`; if green, refresh PR #117's delivery description with the final run and leave it for review. If a stage fails, fix only the evidenced failure on this same branch; do not merge or deploy speculatively.
+
+---
+## Latest run — 2026-11-01 (account-scoped reward receipt recovery regression)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`. Main CI [41244799185](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799185) and Pages preview [41244799278](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799278) passed on that exact SHA. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcb`; no later Worker deployment is claimed.
+- **PUSHED / PR #117 OPEN, unmerged:** continuing `automation/degen/home-trophy-display-v01`. Test commit: `621cb483562780eadfca1f059115a35e2b31afbd`. No direct-main write, force-push, or history rewrite.
+- **Task / files changed:** `tests/client-reward-recovery.test.ts` adds a controller regression that settles a receipt for player A, switches to player B, restarts the controller, proves B neither replays nor receives A's receipt, then switches back and proves A can recover the same Worker-owned receipt through the idempotent completion endpoint. It asserts local storage remains keyed by owner ID, presentation queues remain per-player, and the client never grants a local reward. `AUTONOMOUS_PROGRESS.md` records the exact delivery state.
+- **QA boundary:** immediately preceding exact-head CI [41299481767](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41299481767) completed SUCCESS on prior PR head `f6c7376e40d4416596e452b5d31ad0db715423ed`: deterministic tests, Worker/D1 reward concurrency and transient recovery, Underpass cycle/rollover concurrency, atomic defeat, Chromium housing persistence, production build, Chromium mobile Map → District → Location → Home/Underpass → Degen battle → Worker reward → Home trophy, zero-Mana affordability/free-action continuation, and Wrangler dry-run all passed. The new account-switch regression has not yet received exact-head CI; do not transfer the previous result to commit `621cb48`. No local-shell test/build, production D1 operation, production Worker deployment, or physical-iPhone QA is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, server-owned start/action CAS, reject-before-mutation, exact deduction, zero-cost at zero, killing-blow/defeat, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain intact. The original `sidekick/degen-mana-foundation-v01` is divergent (11 ahead / 102 behind) and superseded; Mana-named successor branches inspected in this run are stale/diverged snapshots, not an unfinished coherent slice. No cherry-pick or competing Mana branch was created.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit ownership, player HP/Mana, enemy HP, turn compare-and-swap, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. This test-only change strengthens client account isolation; it does not move reward or economy authority to the browser.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a conflicting `0007_player_sessions.sql`; PR #114's duplicate-version preflight blocks unsafe writes but does not choose/renumber the sequence. No schema/migration/config or remote D1 operation changed.
+- **Miles blockers:** explicit duplicate-`0007` migration sequencing; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy. The requested Monster Log v0.11 was not found in the accessible Library (v0.9 and earlier surfaced); no monster/status/Shield content or balance was invented.
+- **One best next task:** verify exact-head CI for `621cb483`; if green, refresh PR #117's delivery description with the new head and regression evidence, then continue the next non-schema-gated player-facing reliability gap.
+
+---
+
+## Latest run — 2026-11-01 (exhaustive reward level-transition regression coverage verified)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #117 OPEN, unmerged:** `automation/degen/home-trophy-display-v01`; exact code/test + continuity head `aa14277960b95c4a51635fc19c97e95c8f18c53c`. Exact-head CI [41277202997](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41277202997) completed SUCCESS on this SHA. This new progress entry is a documentation-only follow-up; no direct-main write or history rewrite.
+- **Task / files changed:** `tests/combat-progression.test.ts` now checks persisted-reward inverse level reconstruction for every XP remainder across levels 1–24, awards immediately below/at/above each level threshold, zero and multi-level awards, and malformed/non-finite/fractional/unsafe numeric receipt inputs. `AUTONOMOUS_PROGRESS.md` records the verified delivery. No combat balance, Worker runtime, economy, schema, migration, or UI behavior changed.
+- **Exact-head QA — PASS:** deterministic `npm test`; isolated Worker/D1 reward concurrency; transient D1 reward recovery; Underpass cycle and rollover concurrency; atomic defeat history; Chromium mobile housing persistence; `npm run build`; real Chromium mobile battle vertical slice; and `npm run check:worker` Wrangler validation all passed in CI run [41277202997](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41277202997). These are isolated CI/local-D1/Chromium results, not a production D1 operation, production Worker deployment, or physical-iPhone test. No local-shell run was performed.
+- **Mana:** COMPLETE / MERGED on main. Current main defines Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, Worker-owned initialization/action compare-and-swap, reject-before-mutation for unaffordable abilities, exact deduction, zero-cost use at zero, terminal victory/defeat, cost-aware controls, shared client/Worker math, no monster Mana fields, and no Mana-triggered reversion. `sidekick/degen-mana-foundation-v01` remains divergent (11 ahead / 102 behind); its engine/rules/Worker lack later main validation and terminal-legacy safeguards, so it is superseded and was not cherry-picked.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, player HP/Mana, enemy HP, action turn-CAS, terminal outcomes/history, audited completion receipts, XP/currency/inventory, and recoverable exactly-once settlement. This PR extends deterministic receipt progression coverage only; no client reward authority was introduced.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; the verified deploy workflow runs schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a colliding `0007_player_sessions.sql`; PR #114's migration preflight is OPEN / unmerged and deliberately does not renumber or choose either migration. No remote D1 command or Worker deploy occurred.
+- **Miles blockers:** explicit `0007` migration sequencing; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy. Shield PR #20 remains gated on safe schema/auth sequencing; canonical Monster Log v0.11 and approved status rules remain prerequisites before production monster/status content. No canon or balance was invented.
+- **One best next task:** keep PR #117 ready for normal review; resolve the duplicate-`0007` auth migration decision before opening schema-backed Shield work, and do not replace prototype Degen/monster content until the approved canonical source is available.
+
+---
+
+## Latest run — 2026-11-01 (exhaustive reward level-transition regression coverage)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #117 OPEN, unmerged:** continuing `automation/degen/home-trophy-display-v01`; code/test commit `ef06f7826d9e39cd4e25cb1a57389b8eba3b79dc`. This run does not write to main or rewrite branch history.
+- **Task / files changed:** `tests/combat-progression.test.ts` now checks the persisted-reward inverse level reconstruction for every XP remainder across levels 1–24, awards immediately below/at/above each level threshold, zero and multi-level awards, and malformed/non-finite/fractional/unsafe numeric receipt inputs. No combat balance, Worker runtime, economy, schema, or UI behavior changed.
+- **Tests / QA:** exact-head GitHub Actions CI is required for this pushed test change; no result is claimed yet. No local-shell `npm test`, build, Worker check, browser run, production D1 operation, or deployment was performed in this run.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, Worker-owned initialization/action compare-and-swap, reject-before-mutation for unaffordable abilities, exact deduction, zero-cost use at zero, terminal victory/defeat, cost-aware controls, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain represented on main. The legacy `sidekick/degen-mana-foundation-v01` is still divergent (11 ahead / 102 behind main); its 11-commit diff is stale and superseded by main, so no cherry-pick or duplicate Mana branch was created.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, player HP/Mana, enemy HP, action turn-CAS, terminal outcomes/history, audited completion receipts, XP/currency/inventory, and recoverable exactly-once settlement. PR #117 changes receipt presentation/recovery tests only; no client reward authority was introduced.
+- **D1 / migration assumptions:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a colliding `0007_player_sessions.sql`; PR #114's migration preflight is OPEN / unmerged and deliberately does not renumber or choose either migration. No remote D1 command or Worker deploy occurred.
+- **Miles blockers:** explicit `0007` migration sequencing; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy. Shield PR #20 remains gated on safe schema/auth sequencing; canonical Monster Log v0.11 and approved status rules remain prerequisites before production monster/status content. No canon or balance was invented.
+- **One best next task:** verify exact-head CI for PR #117's exhaustive level-transition test; if green, leave the Home trophy/reward receipt slice ready for normal review and keep schema-backed Shield work gated until the migration decision is explicit.
+
+---
+
+## Latest run — 2026-11-01 (reload-recoverable Worker reward receipts)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #117 OPEN, UNMERGED:** continuing `automation/degen/home-trophy-display-v01`; code/test head `00383cda8f6b7749ec4176fe0ab68886ff4ffe81`, 49 commits ahead / 0 behind main. A progress-only commit follows this code/test head. No direct-main write, force-push, or history rewrite.
+- **Root cause:** the browser vertical slice settled its seeded pre-existing Worker victory before reload. The notice existed only in `AppController` memory, while the pending-rewards endpoint correctly stopped returning an already-awarded receipt. Reload therefore lost the older receipt; the later live battle receipt was shown without the original level-up transition.
+- **Implementation / exact files:** `src/game/progression.ts` adds deterministic inverse reconstruction of the prior level from the persisted post-award level, XP remainder, and XP award; `worker/index.ts` returns that original transition from the existing audited receipt fields and rejects impossible progression receipts; `src/domain/types.ts` and `src/app/api.ts` type and validate the transition; `src/app/AppController.ts` persists only ordered permit IDs, replays them through idempotent Worker completion on startup, and removes an ID only on dismissal. Tests updated/added in `tests/combat-progression.test.ts`, `tests/api-response-protocol.test.ts`, `tests/battle-start-client.test.ts`, `tests/client-battle-action-retry.test.ts`, `tests/client-battle-conflict-recovery.test.ts`, `tests/client-reward-recovery.test.ts`, and `tests/browser-battle-vertical-slice.mjs`.
+- **Exact-head QA:** CI run [41258777421](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41258777421) is running on code/test head `00383cda`. `npm test` passed; isolated Worker/D1 reward-concurrency passed. Transient reward-recovery stage is running; Underpass cycle/rollover, atomic defeat, housing browser, build, Chromium battle vertical slice, and Wrangler validation are still pending. No result is claimed for those pending stages.
+- **Client/economy boundary:** browser storage contains permit IDs only, never reward values, XP, currency, inventory, or level state. Every restored receipt and level transition is fetched from and validated against the Worker. Dismissal is presentation-only; Worker/D1 settlement and idempotency are unchanged.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, affordability rejection, exact deduction, zero-cost-at-zero, killing-blow/defeat behavior, cost-aware UI, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain covered. The original `sidekick/degen-mana-foundation-v01` is divergent/stale (11 ahead / 102 behind) and was inspected; no duplicate Mana branch or cherry-pick.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit ownership, player HP/Mana, enemy HP, turn CAS, terminal history, reward claim/settlement, XP, currency, inventory, and trophy ownership. This slice adds receipt presentation recovery only.
+- **D1 / migration assumptions:** no schema, migration, binding, or deployment-config changes. `wrangler.toml` remains the source of truth; deploy order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth `0007_player_sessions.sql` remains a conflicting Miles decision; no renumbering was attempted.
+- **Miles blockers:** duplicate-`0007` migration resolution; production Discord/Telegram credentials and controlled identity/session verification; approved legacy identity-collision policy; canonical Monster Log v0.11 before production monster integration. No new design canon or balance was invented.
+- **Production boundary:** no production D1 write, production Worker deployment, live-player smoke test, or physical-iPhone QA. Existing main Pages/Worker deployment evidence is unchanged.
+- **One best next task:** finish exact-head CI [41258777421](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41258777421), fix any remaining Worker/browser/build/Wrangler failure on this same PR branch, then leave PR #117 for review; do not merge or deploy speculatively.
+
+---
+
+## Latest run — 2026-10-31 (correct browser permit-count fixture after recovered receipt seed)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`. Main CI [41244799185](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799185) and Pages deployment [41244799278](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799278) passed on this SHA. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcb`; the later main merge changed no Worker runtime. No production Worker deployment or remote D1 operation is claimed for this run.
+- **PUSHED / PR #117 OPEN, unmerged:** continuing `automation/degen/home-trophy-display-v01`; the branch was 43 commits ahead / 0 behind current main before this follow-up. Test correction commit: `bcd8f2f38ba72a81cb0ebf98e28346f43686960f`. No direct-main write, force-push, or history rewrite.
+- **Task / file changed:** `tests/browser-battle-vertical-slice.mjs` only. The browser run correctly recovered and settled a seeded pre-existing victory, then issued a new live Underpass permit after two deliberately lost start responses. The fixture's broad per-player permit count incorrectly expected one total row, overlooking the intentionally retained completed receipt plus the new active encounter. Assertions now scope idempotency to the shared request/permit ID and separately assert exactly one active Underpass permit. Worker behavior was not changed.
+- **Exact-head QA before correction:** run [41251647938](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41251647938) on `6d3b9964e3223c7508ad58ef8f24c2af469d3bd5`: deterministic tests **268/268 PASS**; isolated Worker/D1 reward concurrency **PASS**; transient reward recovery **PASS**; Underpass cycle concurrency **PASS**; rollover concurrency **PASS**; atomic defeat history **PASS**; mobile housing persistence **PASS**; production build **PASS**. Chromium mobile battle vertical slice failed only at the stale broad count assertion (actual 2, expected 1) at line 387; Wrangler validation was skipped after that failure. The corrected code/test head requires fresh exact-head CI. No local-shell test or physical-device QA is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, Worker initialization/action CAS, reject-before-mutation for unaffordable abilities, exact deduction, zero-cost-at-zero, killing-blow/defeat behavior, cost-aware UI, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain covered. The original `sidekick/degen-mana-foundation-v01` is 11 commits ahead / 102 behind and divergent; Mana-named successors inspected are stale/diverged snapshots whose remaining work is already represented on main. No cherry-pick or duplicate Mana branch.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, player HP/Mana, enemy HP, action turn CAS, terminal outcomes/history, reward receipts, clear sequencing, XP/level-up, currency, inventory, and recoverable exactly-once settlement. This is a test-fixture correction only; no reward/economy trust moved to the client.
+- **D1 / migration assumptions:** `wrangler.toml` remains source of truth for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes conflicting `0007_player_sessions.sql`; PR #114 detects duplicate versions but does not choose a renumbering. No migration, D1 binding, or deployment config changed.
+- **Miles blockers:** explicit resolution of the duplicate-`0007` migration sequence; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy; canonical Monster Log v0.11 before production monster integration. Shield/status schema work remains gated; no new canon or balance was invented.
+- **One best next task:** verify exact-head CI on PR #117 after `bcd8f2f`. If the Chromium vertical slice and Wrangler validation pass, keep the PR open for normal review; do not merge or deploy speculatively.
+
+---
+
+## Latest run — 2026-10-31 (reward receipt queue, exact-head QA in progress)
+
+- **Authoritative main SHA:** b7cb304565d9aa5828a4f727818b6aff1fc046e4. PR #119 is confirmed merged at this SHA. Main build run 41244799185, GitHub Pages deploy run 41244799278, and Cloudflare Pages check 124665982796 succeeded. The deploy job is GitHub Pages, not a Worker deploy; latest verified production Worker deployment remains 40959555285 on 4cc3bcb.
+- **PUSHED / PR #117 OPEN, UNMERGED:** branch `automation/degen/home-trophy-display-v01`; code/test head 32afab436149eb994732ef27ae10e2c4151752ae includes current main with no behind commits. A docs-only progress follow-up is being committed separately; no direct-main write.
+- **Task / files changed:** `src/app/AppController.ts` changes the existing per-player receipt slot into an ordered per-player queue. Permit IDs dedupe receipts, dismissing one advances to the next, and queued receipts are hidden while the active battle route is rendered. `src/ui/views.ts` exposes a non-visible `data-permit-id` on each receipt. Tests: `tests/client-battle-conflict-recovery.test.ts`, `tests/home-trophy-display.test.ts`, and `tests/browser-battle-vertical-slice.mjs`. The browser fixture seeds one pre-existing terminal victory in isolated local D1, lets the Worker recover/settle it on app startup, then completes one live Worker/D1 battle before dismissing either receipt; it verifies receipt order and distinct level transitions.
+- **QA:** exact code/test head 32afab is under GitHub Actions run 41251141356. The deterministic game-test step passed. The isolated Worker/D1 reward-concurrency step is still in progress; reward-recovery, cycle/rollover, housing browser, production build, Chromium battle browser, and Wrangler validation have not yet reported results. Cloudflare Pages preview check 124684825401 succeeded. The earlier attempt on e15a066 failed only because a VM-realm array was compared directly with a host array; commit 77805a normalized those assertions with host `Array.from`, and the current run includes that fix. No local-shell run or physical-device QA is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, persisted authoritative player_mana, server-owned initialization and action compare-and-swap, reject-before-mutation for unaffordable abilities, exact deduction, zero-cost at zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain covered. This run adds no Mana or combat-rule changes. Original sidekick branch remains divergent (11 ahead / 102 behind); Mana-named successors were compared against main and are stale/diverged, not a coherent unfinished slice. No duplicate Mana branch or cherry-pick.
+- **Battle authority / reward idempotency:** Worker/D1 remains sole authority for permit state, HP/Mana/enemy HP/turn CAS, terminal outcomes/history, XP/currency/inventory and exactly-once settlement. The new queue only presents validated Worker receipts; no client-side reward/economy mutation was added.
+- **D1 / migration assumptions:** No schema, migration, Wrangler binding, or deployment-order changes. Tracked migrations 0003, 0006, and 0007 remain unchanged. Draft auth PR #14 still has the duplicate-0007 sequence conflict; no renumbering, remote D1 command, or Worker deployment occurred.
+- **Miles blockers:** explicit duplicate-0007 migration resolution; production Discord/Telegram credentials and identity/session policy; canonical Monster Log v0.11 and approved status rules before content/status integration. Shield/status schema work remains gated.
+- **One best next task:** finish exact-head CI on PR #117; fix any browser/integration failure, then request normal PR review. Keep schema-backed Shield/status work gated on the migration decision.
+
+---
+
+## Latest run — 2026-10-31 (queue every recovered battle reward receipt)
+
+- **Authoritative main SHA:** b7cb304565d9aa5828a4f727818b6aff1fc046e4. PR #119 is merged on main; main CI run 41244799185 and Pages deployment 41244799278 completed successfully. No Worker production deployment or remote D1 operation is claimed.
+- **PUSHED / PR #117 OPEN, UNMERGED:** `automation/degen/home-trophy-display-v01`, based on current main with no behind commits. This run continues the existing Home reward/trophy branch; it does not create a competing branch or write to main.
+- **Task / files changed:** `src/app/AppController.ts` now keeps an ordered per-player queue of validated completion receipts rather than overwriting a previous receipt when multiple pending Worker victories recover. Each permit appears once, dismissal advances to the next receipt, account ownership remains bound to the issuing player, and older receipts are not rendered over active battle controls. `src/ui/views.ts` tags the DOM receipt with its permit ID. Tests updated in `tests/client-battle-conflict-recovery.test.ts`, `tests/home-trophy-display.test.ts`, and `tests/browser-battle-vertical-slice.mjs`; the browser scenario completes two real local Worker/D1 encounters before dismissing either receipt and checks the second receipt advances without duplicating server rewards.
+- **QA:** Changes and tests are pushed; exact-head CI is pending for the final continuity commit. The prior PR #117 exact-head run 41245430186 passed 14 stages before this change and is not proof for the new head. No local shell run, physical iPhone QA, production D1 mutation, live player-data smoke test, or Worker deploy is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, persisted authoritative player_mana, server-owned initialization and compare-and-swap action updates, insufficient-Mana reject-before-mutation, exact once-only deduction, zero-cost use at zero, terminal handling, cost-aware controls, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain covered. No Mana code changed in this run.
+- **Battle authority / reward idempotency:** Worker/D1 remains the only authority for permits, HP/Mana/enemy HP/turn CAS, terminal history, receipt settlement, XP/currency/inventory, and exactly-once recovery. This run changes only presentation/recovery queueing; it does not grant rewards or move economy trust to the client.
+- **D1 / migration assumptions:** No schema, migration, Wrangler binding, or deploy-order changes. `wrangler.toml` still binds DEGEN to tracked `db/migrations`; migrations 0003, 0006, and 0007 are unchanged. The duplicate-0007 conflict with the draft auth migration remains unresolved; no remote D1 command was run.
+- **Miles blockers:** Explicit resolution of the duplicate-0007 migration sequence; production Discord/Telegram credentials and identity/session policy; canonical Monster Log v0.11 access before production monster integration. Shield/status schema work remains gated by the migration decision.
+- **One best next task:** Verify exact-head CI on PR #117, then continue with the approved migration-sequence decision before schema-backed Shield/status work.
+
+---
+
+## Latest run — 2026-10-31 (reconcile Home reward receipt and trophy display with current main)
+
+- **Authoritative main SHA:** b7cb304565d9aa5828a4f727818b6aff1fc046e4. PR #119 was merged through its reviewed PR as commit b7cb304; main CI run 41244799278 completed success, while the second main workflow run 41244799185 was still in progress at this update. No Worker deployment or production D1 operation is claimed.
+- **PUSHED / PR #117 OPEN, READY FOR REVIEW, UNMERGED:** automation/degen/home-trophy-display-v01. A normal two-parent merge commit 8021c06f87cb1f4bc65f65895d4cd2e7540bb523 brings main b7cb304 into the existing feature branch. It preserves the existing Home trophy/reward feature commits, incorporates main's merged D1 harness test, and combines the PR-specific progress entries with the current main progress log. No rebase, force-push, or history rewrite.
+- **Task / files changed:** PR #117 continues the existing playable Home reward/trophy slice in src/app/AppController.ts, src/ui/views.ts, src/styles.css and its client/API/browser tests. The Worker-returned completion receipt shows full/reduced tier, XP, currency, item/furniture drops, and a level transition only when the same issuing player's before/after levels prove it. Late receipts remain keyed to their issuing account across account switches. Home shows earned Underpass trophies as ready-to-place or displayed at the persisted room cell. Housing controls expose grouped semantics, pressed state, live placement feedback, and focus restoration. This reconciliation also carries the main tests/worker-d1-concurrency.mjs D1 lifecycle fix. No combat, Worker reward logic, D1 schema, migration, or deployment configuration changed.
+- **QA:** Exact-head CI [41245430186](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41245430186) completed **SUCCESS** on feature head `8f51c34e21fedcf60293ed2383ff420a8a7c2673`. All 14 substantive stages passed: `npm test`, isolated Worker/D1 reward concurrency and transient recovery, Underpass cycle/rollover concurrency, atomic defeat history, mobile housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler validation. Main CI [41244799185](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799185) also completed **SUCCESS** on `b7cb304`; main Pages deployment [41244799278](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799278) succeeded. PR #121 exact-head CI [41245053795](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41245053795) also passed all 14 substantive stages on `beedad1e26a766cf264a4260d1293a7fc0332ae6`. No local-shell run, production D1 write, production Worker deploy, live player-data smoke test, or physical-iPhone QA is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, persisted authoritative player_mana, server-owned start initialization and action compare-and-swap, reject-before-mutation for insufficient Mana, exact once-only deduction, zero-cost use at zero, killing-blow/defeat handling, cost-aware controls, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain covered. The original sidekick/degen-mana-foundation-v01 is superseded and divergent (11 ahead / 101 behind); no Mana branch was revived.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, action state, HP/Mana/enemy HP, turn CAS, terminal outcomes/history, reward receipts, XP/currency/inventory, and recoverable exactly-once settlement. This PR presents only the validated Worker completion result; it does not grant rewards or change economic authority.
+- **D1 / migration assumptions:** wrangler.toml binds DB to DEGEN and db/migrations; deploy order remains schema, tracked migrations, then Worker. Main tracks 0003_degen_mana.sql, 0006_backfill_active_battle_mana.sql, and 0007_player_inventory_quantity_guards.sql. Draft auth PR #14 still proposes colliding 0007_player_sessions.sql; PR #114 detects duplicate migration versions but does not choose renumbering. No remote D1 operation, migration apply, or Worker deployment occurred.
+- **Miles blockers:** explicit resolution of the duplicate-0007 migration sequence; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy; and canonical Monster Log v0.11 access before production monster integration. Shield/status schema work remains gated; no canon or balance was invented.
+- **One best next task:** resolve the `0007_player_inventory_quantity_guards.sql` vs draft auth `0007_player_sessions.sql` migration-number collision with explicit Miles approval before starting schema-backed Shield/status work.
+
+---
+
+## Latest run — 2026-10-31 (retain verified reward receipts across account switches)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED / PR #117 OPEN, READY FOR REVIEW, unmerged:** `automation/degen/home-trophy-display-v01`. Code/test head `0c4e0e61cf019a920cb2486642c5d45ea2ce190a`; exact-head CI run [41240291030](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41240291030) is still in progress. The deterministic game-test step completed SUCCESS; isolated Worker/D1 reward-concurrency is still running, and later recovery/cycle/defeat/housing/browser/build/Wrangler stages have not yet reported. Do not call this head fully green until every stage completes.
+- **Task / files changed:** `src/app/AppController.ts` replaces the single transient reward notice with a per-player notice map. A verified completion that returns after an account switch remains attached to the permit owner; rendering and dismissal use only the currently rendered player's notice. If the owner is not active, the active account's level is never borrowed to invent a level-up transition. `tests/client-battle-conflict-recovery.test.ts` extends the late-victory/account-switch regression to assert receipt retention for the issuing player, no rebinding to the active account, and no cross-account level inference. No Worker, combat math, reward/economy authority, schema, migration, or deployment configuration changed.
+- **QA:** CI run [41240291030](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41240291030) on code/test head `0c4e0e6`: deterministic game tests **PASS**; isolated Worker/D1 reward concurrency **IN PROGRESS** at this update; all later CI stages pending. No local-shell run, full build/Wrangler pass, physical iPhone QA, production D1 operation, production Worker deployment, or live player-data smoke test is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, terminal handling, cost-aware controls, shared deterministic math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain covered. The original `sidekick/degen-mana-foundation-v01` is superseded (11 ahead / 101 behind main); no cherry-pick.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, action CAS, player HP/Mana, enemy HP, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. This client-only change stores the validated Worker completion result for later presentation; it does not compute or grant rewards.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` with `db/migrations`; deployment remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes the conflicting `0007_player_sessions.sql`; PR #114's guard detects but does not resolve the collision. No migration was renumbered or applied.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, approved legacy identity-collision handling, and the duplicate-`0007` migration decision remain unresolved. The requested Monster Log v0.11 remains unavailable in the accessible Library. Shield PR #20 remains gated; no Shield/status or unapproved monster content was added.
+- **One best next task:** finish exact-head CI for PR #117, then follow the existing review order for mobile/reward PRs (#115 → #116 → #117); keep Shield/auth work gated until the migration and identity decisions are explicitly resolved.
+
+---
+
 ## Latest run — 2026-10-31 (fail closed on Worker shutdown before direct D1 probes)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`. Main's last verified CI/Pages evidence is recorded below; latest verified production Worker deployment remains `40959555285` on `4cc3bcb`. No later Worker deployment is claimed.
@@ -94,6 +250,70 @@
 - **Verified D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a colliding `0007_player_sessions.sql`; the duplicate-version guard in PR #114 does not choose a resolution. No remote D1 operation, migration apply, schema change, or Worker deployment occurred.
 - **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy remain release gates. The requested Monster Log v0.11 was not found in the accessible Library (only v0.9 surfaced); status durations/stacking/resistance and GLITCHRAT exact damage/Mana values remain unresolved. No Shield/status or monster content was invented.
 - **One best next task:** verify exact-head CI for PR #119 and the rerun of PR #118's transient D1-lock failure; then keep Shield gated until the `0007` auth-migration sequence and identity policy are explicitly resolved.
+
+---
+
+## Latest run — 2026-10-30 (Home reward receipt + housing accessibility exact-head verification)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`. Main CI [41049131022](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049131022) passed on this SHA. Latest merged main change is City Map → District → Location navigation. The latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`; main's subsequent city navigation commit did not change Worker/D1. No production deployment or remote D1 operation occurred in this run.
+
+- **PUSHED / PR #117 OPEN, READY FOR REVIEW, unmerged:** `automation/degen/home-trophy-display-v01`, code/test head `1e1126922dae2b8bb3bf536a6cb8660d8ec08f9a`, 24 commits ahead / 0 behind main. Exact-head CI [41159356262](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41159356262) completed SUCCESS on this exact SHA. This continuity update is documentation-only and will create a new head requiring its own exact-head CI. No direct-main write.
+
+- **Task / files in the PR:** `src/app/AppController.ts`, `src/ui/views.ts`, `src/styles.css`, `tests/home-trophy-display.test.ts`, `tests/api-response-protocol.test.ts`, `tests/browser-battle-vertical-slice.mjs`, `tests/browser-housing-persistence.mjs`, and this log. The Home panel surfaces the already-earned Underpass Trophy as ready-to-place or displayed at its persisted room cell. A dismissible receipt displays the validated Worker-returned tier, XP, currency, item/furniture drops, and a level transition derived from the prior client snapshot and returned authoritative player snapshot. Housing controls expose selection state, labelled groups, polite action feedback, and focus restoration after rerender. No reward/economy authority, combat rules, Worker routes, D1 schema, or migrations changed.
+
+- **Exact-head QA PASS:** CI [41159356262](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41159356262) ran on `1e1126922dae2b8bb3bf536a6cb8660d8ec08f9a`. Deterministic tests: **267 passed, 0 failed**. The isolated local Worker/D1 reward-concurrency and transient-failure-recovery checks passed; Underpass cycle creation and rollover concurrency passed; atomic defeat-history checks passed; Chromium mobile housing persistence passed; TypeScript/Vite production build passed; the real Chromium mobile + local Wrangler/D1 battle vertical slice passed, including the Worker-authoritative reward receipt, level 1 → 2 transition, trophy placement/reload, and zero-Mana paid/free-action behavior; Wrangler Worker dry-run passed. This is CI/local-D1 browser evidence, not physical-iPhone QA. No production player-data smoke test or production D1 operation is claimed.
+
+- **Mana:** COMPLETE / MERGED on main. Main carries Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, atomic unaffordable rejection, exact deduction, zero-cost use at zero, terminal handling, cost-aware controls, shared deterministic client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion. The legacy `sidekick/degen-mana-foundation-v01` still exists at `e1ec782773728e94805c4e653ead62338a7ff9d1`, but comparison to current main reports 11 ahead / 101 behind and the diff is the superseded initial Mana foundation. Do not cherry-pick or revive it.
+
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, player HP/Mana, enemy HP, turn compare-and-swap, terminal outcomes/history, audited reward receipts, XP/currency/inventory, and recoverable exactly-once settlement. The exact-head CI above re-exercised reward concurrency, transient DB recovery, duplicate-completion replay, and the real mobile completion retry. The receipt is presentation-only and consumes the validated Worker completion result; no client reward/economy trust moved.
+
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. PR #114's duplicate-version preflight guard is OPEN / READY FOR REVIEW with exact-head CI [41073488433](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41073488433) passed; it detects but intentionally does not resolve the collision with draft auth PR #14's `0007_player_sessions.sql`. No migration was renumbered, applied, or remotely executed. Shield PR #20 remains gated behind the session/auth and migration sequence.
+
+- **Miles blockers:** production Discord/Telegram credentials, controlled platform identity/session verification, approved legacy identity-collision handling, and the duplicate-`0007` migration decision remain unresolved. The requested `02 DEGEN Monster Log v0.11` remains unavailable in the accessible source library; no roster, signature, status, Shield, or balance canon was invented.
+
+- **One best next task:** review the exact-head-green mobile/reward PRs in order (`#115` → `#116` → `#117`) against current main while keeping `#114`'s preflight guard in the migration sequence. Do not advance Shield/auth release work until the migration collision and identity policy are explicitly resolved, and do not integrate monster content without the canonical v0.11 source.
+
+---
+
+## Latest run — 2026-10-30 (accessible Home housing placement feedback)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`. Main CI [41049131022](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049131022) passed on this SHA. The latest merged main change is the client-side City Map → District → Location navigation; the last verified Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`. No production Worker deployment or remote D1 operation occurred in this run.
+- **PUSHED / PR #117 OPEN, unmerged:** continuing `automation/degen/home-trophy-display-v01` from exact pre-change head `1a55d0f7f90ccf129b17b8c40d181af0045c5d1e`. The existing Home trophy/receipt slice remains Worker-result presentation only; this follow-up adds keyboard/screen-reader feedback to the same Home housing flow. Exact-head CI for the new code/test head is pending.
+- **Task / files changed:** `src/app/AppController.ts`, `src/ui/views.ts`, `src/styles.css`, `tests/home-trophy-display.test.ts`, `tests/browser-housing-persistence.mjs`, and this log. Furniture selection now exposes pressed state; the room and inventory controls have labelled group semantics; select/place/move/remove/clear actions announce their result in a polite status region; and focus returns to the same logical control after the DOM re-render. Housing persistence and inventory authority are unchanged.
+- **QA:** deterministic view coverage and the real Chromium mobile + local Worker/D1 housing test now assert accessible selection state, live action feedback, and focus restoration alongside existing placement, trophy, empty-room, and reload persistence checks. Exact-head CI is pending; no local-shell `npm test`, build, or Wrangler result is claimed, and no physical-iPhone QA is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, Worker-owned start/action state, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain covered.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, HP/Mana/enemy HP/turn CAS, terminal outcomes/history, audited reward receipts, progression, inventory, currency, and recoverable exactly-once settlement. The Home receipt reads the validated Worker completion result; this follow-up changes no battle/economy authority.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes conflicting `0007_player_sessions.sql`; PR #114's preflight guard detects but does not resolve that collision. No migration was renumbered or applied.
+- **Miles blockers:** production Discord/Telegram credentials, controlled platform identity/session verification, approved legacy identity-collision handling, and the duplicate-`0007` migration decision remain unresolved. The requested `02 DEGEN Monster Log v0.11` is still absent from the accessible Library; no roster, status, Shield, or balance canon was invented.
+- **One best next task:** verify exact-head CI for this Home/housing follow-up, then keep the normal mobile/reward PR review sequence current; leave Shield/auth and approved monster integration gated until their migration, credential, identity-policy, and source-of-truth blockers are resolved.
+
+---
+
+## Latest run — 2026-10-30 (DEGEN authority audit + exact-head receipt QA)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`. Main CI [41049131022](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049131022) and Pages preview [41049130995](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41049130995) both completed SUCCESS on this SHA. The last successful Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`; main's later city/UI-only changes did not touch Worker/D1. No production deployment or remote D1 operation was performed in this run.
+- **PUSHED / PR #117 OPEN, READY FOR REVIEW, unmerged:** `automation/degen/home-trophy-display-v01`, current head `1035c18b47396f81a2a4bb219f94600003029b4d`, based on the exact main SHA above. This run changes only this continuity document; no runtime/test code was changed.
+- **Exact-head QA:** current PR head CI [41151270213](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41151270213) completed SUCCESS. Deterministic suite: **266/266 passed, 0 failed**. All 14 substantive CI stages passed: isolated Worker/D1 reward concurrency, transient-failure reward recovery, Underpass cycle and rollover concurrency, atomic defeat history, mobile housing persistence, production build, real Chromium mobile battle vertical slice with local Worker/D1, and Wrangler validation. Browser checks include the Home trophy place/reload flow and the receipt/level-up/zero-Mana path. This is local Chromium + local D1 evidence, not physical-iPhone QA.
+- **Mana:** COMPLETE / MERGED on main. `DegenDefinition.maxMana`, bespoke `AbilityDefinition.manaCost`, authoritative persisted `player_mana`, Worker-owned start/action state, atomic unaffordable rejection, exact deduction, zero-cost use at zero, terminal handling, cost-aware controls, no monster Mana, and no Mana-triggered reversion are covered. The legacy `sidekick/degen-mana-foundation-v01` is 11 ahead / 101 behind main; the 15 Mana-named successor branches checked this run are divergent/stale or already represented on main. No unfinished coherent Mana slice remains; no cherry-pick or competing Mana branch was created.
+- **Battle authority / reward idempotency:** Worker/D1 remains the authority for permits, HP/Mana/enemy HP/turn CAS, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. Existing integration coverage exercises invalid/expired permit chronology, event closure with a valid issued permit, duplicate completion, action/completion races, full/reduced clears, level-up math, and transient D1 recovery. The receipt remains presentation-only and reads the validated Worker completion result.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a conflicting `0007_player_sessions.sql`; PR #114's preflight guard detects but does not resolve that collision. No migration was renumbered or applied.
+- **Miles blockers:** production Discord/Telegram credentials, controlled platform identity/session verification, the approved legacy identity-collision policy, and the duplicate-`0007` migration decision remain unresolved. The exact `02 DEGEN Monster Log v0.11` is not present in the accessible Library (only older Monster Log snapshots surfaced); do not invent or substitute roster/signature/Degen content. Shield PR #20 remains stale/unmergeable and gated behind the auth/migration sequence.
+- **One best next task:** reconcile the ready, exact-head-green mobile/reward PRs in order (`#115` → `#116` → `#117`), updating each branch against the new main SHA and rerunning full exact-head CI after every shared-browser-test change. Keep Shield/status and approved monster integration gated until the migration/auth and canonical-source blockers are resolved.
+
+---
+
+## Latest run — 2026-10-30 (authoritative reward-receipt contract regression coverage)
+
+- **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`.
+- **PUSHED / PR #117 OPEN, ready for review, unmerged:** `automation/degen/home-trophy-display-v01`. Current code/test head `8696bd1b0c2ed8a34117b726f477c9feeedfcf30`, based on main with 21 commits ahead / 0 behind. No direct-main write.
+- **Task / file changed:** `tests/api-response-protocol.test.ts` now proves a valid Worker completion receipt passes the exact contract consumed by the new UI, and rejects negative XP, fractional currency, non-string item keys, non-array/missing furniture arrays, and unknown reward tiers as protocol errors without retry. The existing validator already enforced these boundaries; this adds direct regression coverage rather than changing combat, reward calculation, or client economy authority.
+- **QA:** exact-head CI [41150956393](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41150956393) is in progress on `8696bd1`. The deterministic `npm test` step passed; isolated Worker/D1 reward concurrency is still running; transient-recovery, cycle/rollover concurrency, atomic defeat, housing browser, build, Chromium battle vertical slice, and Wrangler validation have not yet reported. Previous progress head `018c302` passed all CI steps in [41147305486](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41147305486). Local clone/test execution was unavailable because the container could not resolve `github.com`; no local-shell test/build/Wrangler result is claimed.
+- **Mana status:** COMPLETE / MERGED on main. Verified Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, server-owned battle-start initialization and action compare-and-swap, unaffordable rejection without mutation, exact deduction, zero-cost-at-zero, killing-blow/defeat behavior, cost-aware controls, no monster Mana, and no Mana-triggered reversion. `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql` are tracked. The legacy sidekick branch is divergent (11 ahead / 101 behind) and its old runtime snapshot is superseded by main's stricter terminal-legacy validation; all current Mana-named successor branches were compared and no unfinished coherent Mana slice remains. No cherry-pick.
+- **Battle authority / reward idempotency:** Worker/D1 remains the sole authority for permits, HP/Mana/enemy HP/turn state, terminal outcomes, history, receipts, XP/currency/inventory, and recoverable exactly-once settlement. This run changes only client response-contract tests; no reward/economy trust moved to the client.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` with `db/migrations`; deploy workflow order remains schema → tracked migrations → Worker. Main's `0007_player_inventory_quantity_guards.sql` conflicts by version with draft auth PR #14's `0007_player_sessions.sql`; PR #114 detects but does not resolve it. No migration, DB binding, remote D1 operation, or Worker deployment changed.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, approved legacy identity-collision policy, and the duplicate-`0007` migration decision remain unresolved. Shield/status persistence and approved monster integration remain gated; the specifically required Monster Log v0.11 is not available in the accessible project sources. No canon or balance was invented.
+- **Delivery state:** test commit is PUSHED on PR #117; this progress update is a continuity-only feature-branch commit. Neither is MERGED / LIVE. No production deployment or production player-data smoke test is claimed.
+- **One best next task:** finish exact-head CI for `8696bd1`; then reconcile the shared-file review sequence for PRs #115 → #116 → #117, rerunning full CI on each reconciled head before any merge. Keep the `0007`/platform-auth and missing-roster gates closed.
 
 ---
 
@@ -279,6 +499,7 @@
 - **One best next task:** get exact-head CI and Chromium mobile city-navigation QA green; then continue a non-schema gameplay slice while the auth/migration gate is reconciled.
 
 ---
+
 ## Latest run — 2026-10-29 (housing reliability rebuilt on current main)
 
 - **Authoritative main SHA at branch start:** `66806acc10f303ce60e32f1fac848b0e9f0034d2`.
@@ -961,7 +1182,6 @@
 - **Miles blocker:** production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved policy for unverified legacy identity collisions remain required for auth-dependent work. Main's `0007_player_inventory_quantity_guards.sql` also conflicts by number with draft session PR #14's `0007_player_sessions.sql`. Do not bypass the identity gate or start Shield/housing release work before that policy and migration sequence are resolved.
 - **One best next task:** verify exact-head CI for PR #82, repair any real timeout-test/build regression without weakening Worker authority, then merge only through the normal PR path if green and verify post-merge main CI/Pages status. Keep Mana closed and auth-gated Shield/housing parked.
 
-
 ---
 
 ## Latest run — 2026-10-27 (isolate stale active battle snapshots by permit)
@@ -991,6 +1211,7 @@
 - **One best next task:** run exact-head CI for this continuity commit; if all 13 stages pass, update PR #81's description and mark it ready for review. Do not merge/deploy around the platform-auth gate.
 
 ---
+
 ---
 
 # DEGEN — AUTONOMOUS PROGRESS
@@ -1036,8 +1257,8 @@ Updated: 2026-10-27
 - **Miles blocker:** approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions remain required. Do not bypass that gate for auth-dependent Shield/housing work.
 - **One best next task:** confirm exact-head CI for this documentation-only continuity commit; then mark PR #81 ready for review if green. Do not merge or deploy automatically. After normal review/merge, verify main CI and the applicable Pages deployment receipt separately.
 
-
 ---
+
 ---
 
 ## Latest run — 2026-10-27 (merge request-body hardening and verify Worker deployment)
@@ -1266,6 +1487,7 @@ Updated: 2026-10-27
 - **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. The regression uses isolated Wrangler local D1 only.
 - **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an approved policy for unverified legacy identity collisions. Keep auth-gated Shield/housing work unmerged and unreleased.
 - **One best next task:** verify exact-head CI; if green, inspect the next persisted reward-claim invariant without changing rewards or combat rules.
+
 ---
 
 ## Latest run — 2026-10-26 (reject parseable noncanonical reward-lease timestamps)
@@ -1309,6 +1531,7 @@ Updated: 2026-10-27
 - **D1 assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Tests use isolated Wrangler local D1 only; no production D1 operation or deployment occurred.
 - **Miles blocker:** platform-auth PR #21 still needs approved Discord/Telegram production credentials/configuration, controlled live identity/session verification, and a policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
 - **One best next task:** verify CI on this continuity-only refresh, then keep PR #73 behind normal review; do not merge or deploy auth-gated work.
+
 ---
 
 ## Latest run — 2026-10-26 (recover a reward after claim-release failure)
@@ -1337,7 +1560,6 @@ Updated: 2026-10-27
 - **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order is schema → tracked migrations → Worker. Main SHA `193dbc95a3622546140f9a1e204528af7c4326d6` has successful CI [run 40260035919](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40260035919) and Worker deployment [run 40260035902](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40260035902). No production D1 operation or deployment of PR #73 occurred.
 - **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled identity/session verification, and an approved policy for unverified legacy identity collisions. Do not bypass this gate for Shield/housing.
 - **One best next task:** verify CI on the new continuity head, then continue with the next uncovered reward-recovery invariant without changing reward values or combat balance.
-
 
 ---
 
@@ -1454,6 +1676,7 @@ Updated: 2026-10-27
 - **Best next task:** finish exact-head CI for PR #70; if green, deliver through the normal PR path, then cover the simultaneous inventory-capacity race against two full-clear completions without changing approved reward balance or bypassing platform-auth approval.
 
 ---
+
 ---
 
 ## Latest run — 2026-10-25 (reject corrupt progression before reward settlement)
@@ -1469,6 +1692,7 @@ Updated: 2026-10-27
 - **Best next task:** after required checks on the continuity head, merge PR #69 through the normal PR path; then audit persisted inventory quantity bounds and award-settlement atomicity without changing approved rewards or bypassing platform-auth approval.
 
 ---
+
 ## Latest run — 2026-10-25 (reject unsafe awarded XP thresholds)
 
 - **Authoritative main SHA at start:** `32bf16b31051c861adcf188cd0c6c987db02ac43`, the squash merge of PR #67. PR #67's exact head `3ee815426860d2a3e1c5cbf43eeb5af2baf0d772` passed all 13 CI steps in [40232200115](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40232200115) before merge, including 92/92 deterministic tests, Worker/D1 reward concurrency and recovery, Underpass cycle/rollover races, atomic defeat history, production build, Chromium mobile vertical slice, and Worker dry-run. The PR is **MERGED**; no production deployment or live HTTP smoke is implied by this test result.
@@ -1494,6 +1718,7 @@ Updated: 2026-10-27
 - **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order remains base schema → tracked migrations → Worker. This test-focused change requires no migration and made no production D1 operation.
 - **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved policy for unverified legacy identity collisions. Do not auto-link identities or bypass that gate; keep Shield PR #20 and housing work gated.
 - **Best next task:** verify exact-head CI for the corrected PR #67, then continue the next uncovered reward-receipt invariant without changing approved rewards or bypassing platform-auth approval.
+
 ---
 
 ## Latest run — 2026-10-25 (awarded receipt XP remainder audit CI passed)
@@ -1538,6 +1763,7 @@ Updated: 2026-10-27
 - **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy order is schema → tracked migrations → Worker. No new migration, production D1 operation, Worker deployment, or live HTTP smoke occurred in this run.
 - **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions. Its branch is 10 commits behind and 161 ahead by compare; do not force-push or bypass the release gate. Shield/housing remain gated.
 - **Best next task:** review PR #64 through the normal PR path. Then reconcile auth PR #21 using a normal reviewable branch update while preserving the credential and legacy-identity approval gates.
+
 ---
 
 ## Latest run — 2026-10-25 (legacy terminal victory reward invariant)
@@ -1551,6 +1777,7 @@ Updated: 2026-10-27
 - **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. No new migration or production DB operation is required. No Worker deployment or live HTTP smoke is claimed.
 - **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions. The auth branch is now diverged from current main (10 commits behind, 161 ahead by GitHub compare); do not force-push or bypass its credential/identity gate.
 - **Best next task:** verify exact-head CI for PR #64 and keep it in the normal PR review path. Then reconcile auth PR #21 with a normal, reviewable branch update while preserving the live-credential and legacy-identity approval gates. Do not merge/deploy Shield or housing ahead of those gates.
+
 ---
 
 ## Latest run — 2026-10-25 (malformed legacy terminal Mana snapshot guard)
@@ -1564,6 +1791,7 @@ Updated: 2026-10-27
 - **D1 / deployment assumptions:** `wrangler.toml` is the source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order is base schema → tracked migrations → Worker. No new migration or production DB operation is required. No Worker deployment or live HTTP smoke is claimed.
 - **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and a Miles-approved policy for unverified legacy identity collisions. Do not auto-link accounts or bypass this release gate; do not merge/deploy Shield or housing ahead of it.
 - **Best next task:** verify exact-head CI for PR #64 and continue review through the normal PR path. Then reconcile platform-auth PR #21 against current main with a normal reviewable branch update while preserving its live-credential and legacy-identity approval gates.
+
 ---
 
 ## Latest run — 2026-10-25 (verify legacy terminal recovery exact-head CI)
@@ -1577,6 +1805,7 @@ Updated: 2026-10-27
 - **D1 / deployment:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. This slice requires no new migration and no production DB operation. No Worker deployment or live HTTP smoke is claimed.
 - **Miles blocker:** platform-auth PR #21 still requires approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions. No automatic account linking or release-gate bypass is authorized.
 - **Best next task:** finish review of PR #64 through the normal PR path. Then reconcile platform-auth PR #21 against current main only with a normal, reviewable branch update; keep live credentials, identity verification, and legacy-collision policy as explicit release gates. Do not merge/deploy Shield or housing ahead of those gates.
+
 ---
 
 # DEGEN — AUTONOMOUS PROGRESS
@@ -1595,6 +1824,7 @@ Updated: 2026-10-27
 - **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. This test-only follow-up requires no migration or production DB operation.
 - **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit policy for unverified legacy identity collisions. Do not auto-link accounts or bypass that gate; keep Shield/housing release gated.
 - **Best next task:** review PR #64 through the normal PR path. After it lands, reconcile platform-auth PR #21 against current main while preserving the credential and legacy-identity approval gates; do not deploy or merge auth/Shield/housing ahead of those prerequisites.
+
 ---
 
 ## Latest run — 2026-10-25 (concurrent reward clear invariant merged; next-slice audit)
@@ -1800,8 +2030,8 @@ Updated: 2026-10-27
 - **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains base schema → tracked migrations → Worker. PR #56 is test-only; no migration or remote D1 operation.
 - **Miles blocker:** platform-auth PR #21 still needs approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and an explicit recovery/link policy for unverified legacy identity collisions. Do not bypass that gate or merge Shield/housing work ahead of it.
 - **Best next task:** verify exact-head CI for PR #56 and merge it through the normal PR path if green; then continue safe battle-recovery coverage without changing reward values or bypassing the platform-auth release gate.
----
 
+---
 
 ## Latest run — 2026-10-24 (recover completed victory after action replay)
 
@@ -2538,7 +2768,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blocker:** approved production Discord/Telegram credentials/configuration, controlled live identity/session verification, and the explicit legacy identity-collision policy are still required for platform-auth release work. No production D1 operation, Worker deployment, or live platform-auth verification occurred.
 - **One best next task:** finish exact-head CI for PR #86, fix only evidence-backed regressions, then merge through the normal PR path if all stages pass and verify post-merge main/deploy status separately.
 
-
 ---
 
 ## Latest run — 2026-10-27 (same-turn authoritative snapshot immutability)
@@ -2602,7 +2831,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 / release gates:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. The `0007` inventory-guard / player-session numbering conflict and production Discord/Telegram auth verification gates remain unresolved; no migration or deployment was attempted.
 - **One best next task:** verify all exact-head PR #96 CI stages, then merge through the normal PR path only if green and verify post-merge main CI/deployment separately.
 
-
 ---
 
 ## Latest run — 2026-10-28 (sync authoritative Underpass snapshot validation to current main)
@@ -2651,7 +2879,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 
 - **One best next task:** verify exact-head CI for refreshed PR #101; if the isolated D1 suite and all remaining stages pass, mark it ready and use the normal PR merge path. Otherwise fix only the newly evidenced failure.
 
-
 ---
 
 ## Latest run — 2026-10-28 (mobile Mana affordability feedback)
@@ -2673,7 +2900,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blockers:** no blocker for this presentation-only slice. Production Discord/Telegram credentials, controlled identity/session verification, and the approved legacy identity-collision policy remain blockers for auth-dependent release work. Shield PR #20 and housing merge/deploy remain gated by the documented auth/migration coordination; do not bypass those gates.
 
 - **One best next task:** verify the latest exact-head CI for PR #103 and fix only any demonstrated failure. After it is green, continue the next non-blocked reliability/readability slice; do not start Shield until the migration/auth release gates are reconciled.
-
 
 ---
 
@@ -2697,7 +2923,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 
 - **One best next task:** verify exact-head CI for PR #105; if all required checks pass and mergeability is clean, mark it ready for review through the normal PR path. Then continue non-blocked reliability/readability work; do not start Shield until the documented migration/auth gates are reconciled.
 
-
 ---
 
 ## Follow-up — 2026-10-28 (guard the controller's post-action re-enable path)
@@ -2716,7 +2941,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 
 - **One best next task:** trigger and verify exact-head CI for PR #105, including the real Chromium mobile vertical slice. Fix only demonstrated failures, then make the PR review-ready only if all checks pass.
 
-
 ---
 
 ## Follow-up — 2026-10-28 (CI caught missing Mana validators in isolated controller harness)
@@ -2733,7 +2957,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 
 - **One best next task:** rerun exact-head CI for PR #105 after this harness fix. If deterministic tests pass, continue through Worker/D1 recovery/concurrency, production build, Chromium mobile vertical slice, and Worker validation; do not mark ready until all pass.
 
-
 ---
 
 ## Latest run — 2026-10-28 (Mana UI fail-closed guard — exact-head CI green)
@@ -2748,7 +2971,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blockers:** production Discord/Telegram credentials, controlled live identity/session verification, and approved legacy identity-collision handling remain release gates. Shield/housing release work remains gated as recorded; no bypass or new content canon.
 - **One best next task:** append this QA record, verify the new continuity head's exact CI, then mark PR #105 ready for review only if that final head is green. Do not merge or deploy from this run.
 
-
 ---
 
 ## Latest run — 2026-10-28 (Mana UI fail-closed — exact-head CI verification)
@@ -2762,7 +2984,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 / migration assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; deploy workflow applies schema, tracked migrations, then Worker. `0006_backfill_active_battle_mana.sql` remains tracked. The `0007_player_inventory_quantity_guards.sql` versus draft auth PR #14's `0007_player_sessions.sql` conflict remains unresolved. No migration, remote D1 operation, production Worker deployment, or deployment-config change was made.
 - **Miles blockers:** none for this UI guard. Production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision handling remain gates for auth-dependent release work; Shield/housing must not bypass the recorded migration/auth gates.
 - **One best next task:** verify fresh exact-head CI after this continuity-only commit; then mark PR #105 ready for review only if every stage passes. Do not merge or deploy from this run.
-
 
 ---
 
@@ -2786,7 +3007,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 
 - **One best next task:** verify exact-head CI after this continuity-only commit; if green, mark PR #105 ready for review. Then continue the next non-blocked reliability gap without starting Shield ahead of migration/auth coordination.
 
-
 ---
 
 ## Latest run — 2026-10-28 (reject over-cap Mana in deterministic combat)
@@ -2800,8 +3020,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blockers:** none for this validation fix. Production platform-auth credentials/identity-policy gates and the Shield/housing release gates remain.
 - **One best next task:** verify the new exact-head CI; if green, update PR #105 evidence and mark it ready for review without merging or deploying.
 
-
-
 ---
 
 ## Latest run — 2026-10-28 (fix isolated engine harnesses after Mana-state guard CI failure)
@@ -2813,8 +3031,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Mana / authority:** Mana remains COMPLETE / MERGED on main; the over-cap guard rejects invalid current Mana without spending or advancing a turn. Valid 0 Mana and zero-cost actions remain supported; no monster Mana or reversion. Worker/D1 reward authority is unchanged.
 - **D1 / deployment:** tracked `0006_backfill_active_battle_mana.sql`, `wrangler.toml` binding and schema → migrations → Worker order remain unchanged. Last verified Worker deploy [40688617011](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40688617011) succeeded at `b194ac7520d19ff86b6f6f4ca4e1e41db75868ad`; no deployment or remote D1 operation in this run. The `0007` auth migration collision and platform-auth release gates remain unresolved.
 - **One best next task:** rerun exact-head CI after the two harness fixes; address only failures demonstrated on that head, then mark PR #105 ready only after all required stages pass.
-
-
 
 ---
 
@@ -2829,7 +3045,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blocker:** none for this narrow UI guard. Do not bypass the documented auth/migration gate for Shield or housing release work.
 - **One best next task:** refresh PR #105's QA summary and mark it ready for review now that exact-head CI and preview QA are green. Do not merge or deploy from this run; then choose a non-blocked reliability gap before starting gated Shield work.
 
-
 ---
 
 ## Latest run — 2026-10-28 (Mana UI fail-closed — ready for review)
@@ -2842,7 +3057,6 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **D1 / deployment assumptions:** `wrangler.toml` remains authoritative for `DB` → `DEGEN` and `db/migrations`; `.github/workflows/deploy-worker.yml` applies schema, tracked migrations, then Worker code. The `0007_player_inventory_quantity_guards.sql` / draft auth PR #14 `0007_player_sessions.sql` numbering collision remains unresolved. Production Discord/Telegram credentials, controlled identity/session verification, and the approved legacy identity-collision policy remain release gates. No local-shell result, production D1 operation, Worker deployment, or direct-main write is claimed.
 - **Current delivery status:** PR #105 is ready for review, mergeable, and unmerged. No changes were written to `main`.
 - **One best next task:** verify exact-head CI for this refreshed continuity commit, then continue only with non-blocked reliability work; do not begin Shield/housing release work until the migration/auth gates are reconciled.
-
 
 ---
 
@@ -2915,4 +3129,3 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blocker:** production Discord/Telegram credentials, controlled identity/session verification, and the approved legacy identity-collision policy remain release gates. No additional canon decision is required for this client-side validation guard.
 - **Delivery state:** PUSHED on PR #111; not merged or deployed. No direct-main write, production D1 operation, or Worker deployment was performed.
 - **One best next task:** verify exact-head CI on the new PR #111 head; fix only demonstrated failures, then continue the next non-gated reliability gap.
-

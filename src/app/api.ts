@@ -116,8 +116,14 @@ const isAuthoritativeBattleCompletionResult = (
   if (!isRecord(value)) return false;
   const player = value.player;
   const reward = value.reward;
+  const levelTransition = value.levelTransition;
   const worldEvent = value.worldEvent;
-  if (!isAuthoritativePlayerState(player, playerId) || !isRecord(reward) || !isRecord(worldEvent)) return false;
+  if (!isAuthoritativePlayerState(player, playerId)
+    || !isRecord(reward) || !isRecord(levelTransition) || !isRecord(worldEvent)) return false;
+
+  const previousLevel = levelTransition.previousLevel;
+  if (!isBoundedSafeInteger(previousLevel, 1, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(levelTransition.currentLevel, previousLevel, player.level)) return false;
 
   return isBoundedSafeInteger(reward.xp, 0, Number.MAX_SAFE_INTEGER)
     && isBoundedSafeInteger(reward.currency, 0, Number.MAX_SAFE_INTEGER)

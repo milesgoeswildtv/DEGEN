@@ -47,7 +47,12 @@ const setup = (
   };
   const api = {
     enabled,
-    completeUnderpass: completeUnderpass ?? (async () => ({ player: {}, worldEvent: {} })),
+    completeUnderpass: completeUnderpass ?? (async () => ({
+      player: { id: 'test-player', level: 1 },
+      reward: { xp: 0, currency: 0, items: [], furniture: [], tier: 'reduced' },
+      levelTransition: { previousLevel: 1, currentLevel: 1 },
+      worldEvent: {},
+    })),
     getUnderpass: async () => ({}),
     getPendingBattleRewards: getPendingBattleRewards ?? (async () => []),
   };
@@ -96,7 +101,12 @@ test('failed Worker completion retains the permit and persists retry across cont
   const fixture = setup(true, async () => {
     attempts += 1;
     if (attempts === 1) throw new Error('transient D1 failure');
-    return { player: {}, worldEvent: {} };
+    return {
+      player: { id: 'test-player', level: 1 },
+      reward: { xp: 0, currency: 0, items: [], furniture: [], tier: 'reduced' },
+      levelTransition: { previousLevel: 1, currentLevel: 1 },
+      worldEvent: {},
+    };
   });
   const first = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   first.battlePermit = { permitId: 'permit-1' };
@@ -140,9 +150,9 @@ test('definitive reward rejection retains the permit without an endless retry ti
   assert.equal(fixture.store.localRewards, 0, 'the client never fabricates a reward');
 });
 
-test('retryable reward claim conflicts still schedule recovery', async () => {
+test('fresh Worker reward claim leases schedule bounded recovery', async () => {
   const fixture = setup(true, async () => {
-    throw new TestGameApiError(409, { error: 'Reward claim changed; retry.' }, 'Reward claim changed; retry.');
+    throw new TestGameApiError(409, { error: 'Battle reward is already being claimed.' }, 'Battle reward is already being claimed.');
   });
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   controller.battlePermit = { permitId: 'permit-retryable-claim' };
@@ -152,6 +162,45 @@ test('retryable reward claim conflicts still schedule recovery', async () => {
 
   assert.ok(fixture.timers.some((timer) => timer.delay === 15_000),
     'a Worker conflict explicitly marked retryable must continue bounded recovery');
+  assert.equal(fixture.store.localRewards, 0);
+});
+
+test('legacy combined reward-claim conflict remains retryable during Worker rollout', async () => {
+  const fixture = setup(true, async () => {
+    throw new TestGameApiError(
+      409,
+      { error: 'Battle reward is already being claimed, or the permit expired.' },
+      'Battle reward is already being claimed, or the permit expired.',
+    );
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-legacy-claim-conflict' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await controller.finishBattle('victory');
+
+  assert.ok(fixture.timers.some((timer) => timer.delay === 15_000),
+    'an older Worker response remains recoverable while deployments roll forward');
+  assert.equal(fixture.store.localRewards, 0);
+});
+
+test('permanent unavailable reward-claim state does not schedule repeated recovery', async () => {
+  const fixture = setup(true, async () => {
+    throw new TestGameApiError(
+      409,
+      { error: 'Battle reward claim is not available.' },
+      'Battle reward claim is not available.',
+    );
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-unavailable-claim-state' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await controller.finishBattle('victory');
+
+  assert.equal(controller.battlePermit?.permitId, 'permit-unavailable-claim-state',
+    'retain the receipt identifier for later repair without retrying an invalid state');
+  assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000).length, 0);
   assert.equal(fixture.store.localRewards, 0);
 });
 
@@ -173,7 +222,12 @@ test('duplicate victory notifications share one in-flight Worker completion', as
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(attempts, 1, 'duplicate finish/recovery notifications must coalesce before reaching the Worker');
 
-  resolveCompletion({ player: { id: 'test-player', level: 2 }, worldEvent: { cycleId: 'cycle-1' } });
+  resolveCompletion({
+    player: { id: 'test-player', level: 2 },
+    reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
+    levelTransition: { previousLevel: 1, currentLevel: 2 },
+    worldEvent: { cycleId: 'cycle-1' },
+  });
   await Promise.all([first, second]);
 
   assert.equal(attempts, 1);
@@ -188,7 +242,12 @@ test('successful manual reward retry cancels the existing automatic retry timer'
   const fixture = setup(true, async () => {
     attempts += 1;
     if (attempts === 1) throw new Error('temporary network failure');
-    return { player: { id: 'test-player', level: 2 }, worldEvent: {} };
+    return {
+      player: { id: 'test-player', level: 2 },
+      reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
+      levelTransition: { previousLevel: 1, currentLevel: 2 },
+      worldEvent: {},
+    };
   });
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   controller.battlePermit = { permitId: 'permit-manual-retry' };
@@ -239,7 +298,12 @@ test('server-discovered victory recovery retries a not-yet-deployed endpoint wit
       attempts += 1;
       assert.equal(playerId, 'test-player');
       assert.equal(permitId, 'server-only-permit');
-      return { player: { id: playerId }, worldEvent: {} };
+      return {
+        player: { id: playerId, level: 1 },
+        reward: { xp: 0, currency: 0, items: [], furniture: [], tier: 'reduced' },
+        levelTransition: { previousLevel: 1, currentLevel: 1 },
+        worldEvent: {},
+      };
     },
     async (playerId) => {
       discoveries += 1;
@@ -346,7 +410,12 @@ test('a completion already in flight cannot replace a switched account', async (
   assert.equal(requestedPermitId, 'permit-in-flight');
 
   fixture.store.snapshot.id = 'new-player';
-  resolveCompletion({ player: { id: 'test-player', level: 2 }, worldEvent: { cycleId: 'cycle-1' } });
+  resolveCompletion({
+    player: { id: 'test-player', level: 2 },
+    reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
+    levelTransition: { previousLevel: 1, currentLevel: 2 },
+    worldEvent: { cycleId: 'cycle-1' },
+  });
   await finishing;
 
   assert.equal(fixture.store.snapshot.id, 'new-player');
@@ -357,4 +426,79 @@ test('a completion already in flight cannot replace a switched account', async (
   assert.equal(fixture.storage.get('degen.pending.reward-permits.v1:new-player'), undefined,
     'the original permit never enters the new account’s retry queue');
   assert.equal(controller.battlePermit, undefined, 'the completed old permit is cleared without changing the active account');
+});
+
+
+test('reward receipt hints stay scoped to their owning player across account switches and reloads', async () => {
+  const calls: Array<[string, string]> = [];
+  const fixture = setup(true, async (playerId, permitId) => {
+    calls.push([playerId, permitId]);
+    return {
+      player: { id: playerId, level: 2 },
+      reward: { xp: 75, currency: 30, items: [], furniture: ['tunnel-trophy'], tier: 'full' },
+      levelTransition: { previousLevel: 1, currentLevel: 2 },
+      worldEvent: { cycleId: 'cycle-1' },
+    };
+  });
+
+  const first = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  first.battlePermit = { permitId: 'permit-account-a' };
+  first.battlePermitOwnerId = 'test-player';
+  await first.finishBattle('victory');
+
+  assert.deepEqual(calls, [['test-player', 'permit-account-a']]);
+  assert.equal(fixture.storage.get('degen.reward.receipts.v1:test-player'), '["permit-account-a"]');
+  assert.equal(fixture.storage.get('degen.reward.receipts.v1:other-player'), undefined);
+
+  fixture.store.snapshot.id = 'other-player';
+  const otherAccount = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  await otherAccount.start();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(calls, [['test-player', 'permit-account-a']],
+    'another account must not replay or receive the first player’s receipt');
+  const otherNotices = (otherAccount as unknown as { rewardNotices: Map<string, unknown[]> }).rewardNotices;
+  assert.equal(otherNotices.has('other-player'), false);
+  assert.equal(otherNotices.has('test-player'), false);
+
+  fixture.store.snapshot.id = 'test-player';
+  const restoredAccount = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  await restoredAccount.start();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(calls, [
+    ['test-player', 'permit-account-a'],
+    ['test-player', 'permit-account-a'],
+  ], 'the owning account can recover its receipt through the idempotent Worker endpoint');
+  const restoredNotices = (restoredAccount as unknown as { rewardNotices: Map<string, unknown[]> }).rewardNotices;
+  assert.equal(restoredNotices.get('test-player')?.length, 1);
+  assert.equal(restoredNotices.has('other-player'), false);
+  assert.equal(fixture.store.localRewards, 0, 'the client never computes or grants the reward');
+});
+
+
+test('reward receipt deduplication is scoped to player and permit', async () => {
+  const fixture = setup(true, async (playerId) => ({
+    player: { id: playerId, level: 2 },
+    reward: { xp: 75, currency: 30, items: [], furniture: ['tunnel-trophy'], tier: 'full' },
+    levelTransition: { previousLevel: 1, currentLevel: 2 },
+    worldEvent: { cycleId: `${playerId}-cycle` },
+  }));
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  const notices = (controller as unknown as { rewardNotices: Map<string, unknown[]> }).rewardNotices;
+
+  controller.battlePermit = { permitId: 'same-permit-id' };
+  controller.battlePermitOwnerId = 'test-player';
+  await controller.finishBattle('victory');
+  assert.equal(notices.get('test-player')?.length, 1);
+
+  fixture.store.snapshot.id = 'other-player';
+  controller.battlePermit = { permitId: 'same-permit-id' };
+  controller.battlePermitOwnerId = 'other-player';
+  await controller.finishBattle('victory');
+
+  assert.equal(notices.get('test-player')?.length, 1, 'the first account keeps its own receipt');
+  assert.equal(notices.get('other-player')?.length, 1,
+    'the same permit identifier for another account must not suppress its receipt');
+  assert.equal(fixture.store.localRewards, 0, 'receipt presentation never grants client-side rewards');
 });

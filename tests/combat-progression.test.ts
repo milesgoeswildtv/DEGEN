@@ -10,6 +10,7 @@ import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
   advanceLevel,
+  previousLevelForReward,
   underpassRewardForClear,
   xpNeededForLevel,
 } from '../src/game/progression.ts';
@@ -292,4 +293,42 @@ test('monster definitions do not expose a Mana resource', () => {
     [],
     'monster combat state must not acquire a Mana-equivalent field',
   );
+});
+
+
+test('persisted reward progression reconstructs exact transitions across every XP remainder', () => {
+  for (let level = 1; level <= 24; level += 1) {
+    const threshold = xpNeededForLevel(level);
+    const awards = new Set([
+      0, 1, 3, 10, 75, 250, 1000, 10_000,
+      threshold - 1, threshold, threshold + 1,
+    ]);
+    for (let xp = 0; xp < threshold; xp += 1) {
+      for (const award of awards) {
+        const after = advanceLevel(level, xp, award);
+        assert.equal(previousLevelForReward(after.level, after.xp, award), level,
+          `level ${level}, XP ${xp}, award ${award}`);
+      }
+    }
+  }
+
+  assert.equal(previousLevelForReward(2, 25, 75), 1);
+  assert.equal(previousLevelForReward(2, 100, 75), 2);
+  assert.equal(previousLevelForReward(2, 200, 75), null);
+  assert.equal(previousLevelForReward(0, 0, 75), null);
+
+  const invalidInputs: Array<[number, number, number]> = [
+    [Number.NaN, 0, 0],
+    [1, Number.NaN, 0],
+    [1, 0, Number.NaN],
+    [Number.POSITIVE_INFINITY, 0, 0],
+    [1, -1, 0],
+    [1, 0, -1],
+    [1, 0, 1.5],
+    [Number.MAX_SAFE_INTEGER + 1, 0, 0],
+  ];
+  for (const [level, remainingXp, award] of invalidInputs) {
+    assert.equal(previousLevelForReward(level, remainingXp, award), null,
+      `invalid receipt progression must fail closed: ${level}, ${remainingXp}, ${award}`);
+  }
 });
