@@ -320,6 +320,15 @@ test('combat rules reject universal monster action-resource aliases before resol
     'resourceCost',
     'RESOURCE_COST',
     'resource_cost',
+    'resourceRegeneration',
+    'resource_regen',
+    'resourceSteal',
+    'resource_steal',
+    'resourceDrain',
+    'resource-drain',
+    'resourceRecovery',
+    'resourceRestore',
+    'resourceGain',
     'actionResource',
     'ACTION_RESOURCE',
     'action_resource',
@@ -379,6 +388,18 @@ test('combat rules reject nested monster action resources and safely inspect cyc
     {
       path: 'signature.resourceAmount',
       enemy: { ...TUNNEL_MAW, signature: { resourceAmount: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resourceRegeneration',
+      enemy: { ...TUNNEL_MAW, signature: { resourceRegeneration: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.resource_steal',
+      enemy: { ...TUNNEL_MAW, loadout: [{ resource_steal: 1 }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resource-drain',
+      enemy: { ...TUNNEL_MAW, signature: { 'resource-drain': 1 } } as typeof TUNNEL_MAW,
     },
     {
       path: 'signature.resource_max',
