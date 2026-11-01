@@ -39,13 +39,16 @@ export interface EnemyDefinition {
 }
 
 // A monster may have archetype-specific signature state, but never a universal
-// action-resource pool or a Mana-priced move. Catch any Mana-named field, including
-// snake_case/capitalization variants, plus common generic resource-pool aliases.
-type KeysContainingMana<T> = {
-  [Key in keyof T]: Key extends string
-    ? Lowercase<Key> extends `${string}mana${string}` ? Key : never
+// action-resource pool or a Mana-priced move. Check nested definition objects too.
+type KeysContainingMana<T> = T extends readonly (infer Item)[]
+  ? KeysContainingMana<Item>
+  : T extends object
+    ? {
+        [Key in keyof T]: Key extends string
+          ? Lowercase<Key> extends `${string}mana${string}` ? Key : KeysContainingMana<T[Key]>
+          : never;
+      }[keyof T]
     : never;
-}[keyof T];
 
 type NormalizeMonsterActionResourceKey<Key extends string> =
   Key extends `${infer Prefix}_${infer Suffix}`
@@ -63,13 +66,17 @@ type ForbiddenNormalizedMonsterActionResourceField =
   | 'energy'
   | 'stamina';
 
-type KeysMatchingForbiddenMonsterActionResource<T> = {
-  [Key in keyof T]: Key extends string
-    ? NormalizeMonsterActionResourceKey<Key> extends ForbiddenNormalizedMonsterActionResourceField
-      ? Key
-      : never
+type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer Item)[]
+  ? KeysMatchingForbiddenMonsterActionResource<Item>
+  : T extends object
+    ? {
+        [Key in keyof T]: Key extends string
+          ? NormalizeMonsterActionResourceKey<Key> extends ForbiddenNormalizedMonsterActionResourceField
+            ? Key
+            : KeysMatchingForbiddenMonsterActionResource<T[Key]>
+          : never;
+      }[keyof T]
     : never;
-}[keyof T];
 
 type ForbiddenMonsterActionResourceField =
   | KeysContainingMana<EnemyDefinition>
@@ -77,7 +84,7 @@ type ForbiddenMonsterActionResourceField =
 
 type AssertNoMonsterActionResource<T extends never> = T;
 type _EnemyDefinitionHasNoUniversalActionResource = AssertNoMonsterActionResource<
-  Extract<keyof EnemyDefinition, ForbiddenMonsterActionResourceField>
+  ForbiddenMonsterActionResourceField
 >;
 
 export interface LocationDefinition {
