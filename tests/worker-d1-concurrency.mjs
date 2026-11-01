@@ -2732,6 +2732,41 @@ try {
   assert.deepEqual((await housingBootstrap(housingOtherId)).map(item => item.instanceId),
     [housingCollision.instanceId], 'a cross-player ID collision must preserve the owning room');
 
+  // Two independent players can race for the same globally unique placement ID.
+  // Exactly one complete layout must commit; the rejected player's previous room must survive.
+  const housingRacePlayerA = 'housing-race-player-a';
+  const housingRacePlayerB = 'housing-race-player-b';
+  await Promise.all([
+    housingBootstrap(housingRacePlayerA),
+    housingBootstrap(housingRacePlayerB),
+  ]);
+  const housingRacePlacement = {
+    instanceId: 'housing-race-shared-id',
+    furnitureId: 'starter-bed',
+    x: 2,
+    y: 2,
+  };
+  const housingRaceResponses = await Promise.all([
+    housingSave(housingRacePlayerA, { placements: [housingRacePlacement] }),
+    housingSave(housingRacePlayerB, { placements: [housingRacePlacement] }),
+  ]);
+  assert.deepEqual(housingRaceResponses.map(response => response.status).sort((a, b) => a - b), [204, 409],
+    'concurrent cross-player placement-ID claims must produce one commit and one normalized conflict');
+  const [housingRaceLayoutA, housingRaceLayoutB] = await Promise.all([
+    housingBootstrap(housingRacePlayerA),
+    housingBootstrap(housingRacePlayerB),
+  ]);
+  const housingRaceAOwnsId = housingRaceLayoutA.some(item => item.instanceId === housingRacePlacement.instanceId);
+  const housingRaceBOwnsId = housingRaceLayoutB.some(item => item.instanceId === housingRacePlacement.instanceId);
+  assert.notEqual(housingRaceAOwnsId, housingRaceBOwnsId,
+    'the globally unique placement ID must have exactly one owner after the race');
+  const losingRaceLayout = housingRaceAOwnsId ? housingRaceLayoutB : housingRaceLayoutA;
+  const losingRacePlayerId = housingRaceAOwnsId ? housingRacePlayerB : housingRacePlayerA;
+  assert.deepEqual(losingRaceLayout.map(item => [item.instanceId, item.furnitureId, item.x, item.y]), [
+    [losingRacePlayerId + ':starter-bed-placed', 'starter-bed', 1, 1],
+  ], 'the losing concurrent save must not delete the existing room');
+  console.log('PASS concurrent Worker/D1 housing ID race: one owner, normalized 409, losing layout preserved');
+
   const finalEmptySave = await housingSave(housingPlayerId, { placements: [] });
   assert.equal(finalEmptySave.status, 204);
   assert.deepEqual(await housingBootstrap(housingPlayerId), [],
