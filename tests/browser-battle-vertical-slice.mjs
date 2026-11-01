@@ -93,11 +93,49 @@ try {
     "INSERT INTO players(id, display_name) VALUES('" + seededPlayerId + "', 'Browser QA');",
     "INSERT INTO characters(player_id, level, xp, currency, degen_key) VALUES('" + seededPlayerId + "', 1, 50, 0, 'test-degen');",
     "INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at) VALUES('browser-cycle', 'underpass', datetime('now', '-10 minutes'), datetime('now', '+90 minutes'));",
+    "INSERT INTO players(id, display_name) VALUES('browser-claim-recovery-player', 'Claim Recovery QA');",
+    "INSERT INTO characters(player_id, level, xp, currency, degen_key) VALUES('browser-claim-recovery-player', 1, 0, 0, 'test-degen');",
     "INSERT INTO battle_permits(id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at, completed_at, player_hp, player_mana, enemy_hp, battle_status, turn_count, reward_state) VALUES('" + pendingPermitId + "', '" + seededPlayerId + "', 'underpass', 'browser-cycle', 'tunnel-maw', datetime('now', '-5 minutes'), datetime('now', '+15 minutes'), NULL, 120, 0, 0, 'victory', 3, 'pending');",
+    "INSERT INTO battle_permits(id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at, completed_at, player_hp, player_mana, enemy_hp, battle_status, turn_count, reward_state, reward_claim_token, reward_claimed_at) VALUES('browser-fresh-claim', 'browser-claim-recovery-player', 'underpass', 'browser-cycle', 'tunnel-maw', datetime('now', '-5 minutes'), datetime('now', '+15 minutes'), NULL, 70, 0, 0, 'victory', 3, 'claiming', 'active-claim-token', CURRENT_TIMESTAMP);",
+    "INSERT INTO battle_permits(id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at, completed_at, player_hp, player_mana, enemy_hp, battle_status, turn_count, reward_state, reward_claim_token, reward_claimed_at) VALUES('browser-malformed-claim', 'browser-claim-recovery-player', 'underpass', 'browser-cycle', 'tunnel-maw', datetime('now', '-5 minutes'), datetime('now', '+15 minutes'), NULL, 70, 0, 0, 'victory', 3, 'claiming', 'malformed-claim-token', 'not-a-timestamp');",
   ].join('\n'));
   command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   launch('worker', wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789']);
   await until('local Worker', async () => (await fetch('http://127.0.0.1:8789/api/health', { signal: AbortSignal.timeout(800) })).ok);
+
+  const freshClaimBefore = sql("SELECT reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='browser-fresh-claim'");
+  const malformedClaimBefore = sql("SELECT reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='browser-malformed-claim'");
+  const claimCharacterBefore = sql("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='browser-claim-recovery-player'");
+  const completeClaim = async (permitId) => {
+    const response = await fetch('http://127.0.0.1:8789/api/battle/complete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: 'browser-claim-recovery-player', permitId }),
+    });
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    return { status: response.status, data: await response.json() };
+  };
+  const activeClaim = await completeClaim('browser-fresh-claim');
+  assert.equal(activeClaim.status, 409, JSON.stringify(activeClaim.data));
+  assert.equal(activeClaim.data.error, 'Battle reward is already being claimed.');
+  assert.equal('reward' in activeClaim.data, false);
+  assert.equal('player' in activeClaim.data, false);
+  const malformedClaim = await completeClaim('browser-malformed-claim');
+  assert.equal(malformedClaim.status, 409, JSON.stringify(malformedClaim.data));
+  assert.equal(malformedClaim.data.error, 'Battle reward claim is not available.');
+  assert.equal('reward' in malformedClaim.data, false);
+  assert.equal('player' in malformedClaim.data, false);
+  assert.deepEqual(sql("SELECT reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='browser-fresh-claim'"), freshClaimBefore,
+    'a live claim lease must remain unchanged while the client is told to retry later');
+  assert.deepEqual(sql("SELECT reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='browser-malformed-claim'"), malformedClaimBefore,
+    'an unclaimable malformed lease must remain unchanged and fail closed');
+  assert.deepEqual(sql("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='browser-claim-recovery-player'"), claimCharacterBefore,
+    'claim conflicts must not mutate progression');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM battle_history WHERE player_id='browser-claim-recovery-player'")[0]?.n, 0,
+    'claim conflicts must not invent terminal reward history');
+  assert.equal(sql("SELECT COUNT(*) AS n FROM world_event_clears WHERE player_id='browser-claim-recovery-player'")[0]?.n, 0,
+    'claim conflicts must not reserve a reward clear');
+
   const origin = 'http://localhost:5173';
   const preflight = await fetch('http://127.0.0.1:8789/api/player/bootstrap', {
     method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
