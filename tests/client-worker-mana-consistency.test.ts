@@ -22,7 +22,7 @@ const { BattleEngine } = runInNewContext(
     onComplete: (...args: unknown[]) => void,
     initialState: {
       permitId: string;
-      status: 'active';
+      status: 'active' | 'victory' | 'defeat';
       playerHp: number;
       playerMana: number;
       enemyHp: number;
@@ -126,6 +126,37 @@ test('Mana validation rejects negative, fractional, non-finite, and unsafe value
       degen: TEST_DEGEN,
       enemy: TUNNEL_MAW,
     }), /Invalid player Mana/);
+  }
+});
+
+
+
+test('BattleEngine rejects invalid Worker-owned initial snapshots before exposing battle state', () => {
+  const valid = {
+    permitId: 'permit-invalid-start-snapshot',
+    status: 'active' as const,
+    playerHp: 80,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  };
+  const invalidInitialStates = [
+    { ...valid, status: 'victory' as const, enemyHp: 0, turnCount: 1 },
+    { ...valid, status: 'defeat' as const, playerHp: 0, turnCount: 1 },
+    { ...valid, playerHp: 0 },
+    { ...valid, playerMana: -1 },
+    { ...valid, playerMana: TEST_DEGEN.maxMana + 1 },
+    { ...valid, playerMana: 0.5 },
+    { ...valid, enemyHp: 0 },
+    { ...valid, turnCount: Number.MAX_SAFE_INTEGER },
+    { ...valid, permitId: '' },
+  ];
+
+  for (const initialState of invalidInitialStates) {
+    assert.throws(
+      () => new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initialState),
+      /Invalid authoritative battle start state/,
+    );
   }
 });
 
