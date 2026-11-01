@@ -47,7 +47,12 @@ const setup = (
   };
   const api = {
     enabled,
-    completeUnderpass: completeUnderpass ?? (async () => ({ player: {}, worldEvent: {} })),
+    completeUnderpass: completeUnderpass ?? (async () => ({
+      player: { id: 'test-player', level: 1 },
+      reward: { xp: 0, currency: 0, items: [], furniture: [], tier: 'reduced' },
+      levelTransition: { previousLevel: 1, currentLevel: 1 },
+      worldEvent: {},
+    })),
     getUnderpass: async () => ({}),
     getPendingBattleRewards: getPendingBattleRewards ?? (async () => []),
   };
@@ -96,7 +101,12 @@ test('failed Worker completion retains the permit and persists retry across cont
   const fixture = setup(true, async () => {
     attempts += 1;
     if (attempts === 1) throw new Error('transient D1 failure');
-    return { player: {}, worldEvent: {} };
+    return {
+      player: { id: 'test-player', level: 1 },
+      reward: { xp: 0, currency: 0, items: [], furniture: [], tier: 'reduced' },
+      levelTransition: { previousLevel: 1, currentLevel: 1 },
+      worldEvent: {},
+    };
   });
   const first = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   first.battlePermit = { permitId: 'permit-1' };
@@ -173,7 +183,12 @@ test('duplicate victory notifications share one in-flight Worker completion', as
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(attempts, 1, 'duplicate finish/recovery notifications must coalesce before reaching the Worker');
 
-  resolveCompletion({ player: { id: 'test-player', level: 2 }, worldEvent: { cycleId: 'cycle-1' } });
+  resolveCompletion({
+    player: { id: 'test-player', level: 2 },
+    reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
+    levelTransition: { previousLevel: 1, currentLevel: 2 },
+    worldEvent: { cycleId: 'cycle-1' },
+  });
   await Promise.all([first, second]);
 
   assert.equal(attempts, 1);
@@ -188,7 +203,12 @@ test('successful manual reward retry cancels the existing automatic retry timer'
   const fixture = setup(true, async () => {
     attempts += 1;
     if (attempts === 1) throw new Error('temporary network failure');
-    return { player: { id: 'test-player', level: 2 }, worldEvent: {} };
+    return {
+      player: { id: 'test-player', level: 2 },
+      reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
+      levelTransition: { previousLevel: 1, currentLevel: 2 },
+      worldEvent: {},
+    };
   });
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   controller.battlePermit = { permitId: 'permit-manual-retry' };
@@ -239,7 +259,12 @@ test('server-discovered victory recovery retries a not-yet-deployed endpoint wit
       attempts += 1;
       assert.equal(playerId, 'test-player');
       assert.equal(permitId, 'server-only-permit');
-      return { player: { id: playerId }, worldEvent: {} };
+      return {
+        player: { id: playerId, level: 1 },
+        reward: { xp: 0, currency: 0, items: [], furniture: [], tier: 'reduced' },
+        levelTransition: { previousLevel: 1, currentLevel: 1 },
+        worldEvent: {},
+      };
     },
     async (playerId) => {
       discoveries += 1;
@@ -346,7 +371,12 @@ test('a completion already in flight cannot replace a switched account', async (
   assert.equal(requestedPermitId, 'permit-in-flight');
 
   fixture.store.snapshot.id = 'new-player';
-  resolveCompletion({ player: { id: 'test-player', level: 2 }, worldEvent: { cycleId: 'cycle-1' } });
+  resolveCompletion({
+    player: { id: 'test-player', level: 2 },
+    reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
+    levelTransition: { previousLevel: 1, currentLevel: 2 },
+    worldEvent: { cycleId: 'cycle-1' },
+  });
   await finishing;
 
   assert.equal(fixture.store.snapshot.id, 'new-player');

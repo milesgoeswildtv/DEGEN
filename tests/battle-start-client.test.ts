@@ -821,6 +821,7 @@ const validCompletionResult = (worldEvent = validWorldSnapshot()) => ({
     housing: { inventory: [], placements: [] },
   },
   reward: { xp: 0, currency: 0, items: [], furniture: [], tier: 'full' },
+  levelTransition: { previousLevel: 1, currentLevel: 1 },
   worldEvent,
 });
 
