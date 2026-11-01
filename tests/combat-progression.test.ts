@@ -349,3 +349,58 @@ test('combat rules reject universal monster action-resource aliases before resol
     );
   }
 });
+
+
+test('combat rules reject nested monster action resources and safely inspect cyclic signature data', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  const nestedCases = [
+    {
+      path: 'signature.currentMana',
+      enemy: { ...TUNNEL_MAW, signature: { currentMana: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resource_pool',
+      enemy: { ...TUNNEL_MAW, signature: { resource_pool: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.energy',
+      enemy: { ...TUNNEL_MAW, loadout: [{ energy: 1 }] } as typeof TUNNEL_MAW,
+    },
+  ];
+
+  for (const { path, enemy } of nestedCases) {
+    assert.throws(
+      () => resolveCombatTurn({
+        playerHp: TEST_DEGEN.maxHp,
+        playerMana: TEST_DEGEN.maxMana,
+        enemyHp: TUNNEL_MAW.maxHp,
+        ability: free,
+        degen: TEST_DEGEN,
+        enemy,
+      }),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes(`universal action resource (${path})`),
+      `nested monster field ${path} must be rejected before combat resolves`,
+    );
+  }
+
+  const cyclicSignature: Record<string, unknown> = {};
+  cyclicSignature.self = cyclicSignature;
+  cyclicSignature.mana = 1;
+  const cyclicEnemy = { ...TUNNEL_MAW, signature: cyclicSignature } as typeof TUNNEL_MAW;
+
+  assert.throws(
+    () => resolveCombatTurn({
+      playerHp: TEST_DEGEN.maxHp,
+      playerMana: TEST_DEGEN.maxMana,
+      enemyHp: TUNNEL_MAW.maxHp,
+      ability: free,
+      degen: TEST_DEGEN,
+      enemy: cyclicEnemy,
+    }),
+    /universal action resource \(signature\.mana\)/,
+    'cyclic nested monster data must be checked without infinite recursion',
+  );
+});
