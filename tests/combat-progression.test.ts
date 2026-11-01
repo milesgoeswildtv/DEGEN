@@ -368,6 +368,26 @@ test('combat rules reject nested monster action resources and safely inspect cyc
       path: 'loadout.0.energy',
       enemy: { ...TUNNEL_MAW, loadout: [{ energy: 1 }] } as typeof TUNNEL_MAW,
     },
+    {
+      path: 'signature.maxEnergy',
+      enemy: { ...TUNNEL_MAW, signature: { maxEnergy: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.focus',
+      enemy: { ...TUNNEL_MAW, signature: { focus: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resourceAmount',
+      enemy: { ...TUNNEL_MAW, signature: { resourceAmount: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resource_max',
+      enemy: { ...TUNNEL_MAW, signature: { resource_max: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.maxStamina',
+      enemy: { ...TUNNEL_MAW, loadout: [{ maxStamina: 1 }] } as typeof TUNNEL_MAW,
+    },
   ];
 
   for (const { path, enemy } of nestedCases) {
