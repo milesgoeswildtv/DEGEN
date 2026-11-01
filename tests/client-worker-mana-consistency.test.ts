@@ -64,7 +64,7 @@ test('client battle engine and shared Worker resolver agree on one paid turn', (
   const input = {
     playerHp: 80,
     playerMana: TEST_DEGEN.maxMana,
-    enemyHp: 100,
+    enemyHp: TUNNEL_MAW.maxHp,
     ability,
     degen: TEST_DEGEN,
     enemy: TUNNEL_MAW,
