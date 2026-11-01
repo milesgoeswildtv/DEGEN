@@ -447,6 +447,11 @@ test('server-backed battle start accepts a valid authoritative zero-Mana snapsho
   assert.deepEqual(result.initialState, permit.initialState);
 });
 
+test('server-backed battle start rejects a permit without an initial authoritative snapshot', async () => {
+  const permit = { ...validPermit(), initialState: undefined };
+  await assert.rejects(apiReturning(permit), /Missing or malformed authoritative battle start state/);
+});
+
 test('server-backed battle start rejects an expired permit before entering combat', async () => {
   const permit = validPermit();
   permit.expiresAt = new Date(Date.now() - 60_000).toISOString();
