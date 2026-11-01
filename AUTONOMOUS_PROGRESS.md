@@ -1,3 +1,17 @@
+## Latest run — 2026-11-01 (exhaustive reward level-transition regression coverage)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #117 OPEN, unmerged:** continuing `automation/degen/home-trophy-display-v01`; code/test commit `ef06f7826d9e39cd4e25cb1a57389b8eba3b79dc`. This run does not write to main or rewrite branch history.
+- **Task / files changed:** `tests/combat-progression.test.ts` now checks the persisted-reward inverse level reconstruction for every XP remainder across levels 1–24, awards immediately below/at/above each level threshold, zero and multi-level awards, and malformed/non-finite/fractional/unsafe numeric receipt inputs. No combat balance, Worker runtime, economy, schema, or UI behavior changed.
+- **Tests / QA:** exact-head GitHub Actions CI is required for this pushed test change; no result is claimed yet. No local-shell `npm test`, build, Worker check, browser run, production D1 operation, or deployment was performed in this run.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, Worker-owned initialization/action compare-and-swap, reject-before-mutation for unaffordable abilities, exact deduction, zero-cost use at zero, terminal victory/defeat, cost-aware controls, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain represented on main. The legacy `sidekick/degen-mana-foundation-v01` is still divergent (11 ahead / 102 behind main); its 11-commit diff is stale and superseded by main, so no cherry-pick or duplicate Mana branch was created.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, player HP/Mana, enemy HP, action turn-CAS, terminal outcomes/history, audited completion receipts, XP/currency/inventory, and recoverable exactly-once settlement. PR #117 changes receipt presentation/recovery tests only; no client reward authority was introduced.
+- **D1 / migration assumptions:** `wrangler.toml` remains the source of truth for `DB` → `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a colliding `0007_player_sessions.sql`; PR #114's migration preflight is OPEN / unmerged and deliberately does not renumber or choose either migration. No remote D1 command or Worker deploy occurred.
+- **Miles blockers:** explicit `0007` migration sequencing; production Discord/Telegram credentials, controlled identity/session verification, and approved legacy identity-collision policy. Shield PR #20 remains gated on safe schema/auth sequencing; canonical Monster Log v0.11 and approved status rules remain prerequisites before production monster/status content. No canon or balance was invented.
+- **One best next task:** verify exact-head CI for PR #117's exhaustive level-transition test; if green, leave the Home trophy/reward receipt slice ready for normal review and keep schema-backed Shield work gated until the migration decision is explicit.
+
+---
+
 ## Latest run — 2026-11-01 (reload-recoverable Worker reward receipts)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
