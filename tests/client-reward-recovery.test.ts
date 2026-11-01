@@ -475,3 +475,30 @@ test('reward receipt hints stay scoped to their owning player across account swi
   assert.equal(restoredNotices.has('other-player'), false);
   assert.equal(fixture.store.localRewards, 0, 'the client never computes or grants the reward');
 });
+
+
+test('reward receipt deduplication is scoped to player and permit', async () => {
+  const fixture = setup(true, async (playerId) => ({
+    player: { id: playerId, level: 2 },
+    reward: { xp: 75, currency: 30, items: [], furniture: ['tunnel-trophy'], tier: 'full' },
+    levelTransition: { previousLevel: 1, currentLevel: 2 },
+    worldEvent: { cycleId: `${playerId}-cycle` },
+  }));
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  const notices = (controller as unknown as { rewardNotices: Map<string, unknown[]> }).rewardNotices;
+
+  controller.battlePermit = { permitId: 'same-permit-id' };
+  controller.battlePermitOwnerId = 'test-player';
+  await controller.finishBattle('victory');
+  assert.equal(notices.get('test-player')?.length, 1);
+
+  fixture.store.snapshot.id = 'other-player';
+  controller.battlePermit = { permitId: 'same-permit-id' };
+  controller.battlePermitOwnerId = 'other-player';
+  await controller.finishBattle('victory');
+
+  assert.equal(notices.get('test-player')?.length, 1, 'the first account keeps its own receipt');
+  assert.equal(notices.get('other-player')?.length, 1,
+    'the same permit identifier for another account must not suppress its receipt');
+  assert.equal(fixture.store.localRewards, 0, 'receipt presentation never grants client-side rewards');
+});
