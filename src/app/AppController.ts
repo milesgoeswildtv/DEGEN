@@ -301,10 +301,12 @@ export class AppController {
     // A server-backed permit must never fall through to the offline preview
     // initializer. Preserve the permit and return to Underpass so the player
     // can resume from the Worker-owned snapshot instead of simulating locally.
-    if (this.api.enabled && !permit.initialState) {
+    if (this.api.enabled && (
+      !permit.initialState || permit.initialState.permitId !== permit.permitId
+    )) {
       this.navigate('underpass');
       this.setUnderpassActionStatus(
-        'The server did not provide an authoritative battle snapshot. Resume this encounter to safely reconnect.',
+        'The server did not provide a matching authoritative battle snapshot. Resume this encounter to safely reconnect.',
       );
       return;
     }
