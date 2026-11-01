@@ -18,25 +18,24 @@ export interface CombatTurnResult {
   retaliationDamage: number;
 }
 
-const FORBIDDEN_MONSTER_ACTION_RESOURCE_FIELDS = [
-  'mana',
-  'maxMana',
-  'currentMana',
-  'manaCost',
-  'manaPool',
+const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = new Set([
   'resource',
   'resourcePool',
+  'resource_pool',
   'resourceCost',
+  'resource_cost',
   'actionResource',
+  'action_resource',
   'actionPoints',
+  'action_points',
   'energy',
   'stamina',
-] as const;
+]);
 
 const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
   const record = enemy as unknown as Record<string, unknown>;
-  const forbiddenField = FORBIDDEN_MONSTER_ACTION_RESOURCE_FIELDS.find((field) =>
-    Object.prototype.hasOwnProperty.call(record, field));
+  const forbiddenField = Object.keys(record).find((field) =>
+    /mana/i.test(field) || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.has(field));
 
   if (forbiddenField) {
     throw new TypeError(
