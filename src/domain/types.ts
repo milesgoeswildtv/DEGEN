@@ -39,19 +39,25 @@ export interface EnemyDefinition {
 }
 
 // A monster may have archetype-specific signature state, but never a universal
-// action-resource pool or a Mana-priced move. Keep that boundary compile-time
-// visible as the EnemyDefinition grows.
+// action-resource pool or a Mana-priced move. Catch any Mana-named field, including
+// snake_case/capitalization variants, plus common generic resource-pool aliases.
+type KeysContainingMana<T> = {
+  [Key in keyof T]: Key extends string
+    ? Lowercase<Key> extends `${string}mana${string}` ? Key : never
+    : never;
+}[keyof T];
+
 type ForbiddenMonsterActionResourceField =
-  | 'mana'
-  | 'maxMana'
-  | 'currentMana'
-  | 'manaCost'
-  | 'manaPool'
+  | KeysContainingMana<EnemyDefinition>
   | 'resource'
   | 'resourcePool'
+  | 'resource_pool'
   | 'resourceCost'
+  | 'resource_cost'
   | 'actionResource'
+  | 'action_resource'
   | 'actionPoints'
+  | 'action_points'
   | 'energy'
   | 'stamina';
 
