@@ -12,9 +12,9 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 // This browser suite runs after the production build. Keep the initial Map entry
 // small enough that Phaser cannot silently creep back into the first download.
 const builtHtml = readFileSync(resolve(root, 'dist/index.html'), 'utf8');
-const initialScript = builtHtml.match(/<script\\b[^>]*\\bsrc=["']([^"']+\\.js)["'][^>]*>/i)?.[1];
+const initialScript = builtHtml.match(/<script\b[^>]*\bsrc=["']([^"']+\.js)["'][^>]*>/i)?.[1];
 assert.ok(initialScript, 'production build must expose its initial JavaScript entry');
-const initialScriptFile = resolve(root, 'dist', initialScript.replace(/^\\/+/, ''));
+const initialScriptFile = resolve(root, 'dist', initialScript.replace(/^\/+/, ''));
 const initialScriptBytes = statSync(initialScriptFile).size;
 assert.ok(initialScriptBytes <= 100_000,
   `initial Map JavaScript must stay at or below 100000 bytes; got ${initialScriptBytes}`);
