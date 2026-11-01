@@ -18,15 +18,12 @@ export interface CombatTurnResult {
   retaliationDamage: number;
 }
 
-const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = new Set([
-  'actionpoints',
+const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = [
+  'actionpoint',
   'energy',
-  'maxenergy',
   'stamina',
-  'maxstamina',
   'focus',
-  'maxfocus',
-]);
+] as const;
 
 const normalizeMonsterActionResourceField = (field: string): string =>
   field.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -44,7 +41,7 @@ const findForbiddenMonsterActionResource = (
     const normalizedField = normalizeMonsterActionResourceField(field);
     if (/mana/i.test(field)
       || normalizedField.includes('resource')
-      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.has(normalizedField)) {
+      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => normalizedField.includes(alias))) {
       return fieldPath;
     }
 
