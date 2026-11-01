@@ -74,12 +74,34 @@ export class BattleEngine {
     return () => this.listeners.delete(listener);
   }
 
+  // Validate the complete Worker snapshot at the engine boundary as well as the API boundary.
+  // A malformed response must never alter the displayed battle or emit a terminal callback.
+  private isValidAuthoritativeState(result: BattleActionResult): boolean {
+    if (!this.permitId || result.permitId !== this.permitId) return false;
+    if (!Number.isSafeInteger(result.turnCount) || result.turnCount < 0) return false;
+    if (!Number.isSafeInteger(result.playerHp)
+      || result.playerHp < 0 || result.playerHp > this.degen.maxHp) return false;
+    if (!isValidManaState(result.playerMana, this.degen.maxMana)) return false;
+    if (!Number.isSafeInteger(result.enemyHp)
+      || result.enemyHp < 0 || result.enemyHp > this.enemy.maxHp) return false;
+
+    switch (result.status) {
+      case 'active':
+        return result.playerHp > 0 && result.enemyHp > 0 && result.turnCount < Number.MAX_SAFE_INTEGER;
+      case 'victory':
+        return result.turnCount > 0 && result.playerHp > 0 && result.enemyHp === 0;
+      case 'defeat':
+        return result.turnCount > 0 && result.playerHp === 0 && result.enemyHp > 0;
+      default:
+        return false;
+    }
+  }
+
   // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
   applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
     if (this.status !== 'active') return;
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
-    if (!ability) return;
-    if (!this.permitId || result.permitId !== this.permitId) return;
+    if (!ability || !this.isValidAuthoritativeState(result)) return;
     if (result.turnCount !== this.turnCount + 1) {
       this.synchronizeAuthoritativeState(result);
       return;
@@ -120,8 +142,8 @@ export class BattleEngine {
   }
 
   synchronizeAuthoritativeState(result: BattleActionResult): void {
-    if (this.status !== 'active' || !this.permitId || result.permitId !== this.permitId) return;
-    if (!Number.isSafeInteger(result.turnCount) || result.turnCount < this.turnCount) return;
+    if (this.status !== 'active' || !this.isValidAuthoritativeState(result)) return;
+    if (result.turnCount < this.turnCount) return;
 
     // A turn count identifies one immutable combat snapshot. Same-turn retries
     // are idempotent only when every authoritative field agrees; a conflicting
