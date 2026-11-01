@@ -20,22 +20,22 @@ export interface CombatTurnResult {
 
 const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = new Set([
   'resource',
-  'resourcePool',
-  'resource_pool',
-  'resourceCost',
-  'resource_cost',
-  'actionResource',
-  'action_resource',
-  'actionPoints',
-  'action_points',
+  'resourcepool',
+  'resourcecost',
+  'actionresource',
+  'actionpoints',
   'energy',
   'stamina',
 ]);
 
+const normalizeMonsterActionResourceField = (field: string): string =>
+  field.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
   const record = enemy as unknown as Record<string, unknown>;
   const forbiddenField = Object.keys(record).find((field) =>
-    /mana/i.test(field) || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.has(field));
+    /mana/i.test(field)
+    || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.has(normalizeMonsterActionResourceField(field)));
 
   if (forbiddenField) {
     throw new TypeError(

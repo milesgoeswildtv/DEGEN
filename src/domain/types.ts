@@ -47,19 +47,33 @@ type KeysContainingMana<T> = {
     : never;
 }[keyof T];
 
-type ForbiddenMonsterActionResourceField =
-  | KeysContainingMana<EnemyDefinition>
+type NormalizeMonsterActionResourceKey<Key extends string> =
+  Key extends `${infer Prefix}_${infer Suffix}`
+    ? `${NormalizeMonsterActionResourceKey<Prefix>}${NormalizeMonsterActionResourceKey<Suffix>}`
+    : Key extends `${infer Prefix}-${infer Suffix}`
+      ? `${NormalizeMonsterActionResourceKey<Prefix>}${NormalizeMonsterActionResourceKey<Suffix>}`
+      : Lowercase<Key>;
+
+type ForbiddenNormalizedMonsterActionResourceField =
   | 'resource'
-  | 'resourcePool'
-  | 'resource_pool'
-  | 'resourceCost'
-  | 'resource_cost'
-  | 'actionResource'
-  | 'action_resource'
-  | 'actionPoints'
-  | 'action_points'
+  | 'resourcepool'
+  | 'resourcecost'
+  | 'actionresource'
+  | 'actionpoints'
   | 'energy'
   | 'stamina';
+
+type KeysMatchingForbiddenMonsterActionResource<T> = {
+  [Key in keyof T]: Key extends string
+    ? NormalizeMonsterActionResourceKey<Key> extends ForbiddenNormalizedMonsterActionResourceField
+      ? Key
+      : never
+    : never;
+}[keyof T];
+
+type ForbiddenMonsterActionResourceField =
+  | KeysContainingMana<EnemyDefinition>
+  | KeysMatchingForbiddenMonsterActionResource<EnemyDefinition>;
 
 type AssertNoMonsterActionResource<T extends never> = T;
 type _EnemyDefinitionHasNoUniversalActionResource = AssertNoMonsterActionResource<
