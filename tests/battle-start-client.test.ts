@@ -54,6 +54,18 @@ const enterUnderpass = runInNewContext(
   { console: { warn() {} }, Error },
 ) as (this: any) => Promise<void>;
 
+const mountBattleMethod = controllerSource.match(/private mountBattle\(\): void \{([\s\S]*?)\n  \}\n\n  private async useBattleAbility/);
+assert.ok(mountBattleMethod, 'AppController battle mount must remain available for the server-authority regression');
+const battleEngineCreations: unknown[][] = [];
+const TestBattleEngine = function (...args: unknown[]) {
+  battleEngineCreations.push(args);
+  return { subscribe() {} };
+};
+const mountBattle = runInNewContext(
+  stripTypeScriptTypes(`function mountBattle(): void {${mountBattleMethod[1]}\n}\nmountBattle;`, { mode: 'transform' }),
+  { TEST_DEGEN, TUNNEL_MAW, BattleEngine: TestBattleEngine, updateBattleDom() {}, createBattleGame() { return {}; } },
+) as (this: any) => void;
+
 const validPermit = (permitId = 'permit-1') => {
   return {
     permitId, eventKey: 'underpass', cycleId: 'cycle-1', encounterKey: TUNNEL_MAW.id,
