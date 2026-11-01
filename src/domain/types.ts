@@ -83,6 +83,19 @@ type _MonsterResourceSlashSeparatorIsGuarded = AssertMonsterResourceGuard<
     'resource/amount'
   > extends never ? false : true
 >;
+type _MonsterCompoundResourceAliasesAreGuarded = AssertMonsterResourceGuard<
+  Exclude<
+    'actionPointCost' | 'energyRegeneration' | 'staminaSteal' | 'focusRecovery',
+    KeysMatchingForbiddenMonsterActionResource<{
+      signature: {
+        actionPointCost: number;
+        energyRegeneration: number;
+        staminaSteal: number;
+        focusRecovery: number;
+      };
+    }>
+  > extends never ? true : false
+>;
 
 type ForbiddenNormalizedMonsterActionResourceField =
   // The whole generic resource namespace is reserved for Degen-only Mana.
