@@ -323,6 +323,12 @@ test('combat rules reject universal monster action-resource aliases before resol
     'max_mana',
     'current_mana',
     'mana_cost',
+    'm-a-n-a',
+    'm a n a',
+    'm.a.n.a',
+    'm_a_n_a',
+    'm/a/n/a',
+    'M-A_N.A',
     'resource',
     'RESOURCE',
     'resourcePool',
@@ -411,6 +417,10 @@ test('combat rules reject nested monster action resources and safely inspect cyc
   assert.ok(free);
 
   const nestedCases = [
+    {
+      path: 'signature.m-a-n-a',
+      enemy: { ...TUNNEL_MAW, signature: { 'm-a-n-a': 1 } } as typeof TUNNEL_MAW,
+    },
     {
       path: 'signature.currentMana',
       enemy: { ...TUNNEL_MAW, signature: { currentMana: 1 } } as typeof TUNNEL_MAW,
