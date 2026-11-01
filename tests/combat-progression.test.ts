@@ -329,6 +329,8 @@ test('combat rules reject universal monster action-resource aliases before resol
     'm_a_n_a',
     'm/a/n/a',
     'M-A_N.A',
+    'ｍａｎａ',
+    'ＭＡＮＡＣＯＳＴ',
     'resource',
     'RESOURCE',
     'resourcePool',
@@ -424,6 +426,10 @@ test('combat rules reject nested monster action resources and safely inspect cyc
     {
       path: 'signature.currentMana',
       enemy: { ...TUNNEL_MAW, signature: { currentMana: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.ｍａｎａ',
+      enemy: { ...TUNNEL_MAW, signature: { 'ｍａｎａ': 1 } } as typeof TUNNEL_MAW,
     },
     {
       path: 'signature.resource_pool',
