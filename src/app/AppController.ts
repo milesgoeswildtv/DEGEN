@@ -725,7 +725,8 @@ export class AppController {
         this.rememberRewardReceipt(permitId, playerId);
         const currentPlayer = this.store.snapshot;
         const isCurrentPlayer = currentPlayer.id === playerId;
-        if (!this.displayedRewardPermits.has(permitId)) {
+        const displayKey = this.rewardCompletionKey(playerId, permitId);
+        if (!this.displayedRewardPermits.has(displayKey)) {
           const notices = this.rewardNotices.get(playerId) ?? [];
           notices.push({
             playerId,
@@ -737,7 +738,7 @@ export class AppController {
             currentLevel: result.levelTransition.currentLevel,
           });
           this.rewardNotices.set(playerId, notices);
-          this.displayedRewardPermits.add(permitId);
+          this.displayedRewardPermits.add(displayKey);
         }
         if (isCurrentPlayer) {
           this.store.replaceFromServer(result.player);
@@ -796,7 +797,7 @@ export class AppController {
         currentLevel: playerAfterReward.level,
       });
       this.rewardNotices.set(playerAfterReward.id, notices);
-      this.displayedRewardPermits.add(permitId);
+      this.displayedRewardPermits.add(this.rewardCompletionKey(playerAfterReward.id, permitId));
       this.store.markBossDefeated(TUNNEL_MAW.id);
       this.underpassEvent = getPreviewUnderpass();
     }
