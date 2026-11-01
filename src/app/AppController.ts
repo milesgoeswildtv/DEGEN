@@ -313,8 +313,8 @@ export class AppController {
       this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
         void this.finishBattle(status);
       }, this.api.enabled ? permit.initialState : undefined);
-    } catch {
-      if (!this.api.enabled) throw new Error('Unable to initialize offline battle.');
+    } catch (error) {
+      if (!this.api.enabled) throw error;
       this.navigate('underpass');
       this.setUnderpassActionStatus(
         'The server battle snapshot was invalid. Resume this encounter to safely reconnect.',
