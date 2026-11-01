@@ -660,7 +660,7 @@ try {
   sql("UPDATE battle_permits SET reward_claimed_at = CURRENT_TIMESTAMP WHERE id = 'permit-live-claim'");
   const liveClaim = await complete('permit-live-claim');
   assert.equal(liveClaim.status, 409, JSON.stringify(liveClaim.body));
-  assert.equal(liveClaim.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal(liveClaim.body?.error, 'Battle reward is already being claimed.');
   assert.equal('reward' in (liveClaim.body ?? {}), false);
   const livePermitState = sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
       reward_clear_number, completed_at
@@ -693,7 +693,7 @@ try {
     WHERE id = 'permit-completed-claim:victory'`);
   const inconsistentClaim = await complete('permit-completed-claim');
   assert.equal(inconsistentClaim.status, 409, JSON.stringify(inconsistentClaim.body));
-  assert.equal(inconsistentClaim.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal(inconsistentClaim.body?.error, 'Battle reward claim is not available.');
   assert.equal('reward' in (inconsistentClaim.body ?? {}), false);
   assert.equal('player' in (inconsistentClaim.body ?? {}), false);
   assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
@@ -863,7 +863,7 @@ try {
   assert.ok(staleRaceResults.some(result => result.status === 200),
     'at least one concurrent stale-lease claimant must settle or replay the receipt');
   for (const result of staleRaceResults.filter(result => result.status === 409)) {
-    assert.equal(result.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+    assert.equal(result.body?.error, 'Battle reward is already being claimed.');
   }
 
   const staleRaceRetry = await complete('permit-stale-race');
@@ -921,7 +921,7 @@ try {
   assert.ok(freshRaceResults.every(result => result.status === 200 || result.status === 409),
     JSON.stringify(freshRaceResults));
   for (const result of freshRaceResults.filter(result => result.status === 409)) {
-    assert.equal(result.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+    assert.equal(result.body?.error, 'Battle reward is already being claimed.');
     assert.equal('reward' in (result.body ?? {}), false);
     assert.equal('player' in (result.body ?? {}), false);
   }
@@ -997,7 +997,7 @@ try {
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0;
   const missingLeaseTime = await complete('permit-missing-claim-time');
   assert.equal(missingLeaseTime.status, 409, JSON.stringify(missingLeaseTime.body));
-  assert.equal(missingLeaseTime.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal(missingLeaseTime.body?.error, 'Battle reward claim is not available.');
   assert.equal('reward' in (missingLeaseTime.body ?? {}), false);
   assert.equal('player' in (missingLeaseTime.body ?? {}), false);
   assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
@@ -1031,7 +1031,7 @@ try {
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0;
   const invalidLeaseTime = await complete('permit-invalid-claim-time');
   assert.equal(invalidLeaseTime.status, 409, JSON.stringify(invalidLeaseTime.body));
-  assert.equal(invalidLeaseTime.body?.error, 'Battle reward is already being claimed, or the permit expired.');
+  assert.equal(invalidLeaseTime.body?.error, 'Battle reward claim is not available.');
   assert.equal('reward' in (invalidLeaseTime.body ?? {}), false);
   assert.equal('player' in (invalidLeaseTime.body ?? {}), false);
   assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
@@ -1073,6 +1073,7 @@ try {
     WHERE player_id = 'qa-player' AND event_key = 'underpass' AND cycle_id = 'qa-cycle'`)[0]?.full_reward_clears ?? 0;
   const nonnormalizedLeaseResponse = await complete('permit-nonnormalized-claim-time');
   assert.equal(nonnormalizedLeaseResponse.status, 409, JSON.stringify(nonnormalizedLeaseResponse.body));
+  assert.equal(nonnormalizedLeaseResponse.body?.error, 'Battle reward claim is not available.');
   assert.equal('reward' in (nonnormalizedLeaseResponse.body ?? {}), false);
   assert.equal('player' in (nonnormalizedLeaseResponse.body ?? {}), false);
   assert.deepEqual(sql(`SELECT reward_state, reward_claim_token, reward_claimed_at,
