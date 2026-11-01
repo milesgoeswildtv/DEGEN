@@ -55,7 +55,7 @@ const findForbiddenMonsterActionResource = (
   return undefined;
 };
 
-const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
+export const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
   const forbiddenField = findForbiddenMonsterActionResource(enemy, '', new WeakSet<object>());
 
   if (forbiddenField) {
