@@ -10,6 +10,7 @@ import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
   advanceLevel,
+  previousLevelForReward,
   underpassRewardForClear,
   xpNeededForLevel,
 } from '../src/game/progression.ts';
@@ -292,4 +293,22 @@ test('monster definitions do not expose a Mana resource', () => {
     [],
     'monster combat state must not acquire a Mana-equivalent field',
   );
+});
+
+
+test('persisted reward progression reconstructs its original level transition', () => {
+  for (let level = 1; level <= 12; level += 1) {
+    const threshold = xpNeededForLevel(level);
+    for (let xp = 0; xp < threshold; xp += 17) {
+      for (const award of [0, 3, 10, 75, 250, 1000]) {
+        const after = advanceLevel(level, xp, award);
+        assert.equal(previousLevelForReward(after.level, after.xp, award), level,
+          `level ${level}, XP ${xp}, award ${award}`);
+      }
+    }
+  }
+  assert.equal(previousLevelForReward(2, 25, 75), 1);
+  assert.equal(previousLevelForReward(2, 100, 75), 2);
+  assert.equal(previousLevelForReward(2, 200, 75), null);
+  assert.equal(previousLevelForReward(0, 0, 75), null);
 });

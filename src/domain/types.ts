@@ -121,5 +121,7 @@ export interface BattleActionResult {
 export interface BattleCompletionResult {
   player: PlayerState;
   reward: BattleReward;
+  // Worker-persisted progression at award time, stable across receipt replay.
+  levelTransition: { previousLevel: number; currentLevel: number };
   worldEvent: WorldEventSnapshot;
 }
