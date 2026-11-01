@@ -58,12 +58,9 @@ type NormalizeMonsterActionResourceKey<Key extends string> =
       : Lowercase<Key>;
 
 type ForbiddenNormalizedMonsterActionResourceField =
-  | 'resource'
-  | 'resourcepool'
-  | 'resourcecost'
-  | 'resourceamount'
-  | 'resourcemax'
-  | 'actionresource'
+  // The whole generic resource namespace is reserved for Degen-only Mana.
+  // Catch cost, capacity, regeneration, drain, theft, and future aliases alike.
+  | `${string}resource${string}`
   | 'actionpoints'
   | 'energy'
   | 'maxenergy'
