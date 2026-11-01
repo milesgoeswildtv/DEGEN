@@ -31,11 +31,30 @@ const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = new Set([
 const normalizeMonsterActionResourceField = (field: string): string =>
   field.toLowerCase().replace(/[^a-z0-9]/g, '');
 
+const findForbiddenMonsterActionResource = (
+  value: unknown,
+  path: string,
+  visited: WeakSet<object>,
+): string | undefined => {
+  if (value === null || typeof value !== 'object' || visited.has(value)) return undefined;
+  visited.add(value);
+
+  for (const [field, nestedValue] of Object.entries(value)) {
+    const fieldPath = path ? `${path}.${field}` : field;
+    if (/mana/i.test(field)
+      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.has(normalizeMonsterActionResourceField(field))) {
+      return fieldPath;
+    }
+
+    const nestedForbiddenField = findForbiddenMonsterActionResource(nestedValue, fieldPath, visited);
+    if (nestedForbiddenField) return nestedForbiddenField;
+  }
+
+  return undefined;
+};
+
 const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
-  const record = enemy as unknown as Record<string, unknown>;
-  const forbiddenField = Object.keys(record).find((field) =>
-    /mana/i.test(field)
-    || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.has(normalizeMonsterActionResourceField(field)));
+  const forbiddenField = findForbiddenMonsterActionResource(enemy, '', new WeakSet<object>());
 
   if (forbiddenField) {
     throw new TypeError(
