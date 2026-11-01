@@ -3,7 +3,6 @@ import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
 import { WORLD_LOCATIONS } from '../data/world';
 import { bindCityViewport, type CityCamera } from '../ui/cityViewport';
 import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
-import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
@@ -60,8 +59,9 @@ export class AppController {
   ) {}
 
   async start(): Promise<void> {
-    await this.refreshWorld();
+    // Render the Map immediately; live world state can synchronize in the background.
     this.render();
+    void this.refreshWorld(true);
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
       const localPending = new Set(this.pendingRewardPermits(playerId));
@@ -79,6 +79,11 @@ export class AppController {
     if (route !== 'battle') this.destroyBattle();
     this.route = route;
     this.render();
+    this.focusRouteContent();
+  }
+
+  private focusRouteContent(): void {
+    this.root.querySelector<HTMLElement>('main.screen')?.focus();
   }
 
   private render(): void {
@@ -120,7 +125,7 @@ export class AppController {
     }
     if (this.route === 'home') this.bindHousing();
     if (this.route === 'underpass') this.bindUnderpass();
-    if (this.route === 'battle') this.mountBattle();
+    if (this.route === 'battle') void this.mountBattle();
   }
 
   private bindCommonNavigation(): void {
@@ -293,17 +298,17 @@ export class AppController {
     }
   }
 
-  private mountBattle(): void {
+  private async mountBattle(): Promise<void> {
+    if (this.battleEngine) return;
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     const permit = this.battlePermit;
     if (!parent || !permit) return;
 
-    this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+    const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
       void this.finishBattle(status);
     }, this.api.enabled ? permit.initialState : undefined);
-
-    this.battleEngine.subscribe(updateBattleDom);
-    this.battleGame = createBattleGame(parent, this.battleEngine);
+    this.battleEngine = engine;
+    engine.subscribe(updateBattleDom);
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -311,6 +316,25 @@ export class AppController {
         if (ability) void this.useBattleAbility(ability);
       });
     });
+
+    this.setBattleActionStatus('Loading battle scene…');
+    try {
+      // Phaser is only needed once a player enters a Degen encounter. Keep it out
+      // of the initial map/home route bundle for faster mobile and Activity startup.
+      const { createBattleGame } = await import('../game/createBattleGame');
+      if (this.route !== 'battle' || this.battleEngine !== engine || !parent.isConnected) return;
+      this.battleGame = createBattleGame(parent, engine);
+      this.setBattleActionStatus();
+    } catch (error) {
+      if (this.battleEngine === engine) {
+        this.battleEngine = undefined;
+        this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
+          button.disabled = true;
+        });
+        this.setBattleActionStatus('Battle visuals could not load. Return to the Underpass and try again.');
+      }
+      console.error('Could not load the battle renderer.', error);
+    }
   }
 
   private async useBattleAbility(abilityId: string): Promise<void> {
