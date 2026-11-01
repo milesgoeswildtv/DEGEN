@@ -42,10 +42,13 @@ export class BattleEngine {
     this.degen = degen;
     this.enemy = enemy;
     this.onComplete = onComplete;
+    this.permitId = initialState?.permitId;
+    if (initialState && (!this.isValidAuthoritativeState(initialState) || initialState.status !== 'active')) {
+      throw new Error('Invalid authoritative battle start state.');
+    }
     this.playerHp = initialState?.playerHp ?? degen.maxHp;
     this.playerMana = initialState?.playerMana ?? degen.maxMana;
     this.turnCount = initialState?.turnCount ?? 0;
-    this.permitId = initialState?.permitId;
     this.enemyHp = initialState?.enemyHp ?? enemy.maxHp;
     this.status = initialState?.status ?? 'active';
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
