@@ -43,7 +43,14 @@ export class BattleEngine {
     this.enemy = enemy;
     this.onComplete = onComplete;
     this.permitId = initialState?.permitId;
-    if (initialState && (!this.isValidAuthoritativeState(initialState) || initialState.status !== 'active')) {
+    // Distinguish an omitted state (offline preview) from a supplied but malformed
+    // Worker payload. In particular, null must never silently create an offline battle.
+    if (initialState !== undefined && (
+      !initialState
+      || typeof initialState !== 'object'
+      || !this.isValidAuthoritativeState(initialState)
+      || initialState.status !== 'active'
+    )) {
       throw new Error('Invalid authoritative battle start state.');
     }
     this.playerHp = initialState?.playerHp ?? degen.maxHp;
@@ -80,7 +87,9 @@ export class BattleEngine {
   // Validate the complete Worker snapshot at the engine boundary as well as the API boundary.
   // A malformed response must never alter the displayed battle or emit a terminal callback.
   private isValidAuthoritativeState(result: BattleActionResult): boolean {
-    if (!this.permitId || result.permitId !== this.permitId) return false;
+    if (!result || typeof result !== 'object') return false;
+    if (typeof this.permitId !== 'string' || this.permitId.trim().length === 0) return false;
+    if (typeof result.permitId !== 'string' || result.permitId !== this.permitId) return false;
     if (!Number.isSafeInteger(result.turnCount) || result.turnCount < 0) return false;
     if (!Number.isSafeInteger(result.playerHp)
       || result.playerHp < 0 || result.playerHp > this.degen.maxHp) return false;
