@@ -130,6 +130,82 @@ test('Mana validation rejects negative, fractional, non-finite, and unsafe value
 });
 
 
+test('malformed authoritative snapshots cannot overwrite combat state or forge terminal outcomes', () => {
+  let completions = 0;
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => { completions += 1; }, {
+    permitId: 'permit-malformed-snapshot',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const before = {
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+    log: Array.from(engine.snapshot.log),
+  };
+  const invalidSnapshots = [
+    { permitId: 'permit-malformed-snapshot', status: 'active' as const, playerHp: 70, playerMana: -1, enemyHp: 63, turnCount: 1 },
+    { permitId: 'permit-malformed-snapshot', status: 'active' as const, playerHp: 70, playerMana: TEST_DEGEN.maxMana + 1, enemyHp: 63, turnCount: 1 },
+    { permitId: 'permit-malformed-snapshot', status: 'active' as const, playerHp: 70, playerMana: 0.5, enemyHp: 63, turnCount: 1 },
+    { permitId: 'permit-malformed-snapshot', status: 'victory' as const, playerHp: 0, playerMana: 4, enemyHp: 0, turnCount: 1 },
+    { permitId: 'permit-malformed-snapshot', status: 'defeat' as const, playerHp: 0, playerMana: 4, enemyHp: 0, turnCount: 1 },
+  ];
+
+  for (const invalid of invalidSnapshots) engine.synchronizeAuthoritativeState(invalid);
+
+  assert.deepEqual({
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+    log: Array.from(engine.snapshot.log),
+  }, before, 'invalid Mana and impossible terminal HP combinations must be ignored');
+  assert.equal(completions, 0, 'malformed terminal snapshots cannot emit completion');
+});
+
+test('an authoritative action with over-cap Mana is ignored before the client presents a killing blow', () => {
+  let completions = 0;
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => { completions += 1; }, {
+    permitId: 'permit-invalid-action-result',
+    status: 'active',
+    playerHp: 80,
+    playerMana: 8,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const before = {
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+  };
+
+  engine.applyAuthoritativeAction('crack', {
+    permitId: 'permit-invalid-action-result',
+    status: 'victory',
+    playerHp: 80,
+    playerMana: TEST_DEGEN.maxMana + 1,
+    enemyHp: 0,
+    turnCount: 1,
+  });
+
+  assert.deepEqual({
+    status: engine.snapshot.status,
+    playerHp: engine.snapshot.playerHp,
+    playerMana: engine.snapshot.playerMana,
+    enemyHp: engine.snapshot.enemyHp,
+    turnCount: engine.snapshot.turnCount,
+  }, before);
+  assert.equal(completions, 0, 'invalid authoritative results cannot trigger reward completion');
+});
+
 test('an out-of-order stale Worker snapshot cannot roll back newer HP, Mana, enemy HP, or turn count', () => {
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
     permitId: 'permit-stale-snapshot',
