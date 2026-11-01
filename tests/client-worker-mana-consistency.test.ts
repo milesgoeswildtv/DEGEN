@@ -20,7 +20,7 @@ const { BattleEngine } = runInNewContext(
     degen: typeof TEST_DEGEN,
     enemy: typeof TUNNEL_MAW,
     onComplete: (...args: unknown[]) => void,
-    initialState: {
+    initialState?: {
       permitId: string;
       status: 'active' | 'victory' | 'defeat';
       playerHp: number;
@@ -57,27 +57,21 @@ const { BattleEngine } = runInNewContext(
   };
 };
 
-test('client battle engine and shared Worker resolver agree on one paid turn', () => {
+test('client battle engine and shared Worker resolver agree on one offline preview turn', () => {
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
   assert.ok(ability);
+  const degen = { ...TEST_DEGEN, maxHp: 80 };
 
   const input = {
-    playerHp: 80,
-    playerMana: TEST_DEGEN.maxMana,
+    playerHp: degen.maxHp,
+    playerMana: degen.maxMana,
     enemyHp: TUNNEL_MAW.maxHp,
     ability,
-    degen: TEST_DEGEN,
+    degen,
     enemy: TUNNEL_MAW,
   };
   const expected = resolveCombatTurn(input);
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
-    permitId: 'local-consistency-check',
-    status: 'active',
-    playerHp: input.playerHp,
-    playerMana: input.playerMana,
-    enemyHp: input.enemyHp,
-    turnCount: 0,
-  });
+  const engine = new BattleEngine(degen, TUNNEL_MAW, () => undefined);
 
   engine.useAbility(ability.id);
 
@@ -97,6 +91,45 @@ test('client battle engine and shared Worker resolver agree on one paid turn', (
       turnCount: 1,
     },
   );
+});
+
+test('server-backed BattleEngine never resolves local actions or local rewards', () => {
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const completions: unknown[][] = [];
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (...args) => {
+    completions.push(args);
+  }, {
+    permitId: 'permit-server-owned-action',
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: 1,
+    turnCount: 0,
+  });
+  const before = engine.snapshot;
+
+  engine.useAbility(ability.id);
+
+  assert.deepEqual(
+    {
+      status: engine.snapshot.status,
+      playerHp: engine.snapshot.playerHp,
+      playerMana: engine.snapshot.playerMana,
+      enemyHp: engine.snapshot.enemyHp,
+      turnCount: engine.snapshot.turnCount,
+      log: Array.from(engine.snapshot.log),
+    },
+    {
+      status: before.status,
+      playerHp: before.playerHp,
+      playerMana: before.playerMana,
+      enemyHp: before.enemyHp,
+      turnCount: before.turnCount,
+      log: Array.from(before.log),
+    },
+  );
+  assert.deepEqual(completions, [], 'a server-backed permit cannot emit a client-computed victory/reward');
 });
 
 test('Mana validation rejects negative, fractional, non-finite, and unsafe values', () => {

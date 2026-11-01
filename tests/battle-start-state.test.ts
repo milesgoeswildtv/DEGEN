@@ -49,13 +49,33 @@ test('BattleEngine initializes from the Worker snapshot instead of prototype def
   assert.equal(engine.snapshot.turnCount, 0);
 });
 
-test('a zero-Mana battle remains active and zero-cost abilities remain usable', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({ playerMana: 0 }));
-  engine.useAbility('slash');
+test('a zero-Mana server-backed battle accepts an authoritative zero-cost action', () => {
+  const initial = startState({ playerMana: 0 });
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
+  assert.ok(ability);
+  assert.equal(ability.manaCost, 0);
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initial);
+  const resolved = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    enemyHp: initial.enemyHp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+
+  engine.applyAuthoritativeAction(ability.id, {
+    permitId: initial.permitId,
+    status: resolved.status,
+    playerHp: resolved.playerHp,
+    playerMana: resolved.playerMana,
+    enemyHp: resolved.enemyHp,
+    turnCount: 1,
+  });
 
   assert.equal(engine.snapshot.status, 'active');
   assert.equal(engine.snapshot.playerMana, 0);
-  assert.equal(engine.snapshot.enemyHp, 22);
+  assert.equal(engine.snapshot.enemyHp, resolved.enemyHp);
   assert.equal(engine.snapshot.turnCount, 1);
 });
 
@@ -72,8 +92,9 @@ test('the client snapshot follows authoritative action HP, Mana, and enemy HP', 
   assert.equal(engine.snapshot.turnCount, 1);
 });
 
-test('an unaffordable local preview action changes neither state nor turn count', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({ playerMana: 0 }));
+test('an unaffordable offline preview action changes neither state nor turn count', () => {
+  const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0 };
+  const engine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => undefined);
   const before = engine.snapshot;
   engine.useAbility('crack');
 

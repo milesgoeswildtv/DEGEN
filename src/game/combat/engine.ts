@@ -177,7 +177,9 @@ export class BattleEngine {
   }
 
   useAbility(abilityId: string): void {
-    if (this.status !== 'active') return;
+    // A permit means Worker/D1 owns every action and terminal outcome.
+    // Local simulation and its prototype reward callback are offline-preview only.
+    if (this.permitId || this.status !== 'active') return;
 
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
     if (!ability) return;
