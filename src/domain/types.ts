@@ -38,6 +38,28 @@ export interface EnemyDefinition {
   damage: number;
 }
 
+// A monster may have archetype-specific signature state, but never a universal
+// action-resource pool or a Mana-priced move. Keep that boundary compile-time
+// visible as the EnemyDefinition grows.
+type ForbiddenMonsterActionResourceField =
+  | 'mana'
+  | 'maxMana'
+  | 'currentMana'
+  | 'manaCost'
+  | 'manaPool'
+  | 'resource'
+  | 'resourcePool'
+  | 'resourceCost'
+  | 'actionResource'
+  | 'actionPoints'
+  | 'energy'
+  | 'stamina';
+
+type AssertNoMonsterActionResource<T extends never> = T;
+type _EnemyDefinitionHasNoUniversalActionResource = AssertNoMonsterActionResource<
+  Extract<keyof EnemyDefinition, ForbiddenMonsterActionResourceField>
+>;
+
 export interface LocationDefinition {
   id: string;
   name: string;
