@@ -75,6 +75,9 @@ export class AppController {
     this.render();
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
+      for (const permitId of this.rewardReceiptPermits(playerId)) {
+        void this.queueRewardCompletion(permitId, playerId);
+      }
       const localPending = new Set(this.pendingRewardPermits(playerId));
       for (const permitId of localPending) void this.queueRewardCompletion(permitId, playerId);
       void this.discoverPendingBattleRewards(playerId);
@@ -161,6 +164,7 @@ export class AppController {
     if (!notices || notices[0]?.permitId !== permitId) return;
 
     notices.shift();
+    this.forgetRewardReceipt(permitId, playerId);
     if (notices.length === 0) this.rewardNotices.delete(playerId);
     this.root.querySelector?.('[data-battle-reward-receipt]')?.remove();
     this.renderRewardNotice();
@@ -625,6 +629,42 @@ export class AppController {
     }
   }
 
+  private rewardReceiptKey(playerId: string): string {
+    return `degen.reward.receipts.v1:${playerId}`;
+  }
+
+  private rewardReceiptPermits(playerId: string): string[] {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(this.rewardReceiptKey(playerId)) ?? '[]');
+      if (!Array.isArray(parsed)) return [];
+      return [...new Set(parsed.filter((id): id is string =>
+        typeof id === 'string' && id.trim().length > 0 && id === id.trim() && id.length <= 256))];
+    } catch {
+      return [];
+    }
+  }
+
+  private rememberRewardReceipt(permitId: string, playerId: string): void {
+    try {
+      const ids = this.rewardReceiptPermits(playerId);
+      if (!ids.includes(permitId)) {
+        localStorage.setItem(this.rewardReceiptKey(playerId), JSON.stringify([...ids, permitId]));
+      }
+    } catch (error) {
+      console.warn('Unable to persist battle receipt display hint.', error);
+    }
+  }
+
+  private forgetRewardReceipt(permitId: string, playerId: string): void {
+    try {
+      localStorage.setItem(this.rewardReceiptKey(playerId), JSON.stringify(
+        this.rewardReceiptPermits(playerId).filter((id) => id !== permitId),
+      ));
+    } catch (error) {
+      console.warn('Unable to acknowledge battle receipt display hint.', error);
+    }
+  }
+
   private rememberPendingReward(permitId: string, playerId: string): void {
     try {
       const ids = this.pendingRewardPermits(playerId);
@@ -680,6 +720,8 @@ export class AppController {
         const result = await this.api.completeUnderpass(playerId, permitId);
         if (!result) throw new Error('Missing authoritative battle completion response.');
         this.clearRewardCompletionRetry(key);
+        // Persist only the permit ID; every reload replays the validated receipt with the Worker.
+        this.rememberRewardReceipt(permitId, playerId);
         const currentPlayer = this.store.snapshot;
         const isCurrentPlayer = currentPlayer.id === playerId;
         if (!this.displayedRewardPermits.has(permitId)) {
@@ -690,8 +732,8 @@ export class AppController {
             reward: result.reward,
             // If another account is active, its level is not valid history for this receipt.
             // Use the authoritative result level rather than inventing a transition.
-            previousLevel: isCurrentPlayer ? currentPlayer.level : result.player.level,
-            currentLevel: result.player.level,
+            previousLevel: result.levelTransition.previousLevel,
+            currentLevel: result.levelTransition.currentLevel,
           });
           this.rewardNotices.set(playerId, notices);
           this.displayedRewardPermits.add(permitId);

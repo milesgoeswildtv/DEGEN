@@ -2,7 +2,7 @@
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
 import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
-import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear, xpNeededForLevel } from '../src/game/progression';
+import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, previousLevelForReward, underpassRewardForClear, xpNeededForLevel } from '../src/game/progression';
 import { validateHousingPlacements } from './housingQuantityGuard';
 
 interface Env {
@@ -890,7 +890,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
   type ReceiptRow = {
     cycle_id: string; encounter_key: string; reward_state: 'pending' | 'claiming' | 'awarded';
     reward_clear_number: number | null; reward_xp: number | null; reward_currency: number | null;
-    reward_tier: 'full' | 'reduced' | null;
+    reward_tier: 'full' | 'reduced' | null; reward_level: number | null; reward_remaining_xp: number | null;
   };
   type ValidatedReceiptRow = BattlePermitStateRow & ReceiptRow & {
     permit_id: string;
@@ -964,6 +964,11 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     const rewardCurrency = row.reward_currency;
     const rewardLevel = row.reward_level;
     const remainingXp = row.reward_remaining_xp;
+    const previousLevel = previousLevelForReward(
+      rewardLevel ?? Number.NaN,
+      remainingXp ?? Number.NaN,
+      rewardXp ?? Number.NaN,
+    );
     // A receipt's sequence number must have actually been reached by this player's
     // persisted clear counter for the same event cycle; canonical reward values alone
     // cannot legitimize a forged, far-future clear number.
@@ -978,6 +983,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
       || !isSafeIntegerBetween(xpNeededForLevel(rewardLevel), 1, Number.MAX_SAFE_INTEGER)
       || !isSafeIntegerBetween(remainingXp, 0, Number.MAX_SAFE_INTEGER)
       || remainingXp >= xpNeededForLevel(rewardLevel)
+      || previousLevel === null
       || (row.reward_tier !== 'full' && row.reward_tier !== 'reduced')
       || typeof row.completed_at !== 'string' || row.completed_at.trim().length === 0
       || typeof row.reward_claim_token !== 'string' || row.reward_claim_token.trim().length === 0
@@ -1017,12 +1023,20 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     const cycle = await env.DB.prepare(`SELECT id, event_key, opens_at, closes_at FROM world_event_cycles WHERE id = ?`)
       .bind(row.cycle_id).first<CycleRow>();
     const event = cycle ? await worldSnapshot(env.DB, input.playerId!, cycle) : await worldSnapshot(env.DB, input.playerId!);
+    const previousLevel = previousLevelForReward(
+      row.reward_level ?? Number.NaN,
+      row.reward_remaining_xp ?? Number.NaN,
+      row.reward_xp ?? Number.NaN,
+    );
+    if (previousLevel === null || row.reward_level === null) {
+      return fail(request, env, 'Battle reward progression receipt is invalid.', 409);
+    }
     const full = row.reward_tier === 'full';
     return json(request, env, { player, reward: {
       xp: row.reward_xp ?? 0, currency: row.reward_currency ?? 0,
       items: full ? ['underpass-scrap'] : [], furniture: full ? ['tunnel-trophy'] : [],
       tier: row.reward_tier ?? 'reduced',
-    }, worldEvent: event });
+    }, levelTransition: { previousLevel, currentLevel: row.reward_level }, worldEvent: event });
   };
   if (receipt.reward_state === 'awarded') {
     if (!isValidAwardedReceipt(receipt)) return fail(request, env, 'Battle reward receipt is invalid.', 409);
