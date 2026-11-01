@@ -1,3 +1,17 @@
+## Latest run — 2026-11-01 (close generic monster resource aliases)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **Current branch / PR:** `automation/degen/monster-resource-boundary-v01`, PR #122, based directly on current main; remains PUSHED / OPEN / UNMERGED.
+- **Task / files changed:** `src/domain/types.ts`, `src/game/combat/rules.ts`, and `tests/combat-progression.test.ts`. The compile-time and shared runtime monster guard now rejects any normalized field name containing the generic `resource` namespace, not just a finite list of pool/cost/max aliases. Regression cases cover resource regeneration, theft, drain, recovery, restore, and gain at the top level and inside nested signature/loadout objects. Existing Degen-only Mana, zero-cost, terminal battle, and cycle-safe inspection behavior is unchanged.
+- **Tests:** added deterministic cases; exact-head CI is required after this commit. No local shell execution was available through the repository connector, so no local `npm test`, `npm run build`, or `npm run check:worker` result is claimed.
+- **Mana status:** COMPLETE / MERGED on main; this is a defensive namespace guard, not a new resource system. Monsters still have no Mana or generic universal action-resource pool, and zero Mana does not revert or end a Degen encounter.
+- **Battle authority / reward idempotency:** unchanged; Worker/D1 still owns permit state, action CAS, terminal outcomes, audited receipts, and exactly-once reward settlement.
+- **D1 / migration assumptions:** no schema, migration, Worker route, or deployment configuration changed. Main's tracked Mana migrations remain `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql`; the separate `0007` inventory/auth collision remains unresolved and guarded by open PR #114.
+- **Miles blocker:** no new canon decision required; platform auth credentials/identity policy and the `0007` migration sequence remain existing release gates.
+- **Next task:** run and inspect exact-head CI for PR #122; then review the open reward-receipt/trophy vertical-slice PR #117 without merging or deploying.
+
+---
+
 ## Latest run — 2026-11-01 (verify recursive monster-resource boundary)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`. Current main remains the base of PR #122; the main progress log had not yet caught up with this merge, so this entry records the exact current ref.
