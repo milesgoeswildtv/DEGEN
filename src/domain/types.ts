@@ -96,10 +96,19 @@ type _MonsterCompoundResourceAliasesAreGuarded = AssertMonsterResourceGuard<
     }>
   > extends never ? true : false
 >;
+type _MonsterManaSeparatorAliasesAreGuarded = AssertMonsterResourceGuard<
+  Exclude<
+    'm-a-n-a' | 'M_A.N-A',
+    KeysMatchingForbiddenMonsterActionResource<{
+      signature: { 'm-a-n-a': number; 'M_A.N-A': number };
+    }>
+  > extends never ? true : false
+>;
 
 type ForbiddenNormalizedMonsterActionResourceField =
-  // The whole generic resource namespace is reserved for Degen-only Mana.
+  // Normalize separators before checking every Mana/resource namespace alias.
   // Catch cost, capacity, regeneration, drain, theft, and future aliases alike.
+  | `${string}mana${string}`
   | `${string}resource${string}`
   | `${string}actionpoint${string}`
   | `${string}energy${string}`
