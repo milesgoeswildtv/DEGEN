@@ -88,13 +88,10 @@ type ForbiddenNormalizedMonsterActionResourceField =
   // The whole generic resource namespace is reserved for Degen-only Mana.
   // Catch cost, capacity, regeneration, drain, theft, and future aliases alike.
   | `${string}resource${string}`
-  | 'actionpoints'
-  | 'energy'
-  | 'maxenergy'
-  | 'stamina'
-  | 'maxstamina'
-  | 'focus'
-  | 'maxfocus';
+  | `${string}actionpoint${string}`
+  | `${string}energy${string}`
+  | `${string}stamina${string}`
+  | `${string}focus${string}`;
 
 type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer Item)[]
   ? KeysMatchingForbiddenMonsterActionResource<Item>
