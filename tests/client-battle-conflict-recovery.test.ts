@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaCost, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaCost, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 class TestGameApiProtocolError extends Error {
   constructor(message: string) {
@@ -30,7 +30,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class BattleEngine\b/g, 'class BattleEngine');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,
