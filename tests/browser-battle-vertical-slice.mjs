@@ -1,13 +1,24 @@
 // Isolated Chromium + Vite + local Wrangler/D1 vertical slice. NEVER use --remote.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+// This browser suite runs after the production build. Keep the initial Map entry
+// small enough that Phaser cannot silently creep back into the first download.
+const builtHtml = readFileSync(resolve(root, 'dist/index.html'), 'utf8');
+const initialScript = builtHtml.match(/<script\\b[^>]*\\bsrc=["']([^"']+\\.js)["'][^>]*>/i)?.[1];
+assert.ok(initialScript, 'production build must expose its initial JavaScript entry');
+const initialScriptFile = resolve(root, 'dist', initialScript.replace(/^\\/+/, ''));
+const initialScriptBytes = statSync(initialScriptFile).size;
+assert.ok(initialScriptBytes <= 100_000,
+  `initial Map JavaScript must stay at or below 100000 bytes; got ${initialScriptBytes}`);
+console.log(`PASS initial Map JavaScript budget: ${initialScriptBytes} bytes (<=100000)`);
 const scratch = mkdtempSync(join(tmpdir(), 'degen-browser-'));
 const persist = join(scratch, 'd1');
 const wrangler = resolve(root, 'node_modules/.bin/wrangler');
