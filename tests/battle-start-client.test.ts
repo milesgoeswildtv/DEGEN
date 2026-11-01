@@ -911,6 +911,29 @@ test('server-backed battle without an authoritative start snapshot returns to Un
   assert.equal(battleEngineCreations.length, 0, 'a server-backed battle must not mount the offline preview engine');
 });
 
+test('server-backed battle rejects an initial snapshot bound to a different permit', () => {
+  battleEngineCreations.length = 0;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: {
+      permitId: 'permit-1',
+      initialState: { permitId: 'other-permit', status: 'active', playerHp: 100, playerMana: 0, enemyHp: 60, turnCount: 0 },
+    },
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  mountBattle.call(controller);
+
+  assert.equal(controller.route, 'underpass');
+  assert.match(controller.statusMessage, /matching authoritative battle snapshot/i);
+  assert.equal(controller.battlePermit.permitId, 'permit-1');
+  assert.equal(battleEngineCreations.length, 0, 'mismatched permit state cannot create a client battle');
+});
+
 test('server-backed battle with a rejected snapshot returns to Underpass and preserves the permit', () => {
   battleEngineCreations.length = 0;
   rejectBattleEngineState = true;
@@ -918,7 +941,7 @@ test('server-backed battle with a rejected snapshot returns to Underpass and pre
     root: { querySelector: () => ({}), querySelectorAll: () => [] },
     battlePermit: {
       permitId: 'permit-1',
-      initialState: { permitId: 'wrong-permit', status: 'active', playerHp: 100, playerMana: 0, enemyHp: 60, turnCount: 0 },
+      initialState: { permitId: 'permit-1', status: 'active', playerHp: 100, playerMana: 0, enemyHp: 60, turnCount: 0 },
     },
     api: { enabled: true },
     route: 'battle',
