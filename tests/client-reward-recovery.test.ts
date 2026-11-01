@@ -150,9 +150,9 @@ test('definitive reward rejection retains the permit without an endless retry ti
   assert.equal(fixture.store.localRewards, 0, 'the client never fabricates a reward');
 });
 
-test('retryable reward claim conflicts still schedule recovery', async () => {
+test('fresh Worker reward claim leases schedule bounded recovery', async () => {
   const fixture = setup(true, async () => {
-    throw new TestGameApiError(409, { error: 'Reward claim changed; retry.' }, 'Reward claim changed; retry.');
+    throw new TestGameApiError(409, { error: 'Battle reward is already being claimed.' }, 'Battle reward is already being claimed.');
   });
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   controller.battlePermit = { permitId: 'permit-retryable-claim' };
@@ -162,6 +162,45 @@ test('retryable reward claim conflicts still schedule recovery', async () => {
 
   assert.ok(fixture.timers.some((timer) => timer.delay === 15_000),
     'a Worker conflict explicitly marked retryable must continue bounded recovery');
+  assert.equal(fixture.store.localRewards, 0);
+});
+
+test('legacy combined reward-claim conflict remains retryable during Worker rollout', async () => {
+  const fixture = setup(true, async () => {
+    throw new TestGameApiError(
+      409,
+      { error: 'Battle reward is already being claimed, or the permit expired.' },
+      'Battle reward is already being claimed, or the permit expired.',
+    );
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-legacy-claim-conflict' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await controller.finishBattle('victory');
+
+  assert.ok(fixture.timers.some((timer) => timer.delay === 15_000),
+    'an older Worker response remains recoverable while deployments roll forward');
+  assert.equal(fixture.store.localRewards, 0);
+});
+
+test('permanent unavailable reward-claim state does not schedule repeated recovery', async () => {
+  const fixture = setup(true, async () => {
+    throw new TestGameApiError(
+      409,
+      { error: 'Battle reward claim is not available.' },
+      'Battle reward claim is not available.',
+    );
+  });
+  const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  controller.battlePermit = { permitId: 'permit-unavailable-claim-state' };
+  controller.battlePermitOwnerId = 'test-player';
+
+  await controller.finishBattle('victory');
+
+  assert.equal(controller.battlePermit?.permitId, 'permit-unavailable-claim-state',
+    'retain the receipt identifier for later repair without retrying an invalid state');
+  assert.equal(fixture.timers.filter((timer) => timer.delay === 15_000).length, 0);
   assert.equal(fixture.store.localRewards, 0);
 });
 
