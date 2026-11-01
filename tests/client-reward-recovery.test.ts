@@ -427,3 +427,51 @@ test('a completion already in flight cannot replace a switched account', async (
     'the original permit never enters the new account’s retry queue');
   assert.equal(controller.battlePermit, undefined, 'the completed old permit is cleared without changing the active account');
 });
+
+
+test('reward receipt hints stay scoped to their owning player across account switches and reloads', async () => {
+  const calls: Array<[string, string]> = [];
+  const fixture = setup(true, async (playerId, permitId) => {
+    calls.push([playerId, permitId]);
+    return {
+      player: { id: playerId, level: 2 },
+      reward: { xp: 75, currency: 30, items: [], furniture: ['tunnel-trophy'], tier: 'full' },
+      levelTransition: { previousLevel: 1, currentLevel: 2 },
+      worldEvent: { cycleId: 'cycle-1' },
+    };
+  });
+
+  const first = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  first.battlePermit = { permitId: 'permit-account-a' };
+  first.battlePermitOwnerId = 'test-player';
+  await first.finishBattle('victory');
+
+  assert.deepEqual(calls, [['test-player', 'permit-account-a']]);
+  assert.equal(fixture.storage.get('degen.reward.receipts.v1:test-player'), '["permit-account-a"]');
+  assert.equal(fixture.storage.get('degen.reward.receipts.v1:other-player'), undefined);
+
+  fixture.store.snapshot.id = 'other-player';
+  const otherAccount = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  await otherAccount.start();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(calls, [['test-player', 'permit-account-a']],
+    'another account must not replay or receive the first player’s receipt');
+  const otherNotices = (otherAccount as unknown as { rewardNotices: Map<string, unknown[]> }).rewardNotices;
+  assert.equal(otherNotices.has('other-player'), false);
+  assert.equal(otherNotices.has('test-player'), false);
+
+  fixture.store.snapshot.id = 'test-player';
+  const restoredAccount = new fixture.Controller(fixture.root, fixture.store, fixture.api);
+  await restoredAccount.start();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(calls, [
+    ['test-player', 'permit-account-a'],
+    ['test-player', 'permit-account-a'],
+  ], 'the owning account can recover its receipt through the idempotent Worker endpoint');
+  const restoredNotices = (restoredAccount as unknown as { rewardNotices: Map<string, unknown[]> }).rewardNotices;
+  assert.equal(restoredNotices.get('test-player')?.length, 1);
+  assert.equal(restoredNotices.has('other-player'), false);
+  assert.equal(fixture.store.localRewards, 0, 'the client never computes or grants the reward');
+});
