@@ -296,11 +296,40 @@ export class AppController {
   private mountBattle(): void {
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     const permit = this.battlePermit;
-    if (!parent || !permit) return;
+    if (!parent) return;
+    if (!permit) {
+      this.navigate('underpass');
+      this.setUnderpassActionStatus(this.api.enabled
+        ? 'No active server-issued battle permit is attached. Resume a valid encounter from Underpass.'
+        : 'No active preview encounter is attached. Start or resume a fight from Underpass.');
+      return;
+    }
 
-    this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
-      void this.finishBattle(status);
-    }, this.api.enabled ? permit.initialState : undefined);
+    // A server-backed permit must never fall through to the offline preview
+    // initializer. Preserve the permit and return to Underpass so the player
+    // can resume from the Worker-owned snapshot instead of simulating locally.
+    if (this.api.enabled && (
+      !permit.initialState || permit.initialState.permitId !== permit.permitId
+    )) {
+      this.navigate('underpass');
+      this.setUnderpassActionStatus(
+        'The server did not provide a matching authoritative battle snapshot. Resume this encounter to safely reconnect.',
+      );
+      return;
+    }
+
+    try {
+      this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+        void this.finishBattle(status);
+      }, this.api.enabled ? permit.initialState : undefined);
+    } catch (error) {
+      if (!this.api.enabled) throw error;
+      this.navigate('underpass');
+      this.setUnderpassActionStatus(
+        'The server battle snapshot was invalid. Resume this encounter to safely reconnect.',
+      );
+      return;
+    }
 
     this.battleEngine.subscribe(updateBattleDom);
     this.battleGame = createBattleGame(parent, this.battleEngine);

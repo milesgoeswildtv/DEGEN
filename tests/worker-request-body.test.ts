@@ -84,3 +84,110 @@ test('application/json with a charset parameter is accepted as JSON media type',
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'Request body must be valid JSON.' });
 });
+
+
+test('malformed route identity fields return 400 before touching D1', async () => {
+  const cases = [
+    { path: '/api/player/bootstrap', body: { playerId: {} }, error: 'playerId is required' },
+    { path: '/api/player/bootstrap', body: { playerId: 'player-1', displayName: {} }, error: 'displayName must be a string.' },
+    { path: '/api/player/bootstrap', body: { playerId: 'player-1', platform: {}, platformUserId: 'discord-1' }, error: 'platform must be a string.' },
+    { path: '/api/player/bootstrap', body: { playerId: 'player-1', platform: 'discord', platformUserId: {} }, error: 'platformUserId must be a string.' },
+    { path: '/api/battle/start', body: { playerId: {}, eventKey: 'underpass', cycleId: 'cycle-1', encounterKey: TUNNEL_MAW.id }, error: 'Invalid battle start request' },
+    { path: '/api/battle/start', body: { playerId: 'player-1', eventKey: 'underpass', cycleId: {}, encounterKey: TUNNEL_MAW.id }, error: 'Invalid battle start request' },
+    { path: '/api/battle/action', body: { playerId: 'player-1', permitId: {}, abilityId: 'slash', expectedTurnCount: 0 }, error: 'playerId, permitId, and abilityId are required' },
+    { path: '/api/battle/action', body: { playerId: 'player-1', permitId: 'permit-1', abilityId: {}, expectedTurnCount: 0 }, error: 'playerId, permitId, and abilityId are required' },
+    { path: '/api/battle/complete', body: { playerId: 'player-1', permitId: {} }, error: 'playerId and permitId are required' },
+    { path: '/api/player/housing', body: { playerId: {}, housing: { placements: [] } }, error: 'playerId and housing are required' },
+  ];
+
+  for (const scenario of cases) {
+    const response = await worker.fetch(new Request(`https://degen-api.example${scenario.path}`, {
+      method: scenario.path === '/api/player/housing' ? 'PUT' : 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(scenario.body),
+    }), {
+      DB: { prepare() { throw new Error('D1 must not be touched for malformed route identity fields'); } },
+    });
+    assert.equal(response.status, 400, scenario.path);
+    assert.deepEqual(await response.json(), { error: scenario.error }, scenario.path);
+  }
+});
+
+test('world and pending-reward reads reject whitespace-only player IDs before D1 access', async () => {
+  for (const path of [
+    '/api/world/underpass?playerId=%20%20',
+    '/api/battle/pending-rewards?playerId=%20%20',
+  ]) {
+    const response = await worker.fetch(new Request(`https://degen-api.example${path}`), {
+      DB: { prepare() { throw new Error('D1 must not be touched for an empty player ID'); } },
+    });
+    assert.equal(response.status, 400, path);
+    assert.deepEqual(await response.json(), { error: 'playerId is required' }, path);
+  }
+});
+
+
+
+test('platform identity IDs reject empty or whitespace-padded values before D1 access', async () => {
+  for (const platformUserId of ['', '   ', ' discord-1 ']) {
+    const response = await worker.fetch(new Request('https://degen-api.example/api/player/bootstrap', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: 'player-1', platform: 'discord', platformUserId }),
+    }), {
+      DB: { prepare() { throw new Error('D1 must not be touched for a non-canonical platform identity'); } },
+    });
+    assert.equal(response.status, 400, JSON.stringify({ platformUserId }));
+    assert.deepEqual(await response.json(), {
+      error: 'platformUserId must be a non-empty canonical string.',
+    });
+  }
+});
+
+test('whitespace-only identifiers on mutation routes return 400 before touching D1', async () => {
+  const cases = [
+    { path: '/api/player/bootstrap', method: 'POST', body: { playerId: '   ' }, error: 'playerId is required' },
+    {
+      path: '/api/battle/start', method: 'POST',
+      body: { playerId: 'player-1', eventKey: 'underpass', cycleId: '  ', encounterKey: TUNNEL_MAW.id },
+      error: 'Invalid battle start request',
+    },
+    {
+      path: '/api/battle/action', method: 'POST',
+      body: { playerId: '  ', permitId: 'permit-1', abilityId: 'slash', expectedTurnCount: 0 },
+      error: 'playerId, permitId, and abilityId are required',
+    },
+    {
+      path: '/api/battle/action', method: 'POST',
+      body: { playerId: 'player-1', permitId: '  ', abilityId: 'slash', expectedTurnCount: 0 },
+      error: 'playerId, permitId, and abilityId are required',
+    },
+    {
+      path: '/api/battle/action', method: 'POST',
+      body: { playerId: 'player-1', permitId: 'permit-1', abilityId: '  ', expectedTurnCount: 0 },
+      error: 'playerId, permitId, and abilityId are required',
+    },
+    {
+      path: '/api/battle/complete', method: 'POST',
+      body: { playerId: 'player-1', permitId: '  ' },
+      error: 'playerId and permitId are required',
+    },
+    {
+      path: '/api/player/housing', method: 'PUT',
+      body: { playerId: '  ', housing: { placements: [] } },
+      error: 'playerId and housing are required',
+    },
+  ];
+
+  for (const scenario of cases) {
+    const response = await worker.fetch(new Request(`https://degen-api.example${scenario.path}`, {
+      method: scenario.method,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(scenario.body),
+    }), {
+      DB: { prepare() { throw new Error('D1 must not be touched for whitespace-only route identifiers'); } },
+    });
+    assert.equal(response.status, 400, scenario.path);
+    assert.deepEqual(await response.json(), { error: scenario.error }, scenario.path);
+  }
+});
