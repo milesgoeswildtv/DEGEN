@@ -673,6 +673,7 @@ export class AppController {
       this.worldRefreshPlayerId = playerId;
       this.underpassEvent = undefined;
       this.worldSyncFailed = false;
+      if (accountChanged) this.selectedFurniture = undefined;
       if (accountChanged && this.route === 'battle' && this.battlePermitOwnerId !== playerId) {
         // Never leave a previous account's manifested Degen or battle state on
         // screen after the active identity changes. Keep the old player's
