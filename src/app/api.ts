@@ -15,6 +15,10 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
   const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
   const turnCount = state.turnCount;
+  const hasConsistentActiveShieldAudit = hasLegacyShieldState
+    || (turnCount === 0
+      ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
+      : retaliationDamage > 0);
   return state.permitId === permitId
     && state.status === 'active'
     // An idempotent start retry may recover a battle that has already advanced
@@ -28,7 +32,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     && shieldAbsorbed <= retaliationDamage
     // A fresh start has no Shield or retaliation. An idempotent retry may return
     // the current Shield and last-action audit after one or more accepted turns.
-    && (turnCount > 0 || (playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0))
+    && hasConsistentActiveShieldAudit
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
 };
 
@@ -58,7 +62,14 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
     || !isBoundedSafeInteger(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
-  if (state.status === 'active') return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
+  if (state.status === 'active') {
+    const hasConsistentActiveShieldAudit = hasLegacyShieldState
+      || (turnCount === 0
+        ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
+        : retaliationDamage > 0);
+    return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
+      && hasConsistentActiveShieldAudit;
+  }
   if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
   // Legacy permits predate the Shield audit columns and use a zero/zero sentinel.
   // New-format defeat snapshots carry persisted deltas and must show residual damage.
