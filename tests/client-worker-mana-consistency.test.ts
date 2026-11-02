@@ -6,7 +6,22 @@ import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
-import { isAuthoritativeBattleActionState } from '../src/app/api.ts';
+const apiSource = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8');
+const validatorStart = apiSource.indexOf('export const isAuthoritativeBattleActionState =');
+const validatorEnd = apiSource.indexOf('\nconst isRecord', validatorStart);
+if (validatorStart < 0 || validatorEnd < 0) throw new Error('Authoritative battle validator source was not found.');
+const validatorSource = apiSource.slice(validatorStart, validatorEnd).replace('export const ', 'const ');
+const { isAuthoritativeBattleActionState } = runInNewContext(
+  stripTypeScriptTypes(`
+    const isBoundedSafeInteger = (value, minimum, maximum) =>
+      typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
+    ${validatorSource}
+    ({ isAuthoritativeBattleActionState });
+  `, { mode: 'transform' }),
+  { TEST_DEGEN, TUNNEL_MAW },
+) as {
+  isAuthoritativeBattleActionState(value: unknown, permitId: string): boolean;
+};
 
 // Execute the real client engine with the same deterministic resolver imported by
 // the Worker. This deliberately compares behavior, not duplicated expected math.
