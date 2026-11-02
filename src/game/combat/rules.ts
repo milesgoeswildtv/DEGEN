@@ -19,10 +19,20 @@ export interface CombatTurnResult {
 }
 
 const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = [
+  'resource',
+  'actionresource',
   'actionpoint',
   'energy',
   'stamina',
   'focus',
+  'magicpoint',
+] as const;
+
+const RESOURCE_FIELD_PREFIXES = ['max', 'current', 'base', 'starting', 'initial'] as const;
+const RESOURCE_FIELD_SUFFIXES = [
+  'cost', 'pool', 'regeneration', 'regen', 'steal', 'drain',
+  'recovery', 'restore', 'gain', 'amount', 'value',
+  'max', 'current', 'base', 'starting', 'initial',
 ] as const;
 
 const normalizeMonsterActionResourceField = (field: string): string =>
@@ -34,8 +44,24 @@ const isMonsterMpResourceAlias = (normalizedField: string): boolean =>
   // MP is the conventional abbreviation for Mana Points. Match resource-shaped
   // names only; a broad substring check would incorrectly reject move names
   // such as "jump" or "stomp".
-  /^(?:(?:max|current|base|starting|initial)?mp(?:cost|pool|regeneration|regen|steal|drain|recovery|restore|gain|amount|value)?)$/.test(normalizedField)
-  || normalizedField.includes('magicpoint');
+  /^(?:(?:max|current|base|starting|initial)?mp(?:cost|pool|regeneration|regen|steal|drain|recovery|restore|gain|amount|value)?)$/.test(normalizedField);
+
+const isResourceAliasField = (normalizedField: string, alias: string): boolean => {
+  const bases = [alias, `${alias}s`];
+  for (const base of bases) {
+    if (normalizedField === base) return true;
+    for (const prefix of RESOURCE_FIELD_PREFIXES) {
+      if (normalizedField === `${prefix}${base}`) return true;
+    }
+    for (const suffix of RESOURCE_FIELD_SUFFIXES) {
+      if (normalizedField === `${base}${suffix}`) return true;
+      for (const prefix of RESOURCE_FIELD_PREFIXES) {
+        if (normalizedField === `${prefix}${base}${suffix}`) return true;
+      }
+    }
+  }
+  return false;
+};
 
 const findForbiddenMonsterActionResource = (
   value: unknown,
@@ -49,9 +75,8 @@ const findForbiddenMonsterActionResource = (
     const fieldPath = path ? `${path}.${field}` : field;
     const normalizedField = normalizeMonsterActionResourceField(field);
     if (normalizedField.includes('mana')
-      || normalizedField.includes('resource')
       || isMonsterMpResourceAlias(normalizedField)
-      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => normalizedField.includes(alias))) {
+      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => isResourceAliasField(normalizedField, alias))) {
       return fieldPath;
     }
 

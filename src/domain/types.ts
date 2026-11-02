@@ -105,34 +105,32 @@ type _MonsterManaSeparatorAliasesAreGuarded = AssertMonsterResourceGuard<
   > extends never ? true : false
 >;
 
-type ForbiddenMpResourcePrefix = 'max' | 'current' | 'base' | 'starting' | 'initial';
-type ForbiddenMpResourceSuffix =
+type ForbiddenMonsterActionResourceAlias =
+  | 'resource' | 'actionresource' | 'actionpoint'
+  | 'energy' | 'stamina' | 'focus' | 'magicpoint';
+type ForbiddenMonsterActionResourceBase =
+  | ForbiddenMonsterActionResourceAlias
+  | `${ForbiddenMonsterActionResourceAlias}s`;
+type ForbiddenMonsterActionResourcePrefix = 'max' | 'current' | 'base' | 'starting' | 'initial';
+type ForbiddenMonsterActionResourceSuffix =
   | 'cost' | 'pool' | 'regeneration' | 'regen' | 'steal' | 'drain'
-  | 'recovery' | 'restore' | 'gain' | 'amount' | 'value';
-
-type _MonsterMpAliasesAreGuarded = AssertMonsterResourceGuard<
-  Exclude<
-    'mp' | 'maxMp' | 'mpCost' | 'm-p' | 'magicPoints',
-    KeysMatchingForbiddenMonsterActionResource<{
-      signature: { mp: number; maxMp: number; mpCost: number; 'm-p': number; magicPoints: number };
-    }>
-  > extends never ? true : false
->;
+  | 'recovery' | 'restore' | 'gain' | 'amount' | 'value'
+  | 'max' | 'current' | 'base' | 'starting' | 'initial';
+type ForbiddenMpResourcePrefix = ForbiddenMonsterActionResourcePrefix;
+type ForbiddenMpResourceSuffix = Exclude<ForbiddenMonsterActionResourceSuffix, 'max' | 'current' | 'base' | 'starting' | 'initial'>;
 
 type ForbiddenNormalizedMonsterActionResourceField =
-  // Normalize separators before checking every Mana/resource namespace alias.
-  // Catch cost, capacity, regeneration, drain, theft, and future aliases alike.
+  // Reject resource-shaped aliases, not every descriptive word containing
+  // "energy", "focus", or "resource" (e.g. energyColor/resourceDrops).
   | `${string}mana${string}`
-  | `${string}resource${string}`
-  | `${string}actionpoint${string}`
-  | `${string}energy${string}`
-  | `${string}stamina${string}`
-  | `${string}focus${string}`
+  | ForbiddenMonsterActionResourceBase
+  | `${ForbiddenMonsterActionResourcePrefix}${ForbiddenMonsterActionResourceBase}`
+  | `${ForbiddenMonsterActionResourceBase}${ForbiddenMonsterActionResourceSuffix}`
+  | `${ForbiddenMonsterActionResourcePrefix}${ForbiddenMonsterActionResourceBase}${ForbiddenMonsterActionResourceSuffix}`
   | 'mp'
   | `${ForbiddenMpResourcePrefix}mp`
   | `mp${ForbiddenMpResourceSuffix}`
-  | `${ForbiddenMpResourcePrefix}mp${ForbiddenMpResourceSuffix}`
-  | `${string}magicpoint${string}`;
+  | `${ForbiddenMpResourcePrefix}mp${ForbiddenMpResourceSuffix}`;
 
 type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer Item)[]
   ? KeysMatchingForbiddenMonsterActionResource<Item>
@@ -145,6 +143,21 @@ type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer I
           : never;
       }[keyof T]
     : never;
+
+type _MonsterDescriptiveResourceTermsRemainAllowed = AssertMonsterResourceGuard<
+  Extract<
+    KeysMatchingForbiddenMonsterActionResource<{
+      signature: {
+        energyColor: string;
+        focusDescription: string;
+        staminaAnimation: string;
+        resourceDrops: string[];
+        magicPointColor: string;
+      };
+    }>,
+    'energyColor' | 'focusDescription' | 'staminaAnimation' | 'resourceDrops' | 'magicPointColor'
+  > extends never ? true : false
+>;
 
 type ForbiddenMonsterActionResourceField =
   | KeysContainingMana<EnemyDefinition>

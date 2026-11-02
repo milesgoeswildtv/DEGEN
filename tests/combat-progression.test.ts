@@ -410,6 +410,12 @@ test('combat rules reject universal monster action-resource aliases before resol
     'magicPoints',
     'magicPointCost',
     'magicPointRegeneration',
+    'magicPoint',
+    'maxResource',
+    'currentResource',
+    'resource_max',
+    'maxActionPoints',
+    'actionResourceCost',
     'm-p',
     'm_p',
     'm.p.',
@@ -582,6 +588,29 @@ test('ordinary monster move names containing the letters mp remain valid', () =>
   }));
 });
 
+
+test('monster descriptive metadata and loot labels are not mistaken for action-resource pools', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    energyColor: 'cold blue',
+    focusDescription: 'tracks the loudest movement',
+    staminaAnimation: 'heavy',
+    resourceDrops: ['underpass-scrap'],
+    magicPointColor: 'dim white',
+    abilities: [{ name: 'Focus', description: 'The monster watches its target.' }],
+  } as typeof TUNNEL_MAW;
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
+});
 
 test('monster mechanics cannot use the Degen-only LEAK effect', () => {
   const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
