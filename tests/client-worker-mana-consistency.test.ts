@@ -87,17 +87,19 @@ test('client battle engine and shared Worker resolver agree on one paid turn', (
   const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
   assert.ok(ability);
 
+  const degen = { ...TEST_DEGEN, maxHp: 80 };
+  const enemy = { ...TUNNEL_MAW, maxHp: 100 };
   const input = {
-    playerHp: 80,
-    playerMana: TEST_DEGEN.maxMana,
-    enemyHp: 100,
+    playerHp: degen.maxHp,
+    playerMana: degen.maxMana,
+    enemyHp: enemy.maxHp,
     ability,
-    degen: TEST_DEGEN,
-    enemy: TUNNEL_MAW,
+    degen,
+    enemy,
   };
   const expected = resolveCombatTurn(input);
   // No permit means this is the explicitly local/offline preview path.
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined);
+  const engine = new BattleEngine(degen, enemy, () => undefined);
 
   engine.useAbility(ability.id);
 
