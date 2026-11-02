@@ -365,6 +365,12 @@ test('client rejects impossible active Shield audits and preserves the legacy ze
   assert.equal(isAuthoritativeBattleActionState(base, permitId), false,
     'a new-format active turn cannot retain Shield without a retaliation audit');
   assert.equal(isAuthoritativeBattleActionState({
+    ...base, retaliationDamage: 10,
+  }, permitId), false, 'remaining Shield requires the audit to show full retaliation absorption');
+  assert.equal(isAuthoritativeBattleActionState({
+    ...base, shieldAbsorbed: 10, retaliationDamage: 10,
+  }, permitId), true, 'remaining Shield is valid when it fully absorbed retaliation');
+  assert.equal(isAuthoritativeBattleActionState({
     ...base, playerShield: 0, retaliationDamage: 10,
   }, permitId), true);
   assert.equal(isAuthoritativeBattleActionState({
