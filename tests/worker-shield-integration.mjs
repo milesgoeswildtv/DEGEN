@@ -57,10 +57,10 @@ try {
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
       battle_status,player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count)
     VALUES
-      ('shield-action-permit','shield-action','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',115,0,5,5,10,63,1),
+      ('shield-action-permit','shield-action','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,5,10,10,63,1),
       ('shield-carry-permit','shield-carry','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,12,10,10,63,1),
-      ('shield-kill-permit','shield-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',5,12,5,5,10,1,1),
-      ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',8,0,2,8,10,63,1),
+      ('shield-kill-permit','shield-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',5,12,5,10,10,1,1),
+      ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',8,0,2,10,10,63,1),
       ('shield-race-permit','shield-race','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,10,10,10,63,1),
       ('shield-legacy-permit','shield-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,0,NULL,NULL,92,0),
       ('shield-corrupt-legacy-permit','shield-corrupt-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,1,NULL,NULL,92,0),
@@ -116,9 +116,9 @@ try {
   const action=await post('/api/battle/action',{playerId:'shield-action',permitId:'shield-action-permit',abilityId:'slash',expectedTurnCount:1,playerShield:999});
   assert.equal(action.status,200);
   assert.deepEqual([action.data.playerHp,action.data.playerMana,action.data.playerShield,action.data.shieldAbsorbed,action.data.retaliationDamage,action.data.enemyHp,action.data.turnCount,action.data.status],
-    [110,0,0,5,10,34,2,'active']);
+    [115,0,0,5,10,34,2,'active']);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-action-permit'"),[
-    {player_hp:110,player_mana:0,player_shield:0,last_shield_absorbed:5,last_retaliation_damage:10,enemy_hp:34,turn_count:2,battle_status:'active'},
+    {player_hp:115,player_mana:0,player_shield:0,last_shield_absorbed:5,last_retaliation_damage:10,enemy_hp:34,turn_count:2,battle_status:'active'},
   ]);
 
   const rejected=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'crack',expectedTurnCount:1});
