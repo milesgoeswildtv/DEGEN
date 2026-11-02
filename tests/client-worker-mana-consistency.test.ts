@@ -367,6 +367,14 @@ test('client rejects impossible active Shield audits and preserves the legacy ze
     ...base, playerShield: 0, turnCount: 0,
   }, permitId), true, 'a fresh permit begins with zero Shield and zero retaliation audit');
 
+  for (const invalidRetaliation of [null, "10", -1, TUNNEL_MAW.damage + 1]) {
+    assert.equal(isAuthoritativeBattleActionState({
+      ...base,
+      playerShield: 0,
+      retaliationDamage: invalidRetaliation,
+    }, permitId), false, `invalid retaliation audit ${String(invalidRetaliation)} must fail closed`);
+  }
+
   const legacy = { ...base } as Record<string, unknown>;
   delete legacy.playerShield;
   delete legacy.shieldAbsorbed;
