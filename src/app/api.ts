@@ -52,8 +52,12 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
 
   if (state.status === 'active') return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
   if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
+  // Recovered terminal snapshots do not persist the last action's damage breakdown;
+  // the Worker marks that state with zero/zero deltas. Fresh defeat actions still
+  // require some retaliation to pass through Shield and reach zero HP.
+  const recoveredTerminalSnapshot = shieldAbsorbed === 0 && retaliationDamage === 0;
   return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0
-    && (hasLegacyShieldState || shieldAbsorbed < retaliationDamage);
+    && (hasLegacyShieldState || recoveredTerminalSnapshot || shieldAbsorbed < retaliationDamage);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
