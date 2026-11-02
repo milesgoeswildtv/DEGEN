@@ -24,7 +24,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     || hasLegacyShieldAuditSentinel
     || (turnCount === 0
       ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
-      : retaliationDamage > 0);
+      : isBoundedSafeInteger(retaliationDamage, 1, TUNNEL_MAW.damage));
   return state.permitId === permitId
     && state.status === 'active'
     // An idempotent start retry may recover a battle that has already advanced
