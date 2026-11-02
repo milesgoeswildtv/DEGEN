@@ -137,21 +137,22 @@ test('Shield ability gains and the authoritative remaining Shield are visible in
 
 
 const controllerSource = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8');
-const controllerDisableMethod = controllerSource.match(
-  /  private setAbilityButtonsDisabled\\(disabled: boolean\\): void \\{([\\s\\S]*?)\\n  \\/,
-)?.[1];
-assert.ok(controllerDisableMethod, 'AppController ability-disable method must remain available for focused regression coverage');
+const methodStart = controllerSource.indexOf(
+  '  private setAbilityButtonsDisabled(disabled: boolean): void {',
+);
+const methodEnd = controllerSource.indexOf('\n  private setBattleActionStatus', methodStart);
+assert.ok(methodStart >= 0 && methodEnd > methodStart, 'AppController ability-disable method must remain available for focused regression coverage');
+const controllerMethod = controllerSource
+  .slice(methodStart, methodEnd)
+  .replace('  private setAbilityButtonsDisabled(disabled: boolean): void {', 'function setAbilityButtonsDisabled(disabled) {')
+  .replace(/\n  }\s*$/, '\n}');
 const setAbilityButtonsDisabled = runInNewContext(
-  stripTypeScriptTypes(
-    `function setAbilityButtonsDisabled(disabled: boolean): void {\\n${controllerDisableMethod}\\n}\\nsetAbilityButtonsDisabled;`,
-    { mode: 'transform' },
-  ),
+  stripTypeScriptTypes(controllerMethod + '\nsetAbilityButtonsDisabled;', { mode: 'transform' }),
   { isValidManaCost, isValidManaState, isValidShieldGain },
 ) as (this: {
   battleEngine?: { snapshot: BattleSnapshot };
   root: { querySelectorAll: () => Array<{ dataset: Record<string, string>; disabled: boolean }> };
 }, disabled: boolean) => void;
-
 test('controller re-enabling after a pending action keeps invalid Shield abilities disabled', () => {
   const buttons = [
     { dataset: { manaCost: '0', shieldGain: '-1' }, disabled: false },
