@@ -25,9 +25,10 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   const state = value as Record<string, unknown>;
   const playerHp = state.playerHp;
   const playerMana = state.playerMana;
-  const playerShield = state.playerShield ?? 0;
-  const shieldAbsorbed = state.shieldAbsorbed ?? 0;
-  const retaliationDamage = state.retaliationDamage ?? 0;
+  // Legacy snapshots may omit Shield fields; explicit null is corrupt and must fail closed.
+  const playerShield = state.playerShield === undefined ? 0 : state.playerShield;
+  const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
+  const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
   const enemyHp = state.enemyHp;
   const turnCount = state.turnCount;
   if (state.permitId !== permitId

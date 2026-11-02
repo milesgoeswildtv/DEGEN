@@ -605,6 +605,15 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
     'defeat requires at least one resolved turn');
   assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'victory', enemyHp: 0, turnCount: 1 }, 'permit-1'), true);
   assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, turnCount: 1 }, 'permit-1'), true);
+
+  const shieldSnapshot = { ...active, playerShield: 3, shieldAbsorbed: 2, retaliationDamage: 5 };
+  assert.equal(isAuthoritativeBattleActionState(shieldSnapshot, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, playerShield: null }, 'permit-1'), false,
+    'an explicit null Shield is not a legacy omitted field');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, shieldAbsorbed: null }, 'permit-1'), false,
+    'an explicit null absorption value is malformed');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, retaliationDamage: null }, 'permit-1'), false,
+    'an explicit null retaliation value is malformed');
 });
 
 
