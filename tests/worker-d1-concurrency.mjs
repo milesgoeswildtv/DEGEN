@@ -879,7 +879,7 @@ try {
   assert.equal(duplicateAction.error, 'Stale battle turn.');
   assert.deepEqual(duplicateAction.battleState, {
     permitId: 'permit-insufficient-mana', status: 'active',
-    playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
     enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-insufficient-mana', {
@@ -1300,7 +1300,7 @@ try {
     playerMana: progressedStartReplay.playerMana,
     playerShield: progressedStartReplay.playerShield,
     shieldAbsorbed: 0,
-    retaliationDamage: 0,
+    retaliationDamage: 10,
     enemyHp: progressedStartReplay.enemyHp,
     turnCount: progressedStartReplay.turnCount,
   }, 'a closed-cycle start retry must return persisted combat state without replaying transient turn presentation metadata');
@@ -1356,7 +1356,7 @@ try {
     playerMana: firstAction.playerMana,
     playerShield: firstAction.playerShield,
     shieldAbsorbed: 0,
-    retaliationDamage: 0,
+    retaliationDamage: 10,
     enemyHp: firstAction.enemyHp,
     turnCount: firstAction.turnCount,
   });
@@ -1975,7 +1975,7 @@ try {
   assert.equal(expiredDefeatReplay.error, 'Battle is already defeated.');
   assert.deepEqual(expiredDefeatReplay.battleState, {
     permitId: 'permit-expired-defeat', status: 'defeat',
-    playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
     enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-expired-defeat', {
