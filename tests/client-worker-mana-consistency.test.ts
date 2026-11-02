@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { isAuthoritativeBattleActionState } from '../src/app/api.ts';
 
 // Execute the real client engine with the same deterministic resolver imported by
 // the Worker. This deliberately compares behavior, not duplicated expected math.
@@ -321,4 +322,33 @@ test('a terminal authoritative result cannot be reopened by a later active snaps
     turnCount: engine.snapshot.turnCount,
   }, terminal);
   assert.equal(completions, 1, 'terminal completion must be emitted exactly once');
+});
+
+
+test('client rejects impossible new-format active Shield audit states but preserves legacy snapshots', () => {
+  const permitId = 'shield-audit-validation';
+  const base = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 1,
+  };
+
+  assert.equal(isAuthoritativeBattleActionState(base, permitId), false,
+    'an active turn after turn zero must include a positive retaliation audit');
+  assert.equal(isAuthoritativeBattleActionState({ ...base, retaliationDamage: 10 }, permitId), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...base, turnCount: 0 }, permitId), true,
+    'a fresh permit must begin with zero Shield and zero retaliation audit');
+
+  const legacy = { ...base } as Record<string, unknown>;
+  delete legacy.playerShield;
+  delete legacy.shieldAbsorbed;
+  delete legacy.retaliationDamage;
+  assert.equal(isAuthoritativeBattleActionState(legacy, permitId), true,
+    'pre-Shield snapshots remain readable when all Shield audit fields are absent');
 });
