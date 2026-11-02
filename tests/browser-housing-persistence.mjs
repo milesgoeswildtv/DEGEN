@@ -2,7 +2,8 @@
 // This test uses a 390x844 mobile viewport and never connects to remote D1.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,12 +121,37 @@ async function click(selector) {
   assert.equal(await cdp.evaluate(expression), true, 'expected browser control: ' + selector);
 }
 
+function hasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+function waitForExit(child, timeoutMs) {
+  if (hasExited(child)) return Promise.resolve(true);
+  return new Promise(resolveExit => {
+    const onExit = () => {
+      clearTimeout(timer);
+      resolveExit(true);
+    };
+    const timer = setTimeout(() => {
+      child.removeListener('exit', onExit);
+      resolveExit(hasExited(child));
+    }, timeoutMs);
+    child.once('exit', onExit);
+  });
+}
+
 async function stopAll() {
   for (const child of children.reverse()) {
-    if (child.exitCode !== null) continue;
+    if (hasExited(child)) continue;
     child.kill('SIGTERM');
-    await Promise.race([new Promise(resolveExit => child.once('exit', resolveExit)), sleep(1500)]);
-    if (child.exitCode === null) child.kill('SIGKILL');
+    if (await waitForExit(child, 1500)) continue;
+
+    // SIGKILL is asynchronous too. Wait for exit before deleting Chromium's
+    // profile so browser subprocesses cannot race the recursive cleanup.
+    child.kill('SIGKILL');
+    if (!await waitForExit(child, 5000)) {
+      throw Error('Timed out waiting for a browser test child process to exit');
+    }
   }
 }
 
@@ -226,6 +252,9 @@ try {
   console.log('PASS real Chromium mobile viewport + Vite + local Worker/D1: housing placement persists after reload, empty room remains empty, and room cells remain tappable');
 } finally {
   if (cdp) cdp.ws.close();
-  await stopAll();
-  rmSync(scratch, { recursive: true, force: true });
+  try {
+    await stopAll();
+  } finally {
+    await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
 }

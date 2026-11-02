@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import type { BattleActionResult } from '../src/domain/types.ts';
 
 // Load the real engine source without asking Node's native ESM resolver to
@@ -15,7 +15,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace('export class BattleEngine', 'class BattleEngine');
 const BattleEngine = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\nBattleEngine;',
-  { canUseAbility, isValidManaState, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, resolveCombatTurn },
 ) as new (
   degen: typeof TEST_DEGEN,
   enemy: typeof TUNNEL_MAW,
