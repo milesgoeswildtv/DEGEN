@@ -896,6 +896,25 @@ test('discarding an unrecoverable resume clears only the matching saved permit k
 });
 
 
+test('server-backed battle route without an attached permit returns to Underpass instead of showing an empty fight', () => {
+  battleEngineCreations.length = 0;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: undefined,
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  mountBattle.call(controller);
+
+  assert.equal(controller.route, 'underpass');
+  assert.match(controller.statusMessage, /no active server-issued battle permit/i);
+  assert.equal(battleEngineCreations.length, 0, 'a missing server permit must never mount local combat simulation');
+});
+
 test('server-backed battle without an authoritative start snapshot returns to Underpass without local simulation', () => {
   battleEngineCreations.length = 0;
   const controller = {

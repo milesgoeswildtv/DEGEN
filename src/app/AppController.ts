@@ -296,7 +296,14 @@ export class AppController {
   private mountBattle(): void {
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     const permit = this.battlePermit;
-    if (!parent || !permit) return;
+    if (!parent) return;
+    if (!permit) {
+      this.navigate('underpass');
+      this.setUnderpassActionStatus(this.api.enabled
+        ? 'No active server-issued battle permit is attached. Resume a valid encounter from Underpass.'
+        : 'No active preview encounter is attached. Start or resume a fight from Underpass.');
+      return;
+    }
 
     // A server-backed permit must never fall through to the offline preview
     // initializer. Preserve the permit and return to Underpass so the player
