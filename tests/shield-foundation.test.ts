@@ -59,7 +59,7 @@ test('invalid Shield gain and safe-integer overflow fail before combat state can
 test('authoritative Shield result is presented once and replay does not duplicate the turn log', () => {
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
     permitId: 'shield-permit', status: 'active', playerHp: 50, playerMana: 0, playerShield: 4,
-    shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: TUNNEL_MAW.maxHp, turnCount: 0,
+    shieldAbsorbed: 10, retaliationDamage: 10, enemyHp: TUNNEL_MAW.maxHp, turnCount: 1,
   });
   const turn = resolveCombatTurn({
     playerHp: 50, playerMana: 0, playerShield: 4, enemyHp: TUNNEL_MAW.maxHp,
@@ -68,13 +68,13 @@ test('authoritative Shield result is presented once and replay does not duplicat
   const result = {
     permitId: 'shield-permit', status: turn.status, playerHp: turn.playerHp, playerMana: turn.playerMana,
     playerShield: turn.playerShield, shieldAbsorbed: turn.shieldAbsorbed,
-    retaliationDamage: turn.retaliationDamage, enemyHp: turn.enemyHp, turnCount: 1,
+    retaliationDamage: turn.retaliationDamage, enemyHp: turn.enemyHp, turnCount: 2,
   } as const;
   engine.applyAuthoritativeAction('slash', result);
   assert.equal(engine.snapshot.playerShield, 0);
   assert.equal(engine.snapshot.playerHp, 47);
   const logLength = engine.snapshot.log.length;
   engine.applyAuthoritativeAction('slash', result);
-  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(engine.snapshot.turnCount, 2);
   assert.equal(engine.snapshot.log.length, logLength);
 });
