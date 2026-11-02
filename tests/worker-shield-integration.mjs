@@ -104,7 +104,7 @@ try {
   assert.equal(rejected.status,409);
   assert.equal(rejected.data.battleState.playerShield,12);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count FROM battle_permits WHERE id='shield-carry-permit'"),[
-    {player_hp:120,player_mana:0,player_shield:12,last_shield_absorbed:null,last_retaliation_damage:null,enemy_hp:92,turn_count:0},
+    {player_hp:120,player_mana:0,player_shield:12,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:92,turn_count:0},
   ]);
   const carry=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'slash',expectedTurnCount:0});
   assert.equal(carry.status,200);
