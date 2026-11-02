@@ -34,9 +34,12 @@ test('Shield migration defaults existing permits to zero without resetting battl
       INSERT INTO battle_permits VALUES('legacy-active','active',80,4,92,2);
     `);
     db.exec(shieldMigration);
-    assert.deepEqual(db.prepare('SELECT player_shield FROM battle_permits WHERE id = ?').get('legacy-active'), { player_shield: 0 });
-    assert.deepEqual(db.prepare('SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id = ?').get('legacy-active'),
-      { player_hp: 80, player_mana: 4, enemy_hp: 92, turn_count: 2 });
+    const migrated = db.prepare('SELECT player_shield,player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id = ?').get('legacy-active') as Record<string, number>;
+    assert.equal(migrated.player_shield, 0);
+    assert.equal(migrated.player_hp, 80);
+    assert.equal(migrated.player_mana, 4);
+    assert.equal(migrated.enemy_hp, 92);
+    assert.equal(migrated.turn_count, 2);
   } finally { db.close(); }
 });
 
