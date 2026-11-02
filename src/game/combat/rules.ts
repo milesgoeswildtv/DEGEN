@@ -32,7 +32,7 @@ const FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES = [
 const RESOURCE_FIELD_PREFIXES = ['max', 'current', 'base', 'starting', 'initial'] as const;
 const RESOURCE_FIELD_SUFFIXES = [
   'cost', 'pool', 'regeneration', 'regen', 'steal', 'drain',
-  'recovery', 'restore', 'gain', 'amount', 'value',
+  'recovery', 'restore', 'gain', 'amount', 'value', 'point', 'points',
   'max', 'current', 'base', 'starting', 'initial',
 ] as const;
 
