@@ -449,15 +449,29 @@ test('server-backed battle start rejects a snapshot for another permit or an out
   await assert.rejects(apiReturning(excessiveMana), /Missing or malformed authoritative battle start state/);
 });
 
-test('server-backed battle start accepts a valid progressed snapshot when recovering a lost response', async () => {
+test('server-backed battle start accepts a valid progressed Shield snapshot when recovering a lost response', async () => {
   const permit = validPermit();
   permit.initialState.playerHp = 64;
   permit.initialState.playerMana = 4;
+  permit.initialState.playerShield = 4;
+  permit.initialState.shieldAbsorbed = 5;
+  permit.initialState.retaliationDamage = 10;
   permit.initialState.enemyHp = 50;
   permit.initialState.turnCount = 2;
 
   const result = await apiReturning(permit) as typeof permit;
   assert.deepEqual(result.initialState, permit.initialState);
+});
+
+test('server-backed battle start rejects Shield before the first accepted turn', async () => {
+  const shieldAtStart = validPermit();
+  shieldAtStart.initialState.playerShield = 1;
+  await assert.rejects(apiReturning(shieldAtStart), /Missing or malformed authoritative battle start state/);
+
+  const retaliationAtStart = validPermit();
+  retaliationAtStart.initialState.shieldAbsorbed = 1;
+  retaliationAtStart.initialState.retaliationDamage = 1;
+  await assert.rejects(apiReturning(retaliationAtStart), /Missing or malformed authoritative battle start state/);
 });
 
 test('server-backed battle start rejects active snapshots outside battle invariants', async () => {

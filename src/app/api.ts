@@ -11,16 +11,24 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const hasLegacyShieldState = shieldFields.every((field) => field === undefined);
   const hasCompleteShieldState = shieldFields.every((field) => field !== undefined);
   if (!hasLegacyShieldState && !hasCompleteShieldState) return false;
+  const playerShield = state.playerShield === undefined ? 0 : state.playerShield;
+  const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
+  const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
+  const turnCount = state.turnCount;
   return state.permitId === permitId
     && state.status === 'active'
     // An idempotent start retry may recover a battle that has already advanced
     // while its original response was delayed. Accept only a valid active turn.
-    && isBoundedSafeInteger(state.turnCount, 0, Number.MAX_SAFE_INTEGER - 1)
+    && isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER - 1)
     && isBoundedSafeInteger(state.playerHp, 1, TEST_DEGEN.maxHp)
     && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
-    && (state.playerShield === undefined || (isBoundedSafeInteger(state.playerShield, 0, Number.MAX_SAFE_INTEGER) && state.playerShield === 0))
-    && (state.shieldAbsorbed === undefined || state.shieldAbsorbed === 0)
-    && (state.retaliationDamage === undefined || state.retaliationDamage === 0)
+    && isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(retaliationDamage, 0, TUNNEL_MAW.damage)
+    && shieldAbsorbed <= retaliationDamage
+    // A fresh start has no Shield or retaliation. An idempotent retry may return
+    // the current Shield and last-action audit after one or more accepted turns.
+    && (turnCount > 0 || (playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0))
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
 };
 
