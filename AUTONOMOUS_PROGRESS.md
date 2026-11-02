@@ -1,3 +1,17 @@
+## Latest run — 2026-11-02 (add Shield terminal-recovery regression coverage)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; main remains untouched. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`; no production D1 write or Worker deployment.
+- **PUSHED / PR #125 OPEN / DRAFT / UNMERGED:** `automation/degen/authoritative-shield-foundation-v02`; previous head `70c65bffc95c150014dfdd23d9572a5ddd75baa8`. Exact-head CI [41513799112](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41513799112) was IN PROGRESS when this update began; it is not yet a green result for the combined changes.
+- **Task / files changed:** selectively transplanted only the test coverage from the older, divergent PR #20 branch into new `tests/worker-shield-recovery.test.ts`; no runtime code or history from PR #20 was copied. Six Worker-handler regressions cover replay after settlement returning the persisted Shield victory snapshot, expired pending victory/defeat recovery without applying another action, corrupt persisted Shield rejection, unsupported encounter terminal rejection, inconsistent Shield/event audit rejection, and retaliation audit exceeding the supported monster damage. This complements current #125's concurrent-action, expiry/CAS, D1 Shield, victory/defeat, and generic terminal recovery coverage.
+- **QA:** prior exact-head deterministic runs exposed only the corrected EnemyDefinition test-regex issue; commit `70c65bf` fixed it. The new recovery tests have not yet run. This commit and its continuity record require fresh exact-head CI; no local shell test/build or physical-device QA is claimed.
+- **Mana:** COMPLETE / MERGED on main; Degen-only resource authority, persisted Mana, affordability, exact deduction, free actions at zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no depletion reversion remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 still owns permits, HP/Mana/Shield, enemy HP, turn CAS, terminal history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. #123 client recovery, #124 Worker identity validation, and #122 monster resource/LEAK guard are integrated on #125. The stale PR #20 branch remains untouched and divergent.
+- **D1 / migration assumptions:** main binds `DB` to `DEGEN` and deploys schema → tracked migrations → Worker. Main 0003/0006/0007 unchanged; Shield 0008 is branch-only and unapplied. Duplicate 0007 between main inventory guards and draft auth PR #14 remains unresolved; no renumbering, bypass, or remote migration.
+- **Miles blockers:** duplicate 0007 migration order and production platform identity/credential policy remain unresolved. No new monster, status, Degen kit, or balance canon.
+- **One best next task:** verify exact-head CI for the new Shield terminal-recovery tests, inspect any failure logs, and keep #125 draft until the migration-order gate is explicitly resolved.
+
+---
+
 ## Latest run — 2026-11-02 (correct interface-only monster guard assertion)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; main remains untouched. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`; no production D1 write or Worker deployment.
