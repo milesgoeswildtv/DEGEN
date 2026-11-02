@@ -102,7 +102,8 @@ export class BattleEngine {
           || hasLegacyAuditSentinel
           || (result.turnCount === 0
             ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
-            : retaliationDamage > 0);
+            : retaliationDamage > 0
+              && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
         return result.playerHp > 0 && result.enemyHp > 0
           && result.turnCount < Number.MAX_SAFE_INTEGER
           && hasConsistentAudit;
