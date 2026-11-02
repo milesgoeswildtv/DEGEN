@@ -114,7 +114,7 @@ type ForbiddenMonsterActionResourceBase =
 type ForbiddenMonsterActionResourcePrefix = 'max' | 'current' | 'base' | 'starting' | 'initial';
 type ForbiddenMonsterActionResourceSuffix =
   | 'cost' | 'pool' | 'regeneration' | 'regen' | 'steal' | 'drain'
-  | 'recovery' | 'restore' | 'gain' | 'amount' | 'value'
+  | 'recovery' | 'restore' | 'gain' | 'amount' | 'value' | 'point' | 'points'
   | 'max' | 'current' | 'base' | 'starting' | 'initial';
 type ForbiddenNormalizedMonsterActionResourceField =
   // Reject resource-shaped aliases, not every descriptive word containing
@@ -137,6 +137,25 @@ type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer I
           : never;
       }[keyof T]
     : never;
+
+type _MonsterPointResourceAliasesAreGuarded = AssertMonsterResourceGuard<
+  Exclude<
+    'energyPoint' | 'energyPoints' | 'staminaPoint' | 'staminaPoints'
+      | 'focusPoint' | 'focusPoints' | 'resourcePoint' | 'resourcePoints',
+    KeysMatchingForbiddenMonsterActionResource<{
+      signature: {
+        energyPoint: number;
+        energyPoints: number;
+        staminaPoint: number;
+        staminaPoints: number;
+        focusPoint: number;
+        focusPoints: number;
+        resourcePoint: number;
+        resourcePoints: number;
+      };
+    }>
+  > extends never ? true : false
+>;
 
 type _MonsterMpAliasesRemainGuarded = AssertMonsterResourceGuard<
   Exclude<
