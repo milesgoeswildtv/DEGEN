@@ -616,7 +616,7 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 5 }, 'permit-1'), false,
     'a defeat cannot claim that Shield absorbed all retaliation while player HP reached zero');
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 0, retaliationDamage: 0 }, 'permit-1'), true,
-    'Worker recovery snapshots use zero damage deltas because terminal action details are not persisted');
+    'legacy Worker rows without Shield audit columns use the zero/zero compatibility sentinel');
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: undefined }, 'permit-1'), false,
     'partially omitted Shield state is malformed rather than a legacy snapshot');
 

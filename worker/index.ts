@@ -78,6 +78,8 @@ type BattlePermitStateRow = {
   player_hp: number | null;
   player_mana: number | null;
   player_shield: number | null;
+  last_shield_absorbed: number | null;
+  last_retaliation_damage: number | null;
   enemy_hp: number | null;
   battle_status: 'active' | 'victory' | 'defeat';
   turn_count: number;
@@ -145,6 +147,12 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
   const playerHp = state.player_hp;
   const playerMana = state.player_mana;
   const playerShield = state.player_shield;
+  const lastShieldAbsorbed = state.last_shield_absorbed;
+  const lastRetaliationDamage = state.last_retaliation_damage;
+  const hasLegacyShieldAudit = lastShieldAbsorbed === null && lastRetaliationDamage === null;
+  const hasValidShieldAudit = isSafeIntegerBetween(lastShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+    && isSafeIntegerBetween(lastRetaliationDamage, 0, TUNNEL_MAW.damage)
+    && lastShieldAbsorbed <= lastRetaliationDamage;
   const enemyHp = state.enemy_hp;
   const turnCount = state.turn_count;
 
@@ -156,6 +164,7 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
   if (!isSafeIntegerBetween(playerHp, 0, TEST_DEGEN.maxHp)
     || !hasValidMana
     || !isSafeIntegerBetween(playerShield, 0, Number.MAX_SAFE_INTEGER)
+    || (!hasLegacyShieldAudit && !hasValidShieldAudit)
     || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
@@ -164,9 +173,11 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
       // An accepted action must be able to increment turn_count without leaving safe-integer range.
       return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
     case 'victory':
-      return turnCount > 0 && playerHp > 0 && enemyHp === 0;
+      return turnCount > 0 && playerHp > 0 && enemyHp === 0
+        && (hasLegacyShieldAudit || (lastShieldAbsorbed === 0 && lastRetaliationDamage === 0));
     case 'defeat':
-      return turnCount > 0 && playerHp === 0 && playerShield === 0 && enemyHp > 0;
+      return turnCount > 0 && playerHp === 0 && playerShield === 0 && enemyHp > 0
+        && (hasLegacyShieldAudit || lastRetaliationDamage > lastShieldAbsorbed);
     default:
       return false;
   }
@@ -412,7 +423,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       permit.expires_at, permit.completed_at, permit.reward_state, permit.reward_clear_number,
       permit.reward_xp, permit.reward_currency, permit.reward_tier, permit.reward_level,
       permit.reward_remaining_xp, permit.reward_claim_token, permit.reward_claimed_at,
-      permit.player_hp, permit.player_mana, permit.player_shield, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage, permit.enemy_hp, permit.battle_status, permit.turn_count,
       (SELECT COUNT(*) FROM battle_history AS marker
         WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
       (SELECT COUNT(*) FROM battle_history AS marker
@@ -469,8 +480,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         playerHp: existing.player_hp as number,
         playerMana: playerManaForSnapshot(existing),
         playerShield: existing.player_shield ?? 0,
-        shieldAbsorbed: 0,
-        retaliationDamage: 0,
+        shieldAbsorbed: existing.last_shield_absorbed ?? 0,
+        retaliationDamage: existing.last_retaliation_damage ?? 0,
         enemyHp: existing.enemy_hp as number,
         turnCount: existing.turn_count,
       },
@@ -502,12 +513,12 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   // Recheck the cycle in the same statement: the earlier phase read is advisory.
   const issuedPermit = await env.DB.prepare(`INSERT INTO battle_permits (
       id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at,
-      player_hp, player_mana, player_shield, enemy_hp, battle_status, turn_count
+      player_hp, player_mana, player_shield, last_shield_absorbed, last_retaliation_damage, enemy_hp, battle_status, turn_count
     )
     SELECT ?, ?, 'underpass', ?, ?,
       strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
       strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+20 minutes'),
-      ?, ?, ?, ?, 'active', 0
+      ?, ?, ?, 0, 0, ?, 'active', 0
     WHERE EXISTS (
       SELECT 1 FROM world_event_cycles
       WHERE id = ? AND event_key = 'underpass'
@@ -569,7 +580,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
 
   const permit = await env.DB.prepare(`SELECT
       permit.event_key, cycle.event_key AS cycle_event_key,
-      permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield,
+      permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
       permit.enemy_hp, permit.battle_status, permit.turn_count
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
@@ -585,7 +596,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     // Preserve the existing awarded-receipt replay path for a delayed second tab.
     const completed = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
-        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
         (SELECT COUNT(*) FROM battle_history AS marker
           WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
@@ -625,8 +636,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           playerHp: completed.player_hp,
           playerMana: playerManaForSnapshot(completed),
           playerShield: completed.player_shield ?? 0,
-          shieldAbsorbed: 0,
-          retaliationDamage: 0,
+          shieldAbsorbed: completed.last_shield_absorbed ?? 0,
+          retaliationDamage: completed.last_retaliation_damage ?? 0,
           enemyHp: completed.enemy_hp,
           turnCount: completed.turn_count,
         },
@@ -638,7 +649,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     // the permit or authorizes another action. Active expired permits still fail closed.
     const terminal = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
-        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
         permit.completed_at, permit.reward_state,
         (SELECT COUNT(*) FROM battle_history AS marker
@@ -682,8 +693,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           playerHp: terminal.player_hp,
           playerMana: playerManaForSnapshot(terminal),
           playerShield: terminal.player_shield ?? 0,
-          shieldAbsorbed: 0,
-          retaliationDamage: 0,
+          shieldAbsorbed: terminal.last_shield_absorbed ?? 0,
+          retaliationDamage: terminal.last_retaliation_damage ?? 0,
           enemyHp: terminal.enemy_hp,
           turnCount: terminal.turn_count,
         },
@@ -708,8 +719,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     playerHp: permit.player_hp,
     playerMana: playerManaForSnapshot(permit),
     playerShield: permit.player_shield,
-    shieldAbsorbed: 0,
-    retaliationDamage: 0,
+    shieldAbsorbed: permit.last_shield_absorbed ?? 0,
+    retaliationDamage: permit.last_retaliation_damage ?? 0,
     enemyHp: permit.enemy_hp,
     turnCount: permit.turn_count,
   };
@@ -720,7 +731,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const conflict = async (message: string): Promise<Response> => {
     const latest = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
-        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
         (SELECT COUNT(*) FROM battle_history AS marker
           WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
@@ -763,8 +774,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         playerHp: latest.player_hp,
         playerMana: playerManaForSnapshot(latest),
         playerShield: latest.player_shield ?? 0,
-        shieldAbsorbed: 0,
-        retaliationDamage: 0,
+        shieldAbsorbed: latest.last_shield_absorbed ?? 0,
+        retaliationDamage: latest.last_retaliation_damage ?? 0,
         enemyHp: latest.enemy_hp,
         turnCount: latest.turn_count,
       },
@@ -803,7 +814,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   // Keep both deterministic terminal keys out of the action compare-and-swap so a
   // poisoned victory marker cannot mutate combat and strand the later reward claim.
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
-    SET player_hp = ?, player_mana = ?, player_shield = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
+    SET player_hp = ?, player_mana = ?, player_shield = ?, last_shield_absorbed = ?, last_retaliation_damage = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
       AND julianday(expires_at) > julianday('now')
       AND event_key = 'underpass' AND encounter_key = ?
@@ -816,7 +827,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
     RETURNING turn_count`)
-    .bind(playerHp, playerMana, playerShield, enemyHp, status, input.permitId, input.playerId,
+    .bind(playerHp, playerMana, playerShield, shieldAbsorbed, retaliationDamage, enemyHp, status, input.permitId, input.playerId,
       TUNNEL_MAW.id, permit.turn_count, permit.player_shield, `${input.permitId}:defeat`, `${input.permitId}:victory`);
 
   let updated: { turn_count: number } | null | undefined;
@@ -846,7 +857,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     // A competing action may have committed after the SELECT. Return only persisted state.
     const latest = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
-        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
         permit.enemy_hp, permit.battle_status, permit.turn_count,
         (SELECT COUNT(*) FROM battle_history AS marker
           WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
@@ -887,8 +898,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           playerHp: latest.player_hp,
           playerMana: playerManaForSnapshot(latest),
           playerShield: latest.player_shield ?? 0,
-          shieldAbsorbed: 0,
-          retaliationDamage: 0,
+          shieldAbsorbed: latest.last_shield_absorbed ?? 0,
+          retaliationDamage: latest.last_retaliation_damage ?? 0,
           enemyHp: latest.enemy_hp,
           turnCount: latest.turn_count,
         },
@@ -942,7 +953,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     defeat_history_marker_count: number;
   };
   const loadReceipt = async () => env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
-      permit.player_hp, permit.player_mana, permit.player_shield, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage, permit.enemy_hp, permit.battle_status, permit.turn_count,
       permit.reward_state, permit.reward_clear_number, permit.reward_xp, permit.reward_currency, permit.reward_tier,
       permit.reward_level, permit.reward_remaining_xp, permit.completed_at,
       permit.reward_claim_token, permit.reward_claimed_at,
@@ -1372,7 +1383,7 @@ async function handlePendingBattleRewards(request: Request, env: Env, playerId: 
   // event-cycle chronology and persisted terminal state determine eligibility.
   const pending = await env.DB.prepare(`SELECT
       permit.id, permit.event_key, permit.cycle_id, permit.encounter_key,
-      permit.player_hp, permit.player_mana, permit.player_shield, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage, permit.enemy_hp, permit.battle_status, permit.turn_count,
       cycle.event_key AS cycle_event_key
     FROM battle_permits AS permit
     JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id

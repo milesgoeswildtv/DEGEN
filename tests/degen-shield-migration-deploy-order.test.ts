@@ -23,7 +23,9 @@ test('Shield migration follows the current tracked inventory guard with unique v
 
 test('Shield migration defaults existing permits to zero without resetting battle state', () => {
   assert.ok(shieldMigration.includes('ADD COLUMN player_shield INTEGER NOT NULL DEFAULT 0 CHECK (player_shield >= 0);'));
-  assert.equal(shieldMigration.split('ALTER TABLE').length - 1, 1);
+  assert.ok(shieldMigration.includes('ADD COLUMN last_shield_absorbed INTEGER CHECK (last_shield_absorbed >= 0);'));
+  assert.ok(shieldMigration.includes('ADD COLUMN last_retaliation_damage INTEGER CHECK (last_retaliation_damage >= 0);'));
+  assert.equal(shieldMigration.split('ALTER TABLE').length - 1, 3);
   const db = new DatabaseSync(':memory:');
   try {
     db.exec(`
@@ -34,8 +36,10 @@ test('Shield migration defaults existing permits to zero without resetting battl
       INSERT INTO battle_permits VALUES('legacy-active','active',80,4,92,2);
     `);
     db.exec(shieldMigration);
-    const migrated = db.prepare('SELECT player_shield,player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id = ?').get('legacy-active') as Record<string, number>;
+    const migrated = db.prepare('SELECT player_shield,last_shield_absorbed,last_retaliation_damage,player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id = ?').get('legacy-active') as Record<string, number | null>;
     assert.equal(migrated.player_shield, 0);
+    assert.equal(migrated.last_shield_absorbed, null);
+    assert.equal(migrated.last_retaliation_damage, null);
     assert.equal(migrated.player_hp, 80);
     assert.equal(migrated.player_mana, 4);
     assert.equal(migrated.enemy_hp, 92);
