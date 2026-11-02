@@ -113,7 +113,17 @@ try {
     {player_hp:110,player_mana:0,player_shield:5,last_shield_absorbed:0,last_retaliation_damage:10,enemy_hp:63,turn_count:1,battle_status:'active'},
   ]);
 
-  const action=await post('/api/battle/action',{playerId:'shield-action',permitId:'shield-action-permit',abilityId:'slash',expectedTurnCount:1,playerShield:999});
+  // Every combat, outcome, and reward field supplied by the browser is hostile.
+  // The Worker must derive all of them from the persisted permit and selected ability.
+  const action=await post('/api/battle/action',{
+    playerId:'shield-action',permitId:'shield-action-permit',abilityId:'slash',expectedTurnCount:1,
+    playerHp:0,playerMana:12,playerShield:999,shieldAbsorbed:0,retaliationDamage:0,
+    enemyHp:0,turnCount:Number.MAX_SAFE_INTEGER,status:'victory',victory:true,
+    damage:Number.MAX_SAFE_INTEGER,manaCost:0,shieldGain:Number.MAX_SAFE_INTEGER,
+    ability:{damage:Number.MAX_SAFE_INTEGER,manaCost:0,shieldGain:Number.MAX_SAFE_INTEGER},
+    reward:{xp:999999,currency:999999,items:['forged-item']},
+    xp:999999,currency:999999,items:['forged-item'],
+  });
   assert.equal(action.status,200);
   assert.deepEqual([action.data.playerHp,action.data.playerMana,action.data.playerShield,action.data.shieldAbsorbed,action.data.retaliationDamage,action.data.enemyHp,action.data.turnCount,action.data.status],
     [115,0,0,5,10,34,2,'active']);
