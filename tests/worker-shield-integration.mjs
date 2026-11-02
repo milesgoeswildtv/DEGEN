@@ -130,6 +130,13 @@ try {
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-action-permit'"),[
     {player_hp:115,player_mana:0,player_shield:0,last_shield_absorbed:5,last_retaliation_damage:10,enemy_hp:34,turn_count:2,battle_status:'active'},
   ]);
+  assert.equal('reward' in action.data,false,'action responses never accept or return client reward payloads');
+  assert.equal('xp' in action.data,false);
+  assert.equal('currency' in action.data,false);
+  assert.equal('victory' in action.data,false);
+  assert.deepEqual(sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-action'"),[
+    {level:1,xp:0,currency:0},
+  ],'forged XP, currency, and victory fields must not mutate progression');
 
   const rejected=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'crack',expectedTurnCount:1});
   assert.equal(rejected.status,409);
