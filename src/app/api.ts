@@ -7,6 +7,10 @@ const isBoundedSafeInteger = (value: unknown, minimum: number, maximum: number):
 const isAuthoritativeBattleStartState = (value: unknown, permitId: string): value is BattleActionResult => {
   if (!value || typeof value !== 'object') return false;
   const state = value as Record<string, unknown>;
+  const shieldFields = [state.playerShield, state.shieldAbsorbed, state.retaliationDamage];
+  const hasLegacyShieldState = shieldFields.every((field) => field === undefined);
+  const hasCompleteShieldState = shieldFields.every((field) => field !== undefined);
+  if (!hasLegacyShieldState && !hasCompleteShieldState) return false;
   return state.permitId === permitId
     && state.status === 'active'
     // An idempotent start retry may recover a battle that has already advanced
@@ -23,6 +27,10 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
 export const isAuthoritativeBattleActionState = (value: unknown, permitId: string): value is BattleActionResult => {
   if (!value || typeof value !== 'object') return false;
   const state = value as Record<string, unknown>;
+  const shieldFields = [state.playerShield, state.shieldAbsorbed, state.retaliationDamage];
+  const hasLegacyShieldState = shieldFields.every((field) => field === undefined);
+  const hasCompleteShieldState = shieldFields.every((field) => field !== undefined);
+  if (!hasLegacyShieldState && !hasCompleteShieldState) return false;
   const playerHp = state.playerHp;
   const playerMana = state.playerMana;
   // Legacy snapshots may omit Shield fields; explicit null is corrupt and must fail closed.
@@ -44,7 +52,8 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
 
   if (state.status === 'active') return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
   if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
-  return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0;
+  return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0
+    && (hasLegacyShieldState || shieldAbsorbed < retaliationDamage);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

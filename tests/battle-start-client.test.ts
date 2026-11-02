@@ -604,7 +604,21 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
   assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, turnCount: 0 }, 'permit-1'), false,
     'defeat requires at least one resolved turn');
   assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'victory', enemyHp: 0, turnCount: 1 }, 'permit-1'), true);
-  assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, turnCount: 1 }, 'permit-1'), true);
+  const legacyDefeat = { ...active, status: 'defeat', playerHp: 0, turnCount: 1 };
+  assert.equal(isAuthoritativeBattleActionState(legacyDefeat, 'permit-1'), true,
+    'pre-Shield Worker terminal snapshots remain readable when every Shield field is absent');
+
+  const shieldDefeat = {
+    ...active, status: 'defeat', playerHp: 0, turnCount: 1,
+    playerShield: 0, shieldAbsorbed: 2, retaliationDamage: 5,
+  };
+  assert.equal(isAuthoritativeBattleActionState(shieldDefeat, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 5 }, 'permit-1'), false,
+    'a defeat cannot claim that Shield absorbed all retaliation while player HP reached zero');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: 0, shieldAbsorbed: 0 }, 'permit-1'), false,
+    'a new-format defeat requires positive unabsorbed retaliation');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: undefined }, 'permit-1'), false,
+    'partially omitted Shield state is malformed rather than a legacy snapshot');
 
   const shieldSnapshot = { ...active, playerShield: 3, shieldAbsorbed: 2, retaliationDamage: 5 };
   assert.equal(isAuthoritativeBattleActionState(shieldSnapshot, 'permit-1'), true);
