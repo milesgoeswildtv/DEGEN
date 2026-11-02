@@ -581,3 +581,62 @@ test('ordinary monster move names containing the letters mp remain valid', () =>
     enemy,
   }));
 });
+
+
+test('monster mechanics cannot use the Degen-only LEAK effect', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  const forbiddenCases = [
+    {
+      path: 'status',
+      enemy: { ...TUNNEL_MAW, status: 'LEAK' } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.name',
+      enemy: { ...TUNNEL_MAW, signature: { name: 'LEAK' } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.appliedEffect',
+      enemy: { ...TUNNEL_MAW, loadout: [{ appliedEffect: 'leak' }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'abilities.0.effect',
+      enemy: { ...TUNNEL_MAW, abilities: [{ effect: 'ＬＥＡＫ' }] } as typeof TUNNEL_MAW,
+    },
+  ];
+
+  for (const { path, enemy } of forbiddenCases) {
+    assert.throws(
+      () => resolveCombatTurn({
+        playerHp: TEST_DEGEN.maxHp,
+        playerMana: TEST_DEGEN.maxMana,
+        enemyHp: TUNNEL_MAW.maxHp,
+        ability: free,
+        degen: TEST_DEGEN,
+        enemy,
+      }),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('Degen-owned effect LEAK (' + path + ')'),
+      'monster mechanic ' + path + ' must not claim GLITCHRAT\'s LEAK effect',
+    );
+  }
+});
+
+test('LEAK in monster flavor text is not mistaken for a Degen effect', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    description: 'A cracked service pipe leaks water into the tunnel.',
+  };
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
+});
