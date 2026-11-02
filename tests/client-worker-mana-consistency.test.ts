@@ -436,6 +436,7 @@ test('BattleEngine rejects malformed initial Worker Shield snapshots', () => {
     { ...valid, retaliationDamage: TUNNEL_MAW.damage + 1 },
     { ...valid, playerShield: 1, turnCount: 1 },
     { ...valid, playerShield: 1, turnCount: 1, retaliationDamage: 0 },
+    { ...valid, playerShield: 5, turnCount: 1, shieldAbsorbed: 0, retaliationDamage: 10 },
     { ...valid, status: 'victory' as const, enemyHp: 0, turnCount: 1, retaliationDamage: 1 },
     { ...valid, status: 'defeat' as const, playerHp: 0, turnCount: 1, playerShield: 0, shieldAbsorbed: 10, retaliationDamage: 10 },
   ];
