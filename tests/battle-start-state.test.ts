@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import type { BattleActionResult } from '../src/domain/types.ts';
 
 // Load the real engine source without asking Node's native ESM resolver to
@@ -15,7 +15,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace('export class BattleEngine', 'class BattleEngine');
 const BattleEngine = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\nBattleEngine;',
-  { canUseAbility, isValidManaState, resolveCombatTurn },
+  { canUseAbility, isValidManaState, isValidShield, resolveCombatTurn },
 ) as new (
   degen: typeof TEST_DEGEN,
   enemy: typeof TUNNEL_MAW,
@@ -49,8 +49,9 @@ test('BattleEngine initializes from the Worker snapshot instead of prototype def
   assert.equal(engine.snapshot.turnCount, 0);
 });
 
-test('a zero-Mana battle remains active and zero-cost abilities remain usable', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({ playerMana: 0 }));
+test('an offline zero-Mana preview remains active and zero-cost abilities remain usable', () => {
+  const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0 };
+  const engine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => undefined);
   engine.useAbility('slash');
 
   assert.equal(engine.snapshot.status, 'active');
@@ -72,8 +73,9 @@ test('the client snapshot follows authoritative action HP, Mana, and enemy HP', 
   assert.equal(engine.snapshot.turnCount, 1);
 });
 
-test('an unaffordable local preview action changes neither state nor turn count', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({ playerMana: 0 }));
+test('an unaffordable offline preview action changes neither state nor turn count', () => {
+  const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0 };
+  const engine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => undefined);
   const before = engine.snapshot;
   engine.useAbility('crack');
 
