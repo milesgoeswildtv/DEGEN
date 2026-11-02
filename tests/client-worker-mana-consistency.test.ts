@@ -325,14 +325,14 @@ test('a terminal authoritative result cannot be reopened by a later active snaps
 });
 
 
-test('client rejects impossible new-format active Shield audit states but preserves legacy snapshots', () => {
+test('client rejects impossible active Shield audits and preserves the legacy zero/zero sentinel', () => {
   const permitId = 'shield-audit-validation';
   const base = {
     permitId,
     status: 'active' as const,
     playerHp: TEST_DEGEN.maxHp,
     playerMana: TEST_DEGEN.maxMana,
-    playerShield: 0,
+    playerShield: 5,
     shieldAbsorbed: 0,
     retaliationDamage: 0,
     enemyHp: TUNNEL_MAW.maxHp,
@@ -340,10 +340,17 @@ test('client rejects impossible new-format active Shield audit states but preser
   };
 
   assert.equal(isAuthoritativeBattleActionState(base, permitId), false,
-    'an active turn after turn zero must include a positive retaliation audit');
-  assert.equal(isAuthoritativeBattleActionState({ ...base, retaliationDamage: 10 }, permitId), true);
-  assert.equal(isAuthoritativeBattleActionState({ ...base, turnCount: 0 }, permitId), true,
-    'a fresh permit must begin with zero Shield and zero retaliation audit');
+    'a new-format active turn cannot retain Shield without a retaliation audit');
+  assert.equal(isAuthoritativeBattleActionState({
+    ...base, playerShield: 0, retaliationDamage: 10,
+  }, permitId), true);
+  assert.equal(isAuthoritativeBattleActionState({
+    ...base, playerShield: 0,
+  }, permitId), true,
+  'the zero-Shield, zero/zero audit is the compatibility projection for migrated legacy permits');
+  assert.equal(isAuthoritativeBattleActionState({
+    ...base, playerShield: 0, turnCount: 0,
+  }, permitId), true, 'a fresh permit begins with zero Shield and zero retaliation audit');
 
   const legacy = { ...base } as Record<string, unknown>;
   delete legacy.playerShield;
