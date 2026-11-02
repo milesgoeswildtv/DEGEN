@@ -42,11 +42,11 @@ try {
   writeFileSync(seed,`
     INSERT INTO players(id,display_name) VALUES
       ('shield-start','Shield Start'),('shield-action','Shield Action'),
-      ('shield-carry','Shield Carry'),('shield-kill','Shield Kill'),('shield-defeat','Shield Defeat');
+      ('shield-carry','Shield Carry'),('shield-kill','Shield Kill'),('shield-defeat','Shield Defeat'),('shield-race','Shield Race');
     INSERT INTO characters(player_id,level,xp,currency,degen_key) VALUES
       ('shield-start',1,0,0,'test-degen'),('shield-action',1,0,0,'test-degen'),
       ('shield-carry',1,0,0,'test-degen'),('shield-kill',1,0,0,'test-degen'),
-      ('shield-defeat',1,0,0,'test-degen');
+      ('shield-defeat',1,0,0,'test-degen'),('shield-race',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('shield-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
@@ -55,7 +55,8 @@ try {
       ('shield-action-permit','shield-action','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,5,92,0),
       ('shield-carry-permit','shield-carry','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,12,92,0),
       ('shield-kill-permit','shield-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',5,12,5,1,0),
-      ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',1,0,2,92,0);
+      ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',1,0,2,92,0),
+      ('shield-race-permit','shield-race','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,10,92,0);
   `);
   cli(['d1','execute','DEGEN','--local','--persist-to='+persist,'--file='+seed]);
   server=spawn(wrangler,['dev','--local','--persist-to='+persist,'--ip=127.0.0.1','--port=8791'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
@@ -89,6 +90,18 @@ try {
   const carry=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'slash',expectedTurnCount:0});
   assert.equal(carry.status,200);
   assert.deepEqual([carry.data.playerHp,carry.data.playerShield,carry.data.shieldAbsorbed,carry.data.retaliationDamage],[120,2,10,10]);
+
+  const race = await Promise.all([
+    post('/api/battle/action',{playerId:'shield-race',permitId:'shield-race-permit',abilityId:'slash',expectedTurnCount:0}),
+    post('/api/battle/action',{playerId:'shield-race',permitId:'shield-race-permit',abilityId:'slash',expectedTurnCount:0}),
+  ]);
+  assert.deepEqual(race.map((result) => result.status).sort(), [200,409]);
+  const raceConflict = race.find((result) => result.status === 409);
+  assert.equal(raceConflict?.data.battleState.playerShield, 0);
+  assert.equal(raceConflict?.data.battleState.turnCount, 1);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-race-permit'"),[
+    {player_hp:120,player_mana:0,player_shield:0,enemy_hp:63,turn_count:1,battle_status:'active'},
+  ]);
 
   const kill=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'crack',expectedTurnCount:0});
   assert.equal(kill.status,200);
