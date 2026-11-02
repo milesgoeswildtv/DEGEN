@@ -172,9 +172,17 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
     || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   switch (state.battle_status) {
-    case 'active':
+    case 'active': {
+      // Every accepted non-terminal turn includes retaliation; a fresh permit has
+      // a zero/zero audit. Preserve migrated pre-Shield permits with NULL audit.
+      const hasConsistentActiveShieldAudit = hasLegacyShieldAudit
+        || (turnCount === 0
+          ? playerShield === 0 && lastShieldAbsorbed === 0 && lastRetaliationDamage === 0
+          : lastRetaliationDamage > 0);
       // An accepted action must be able to increment turn_count without leaving safe-integer range.
-      return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
+      return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
+        && hasConsistentActiveShieldAudit;
+    }
     case 'victory':
       return turnCount > 0 && playerHp > 0 && enemyHp === 0
         && (hasLegacyShieldAudit || (lastShieldAbsorbed === 0 && lastRetaliationDamage === 0));
