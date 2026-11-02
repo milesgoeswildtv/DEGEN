@@ -10,10 +10,10 @@ import { isValidManaCost, isValidManaState, isValidShieldGain } from '../src/gam
 const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/\bexport const /g, 'const ');
-const buttonWithCostLabel = (manaCost: string | undefined, label: string) => {
+const buttonWithCostLabel = (manaCost: string | undefined, label: string, shieldGain = '0') => {
   const costLabel = { textContent: label };
   return {
-    dataset: { manaCost },
+    dataset: { manaCost, shieldGain },
     disabled: false,
     costLabel,
     querySelector: (selector: string) => selector === 'small' ? costLabel : null,
@@ -175,6 +175,56 @@ test('battle terminal outcomes announce defeat/victory and disable every ability
   }
 });
 
+
+test('malformed Shield gain stays unavailable after the first snapshot update', () => {
+  const malformedDegen = {
+    ...TEST_DEGEN,
+    abilities: [
+      { ...TEST_DEGEN.abilities[0]!, shieldGain: null },
+      { ...TEST_DEGEN.abilities[1]!, shieldGain: -1 },
+    ],
+  };
+  const markup = ui.battleView({ displayName: 'Player', level: 1, currency: 0 }, malformedDegen as unknown as typeof TEST_DEGEN);
+  assert.match(markup, /data-ability="slash" data-mana-cost="0" data-shield-gain="null" disabled/);
+  assert.match(markup, /data-ability="crack" data-mana-cost="4" data-shield-gain="-1" disabled/);
+
+  const log = { innerHTML: '', append: (_node: unknown) => undefined };
+  const accessibleHud = { textContent: '' };
+  const buttons = [
+    buttonWithCostLabel('0', 'NO MANA', 'null'),
+    buttonWithCostLabel('4', '4 MANA', '-1'),
+  ];
+  const fakeDocument = {
+    querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
+    querySelectorAll: (_selector: string) => buttons,
+  };
+  const boundUi = runInNewContext(
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
+  ) as {
+    updateBattleDom: (snapshot: {
+      status: 'active' | 'victory' | 'defeat';
+      playerName: string;
+      playerHp: number;
+      playerMaxHp: number;
+      playerMana: number;
+      playerMaxMana: number;
+      playerShield: number;
+      enemyName: string;
+      enemyHp: number;
+      enemyMaxHp: number;
+      turnCount: number;
+      log: string[];
+    }) => void;
+  };
+  boundUi.updateBattleDom({
+    status: 'active', playerName: 'TEST_DEGEN', playerHp: 80, playerMaxHp: 120,
+    playerMana: 12, playerMaxMana: 12, playerShield: 0,
+    enemyName: 'Tunnel Maw', enemyHp: 50, enemyMaxHp: 92, turnCount: 1, log: [],
+  });
+  assert.ok(buttons.every((button) => button.disabled));
+  assert.ok(buttons.every((button) => button.costLabel.textContent === 'UNAVAILABLE'));
+});
 
 test('malformed Mana costs and snapshots fail closed in battle controls', () => {
   const malformedDegen = {

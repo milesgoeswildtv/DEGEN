@@ -207,9 +207,9 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
         ${degen.abilities.map((ability) => {
           const manaCost = isValidManaCost(ability.manaCost) ? ability.manaCost : undefined;
           const validShieldGain = isValidShieldGain(ability.shieldGain);
-          const shieldGain = ability.shieldGain ?? 0;
+          const shieldGain = ability.shieldGain === undefined ? 0 : ability.shieldGain;
           return `
-          <button type="button" data-ability="${ability.id}" data-mana-cost="${manaCost ?? ''}" data-shield-gain="${shieldGain ?? ''}" ${manaCost === undefined || !validShieldGain ? 'disabled' : ''}>
+          <button type="button" data-ability="${ability.id}" data-mana-cost="${manaCost ?? ''}" data-shield-gain="${shieldGain}" ${manaCost === undefined || !validShieldGain ? 'disabled' : ''}>
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
             <small>${manaCost === undefined || !validShieldGain ? 'UNAVAILABLE' : `${manaCost === 0 ? 'NO MANA' : `${manaCost} MANA`}${shieldGain > 0 ? ` · SHIELD +${shieldGain}` : ''}`}</small>
