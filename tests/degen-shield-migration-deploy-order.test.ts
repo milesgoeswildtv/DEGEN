@@ -59,7 +59,8 @@ test('Shield migration defaults existing permits to zero without resetting battl
     for (const [column, sqlValue] of invalidValues) {
       assert.throws(
         () => db.exec(`UPDATE battle_permits SET ${column} = ${sqlValue} WHERE id = 'legacy-active'`),
-        `${column} must reject invalid or inexact persisted combat values`,
+        /CHECK constraint failed/,
+        `${column} must reject invalid or inexact persisted combat values at the SQLite CHECK boundary`,
       );
     }
 
