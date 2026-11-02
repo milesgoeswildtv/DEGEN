@@ -5,7 +5,7 @@ Persistent RPG built for a shared core with Discord Activity and Telegram Mini A
 ## Locked product rules
 
 - Combat is **Degen-only**. Entering any battle means the player manifests as their Degen for the entire encounter.
-- Universal Stability/Break is retired. The current combat foundation is HP + Degen-only Mana + bespoke abilities. Mana depletion never causes reversion. Shield and status systems are later slices.
+- Universal Stability/Break is retired. The current combat foundation is HP + Degen-only Mana + temporary Degen Shield + bespoke abilities. Mana depletion never causes reversion. The universal status engine is a later slice.
 - Server-backed Underpass battles validate every action on the Worker before victory rewards can be claimed; a battle permit alone is not sufficient.
 - Human/normal form exists outside battle only.
 - NPCs never have Degens. Only real players do.
