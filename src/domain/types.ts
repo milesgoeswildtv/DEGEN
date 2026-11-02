@@ -107,7 +107,7 @@ type _MonsterManaSeparatorAliasesAreGuarded = AssertMonsterResourceGuard<
 
 type ForbiddenMonsterActionResourceAlias =
   | 'resource' | 'actionresource' | 'actionpoint'
-  | 'energy' | 'stamina' | 'focus' | 'magicpoint';
+  | 'energy' | 'stamina' | 'focus' | 'magicpoint' | 'mp';
 type ForbiddenMonsterActionResourceBase =
   | ForbiddenMonsterActionResourceAlias
   | `${ForbiddenMonsterActionResourceAlias}s`;
@@ -116,9 +116,6 @@ type ForbiddenMonsterActionResourceSuffix =
   | 'cost' | 'pool' | 'regeneration' | 'regen' | 'steal' | 'drain'
   | 'recovery' | 'restore' | 'gain' | 'amount' | 'value'
   | 'max' | 'current' | 'base' | 'starting' | 'initial';
-type ForbiddenMpResourcePrefix = ForbiddenMonsterActionResourcePrefix;
-type ForbiddenMpResourceSuffix = Exclude<ForbiddenMonsterActionResourceSuffix, 'max' | 'current' | 'base' | 'starting' | 'initial'>;
-
 type ForbiddenNormalizedMonsterActionResourceField =
   // Reject resource-shaped aliases, not every descriptive word containing
   // "energy", "focus", or "resource" (e.g. energyColor/resourceDrops).
@@ -127,10 +124,7 @@ type ForbiddenNormalizedMonsterActionResourceField =
   | `${ForbiddenMonsterActionResourcePrefix}${ForbiddenMonsterActionResourceBase}`
   | `${ForbiddenMonsterActionResourceBase}${ForbiddenMonsterActionResourceSuffix}`
   | `${ForbiddenMonsterActionResourcePrefix}${ForbiddenMonsterActionResourceBase}${ForbiddenMonsterActionResourceSuffix}`
-  | 'mp'
-  | `${ForbiddenMpResourcePrefix}mp`
-  | `mp${ForbiddenMpResourceSuffix}`
-  | `${ForbiddenMpResourcePrefix}mp${ForbiddenMpResourceSuffix}`;
+;
 
 type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer Item)[]
   ? KeysMatchingForbiddenMonsterActionResource<Item>
@@ -143,6 +137,23 @@ type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer I
           : never;
       }[keyof T]
     : never;
+
+type _MonsterMpAliasesRemainGuarded = AssertMonsterResourceGuard<
+  Exclude<
+    'mp' | 'maxMp' | 'mpCost' | 'mpMax' | 'mpCurrent' | 'mpBase' | 'm-p',
+    KeysMatchingForbiddenMonsterActionResource<{
+      signature: {
+        mp: number;
+        maxMp: number;
+        mpCost: number;
+        mpMax: number;
+        mpCurrent: number;
+        mpBase: number;
+        'm-p': number;
+      };
+    }>
+  > extends never ? true : false
+>;
 
 type _MonsterDescriptiveResourceTermsRemainAllowed = AssertMonsterResourceGuard<
   Extract<
