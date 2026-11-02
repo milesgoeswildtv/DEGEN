@@ -615,12 +615,10 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
   assert.equal(isAuthoritativeBattleActionState(shieldDefeat, 'permit-1'), true);
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 5 }, 'permit-1'), false,
     'a defeat cannot claim that Shield absorbed all retaliation while player HP reached zero');
-  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: 0, shieldAbsorbed: 0 }, 'permit-1'), false,
-    'a new-format defeat requires positive unabsorbed retaliation');
-  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: undefined }, 'permit-1'), false,
-    'partially omitted Shield state is malformed rather than a legacy snapshot');
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 0, retaliationDamage: 0 }, 'permit-1'), true,
     'Worker recovery snapshots use zero damage deltas because terminal action details are not persisted');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: undefined }, 'permit-1'), false,
+    'partially omitted Shield state is malformed rather than a legacy snapshot');
 
   const shieldSnapshot = { ...active, playerShield: 3, shieldAbsorbed: 2, retaliationDamage: 5 };
   assert.equal(isAuthoritativeBattleActionState(shieldSnapshot, 'permit-1'), true);
