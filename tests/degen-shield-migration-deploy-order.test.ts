@@ -1,0 +1,59 @@
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { readFileSync, readdirSync } from 'node:fs';
+import test from 'node:test';
+
+const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
+const shieldMigration = read('../db/migrations/0008_degen_shield.sql');
+const deployWorkflow = read('../.github/workflows/deploy-worker.yml');
+const wranglerConfig = read('../wrangler.toml');
+const packageJson = JSON.parse(read('../package.json')) as { scripts: Record<string, string> };
+const domainTypes = read('../src/domain/types.ts');
+
+test('Shield migration follows the current tracked inventory guard with unique versions', () => {
+  const names = readdirSync(new URL('../db/migrations/', import.meta.url))
+    .filter((name) => /^\\d{4}_[a-z0-9_]+\\.sql$/i.test(name)).sort();
+  const inventoryIndex = names.indexOf('0007_player_inventory_quantity_guards.sql');
+  const shieldIndex = names.indexOf('0008_degen_shield.sql');
+  assert.ok(inventoryIndex >= 0, 'current main migration 0007 must remain tracked');
+  assert.ok(shieldIndex > inventoryIndex, 'Shield must follow the current main migration chain');
+  const versions = names.map((name) => name.slice(0, 4));
+  assert.equal(new Set(versions).size, versions.length, 'migration versions must be unique');
+});
+
+test('Shield migration defaults existing permits to zero without resetting battle state', () => {
+  assert.match(shieldMigration, /ADD COLUMN player_shield INTEGER NOT NULL DEFAULT 0 CHECK \\(player_shield >= 0\\)/i);
+  assert.equal((shieldMigration.match(/\\bALTER\\s+TABLE\\b/gi) ?? []).length, 1);
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(`
+      CREATE TABLE battle_permits (
+        id TEXT PRIMARY KEY, battle_status TEXT NOT NULL, player_hp INTEGER, player_mana INTEGER,
+        enemy_hp INTEGER, turn_count INTEGER NOT NULL
+      );
+      INSERT INTO battle_permits VALUES('legacy-active','active',80,4,92,2);
+    `);
+    db.exec(shieldMigration);
+    assert.deepEqual(db.prepare('SELECT player_shield FROM battle_permits WHERE id = ?').get('legacy-active'), { player_shield: 0 });
+    assert.deepEqual(db.prepare('SELECT player_hp,player_mana,enemy_hp,turn_count FROM battle_permits WHERE id = ?').get('legacy-active'),
+      { player_hp: 80, player_mana: 4, enemy_hp: 92, turn_count: 2 });
+  } finally { db.close(); }
+});
+
+test('Worker deployment applies tracked migrations before deploying Worker code', () => {
+  const schema = deployWorkflow.indexOf('run: npm run db:apply');
+  const migrations = deployWorkflow.indexOf('run: npm run db:migrate');
+  const worker = deployWorkflow.indexOf('run: npm run deploy:worker');
+  assert.ok(schema >= 0 && migrations > schema && worker > migrations);
+  assert.match(wranglerConfig, /binding\\s*=\\s*"DB"/);
+  assert.match(wranglerConfig, /database_name\\s*=\\s*"DEGEN"/);
+  assert.match(wranglerConfig, /migrations_dir\\s*=\\s*"db\\/migrations"/);
+  assert.match(packageJson.scripts['db:migrate'], /wrangler d1 migrations apply DEGEN/);
+});
+
+test('EnemyDefinition remains free of Mana-equivalent resources', () => {
+  const start = domainTypes.indexOf('export interface EnemyDefinition');
+  const end = domainTypes.indexOf('export interface LocationDefinition', start);
+  assert.ok(start >= 0 && end > start);
+  assert.doesNotMatch(domainTypes.slice(start, end), /\\b(?:mana|maxMana|currentMana|energy|stamina|focus)\\s*:/i);
+});

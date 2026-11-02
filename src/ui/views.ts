@@ -1,6 +1,6 @@
 import { renderIsometricCity, renderIsometricDistrict } from './isometricCity';
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
-import { isValidManaCost, isValidManaState } from '../game/combat/rules';
+import { isValidManaCost, isValidManaState, isValidShieldGain } from '../game/combat/rules';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
 
@@ -192,7 +192,13 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot, h
 
 export const battleView = (player: PlayerState, degen: DegenDefinition): string => appShell(player, `
   <section class="battle-layout">
-    <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
+    <div class="battle-arena">
+      <div class="battle-resources" role="status" aria-label="Degen combat resources" aria-live="polite">
+        <span id="battle-mana" class="battle-resource">MANA ${degen.maxMana}/${degen.maxMana}</span>
+        <span id="battle-shield" class="battle-resource">SHIELD 0</span>
+      </div>
+      <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
+    </div>
     <div id="battle-accessible-hud" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     <div class="battle-controls">
       <span class="eyebrow">MANIFESTED // ${escapeHtml(degen.name)}</span>
@@ -200,11 +206,12 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
       <div class="ability-grid">
         ${degen.abilities.map((ability) => {
           const manaCost = isValidManaCost(ability.manaCost) ? ability.manaCost : undefined;
+          const shieldGain = isValidShieldGain(ability.shieldGain) ? ability.shieldGain : undefined;
           return `
-          <button type="button" data-ability="${ability.id}" data-mana-cost="${manaCost ?? ''}" ${manaCost === undefined ? 'disabled' : ''}>
+          <button type="button" data-ability="${ability.id}" data-mana-cost="${manaCost ?? ''}" data-shield-gain="${shieldGain ?? ''}" ${manaCost === undefined || shieldGain === undefined ? 'disabled' : ''}>
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
-            <small>${manaCost === undefined ? 'UNAVAILABLE' : manaCost === 0 ? 'NO MANA' : `${manaCost} MANA`}</small>
+            <small>${manaCost === undefined || shieldGain === undefined ? 'UNAVAILABLE' : `${manaCost === 0 ? 'NO MANA' : `${manaCost} MANA`}${shieldGain > 0 ? ` · SHIELD +${shieldGain}` : ''}`}</small>
           </button>
         `;
         }).join('')}
@@ -230,8 +237,13 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
     const manaSummary = validManaState
       ? `Mana ${snapshot.playerMana} of ${snapshot.playerMaxMana}`
       : 'Mana unavailable';
-    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, ${manaSummary}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}. Turn ${snapshot.turnCount}. ${outcome}`;
+    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, ${manaSummary}, Shield ${snapshot.playerShield}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}. Turn ${snapshot.turnCount}. ${outcome}`;
   }
+
+  const manaPill = document.querySelector<HTMLElement>('#battle-mana');
+  if (manaPill) manaPill.textContent = validManaState ? `MANA ${snapshot.playerMana}/${snapshot.playerMaxMana}` : 'MANA —';
+  const shieldPill = document.querySelector<HTMLElement>('#battle-shield');
+  if (shieldPill) shieldPill.textContent = `SHIELD ${snapshot.playerShield}`;
 
   const log = document.querySelector<HTMLElement>('#battle-log');
   if (!log) return;
@@ -242,22 +254,29 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
     const rawManaCost = button.dataset.manaCost;
     const parsedManaCost = rawManaCost?.trim() ? Number(rawManaCost) : Number.NaN;
     const validManaCost = isValidManaCost(parsedManaCost);
+    const rawShieldGain = button.dataset.shieldGain;
+    const parsedShieldGain = rawShieldGain?.trim() ? Number(rawShieldGain) : 0;
+    const validShieldGain = isValidShieldGain(parsedShieldGain);
     const unaffordable = snapshot.status === 'active'
       && (!validManaState || !validManaCost || parsedManaCost > snapshot.playerMana);
     button.disabled = snapshot.status !== 'active'
       || !validManaState
       || !validManaCost
+      || !validShieldGain
       || parsedManaCost > snapshot.playerMana;
 
     // Malformed configuration or a corrupt snapshot must fail closed rather
     // than making a paid move appear usable when the rules engine will reject it.
     const costLabel = button.querySelector<HTMLElement>('small');
     if (costLabel) {
-      costLabel.textContent = !validManaState || !validManaCost
+      const manaLabel = !validManaState || !validManaCost
         ? 'UNAVAILABLE'
         : unaffordable
           ? `NEED ${parsedManaCost} MANA`
           : parsedManaCost === 0 ? 'NO MANA' : `${parsedManaCost} MANA`;
+      costLabel.textContent = !validShieldGain || manaLabel === 'UNAVAILABLE'
+        ? 'UNAVAILABLE'
+        : `${manaLabel}${parsedShieldGain > 0 ? ` · SHIELD +${parsedShieldGain}` : ''}`;
     }
   });
 

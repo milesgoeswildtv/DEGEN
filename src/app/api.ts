@@ -14,6 +14,9 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     && isBoundedSafeInteger(state.turnCount, 0, Number.MAX_SAFE_INTEGER - 1)
     && isBoundedSafeInteger(state.playerHp, 1, TEST_DEGEN.maxHp)
     && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
+    && (state.playerShield === undefined || (isBoundedSafeInteger(state.playerShield, 0, Number.MAX_SAFE_INTEGER) && state.playerShield === 0))
+    && (state.shieldAbsorbed === undefined || state.shieldAbsorbed === 0)
+    && (state.retaliationDamage === undefined || state.retaliationDamage === 0)
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
 };
 
@@ -22,18 +25,25 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   const state = value as Record<string, unknown>;
   const playerHp = state.playerHp;
   const playerMana = state.playerMana;
+  const playerShield = state.playerShield ?? 0;
+  const shieldAbsorbed = state.shieldAbsorbed ?? 0;
+  const retaliationDamage = state.retaliationDamage ?? 0;
   const enemyHp = state.enemyHp;
   const turnCount = state.turnCount;
   if (state.permitId !== permitId
     || (state.status !== 'active' && state.status !== 'victory' && state.status !== 'defeat')
     || !isBoundedSafeInteger(playerHp, 0, TEST_DEGEN.maxHp)
     || !isBoundedSafeInteger(playerMana, 0, TEST_DEGEN.maxMana)
+    || !isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(retaliationDamage, 0, TUNNEL_MAW.damage)
+    || shieldAbsorbed > retaliationDamage
     || !isBoundedSafeInteger(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   if (state.status === 'active') return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
-  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0;
-  return turnCount > 0 && playerHp === 0 && enemyHp > 0;
+  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
+  return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

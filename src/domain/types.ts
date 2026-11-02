@@ -16,6 +16,8 @@ export interface AbilityDefinition {
   description: string;
   damage: number;
   manaCost: number;
+  /** Optional temporary Shield gained by this bespoke Degen ability. */
+  shieldGain?: number;
 }
 
 export interface DegenDefinition {
@@ -114,6 +116,11 @@ export interface BattleActionResult {
   status: 'active' | 'victory' | 'defeat';
   playerHp: number;
   playerMana: number;
+  /** Temporary Degen Shield; absent only on pre-Shield legacy Worker snapshots. */
+  playerShield?: number;
+  /** Server-resolved Shield absorption and full retaliation for the accepted action. */
+  shieldAbsorbed?: number;
+  retaliationDamage?: number;
   enemyHp: number;
   turnCount: number;
 }
