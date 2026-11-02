@@ -393,6 +393,29 @@ test('combat rules reject universal monster action-resource aliases before resol
     'focusRecovery',
     'focusRestore',
     'focusGain',
+    'mp',
+    'MP',
+    'maxMp',
+    'currentMp',
+    'mpCost',
+    'mpPool',
+    'mpRegeneration',
+    'mpRegen',
+    'mpSteal',
+    'mpDrain',
+    'mpRecovery',
+    'mpRestore',
+    'mpGain',
+    'magicPoint',
+    'magicPoints',
+    'magicPointCost',
+    'magicPointRegeneration',
+    'm-p',
+    'm_p',
+    'm.p.',
+    'm p',
+    'ｍｐ',
+    'ＭＰＣＯＳＴ',
   ] as const;
 
   for (const field of forbiddenFields) {
@@ -488,6 +511,14 @@ test('combat rules reject nested monster action resources and safely inspect cyc
       enemy: { ...TUNNEL_MAW, signature: { 'resource-drain': 1 } } as typeof TUNNEL_MAW,
     },
     {
+      path: 'signature.mpPool',
+      enemy: { ...TUNNEL_MAW, signature: { mpPool: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.magicPointCost',
+      enemy: { ...TUNNEL_MAW, loadout: [{ magicPointCost: 1 }] } as typeof TUNNEL_MAW,
+    },
+    {
       path: 'signature.resource_max',
       enemy: { ...TUNNEL_MAW, signature: { resource_max: 1 } } as typeof TUNNEL_MAW,
     },
@@ -530,4 +561,23 @@ test('combat rules reject nested monster action resources and safely inspect cyc
     /universal action resource \(signature\.mana\)/,
     'cyclic nested monster data must be checked without infinite recursion',
   );
+});
+
+
+test('ordinary monster move names containing the letters mp remain valid', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    signature: { jump: true, stomp: true },
+  } as typeof TUNNEL_MAW;
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
 });
