@@ -51,5 +51,5 @@ test('Worker handler validates complete layout before D1 batch', () => {
   assert.ok(start>=0 && end>start);
   assert.ok(handler.indexOf('validateHousingPlacements(')>=0);
   assert.ok(handler.indexOf('validateHousingPlacements(')<handler.indexOf('await env.DB.batch(['));
-  assert.match(handler,/typeof input.playerId !== 'string'/);
+  assert.match(handler,/isNonEmptyString\(input\.playerId\)/);
 });
