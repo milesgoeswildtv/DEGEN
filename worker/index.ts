@@ -302,6 +302,11 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
   if (input.platformUserId !== undefined && typeof input.platformUserId !== 'string') {
     return fail(request, env, 'platformUserId must be a string.');
   }
+  if (input.platformUserId !== undefined
+    && (!isNonEmptyString(input.platformUserId)
+      || input.platformUserId !== input.platformUserId.trim())) {
+    return fail(request, env, 'platformUserId must be a non-empty canonical string.');
+  }
   await ensurePlayer(env.DB, input.playerId, input.displayName || 'Player');
 
   if ((input.platform === 'discord' || input.platform === 'telegram') && input.platformUserId) {

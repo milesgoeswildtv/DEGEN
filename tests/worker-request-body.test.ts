@@ -127,6 +127,23 @@ test('world and pending-reward reads reject whitespace-only player IDs before D1
 });
 
 
+
+test('platform identity IDs reject empty or whitespace-padded values before D1 access', async () => {
+  for (const platformUserId of ['', '   ', ' discord-1 ']) {
+    const response = await worker.fetch(new Request('https://degen-api.example/api/player/bootstrap', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: 'player-1', platform: 'discord', platformUserId }),
+    }), {
+      DB: { prepare() { throw new Error('D1 must not be touched for a non-canonical platform identity'); } },
+    });
+    assert.equal(response.status, 400, JSON.stringify({ platformUserId }));
+    assert.deepEqual(await response.json(), {
+      error: 'platformUserId must be a non-empty canonical string.',
+    });
+  }
+});
+
 test('whitespace-only identifiers on mutation routes return 400 before touching D1', async () => {
   const cases = [
     { path: '/api/player/bootstrap', method: 'POST', body: { playerId: '   ' }, error: 'playerId is required' },
