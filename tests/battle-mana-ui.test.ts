@@ -100,3 +100,37 @@ test('ability controls disable only unaffordable abilities and preserve free act
     Reflect.deleteProperty(viewContext, 'document');
   }
 });
+
+
+test('Shield ability gains and the authoritative remaining Shield are visible in the battle HUD', () => {
+  const shieldDegen = {
+    ...TEST_DEGEN,
+    abilities: [{ ...TEST_DEGEN.abilities[0]!, shieldGain: 5 }],
+  };
+  const markup = battleView(player, shieldDegen as typeof TEST_DEGEN);
+  assert.match(markup, /data-shield-gain="5"/);
+  assert.match(markup, /NO MANA · SHIELD \\+5/);
+
+  const log = { innerHTML: '', append: () => undefined };
+  const accessibleHud = { textContent: '' };
+  const manaPill = { textContent: '' };
+  const shieldPill = { textContent: '' };
+  const fakeDocument = {
+    querySelector: (selector: string) => ({
+      '#battle-accessible-hud': accessibleHud,
+      '#battle-mana': manaPill,
+      '#battle-shield': shieldPill,
+      '#battle-log': log,
+    } as Record<string, unknown>)[selector],
+    querySelectorAll: () => [],
+  };
+  const boundUi = runInNewContext(
+    stripTypeScriptTypes(viewsSource, { mode: 'transform' }) + '\\n({ updateBattleDom });',
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
+  ) as { updateBattleDom: (state: BattleSnapshot) => void };
+
+  boundUi.updateBattleDom({ ...snapshot(0), playerShield: 7, turnCount: 2 });
+  assert.equal(manaPill.textContent, 'MANA 0/12');
+  assert.equal(shieldPill.textContent, 'SHIELD 7');
+  assert.match(accessibleHud.textContent, /Mana 0 of 12, Shield 7/);
+});
