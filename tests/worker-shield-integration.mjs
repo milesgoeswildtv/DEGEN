@@ -53,14 +53,15 @@ try {
       ('shield-impossible-active',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('shield-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+    -- Shield-bearing rows below are valid post-turn snapshots, not fresh turn-zero permits.
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
       battle_status,player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count)
     VALUES
-      ('shield-action-permit','shield-action','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,5,0,0,92,0),
-      ('shield-carry-permit','shield-carry','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,12,0,0,92,0),
-      ('shield-kill-permit','shield-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',5,12,5,0,0,1,0),
-      ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',1,0,2,0,0,92,0),
-      ('shield-race-permit','shield-race','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,10,0,0,92,0),
+      ('shield-action-permit','shield-action','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',115,0,5,5,10,63,1),
+      ('shield-carry-permit','shield-carry','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,12,10,10,63,1),
+      ('shield-kill-permit','shield-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',5,12,5,5,10,1,1),
+      ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',8,0,2,8,10,63,1),
+      ('shield-race-permit','shield-race','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,10,10,10,63,1),
       ('shield-legacy-permit','shield-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,0,NULL,NULL,92,0),
       ('shield-corrupt-legacy-permit','shield-corrupt-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,1,NULL,NULL,92,0),
       ('shield-impossible-active-permit','shield-impossible-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,0,0,0,63,1);
@@ -103,21 +104,21 @@ try {
     {player_hp:110,player_mana:0,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:63,turn_count:1,battle_status:'active'},
   ]);
 
-  const action=await post('/api/battle/action',{playerId:'shield-action',permitId:'shield-action-permit',abilityId:'slash',expectedTurnCount:0,playerShield:999});
+  const action=await post('/api/battle/action',{playerId:'shield-action',permitId:'shield-action-permit',abilityId:'slash',expectedTurnCount:1,playerShield:999});
   assert.equal(action.status,200);
   assert.deepEqual([action.data.playerHp,action.data.playerMana,action.data.playerShield,action.data.shieldAbsorbed,action.data.retaliationDamage,action.data.enemyHp,action.data.turnCount,action.data.status],
-    [115,0,0,5,10,63,1,'active']);
+    [110,0,0,5,10,34,2,'active']);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-action-permit'"),[
-    {player_hp:115,player_mana:0,player_shield:0,last_shield_absorbed:5,last_retaliation_damage:10,enemy_hp:63,turn_count:1,battle_status:'active'},
+    {player_hp:110,player_mana:0,player_shield:0,last_shield_absorbed:5,last_retaliation_damage:10,enemy_hp:34,turn_count:2,battle_status:'active'},
   ]);
 
-  const rejected=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'crack',expectedTurnCount:0});
+  const rejected=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'crack',expectedTurnCount:1});
   assert.equal(rejected.status,409);
   assert.equal(rejected.data.battleState.playerShield,12);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count FROM battle_permits WHERE id='shield-carry-permit'"),[
-    {player_hp:120,player_mana:0,player_shield:12,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:92,turn_count:0},
+    {player_hp:120,player_mana:0,player_shield:12,last_shield_absorbed:10,last_retaliation_damage:10,enemy_hp:63,turn_count:1},
   ]);
-  const carry=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'slash',expectedTurnCount:0});
+  const carry=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'slash',expectedTurnCount:1});
   assert.equal(carry.status,200);
   assert.deepEqual([carry.data.playerHp,carry.data.playerShield,carry.data.shieldAbsorbed,carry.data.retaliationDamage],[120,2,10,10]);
   assert.deepEqual(sql("SELECT last_shield_absorbed,last_retaliation_damage FROM battle_permits WHERE id='shield-carry-permit'"),[
@@ -125,20 +126,20 @@ try {
   ]);
 
   const race = await Promise.all([
-    post('/api/battle/action',{playerId:'shield-race',permitId:'shield-race-permit',abilityId:'slash',expectedTurnCount:0}),
-    post('/api/battle/action',{playerId:'shield-race',permitId:'shield-race-permit',abilityId:'slash',expectedTurnCount:0}),
+    post('/api/battle/action',{playerId:'shield-race',permitId:'shield-race-permit',abilityId:'slash',expectedTurnCount:1}),
+    post('/api/battle/action',{playerId:'shield-race',permitId:'shield-race-permit',abilityId:'slash',expectedTurnCount:1}),
   ]);
   assert.deepEqual(race.map((result) => result.status).sort(), [200,409]);
   const raceConflict = race.find((result) => result.status === 409);
   assert.equal(raceConflict?.data.battleState.playerShield, 0);
-  assert.equal(raceConflict?.data.battleState.turnCount, 1);
+  assert.equal(raceConflict?.data.battleState.turnCount, 2);
   assert.equal(raceConflict?.data.battleState.shieldAbsorbed, 10);
   assert.equal(raceConflict?.data.battleState.retaliationDamage, 10);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-race-permit'"),[
-    {player_hp:120,player_mana:0,player_shield:0,last_shield_absorbed:10,last_retaliation_damage:10,enemy_hp:63,turn_count:1,battle_status:'active'},
+    {player_hp:120,player_mana:0,player_shield:0,last_shield_absorbed:10,last_retaliation_damage:10,enemy_hp:34,turn_count:2,battle_status:'active'},
   ]);
 
-  const kill=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'crack',expectedTurnCount:0});
+  const kill=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'crack',expectedTurnCount:1});
   assert.equal(kill.status,200);
   assert.equal(kill.data.status,'victory');
   assert.equal(kill.data.playerShield,5);
@@ -149,13 +150,13 @@ try {
   ]);
   const complete=await post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'});
   assert.equal(complete.status,200);
-  const replay=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'slash',expectedTurnCount:1});
+  const replay=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'slash',expectedTurnCount:2});
   assert.equal(replay.status,409);
   assert.equal(replay.data.error,'Battle permit is already completed.');
   assert.equal(replay.data.battleState.shieldAbsorbed,0);
   assert.equal(replay.data.battleState.retaliationDamage,0);
 
-  const defeat=await post('/api/battle/action',{playerId:'shield-defeat',permitId:'shield-defeat-permit',abilityId:'slash',expectedTurnCount:0});
+  const defeat=await post('/api/battle/action',{playerId:'shield-defeat',permitId:'shield-defeat-permit',abilityId:'slash',expectedTurnCount:1});
   assert.equal(defeat.status,200);
   assert.equal(defeat.data.status,'defeat');
   assert.equal(defeat.data.playerHp,0);
@@ -163,16 +164,16 @@ try {
   assert.equal(defeat.data.shieldAbsorbed,2);
   assert.equal(defeat.data.retaliationDamage,10);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-defeat-permit'"),[
-    {player_hp:0,player_mana:0,player_shield:0,last_shield_absorbed:2,last_retaliation_damage:10,enemy_hp:63,turn_count:1,battle_status:'defeat'},
+    {player_hp:0,player_mana:0,player_shield:0,last_shield_absorbed:2,last_retaliation_damage:10,enemy_hp:34,turn_count:2,battle_status:'defeat'},
   ]);
   sql("UPDATE battle_permits SET expires_at=datetime('now','-1 minute') WHERE id='shield-defeat-permit'");
-  const recoveredDefeat=await post('/api/battle/action',{playerId:'shield-defeat',permitId:'shield-defeat-permit',abilityId:'slash',expectedTurnCount:1});
+  const recoveredDefeat=await post('/api/battle/action',{playerId:'shield-defeat',permitId:'shield-defeat-permit',abilityId:'slash',expectedTurnCount:2});
   assert.equal(recoveredDefeat.status,409);
   assert.equal(recoveredDefeat.data.error,'Battle is already defeated.');
   assert.equal(recoveredDefeat.data.battleState.shieldAbsorbed,2);
   assert.equal(recoveredDefeat.data.battleState.retaliationDamage,10);
   sql("UPDATE battle_permits SET last_shield_absorbed=11 WHERE id='shield-defeat-permit'");
-  const corruptRecovery=await post('/api/battle/action',{playerId:'shield-defeat',permitId:'shield-defeat-permit',abilityId:'slash',expectedTurnCount:1});
+  const corruptRecovery=await post('/api/battle/action',{playerId:'shield-defeat',permitId:'shield-defeat-permit',abilityId:'slash',expectedTurnCount:2});
   assert.equal(corruptRecovery.status,409);
   assert.equal(corruptRecovery.data.error,'Battle permit is invalid, expired, or already completed.');
   assert.equal('battleState' in corruptRecovery.data,false);
