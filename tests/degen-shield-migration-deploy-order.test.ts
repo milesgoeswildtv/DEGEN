@@ -12,7 +12,7 @@ const domainTypes = read('../src/domain/types.ts');
 
 test('Shield migration follows the current tracked inventory guard with unique versions', () => {
   const names = readdirSync(new URL('../db/migrations/', import.meta.url))
-    .filter((name) => /^\\d{4}_[a-z0-9_]+\\.sql$/i.test(name)).sort();
+    .filter((name) => name.endsWith('.sql') && name.slice(0, 4).split('').every((char) => char >= '0' && char <= '9')).sort();
   const inventoryIndex = names.indexOf('0007_player_inventory_quantity_guards.sql');
   const shieldIndex = names.indexOf('0008_degen_shield.sql');
   assert.ok(inventoryIndex >= 0, 'current main migration 0007 must remain tracked');
@@ -22,8 +22,8 @@ test('Shield migration follows the current tracked inventory guard with unique v
 });
 
 test('Shield migration defaults existing permits to zero without resetting battle state', () => {
-  assert.match(shieldMigration, /ADD COLUMN player_shield INTEGER NOT NULL DEFAULT 0 CHECK \\(player_shield >= 0\\)/i);
-  assert.equal((shieldMigration.match(/\\bALTER\\s+TABLE\\b/gi) ?? []).length, 1);
+  assert.ok(shieldMigration.includes('ADD COLUMN player_shield INTEGER NOT NULL DEFAULT 0 CHECK (player_shield >= 0);'));
+  assert.equal(shieldMigration.split('ALTER TABLE').length - 1, 1);
   const db = new DatabaseSync(':memory:');
   try {
     db.exec(`
@@ -45,15 +45,15 @@ test('Worker deployment applies tracked migrations before deploying Worker code'
   const migrations = deployWorkflow.indexOf('run: npm run db:migrate');
   const worker = deployWorkflow.indexOf('run: npm run deploy:worker');
   assert.ok(schema >= 0 && migrations > schema && worker > migrations);
-  assert.match(wranglerConfig, /binding\\s*=\\s*"DB"/);
-  assert.match(wranglerConfig, /database_name\\s*=\\s*"DEGEN"/);
-  assert.match(wranglerConfig, /migrations_dir\\s*=\\s*"db\\/migrations"/);
-  assert.match(packageJson.scripts['db:migrate'], /wrangler d1 migrations apply DEGEN/);
+  assert.ok(wranglerConfig.includes('binding = "DB"'));
+  assert.ok(wranglerConfig.includes('database_name = "DEGEN"'));
+  assert.ok(wranglerConfig.includes('migrations_dir = "db/migrations"'));
+  assert.ok(packageJson.scripts['db:migrate'].includes('wrangler d1 migrations apply DEGEN'));
 });
 
 test('EnemyDefinition remains free of Mana-equivalent resources', () => {
   const start = domainTypes.indexOf('export interface EnemyDefinition');
   const end = domainTypes.indexOf('export interface LocationDefinition', start);
   assert.ok(start >= 0 && end > start);
-  assert.doesNotMatch(domainTypes.slice(start, end), /\\b(?:mana|maxMana|currentMana|energy|stamina|focus)\\s*:/i);
+  assert.equal(/mana|maxMana|currentMana|energy|stamina|focus/i.test(domainTypes.slice(start, end)), false);
 });
