@@ -454,13 +454,24 @@ test('server-backed battle start accepts a valid progressed Shield snapshot when
   permit.initialState.playerHp = 64;
   permit.initialState.playerMana = 4;
   permit.initialState.playerShield = 4;
-  permit.initialState.shieldAbsorbed = 5;
+  permit.initialState.shieldAbsorbed = 10;
   permit.initialState.retaliationDamage = 10;
   permit.initialState.enemyHp = 50;
   permit.initialState.turnCount = 2;
 
   const result = await apiReturning(permit) as typeof permit;
   assert.deepEqual(result.initialState, permit.initialState);
+});
+
+test('server-backed battle start rejects a recovered snapshot with partial Shield absorption and Shield remaining', async () => {
+  const permit = validPermit();
+  permit.initialState.playerHp = 64;
+  permit.initialState.playerShield = 4;
+  permit.initialState.shieldAbsorbed = 5;
+  permit.initialState.retaliationDamage = 10;
+  permit.initialState.enemyHp = 50;
+  permit.initialState.turnCount = 2;
+  await assert.rejects(apiReturning(permit), /Missing or malformed authoritative battle start state/);
 });
 
 test('server-backed battle start rejects Shield before the first accepted turn', async () => {
