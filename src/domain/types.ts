@@ -105,6 +105,20 @@ type _MonsterManaSeparatorAliasesAreGuarded = AssertMonsterResourceGuard<
   > extends never ? true : false
 >;
 
+type ForbiddenMpResourcePrefix = 'max' | 'current' | 'base' | 'starting' | 'initial';
+type ForbiddenMpResourceSuffix =
+  | 'cost' | 'pool' | 'regeneration' | 'regen' | 'steal' | 'drain'
+  | 'recovery' | 'restore' | 'gain' | 'amount' | 'value';
+
+type _MonsterMpAliasesAreGuarded = AssertMonsterResourceGuard<
+  Exclude<
+    'mp' | 'maxMp' | 'mpCost' | 'm-p' | 'magicPoints',
+    KeysMatchingForbiddenMonsterActionResource<{
+      signature: { mp: number; maxMp: number; mpCost: number; 'm-p': number; magicPoints: number };
+    }>
+  > extends never ? true : false
+>;
+
 type ForbiddenNormalizedMonsterActionResourceField =
   // Normalize separators before checking every Mana/resource namespace alias.
   // Catch cost, capacity, regeneration, drain, theft, and future aliases alike.
@@ -113,7 +127,12 @@ type ForbiddenNormalizedMonsterActionResourceField =
   | `${string}actionpoint${string}`
   | `${string}energy${string}`
   | `${string}stamina${string}`
-  | `${string}focus${string}`;
+  | `${string}focus${string}`
+  | 'mp'
+  | `${ForbiddenMpResourcePrefix}mp`
+  | `mp${ForbiddenMpResourceSuffix}`
+  | `${ForbiddenMpResourcePrefix}mp${ForbiddenMpResourceSuffix}`
+  | `${string}magicpoint${string}`;
 
 type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer Item)[]
   ? KeysMatchingForbiddenMonsterActionResource<Item>
