@@ -73,7 +73,7 @@ test('Worker deployment watches every shared source module imported by the Worke
 });
 
 test('EnemyDefinition remains free of Mana-equivalent resources', () => {
-  const enemyDefinition = domainTypes.match(/export interface EnemyDefinition \\{[\\s\\S]*?\\n\\}/)?.[0] ?? '';
+  const enemyDefinition = domainTypes.match(/export interface EnemyDefinition \{[\s\S]*?\n\}/)?.[0] ?? '';
   assert.ok(enemyDefinition, 'EnemyDefinition interface must remain present');
   assert.equal(/mana|maxMana|currentMana|energy|stamina|focus/i.test(enemyDefinition), false);
   assert.match(domainTypes, /type _EnemyDefinitionHasNoUniversalActionResource/,
