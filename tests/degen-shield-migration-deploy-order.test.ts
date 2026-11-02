@@ -73,8 +73,9 @@ test('Worker deployment watches every shared source module imported by the Worke
 });
 
 test('EnemyDefinition remains free of Mana-equivalent resources', () => {
-  const start = domainTypes.indexOf('export interface EnemyDefinition');
-  const end = domainTypes.indexOf('export interface LocationDefinition', start);
-  assert.ok(start >= 0 && end > start);
-  assert.equal(/mana|maxMana|currentMana|energy|stamina|focus/i.test(domainTypes.slice(start, end)), false);
+  const enemyDefinition = domainTypes.match(/export interface EnemyDefinition \\{[\\s\\S]*?\\n\\}/)?.[0] ?? '';
+  assert.ok(enemyDefinition, 'EnemyDefinition interface must remain present');
+  assert.equal(/mana|maxMana|currentMana|energy|stamina|focus/i.test(enemyDefinition), false);
+  assert.match(domainTypes, /type _EnemyDefinitionHasNoUniversalActionResource/,
+    'the recursive compile-time monster resource guard must remain active');
 });
