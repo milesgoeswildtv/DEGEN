@@ -437,3 +437,69 @@ test('an A-to-B-to-A account switch cannot let the first A response overwrite th
   assert.equal(renderCount, 2, 'the cleared account state and latest A snapshot are each rendered once');
   assert.equal(loaded.previewCalls(), 0);
 });
+
+test('switching accounts during battle closes the old account view but preserves its recoverable start', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  const discarded: string[] = [];
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => {
+      requests.push(playerId);
+      return { ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server' };
+    },
+    hasRecoverableUnderpassStart: (playerId: string) => playerId === 'player-1',
+    discardUnrecoverableUnderpassStart: (playerId: string, permitId: string) => {
+      discarded.push(`${playerId}:${permitId}`);
+    },
+  });
+  const state = controller as unknown as {
+    route: string;
+    battlePermit?: { permitId: string; cycleId: string };
+    battlePermitOwnerId?: string;
+    battleGame?: { destroy: (removeCanvas?: boolean) => void };
+    battleEngine?: unknown;
+    battleActionPending: boolean;
+    battleResumeAttempt: number;
+    underpassEvent?: EventSnapshot;
+    render: () => void;
+    refreshWorld: () => Promise<void>;
+  };
+
+  await state.refreshWorld();
+  assert.equal(state.underpassEvent?.cycleId, 'player-1-cycle');
+  state.route = 'battle';
+  state.battlePermit = { permitId: 'player-1-permit', cycleId: 'player-1-cycle' };
+  state.battlePermitOwnerId = 'player-1';
+  let destroyed = 0;
+  state.battleGame = { destroy: (removeCanvas) => {
+    assert.equal(removeCanvas, true);
+    destroyed += 1;
+  } };
+  state.battleEngine = {};
+  state.battleActionPending = true;
+  state.battleResumeAttempt = 4;
+
+  const rendered: Array<{ route: string; cycleId?: string }> = [];
+  state.render = () => rendered.push({ route: state.route, cycleId: state.underpassEvent?.cycleId });
+
+  store.snapshot.id = 'player-2';
+  await state.refreshWorld();
+
+  assert.deepEqual(requests, ['player-1', 'player-2']);
+  assert.deepEqual(rendered, [
+    { route: 'map', cycleId: undefined },
+    { route: 'map', cycleId: 'player-2-cycle' },
+  ], 'the old manifested battle must be hidden before the new account world state renders');
+  assert.equal(state.route, 'map');
+  assert.equal(state.battlePermit, undefined);
+  assert.equal(state.battlePermitOwnerId, undefined);
+  assert.equal(state.battleGame, undefined);
+  assert.equal(state.battleEngine, undefined);
+  assert.equal(state.battleActionPending, false);
+  assert.equal(state.battleResumeAttempt, 5, 'pending resume attempts from the old account are invalidated');
+  assert.equal(destroyed, 1, 'the old Phaser battle is destroyed exactly once');
+  assert.equal(discarded.length, 0, 'the old account recovery key is not discarded');
+  assert.equal(state.underpassEvent?.cycleId, 'player-2-cycle');
+});
