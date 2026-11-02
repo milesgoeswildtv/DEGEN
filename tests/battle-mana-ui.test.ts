@@ -109,7 +109,7 @@ test('Shield ability gains and the authoritative remaining Shield are visible in
   };
   const markup = battleView(player, shieldDegen as typeof TEST_DEGEN);
   assert.match(markup, /data-shield-gain="5"/);
-  assert.match(markup, /NO MANA · SHIELD \\+5/);
+  assert.ok(markup.includes('NO MANA · SHIELD +5'));
 
   const log = { innerHTML: '', append: () => undefined };
   const accessibleHud = { textContent: '' };
@@ -125,7 +125,7 @@ test('Shield ability gains and the authoritative remaining Shield are visible in
     querySelectorAll: () => [],
   };
   const boundUi = runInNewContext(
-    stripTypeScriptTypes(viewsSource, { mode: 'transform' }) + '\\n({ updateBattleDom });',
+    stripTypeScriptTypes(viewsSource, { mode: 'transform' }) + '\n({ updateBattleDom });',
     { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
   ) as { updateBattleDom: (state: BattleSnapshot) => void };
 
