@@ -15,7 +15,13 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
   const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
   const turnCount = state.turnCount;
+  // A 0/0 audit with zero Shield is also the compatibility projection
+  // for migrated pre-Shield permits; Worker validation checks the underlying NULLs.
+  const hasLegacyShieldAuditSentinel = playerShield === 0
+    && shieldAbsorbed === 0
+    && retaliationDamage === 0;
   const hasConsistentActiveShieldAudit = hasLegacyShieldState
+    || hasLegacyShieldAuditSentinel
     || (turnCount === 0
       ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
       : retaliationDamage > 0);
@@ -63,7 +69,12 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   if (state.status === 'active') {
+    // Preserve the zero-Shield/0/0 projection used for migrated pre-Shield permits.
+    const hasLegacyShieldAuditSentinel = playerShield === 0
+      && shieldAbsorbed === 0
+      && retaliationDamage === 0;
     const hasConsistentActiveShieldAudit = hasLegacyShieldState
+      || hasLegacyShieldAuditSentinel
       || (turnCount === 0
         ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
         : retaliationDamage > 0);
