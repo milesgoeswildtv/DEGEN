@@ -1,3 +1,18 @@
+## Latest run — 2026-11-01 (enforce GLITCHRAT-only LEAK namespace)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **Current branch / PR:** `automation/degen/monster-resource-boundary-v01` / [PR #122](https://github.com/milesgoeswildtv/DEGEN/pull/122), continuing the existing resource-boundary slice; no duplicate branch.
+- **Task / files changed:** `src/game/combat/rules.ts` now rejects the Degen-owned `LEAK` effect when it appears as a monster status, signature, move/ability effect, or mechanic ID, including case/compatibility-character variants. The scan is cycle-safe and intentionally ignores ordinary descriptive prose. `tests/combat-progression.test.ts` covers direct/nested aliases, full-width text, and prose false-positive safety. No monster names, archetypes, moves, or Degen kits were added.
+- **Code/test commit:** `97e61d280bab5a880402ce8e5cc2d30d67f39038` (rules + deterministic regression tests); progress-only update follows. Exact-head CI is pending.
+- **Tests / QA:** changes are pushed to the existing PR branch; no local shell execution is available through this connected workflow, so no local `npm test`, build, browser, or Wrangler result is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative permit Mana, atomic unaffordable rejection, exact deduction, zero-cost use at zero, client/Worker math consistency, no monster Mana-equivalent resource, and no Mana-triggered reversion remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, action turn-CAS, player HP/Mana, enemy HP, terminal outcomes, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. This slice only hardens monster-definition boundaries.
+- **D1 / migration assumptions:** no schema, migration, binding, or deploy workflow changes. Main still tracks `0007_player_inventory_quantity_guards.sql`; draft auth PR #14 proposes the colliding `0007_player_sessions.sql`; PR #114's fail-closed preflight detects but does not resolve the sequence. No D1 mutation or Worker deployment.
+- **Miles blockers:** the requested `02 DEGEN Monster Log v0.11` was not present in the accessible Library search (v0.9 and older surfaced); no older roster was substituted. Shield/status work remains gated by the unresolved `0007` migration/auth decision and status behavior. Production Discord/Telegram identity credentials and legacy identity-collision policy remain unresolved.
+- **One best next task:** verify exact-head CI for PR #122; then continue review sequencing for the already-green mobile, trophy, and account-refresh PRs while keeping schema-backed Shield/status and production monster integration behind their existing gates.
+
+---
+
 ## Latest run — 2026-11-01 (close the monster MP-resource alias gap)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`. Main CI [41244799185](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799185) completed SUCCESS. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcb`; no production deployment or D1 mutation occurred in this run.
