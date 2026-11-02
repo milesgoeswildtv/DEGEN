@@ -100,7 +100,7 @@ test('an expiry crossed during a conflict re-read does not return an unusable ac
   const activeSnapshot = {
     event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
     encounter_key: TUNNEL_MAW.id,
-    player_hp: 80, player_mana: 0, enemy_hp: 50, battle_status: 'active', turn_count: 0,
+    player_hp: 80, player_mana: 0, player_shield: 0, enemy_hp: 50, battle_status: 'active', turn_count: 0,
   };
   const expiredSnapshot = { ...activeSnapshot, permit_is_unexpired: 0 };
   const reads: string[] = [];
@@ -142,7 +142,7 @@ test('a failed action compare-and-swap after expiry does not return an active sn
   const activeSnapshot = {
     event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
     encounter_key: TUNNEL_MAW.id,
-    player_hp: 80, player_mana: 12, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+    player_hp: 80, player_mana: 12, player_shield: 0, enemy_hp: 92, battle_status: 'active', turn_count: 0,
   };
   const expiredSnapshot = { ...activeSnapshot, permit_is_unexpired: 0 };
   const reads: string[] = [];
@@ -254,17 +254,17 @@ test('completed permits for unsupported encounters, events, or cycles are not re
   const unsupportedSnapshots = [
     {
       event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
-      encounter_key: 'different-monster', player_hp: 70, player_mana: 0, enemy_hp: 0,
+      encounter_key: 'different-monster', player_hp: 70, player_mana: 0, player_shield: 0, enemy_hp: 0,
       battle_status: 'victory', turn_count: 3,
     },
     {
       event_key: 'unapproved-event', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
-      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, enemy_hp: 0,
+      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, player_shield: 0, enemy_hp: 0,
       battle_status: 'victory', turn_count: 3,
     },
     {
       event_key: 'underpass', cycle_event_key: 'unapproved-event', cycle_id: 'cycle-foreign',
-      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, enemy_hp: 0,
+      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, player_shield: 0, enemy_hp: 0,
       battle_status: 'victory', turn_count: 3,
     },
   ];
@@ -303,27 +303,27 @@ test('expired terminal retries recover only valid pending victory or defeat snap
     {
       state: {
         event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
-        player_hp: 70, player_mana: 0, enemy_hp: 0,
+        player_hp: 70, player_mana: 0, player_shield: 0, enemy_hp: 0,
         battle_status: 'victory', turn_count: 3,
         completed_at: null, reward_state: 'pending',
       },
       expectedError: 'Battle victory is awaiting reward completion.',
       expectedState: {
         permitId: 'permit-1', status: 'victory',
-        playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
+        playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 0, turnCount: 3,
       },
     },
     {
       state: {
         event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
-        player_hp: 0, player_mana: 0, enemy_hp: 63,
+        player_hp: 0, player_mana: 0, player_shield: 0, enemy_hp: 63,
         battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
       },
       expectedError: 'Battle is already defeated.',
       expectedState: {
         permitId: 'permit-1', status: 'defeat',
-        playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
+        playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 63, turnCount: 1,
       },
     },
   ];
