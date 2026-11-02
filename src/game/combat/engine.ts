@@ -1,5 +1,5 @@
 import type { BattleActionResult, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
-import { canUseAbility, isValidManaState, resolveCombatTurn } from './rules.ts';
+import { canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from './rules.ts';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
 
@@ -23,6 +23,8 @@ export class BattleEngine {
   private playerHp: number;
   private playerMana: number;
   private playerShield: number;
+  private shieldAbsorbed: number;
+  private retaliationDamage: number;
   private turnCount: number;
   private readonly permitId?: string;
   private enemyHp: number;
@@ -44,14 +46,80 @@ export class BattleEngine {
     this.degen = degen;
     this.enemy = enemy;
     this.onComplete = onComplete;
+    this.permitId = initialState?.permitId;
+    // Distinguish an omitted offline-preview state from a supplied but malformed
+    // Worker payload. A server permit must never silently become a local battle.
+    if (initialState !== undefined && (
+      !initialState
+      || typeof initialState !== 'object'
+      || !this.isValidAuthoritativeState(initialState)
+      || initialState.status !== 'active'
+    )) {
+      throw new Error('Invalid authoritative battle start state.');
+    }
     this.playerHp = initialState?.playerHp ?? degen.maxHp;
     this.playerMana = initialState?.playerMana ?? degen.maxMana;
     this.playerShield = initialState?.playerShield ?? 0;
+    this.shieldAbsorbed = initialState?.shieldAbsorbed ?? 0;
+    this.retaliationDamage = initialState?.retaliationDamage ?? 0;
     this.turnCount = initialState?.turnCount ?? 0;
-    this.permitId = initialState?.permitId;
     this.enemyHp = initialState?.enemyHp ?? enemy.maxHp;
     this.status = initialState?.status ?? 'active';
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
+  }
+
+  // Validate Worker-owned snapshots at the engine boundary too; the API validator
+  // is not the only caller that can reach this stateful object.
+  private isValidAuthoritativeState(result: BattleActionResult): boolean {
+    if (!result || typeof result !== 'object') return false;
+    if (typeof this.permitId !== 'string' || this.permitId.trim().length === 0) return false;
+    if (typeof result.permitId !== 'string' || result.permitId !== this.permitId) return false;
+    if (!Number.isSafeInteger(result.turnCount) || result.turnCount < 0) return false;
+    if (!Number.isSafeInteger(result.playerHp)
+      || result.playerHp < 0 || result.playerHp > this.degen.maxHp) return false;
+    if (!isValidManaState(result.playerMana, this.degen.maxMana)) return false;
+    if (!Number.isSafeInteger(result.enemyHp)
+      || result.enemyHp < 0 || result.enemyHp > this.enemy.maxHp) return false;
+
+    const shieldFields = [result.playerShield, result.shieldAbsorbed, result.retaliationDamage];
+    const hasLegacyShieldState = shieldFields.every((field) => field === undefined);
+    if (!hasLegacyShieldState && shieldFields.some((field) => field === undefined)) return false;
+    const playerShield = result.playerShield === undefined ? 0 : result.playerShield;
+    const shieldAbsorbed = result.shieldAbsorbed === undefined ? 0 : result.shieldAbsorbed;
+    const retaliationDamage = result.retaliationDamage === undefined ? 0 : result.retaliationDamage;
+    if (!isValidShield(playerShield)
+      || !isValidShield(shieldAbsorbed)
+      || !isValidShield(retaliationDamage)
+      || retaliationDamage > this.enemy.damage
+      || shieldAbsorbed > retaliationDamage) return false;
+
+    switch (result.status) {
+      case 'active': {
+        const hasLegacyAuditSentinel = playerShield === 0
+          && shieldAbsorbed === 0
+          && retaliationDamage === 0;
+        const hasConsistentAudit = hasLegacyShieldState
+          || hasLegacyAuditSentinel
+          || (result.turnCount === 0
+            ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
+            : retaliationDamage > 0);
+        return result.playerHp > 0 && result.enemyHp > 0
+          && result.turnCount < Number.MAX_SAFE_INTEGER
+          && hasConsistentAudit;
+      }
+      case 'victory':
+        return result.turnCount > 0 && result.playerHp > 0 && result.enemyHp === 0
+          && shieldAbsorbed === 0 && retaliationDamage === 0;
+      case 'defeat': {
+        const legacyTerminalAudit = hasLegacyShieldState
+          || (shieldAbsorbed === 0 && retaliationDamage === 0);
+        return result.turnCount > 0 && result.playerHp === 0 && result.enemyHp > 0
+          && playerShield === 0
+          && (legacyTerminalAudit || shieldAbsorbed < retaliationDamage);
+      }
+      default:
+        return false;
+    }
   }
 
   get snapshot(): BattleSnapshot {
@@ -82,7 +150,7 @@ export class BattleEngine {
   applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
     if (this.status !== 'active') return;
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
-    if (!ability) return;
+    if (!ability || !this.isValidAuthoritativeState(result)) return;
     if (!this.permitId || result.permitId !== this.permitId) return;
     if (result.turnCount !== this.turnCount + 1) {
       this.synchronizeAuthoritativeState(result);
@@ -97,6 +165,8 @@ export class BattleEngine {
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
     this.playerShield = nextPlayerShield;
+    this.shieldAbsorbed = result.shieldAbsorbed ?? 0;
+    this.retaliationDamage = result.retaliationDamage ?? 0;
     this.enemyHp = result.enemyHp;
     this.turnCount = result.turnCount;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${playerDamage} damage.`);
@@ -129,8 +199,9 @@ export class BattleEngine {
   }
 
   synchronizeAuthoritativeState(result: BattleActionResult): void {
-    if (this.status !== 'active' || !this.permitId || result.permitId !== this.permitId) return;
-    if (!Number.isSafeInteger(result.turnCount) || result.turnCount < this.turnCount) return;
+    if (this.status !== 'active' || !this.isValidAuthoritativeState(result)) return;
+    if (!this.permitId || result.permitId !== this.permitId) return;
+    if (result.turnCount < this.turnCount) return;
 
     // A turn count identifies one immutable combat snapshot. Same-turn retries
     // are idempotent only when every authoritative field agrees; a conflicting
@@ -139,6 +210,8 @@ export class BattleEngine {
       result.playerHp !== this.playerHp
       || result.playerMana !== this.playerMana
       || (result.playerShield ?? 0) !== this.playerShield
+      || (result.shieldAbsorbed ?? 0) !== this.shieldAbsorbed
+      || (result.retaliationDamage ?? 0) !== this.retaliationDamage
       || result.enemyHp !== this.enemyHp
       || result.status !== this.status
     )) return;
@@ -146,12 +219,16 @@ export class BattleEngine {
     const changed = this.playerHp !== result.playerHp
       || this.playerMana !== result.playerMana
       || this.playerShield !== (result.playerShield ?? 0)
+      || this.shieldAbsorbed !== (result.shieldAbsorbed ?? 0)
+      || this.retaliationDamage !== (result.retaliationDamage ?? 0)
       || this.enemyHp !== result.enemyHp
       || this.turnCount !== result.turnCount
       || this.status !== result.status;
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
     this.playerShield = result.playerShield ?? 0;
+    this.shieldAbsorbed = result.shieldAbsorbed ?? 0;
+    this.retaliationDamage = result.retaliationDamage ?? 0;
     this.enemyHp = result.enemyHp;
     this.turnCount = result.turnCount;
     this.status = result.status;
@@ -164,7 +241,9 @@ export class BattleEngine {
   }
 
   useAbility(abilityId: string): void {
-    if (this.status !== 'active') return;
+    // A permit means Worker/D1 owns every action and terminal outcome.
+    // Local simulation and its prototype reward callback are offline-preview only.
+    if (this.permitId || this.status !== 'active') return;
 
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
     if (!ability) return;
@@ -196,6 +275,8 @@ export class BattleEngine {
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
     this.playerShield = result.playerShield;
+    this.shieldAbsorbed = result.shieldAbsorbed;
+    this.retaliationDamage = result.retaliationDamage;
     this.enemyHp = result.enemyHp;
     this.turnCount += 1;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${result.playerDamage} damage.`);
