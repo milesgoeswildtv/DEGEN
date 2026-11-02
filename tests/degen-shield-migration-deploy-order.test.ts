@@ -22,7 +22,7 @@ test('Shield migration follows the current tracked inventory guard with unique v
 });
 
 test('Shield migration defaults existing permits to zero without resetting battle state', () => {
-  assert.ok(shieldMigration.includes("CHECK (typeof(player_shield) = 'integer' AND player_shield BETWEEN 0 AND 9007199254740991);")); 
+  assert.ok(shieldMigration.includes("CHECK (typeof(player_shield) = 'integer' AND player_shield BETWEEN 0 AND 9007199254740991);"));
   assert.ok(shieldMigration.includes("CHECK (last_shield_absorbed IS NULL OR (typeof(last_shield_absorbed) = 'integer' AND last_shield_absorbed BETWEEN 0 AND 9007199254740991));"));
   assert.ok(shieldMigration.includes("CHECK (last_retaliation_damage IS NULL OR (typeof(last_retaliation_damage) = 'integer' AND last_retaliation_damage BETWEEN 0 AND 9007199254740991));"));
   assert.equal(shieldMigration.split('ALTER TABLE').length - 1, 3);
@@ -46,26 +46,28 @@ test('Shield migration defaults existing permits to zero without resetting battl
     assert.equal(migrated.turn_count, 2);
 
     const invalidValues = [
-      ['player_shield', -1],
-      ['player_shield', 1.5],
-      ['player_shield', Number.MAX_SAFE_INTEGER + 1],
-      ['last_shield_absorbed', -1],
-      ['last_shield_absorbed', 1.5],
-      ['last_shield_absorbed', Number.MAX_SAFE_INTEGER + 1],
-      ['last_retaliation_damage', -1],
-      ['last_retaliation_damage', 1.5],
-      ['last_retaliation_damage', Number.MAX_SAFE_INTEGER + 1],
+      ['player_shield', '-1'],
+      ['player_shield', '1.5'],
+      ['player_shield', '9007199254740992'],
+      ['last_shield_absorbed', '-1'],
+      ['last_shield_absorbed', '1.5'],
+      ['last_shield_absorbed', '9007199254740992'],
+      ['last_retaliation_damage', '-1'],
+      ['last_retaliation_damage', '1.5'],
+      ['last_retaliation_damage', '9007199254740992'],
     ] as const;
-    for (const [column, value] of invalidValues) {
+    for (const [column, sqlValue] of invalidValues) {
       assert.throws(
-        () => db.prepare(`UPDATE battle_permits SET ${column} = ? WHERE id = ?`).run(value, 'legacy-active'),
+        () => db.exec(`UPDATE battle_permits SET ${column} = ${sqlValue} WHERE id = 'legacy-active'`),
         `${column} must reject invalid or inexact persisted combat values`,
       );
     }
 
-    db.prepare('UPDATE battle_permits SET player_shield = ? WHERE id = ?').run(Number.MAX_SAFE_INTEGER, 'legacy-active');
-    const maxSafeShield = db.prepare('SELECT player_shield FROM battle_permits WHERE id = ?').get('legacy-active') as { player_shield: number };
-    assert.equal(maxSafeShield.player_shield, Number.MAX_SAFE_INTEGER);
+    db.exec("UPDATE battle_permits SET player_shield = 9007199254740991, last_shield_absorbed = 9007199254740991, last_retaliation_damage = 9007199254740991 WHERE id = 'legacy-active'");
+    const maxSafe = db.prepare('SELECT player_shield,last_shield_absorbed,last_retaliation_damage FROM battle_permits WHERE id = ?').get('legacy-active') as Record<string, number>;
+    assert.equal(maxSafe.player_shield, Number.MAX_SAFE_INTEGER);
+    assert.equal(maxSafe.last_shield_absorbed, Number.MAX_SAFE_INTEGER);
+    assert.equal(maxSafe.last_retaliation_damage, Number.MAX_SAFE_INTEGER);
   } finally { db.close(); }
 });
 
