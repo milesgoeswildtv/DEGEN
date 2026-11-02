@@ -507,6 +507,7 @@ test('switching accounts during battle closes the old account view but preserves
   assert.equal(destroyed, 1, 'the old Phaser battle is destroyed exactly once');
   assert.equal(discarded.length, 0, 'the old account recovery key is not discarded');
   assert.equal(state.underpassEvent?.cycleId, 'player-2-cycle');
+  assert.equal(state.selectedFurniture, undefined, 'a prior account furniture selection must not carry into the new room');
 });
 
 test('account refresh preserves a battle already owned by the newly active player', async () => {
@@ -563,12 +564,14 @@ test('account switch refreshes Home immediately with the new player room', async
   const state = controller as unknown as {
     route: string;
     underpassEvent?: EventSnapshot;
+    selectedFurniture?: string;
     render: () => void;
     refreshWorld: () => Promise<void>;
   };
 
   await state.refreshWorld();
   state.route = 'home';
+  state.selectedFurniture = 'starter-bed';
   const rendered: Array<{ route: string; playerId: string }> = [];
   state.render = () => rendered.push({ route: state.route, playerId: store.snapshot.id });
 
