@@ -171,7 +171,7 @@ test('battle start replays the same active permit after event closure without in
     reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
     reward_tier: null, reward_level: null, reward_remaining_xp: null,
     reward_claim_token: null, reward_claimed_at: null,
-    player_hp: 64, player_mana: 4, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, enemy_hp: 50, battle_status: 'active', turn_count: 2,
+    player_hp: 64, player_mana: 4, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 10, enemy_hp: 50, battle_status: 'active', turn_count: 2,
     cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
     victory_history_marker_count: 0, defeat_history_marker_count: 0,
   };
@@ -186,7 +186,7 @@ test('battle start replays the same active permit after event closure without in
     encounterKey: TUNNEL_MAW.id,
     expiresAt: persistedExpiry,
     initialState: {
-      permitId: requestId, status: 'active', playerHp: 64, playerMana: 4, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 50, turnCount: 2,
+      permitId: requestId, status: 'active', playerHp: 64, playerMana: 4, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 50, turnCount: 2,
     },
   });
   assert.equal(inserts.length, 0, 'recovery must return the persisted snapshot without issuing a second permit');
@@ -241,7 +241,7 @@ test('battle start recovers a concurrent request-ID insert without issuing a dup
     reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
     reward_tier: null, reward_level: null, reward_remaining_xp: null,
     reward_claim_token: null, reward_claimed_at: null,
-    player_hp: 72, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, enemy_hp: 41, battle_status: 'active', turn_count: 1,
+    player_hp: 72, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 10, enemy_hp: 41, battle_status: 'active', turn_count: 1,
     cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
     victory_history_marker_count: 0, defeat_history_marker_count: 0,
   };
@@ -252,7 +252,7 @@ test('battle start recovers a concurrent request-ID insert without issuing a dup
   const result = await response.json() as { permitId: string; initialState: Record<string, unknown> };
   assert.equal(result.permitId, requestId);
   assert.deepEqual(result.initialState, {
-    permitId: requestId, status: 'active', playerHp: 72, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 41, turnCount: 1,
+    permitId: requestId, status: 'active', playerHp: 72, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 41, turnCount: 1,
   });
   assert.equal(inserts.length, 0, 'a concurrent winner owns the one permit row; the retry must only replay it');
 });
