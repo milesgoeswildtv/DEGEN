@@ -30,6 +30,13 @@ const normalizeMonsterActionResourceField = (field: string): string =>
   // before separator removal, so visually disguised resource aliases fail closed.
   field.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+const isMonsterMpResourceAlias = (normalizedField: string): boolean =>
+  // MP is the conventional abbreviation for Mana Points. Match resource-shaped
+  // names only; a broad substring check would incorrectly reject move names
+  // such as "jump" or "stomp".
+  /^(?:(?:max|current|base|starting|initial)?mp(?:cost|pool|regeneration|regen|steal|drain|recovery|restore|gain|amount|value)?)$/.test(normalizedField)
+  || normalizedField.includes('magicpoint');
+
 const findForbiddenMonsterActionResource = (
   value: unknown,
   path: string,
@@ -43,6 +50,7 @@ const findForbiddenMonsterActionResource = (
     const normalizedField = normalizeMonsterActionResourceField(field);
     if (normalizedField.includes('mana')
       || normalizedField.includes('resource')
+      || isMonsterMpResourceAlias(normalizedField)
       || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => normalizedField.includes(alias))) {
       return fieldPath;
     }
