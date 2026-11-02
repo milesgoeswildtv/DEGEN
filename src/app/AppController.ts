@@ -673,7 +673,16 @@ export class AppController {
       this.worldRefreshPlayerId = playerId;
       this.underpassEvent = undefined;
       this.worldSyncFailed = false;
-      if (accountChanged && hadPreviousWorldState
+      if (accountChanged && this.route === 'battle' && this.battlePermitOwnerId !== playerId) {
+        // Never leave a previous account's manifested Degen or battle state on
+        // screen after the active identity changes. Keep the old player's
+        // persisted start key untouched so that player can resume on return.
+        this.battleResumeAttempt += 1;
+        this.battleResumePending = false;
+        this.battlePermit = undefined;
+        this.battlePermitOwnerId = undefined;
+        this.navigate('map');
+      } else if (accountChanged && hadPreviousWorldState
         && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) {
         // Clear the prior account's per-player event state even when the caller
         // will not perform its own post-refresh render (for example, a stale
