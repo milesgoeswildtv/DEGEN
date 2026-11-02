@@ -5,7 +5,7 @@ import { bindCityViewport, type CityCamera } from '../ui/cityViewport';
 import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
-import { isValidManaCost, isValidManaState } from '../game/combat/rules';
+import { isValidManaCost, isValidManaState, isValidShieldGain } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
 import { battleView, districtView, homeView, locationView, mapView, underpassView, updateBattleDom } from '../ui/views';
 import { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } from './api';
@@ -505,11 +505,15 @@ export class AppController {
       const rawManaCost = button.dataset.manaCost;
       const manaCost = rawManaCost?.trim() ? Number(rawManaCost) : Number.NaN;
       const validManaCost = isValidManaCost(manaCost);
+      const rawShieldGain = button.dataset.shieldGain;
+      const shieldGain = rawShieldGain?.trim() ? Number(rawShieldGain) : 0;
+      const validShieldGain = isValidShieldGain(shieldGain);
       button.disabled = disabled
         || !snapshot
         || snapshot.status !== 'active'
         || !validManaState
         || !validManaCost
+        || !validShieldGain
         || manaCost > snapshot.playerMana;
     });
   }
