@@ -483,5 +483,16 @@ test('malformed Worker action snapshots cannot mutate engine state or emit compl
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   });
+  engine.applyAuthoritativeAction('crack', {
+    permitId: 'permit-shield-action-validation',
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 5,
+    shieldAbsorbed: 0,
+    retaliationDamage: 10,
+    enemyHp: TUNNEL_MAW.maxHp - 29,
+    turnCount: 1,
+  });
   assert.deepEqual(engine.snapshot, before);
 });
