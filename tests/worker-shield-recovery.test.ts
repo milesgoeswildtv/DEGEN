@@ -50,6 +50,8 @@ const battleState = (row: {
 test('replayed action after reward settlement returns the persisted Shield victory snapshot', async () => {
   const completed = {
     cycle_id: 'cycle-1',
+    event_key: 'underpass',
+    cycle_event_key: 'underpass',
     encounter_key: TUNNEL_MAW.id,
     player_hp: 120,
     player_mana: 8,
@@ -59,6 +61,9 @@ test('replayed action after reward settlement returns the persisted Shield victo
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
+    victory_history_marker_count: 1,
+    defeat_history_marker_count: 0,
+    valid_victory_history_marker_count: 1,
   };
   const reads: string[] = [];
   const db = {
@@ -93,22 +98,24 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
     {
       permitId: 'shield-pending-victory',
       row: {
-        cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
+        cycle_id: 'cycle-1', event_key: 'underpass', cycle_event_key: 'underpass', encounter_key: TUNNEL_MAW.id,
         player_hp: 120, player_mana: 8, player_shield: 5,
         last_shield_absorbed: 0, last_retaliation_damage: 0,
         enemy_hp: 0, battle_status: 'victory', turn_count: 1,
         completed_at: null, reward_state: 'pending',
+        victory_history_marker_count: 0, defeat_history_marker_count: 0,
       },
       error: 'Battle victory is awaiting reward completion.',
     },
     {
       permitId: 'shield-pending-defeat',
       row: {
-        cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
+        cycle_id: 'cycle-1', event_key: 'underpass', cycle_event_key: 'underpass', encounter_key: TUNNEL_MAW.id,
         player_hp: 0, player_mana: 0, player_shield: 0,
         last_shield_absorbed: 2, last_retaliation_damage: 10,
         enemy_hp: TUNNEL_MAW.maxHp - 29, battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
+        victory_history_marker_count: 0, defeat_history_marker_count: 0,
       },
       error: 'Battle is already defeated.',
     },
@@ -148,6 +155,8 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
 test('expired terminal recovery rejects corrupt persisted Shield instead of echoing it', async () => {
   const corrupt = {
     cycle_id: 'cycle-1',
+    event_key: 'underpass',
+    cycle_event_key: 'underpass',
     encounter_key: TUNNEL_MAW.id,
     player_hp: 120,
     player_mana: 8,
@@ -159,6 +168,8 @@ test('expired terminal recovery rejects corrupt persisted Shield instead of echo
     turn_count: 1,
     completed_at: null,
     reward_state: 'pending',
+    victory_history_marker_count: 0,
+    defeat_history_marker_count: 0,
   };
   const db = {
     prepare(sql: string) {
@@ -187,6 +198,8 @@ test('expired terminal recovery rejects corrupt persisted Shield instead of echo
 test('completed permits for unsupported encounters are not returned as this battle snapshot', async () => {
   const unsupported = {
     cycle_id: 'cycle-1',
+    event_key: 'underpass',
+    cycle_event_key: 'underpass',
     encounter_key: 'unapproved-encounter',
     player_hp: 120,
     player_mana: 8,
@@ -196,6 +209,9 @@ test('completed permits for unsupported encounters are not returned as this batt
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
+    victory_history_marker_count: 1,
+    defeat_history_marker_count: 0,
+    valid_victory_history_marker_count: 1,
   };
   let reads = 0;
   const db = {
@@ -226,6 +242,8 @@ test('completed permits for unsupported encounters are not returned as this batt
 test('expired terminal recovery rejects inconsistent persisted Shield event audit', async () => {
   const corrupt = {
     cycle_id: 'cycle-1',
+    event_key: 'underpass',
+    cycle_event_key: 'underpass',
     encounter_key: TUNNEL_MAW.id,
     player_hp: 0,
     player_mana: 0,
@@ -237,6 +255,8 @@ test('expired terminal recovery rejects inconsistent persisted Shield event audi
     turn_count: 1,
     completed_at: null,
     reward_state: 'pending',
+    victory_history_marker_count: 0,
+    defeat_history_marker_count: 0,
   };
   const db = {
     prepare(sql: string) {
@@ -265,6 +285,8 @@ test('expired terminal recovery rejects inconsistent persisted Shield event audi
 test('expired terminal recovery rejects retaliation audit above the supported monster damage', async () => {
   const corrupt = {
     cycle_id: 'cycle-1',
+    event_key: 'underpass',
+    cycle_event_key: 'underpass',
     encounter_key: TUNNEL_MAW.id,
     player_hp: 0,
     player_mana: 0,
@@ -276,6 +298,8 @@ test('expired terminal recovery rejects retaliation audit above the supported mo
     turn_count: 1,
     completed_at: null,
     reward_state: 'pending',
+    victory_history_marker_count: 0,
+    defeat_history_marker_count: 0,
   };
   const db = {
     prepare(sql: string) {

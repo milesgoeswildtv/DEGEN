@@ -1,3 +1,18 @@
+## Latest run — 2026-11-02 (align Shield recovery fixtures with current Worker audit contract)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; main remains untouched. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285); no production D1 write or Worker deployment.
+- **PUSHED / PR #125 OPEN / DRAFT / UNMERGED:** `automation/degen/authoritative-shield-foundation-v02`; previous head `5b592a3b686fee2f579f10eb6d863fc3c65c2fb1`. Exact-head CI [41514125417](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41514125417) reached 296 passing / 2 failing deterministic tests, both in the selectively transplanted Shield recovery suite.
+- **Evidence-backed diagnosis:** current Worker recovery queries require event/cycle identity and validate deterministic history-marker counts. The older PR #20 test fixtures modeled the pre-reconciliation query and omitted `event_key`, `cycle_event_key`, `victory_history_marker_count`, `defeat_history_marker_count`, and the valid victory-marker count. The production Worker correctly failed closed; the fixture contract was stale.
+- **Task / files changed:** updated all seven Shield recovery fixtures in `tests/worker-shield-recovery.test.ts` to model the current Worker event/cycle and history audit columns. Completed-award replay fixtures include one valid victory marker and zero defeat markers; pending terminal fixtures include zero conflicting markers. No runtime behavior changed.
+- **QA:** run [41514125417](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41514125417) passed 296/298 deterministic tests; only the two stale fixture assertions failed. New fixture correction requires fresh exact-head CI. No local shell tests/build, browser QA, or deployment claimed for this new head.
+- **Mana:** COMPLETE / MERGED on main; Degen-only Mana persistence, affordability, exact deduction, zero-cost, terminal, UI, shared math, no-monster-resource, and no-reversion remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 remains source of truth for permits, HP/Mana/Shield, enemy HP, turn CAS, terminal history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. Client recovery #123, Worker identity validation #124, and monster resource/LEAK boundary #122 are integrated on #125.
+- **D1 / migration assumptions:** main 0003/0006/0007 unchanged; Shield 0008 branch-only and unapplied. Duplicate 0007 with draft auth PR #14 remains unresolved. No migration renumbering, bypass, or remote migration.
+- **Miles blockers:** duplicate 0007 order and production platform identity/credential policy. No new monster/status/Degen/balance canon.
+- **One best next task:** rerun exact-head CI with corrected Shield recovery fixtures; inspect any new failures, then review combined diff and keep #125 draft until migration ordering is explicitly resolved.
+
+---
+
 ## Latest run — 2026-11-02 (add Shield terminal-recovery regression coverage)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; main remains untouched. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`; no production D1 write or Worker deployment.
