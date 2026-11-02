@@ -155,7 +155,7 @@ try {
       Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
-        if (typeof text === 'string' && (text.startsWith('MANA ') || text === 'MANIFESTED')) rendered.push(text);
+        if (typeof text === 'string' && text === 'MANIFESTED') rendered.push(text);
         return original.call(this, text, ...args);
       };
 
@@ -370,10 +370,10 @@ try {
     'a persisted uncertain start must offer resume, not mint a second permit');
   await tap("[data-resume-battle]");
   await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
-  await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
+  await until('rendered initial Mana and Shield resource HUD', () => cdp.evaluate("document.querySelector('#battle-mana')?.textContent === 'MANA 12/12' && document.querySelector('#battle-shield')?.textContent === 'SHIELD 0' && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
   assert.equal(initialAccessibleHud,
-    'TEST_DEGEN: HP 120 of 120, Mana 12 of 12. Tunnel Maw: HP 92 of 92. Turn 0. Choose an action.',
+    'TEST_DEGEN: HP 120 of 120, Mana 12 of 12, Shield 0. Tunnel Maw: HP 92 of 92. Turn 0. Choose an action.',
     'the live DOM status must expose the initial Worker-backed battle snapshot outside the Phaser canvas');
   assert.deepEqual(await cdp.evaluate("(() => { const status = document.querySelector('#battle-action-status'); return { exists: !!status, hidden: status?.hidden, ariaLive: status?.getAttribute('aria-live'), display: status ? getComputedStyle(status).display : null }; })()"),
     { exists: true, hidden: true, ariaLive: 'polite', display: 'none' },
@@ -451,15 +451,16 @@ try {
     });
     for (const [key, value] of Object.entries(expected)) assert.equal(persisted[key], value, 'persisted turn ' + turn + ' ' + key);
     const displayedMana = `MANA ${expected.player_mana}/12`;
-    await until('rendered authoritative Mana HUD after turn ' + turn,
-      () => cdp.evaluate(`window.__degenRenderedBattleText?.includes(${JSON.stringify(displayedMana)})`));
-    const hudOrder = await cdp.evaluate(`(() => {
-      const rendered = window.__degenRenderedBattleText || [];
-      return { mana: rendered.lastIndexOf(${JSON.stringify(displayedMana)}), manifested: rendered.lastIndexOf('MANIFESTED') };
-    })()`);
-    assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
-    assert.ok(hudOrder.manifested > hudOrder.mana,
-      'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
+    await until('rendered authoritative Mana and Shield HUD after turn ' + turn,
+      () => cdp.evaluate(`document.querySelector('#battle-mana')?.textContent === ${JSON.stringify(displayedMana)} && document.querySelector('#battle-shield')?.textContent === 'SHIELD 0'`));
+    const hudState = await cdp.evaluate(`(() => ({
+      mana: document.querySelector('#battle-mana')?.textContent ?? '',
+      shield: document.querySelector('#battle-shield')?.textContent ?? '',
+      manifested: (window.__degenRenderedBattleText || []).includes('MANIFESTED'),
+    }))()`);
+    assert.equal(hudState.mana, displayedMana, 'the current authoritative Mana value must be rendered');
+    assert.equal(hudState.shield, 'SHIELD 0', 'the current authoritative Shield value must be rendered');
+    assert.equal(hudState.manifested, true, 'MANIFESTED remains rendered, including at zero Mana');
 
     if (turn === 1) {
       const activeCycleId = sql("SELECT cycle_id FROM battle_permits WHERE id='" + permitId + "'")[0]?.cycle_id;
@@ -479,7 +480,7 @@ try {
       ));
       await tap("[data-resume-battle]");
       await until('persisted active encounter resumed after cycle closure', () => cdp.evaluate(
-        '(() => { const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? ""; return !!document.querySelector("[data-ability=crack]") && hud.includes("HP 110 of 120, Mana 8 of 12") && hud.includes("Tunnel Maw: HP 57 of 92. Turn 1."); })()',
+        '(() => { const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? ""; return !!document.querySelector("[data-ability=crack]") && hud.includes("HP 110 of 120, Mana 8 of 12, Shield 0") && hud.includes("Tunnel Maw: HP 57 of 92. Turn 1."); })()',
       ));
       const resumedState = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
       assert.deepEqual(resumedState, {
@@ -635,8 +636,8 @@ try {
   }, 'the free action advances the real Worker-backed battle while Mana remains zero');
   await until('Phaser keeps the Degen manifested at zero Mana in the running app', () => cdp.evaluate(`(() => {
     const rendered = window.__degenRenderedBattleText || [];
-    const mana = rendered.lastIndexOf("MANA 0/12");
-    return mana >= 0 && rendered.lastIndexOf("MANIFESTED") > mana;
+    const mana = document.querySelector('#battle-mana')?.textContent;
+    return mana === 'MANA 0/12' && rendered.includes('MANIFESTED');
   })()`));
 
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback and free-action continuation');
