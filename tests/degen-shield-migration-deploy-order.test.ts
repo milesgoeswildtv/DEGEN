@@ -58,6 +58,20 @@ test('Worker deployment applies tracked migrations before deploying Worker code'
   assert.ok(packageJson.scripts['db:migrate'].includes('wrangler d1 migrations apply DEGEN'));
 });
 
+test('Worker deployment watches every shared source module imported by the Worker', () => {
+  for (const sourcePath of [
+    'src/data/combatPrototype.ts',
+    'src/domain/types.ts',
+    'src/game/combat/rules.ts',
+    'src/game/progression.ts',
+  ]) {
+    assert.ok(
+      deployWorkflow.includes(`      - '${sourcePath}'`),
+      `Worker deployment must run when ${sourcePath} changes`,
+    );
+  }
+});
+
 test('EnemyDefinition remains free of Mana-equivalent resources', () => {
   const start = domainTypes.indexOf('export interface EnemyDefinition');
   const end = domainTypes.indexOf('export interface LocationDefinition', start);
