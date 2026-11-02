@@ -1,3 +1,17 @@
+## Latest run — 2026-11-02 (finalize Shield HUD regression test)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; main remains untouched.
+- **PUSHED / PR #125 OPEN / DRAFT / UNMERGED:** `automation/degen/authoritative-shield-foundation-v02`, current code/test head `8fe0ec97225a9d7cb854f429c6b04291599c5d9a`. Fresh exact-head CI is pending; the intermediate test harness was corrected before accepting any CI result.
+- **Previous exact-head CI — PASS:** [41518217911](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41518217911) completed SUCCESS on `f1e2c823683d6dec1ab52460b3652097dfbcf109` at 2026-11-02 20:37:11 UTC. All deterministic, isolated Worker/D1 reward/recovery, Underpass cycle/rollover, atomic defeat, Shield D1 integration, Chromium housing, production build, Chromium mobile battle vertical-slice, and Wrangler stages passed. Code/test head `a622280078211b07f44760d32697b35dc9b4e465` also passed [41514842383](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41514842383).
+- **Task / file changed:** `tests/battle-mana-ui.test.ts` now verifies a bespoke Shield-granting ability displays `SHIELD +5`, and the visible Shield pill plus accessible HUD both project the Worker-authoritative remaining Shield. No combat/runtime, Worker, schema, migration, reward, or deploy code changed in this follow-up.
+- **Mana:** COMPLETE / MERGED on main; Degen-only `maxMana` / `manaCost`, authoritative persisted `player_mana`, server initialization/action CAS, no-mutation unaffordable rejection, exact deduction, zero-cost at zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain covered.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, HP/Mana/Shield, enemy HP, turn CAS, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. Permit-backed clients only render accepted Worker snapshots; local simulation/reward callbacks remain offline-preview-only.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Shield `0008_degen_shield.sql` is branch-only/unapplied. Draft PR #14 still proposes colliding `0007_player_sessions.sql`; PR #114's duplicate-version preflight is open/unmerged and blocks unsafe writes without selecting an order. No renumbering, remote D1 operation, migration apply, or production Worker deploy.
+- **Miles blockers:** explicit duplicate-`0007` ordering and production Discord/Telegram credential/identity-policy decisions remain unresolved. No physical-iPhone QA or production deployment is claimed; no Degen, monster, status, or balance canon was invented.
+- **One best next task:** verify exact-head CI for `8fe0ec9`, then finish the Shield PR review while keeping migration `0008` gated on the migration-order decision.
+
+---
+
 ## Latest run — 2026-11-02 (verify authoritative Shield HUD projection)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; main remains untouched.
