@@ -77,7 +77,8 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
       || hasLegacyShieldAuditSentinel
       || (turnCount === 0
         ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
-        : retaliationDamage > 0);
+        : retaliationDamage > 0
+          && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
     return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
       && hasConsistentActiveShieldAudit;
   }
