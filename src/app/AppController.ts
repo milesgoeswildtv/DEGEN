@@ -682,6 +682,10 @@ export class AppController {
         this.battlePermit = undefined;
         this.battlePermitOwnerId = undefined;
         this.navigate('map');
+      } else if (accountChanged && this.route === 'home') {
+        // Home is player-owned state too: replace the prior account's room
+        // immediately rather than waiting for another navigation.
+        this.render();
       } else if (accountChanged && hadPreviousWorldState
         && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) {
         // Clear the prior account's per-player event state even when the caller
