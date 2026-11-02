@@ -62,12 +62,75 @@ const findForbiddenMonsterActionResource = (
   return undefined;
 };
 
+const DEGEN_MECHANIC_COLLECTION_FIELDS = new Set([
+  'ability', 'abilities', 'move', 'moves', 'loadout',
+  'signature', 'signatures', 'effect', 'effects',
+  'status', 'statuses', 'appliedeffect', 'appliedeffects',
+  'mechanic', 'mechanics', 'degenmechanic', 'degenmechanics',
+]);
+
+const DEGEN_MECHANIC_DIRECT_NAME_FIELDS = new Set([
+  'effect', 'appliedeffect', 'status', 'statusname',
+  'effectname', 'signature', 'signaturename',
+  'degeneffect', 'degenstatus', 'mechanic', 'mechanicname',
+]);
+
+const DEGEN_MECHANIC_NESTED_NAME_FIELDS = new Set([
+  'id', 'key', 'name', 'type', 'value',
+  'effect', 'appliedeffect', 'status', 'statusname',
+  'effectname', 'signature', 'signaturename',
+  'degeneffect', 'degenstatus', 'mechanic', 'mechanicname',
+]);
+
+const findForbiddenDegenOwnedEffect = (
+  value: unknown,
+  path: string,
+  insideMechanic: boolean,
+  visited: WeakSet<object>,
+): string | undefined => {
+  if (value === null || typeof value !== 'object' || visited.has(value)) return undefined;
+  visited.add(value);
+
+  for (const [field, nestedValue] of Object.entries(value)) {
+    const fieldPath = path ? path + '.' + field : field;
+    const normalizedField = normalizeMonsterActionResourceField(field);
+    const mechanicContext = insideMechanic || DEGEN_MECHANIC_COLLECTION_FIELDS.has(normalizedField);
+    const directMechanicName = DEGEN_MECHANIC_DIRECT_NAME_FIELDS.has(normalizedField);
+    const nestedMechanicName = mechanicContext && DEGEN_MECHANIC_NESTED_NAME_FIELDS.has(normalizedField);
+
+    if (typeof nestedValue === 'string'
+      && nestedValue.normalize('NFKC').trim().toUpperCase() === 'LEAK'
+      && (directMechanicName || nestedMechanicName)) {
+      return fieldPath;
+    }
+
+    const nestedForbiddenEffect = findForbiddenDegenOwnedEffect(
+      nestedValue,
+      fieldPath,
+      mechanicContext,
+      visited,
+    );
+    if (nestedForbiddenEffect) return nestedForbiddenEffect;
+  }
+
+  return undefined;
+};
+
 export const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
   const forbiddenField = findForbiddenMonsterActionResource(enemy, '', new WeakSet<object>());
 
   if (forbiddenField) {
     throw new TypeError(
       `Monster definitions cannot expose a universal action resource (${forbiddenField}).`,
+    );
+  }
+
+  // LEAK is a GLITCHRAT-owned Degen effect, never a monster status or signature.
+  // Inspect only mechanical names/IDs; ordinary descriptive prose is not a use.
+  const forbiddenDegenEffect = findForbiddenDegenOwnedEffect(enemy, '', false, new WeakSet<object>());
+  if (forbiddenDegenEffect) {
+    throw new TypeError(
+      `Monster definitions cannot use the Degen-owned effect LEAK (${forbiddenDegenEffect}).`,
     );
   }
 };
