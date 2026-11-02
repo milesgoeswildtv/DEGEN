@@ -181,7 +181,7 @@ try {
   assert.equal(recoveredDefeat.data.error,'Battle is already defeated.');
   assert.equal(recoveredDefeat.data.battleState.shieldAbsorbed,2);
   assert.equal(recoveredDefeat.data.battleState.retaliationDamage,10);
-  sql("UPDATE battle_permits SET last_shield_absorbed=11 WHERE id='shield-defeat-permit'");
+  sql("UPDATE battle_permits SET last_shield_absorbed=10,last_retaliation_damage=10 WHERE id='shield-defeat-permit'");
   const corruptRecovery=await post('/api/battle/action',{playerId:'shield-defeat',permitId:'shield-defeat-permit',abilityId:'slash',expectedTurnCount:2});
   assert.equal(corruptRecovery.status,409);
   assert.equal(corruptRecovery.data.error,'Battle permit is invalid, expired, or already completed.');
