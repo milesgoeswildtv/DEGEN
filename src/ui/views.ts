@@ -206,12 +206,13 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
       <div class="ability-grid">
         ${degen.abilities.map((ability) => {
           const manaCost = isValidManaCost(ability.manaCost) ? ability.manaCost : undefined;
-          const shieldGain = isValidShieldGain(ability.shieldGain) ? ability.shieldGain : undefined;
+          const validShieldGain = isValidShieldGain(ability.shieldGain);
+          const shieldGain = ability.shieldGain ?? 0;
           return `
-          <button type="button" data-ability="${ability.id}" data-mana-cost="${manaCost ?? ''}" data-shield-gain="${shieldGain ?? ''}" ${manaCost === undefined || shieldGain === undefined ? 'disabled' : ''}>
+          <button type="button" data-ability="${ability.id}" data-mana-cost="${manaCost ?? ''}" data-shield-gain="${shieldGain ?? ''}" ${manaCost === undefined || !validShieldGain ? 'disabled' : ''}>
             <strong>${escapeHtml(ability.name)}</strong>
             <span>${escapeHtml(ability.description)}</span>
-            <small>${manaCost === undefined || shieldGain === undefined ? 'UNAVAILABLE' : `${manaCost === 0 ? 'NO MANA' : `${manaCost} MANA`}${shieldGain > 0 ? ` · SHIELD +${shieldGain}` : ''}`}</small>
+            <small>${manaCost === undefined || !validShieldGain ? 'UNAVAILABLE' : `${manaCost === 0 ? 'NO MANA' : `${manaCost} MANA`}${shieldGain > 0 ? ` · SHIELD +${shieldGain}` : ''}`}</small>
           </button>
         `;
         }).join('')}
