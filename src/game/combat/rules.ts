@@ -86,10 +86,28 @@ const findForbiddenDegenOwnedEffect = (
   value: unknown,
   path: string,
   insideMechanic: boolean,
-  visited: WeakSet<object>,
+  visitedContexts: WeakMap<object, number>,
 ): string | undefined => {
-  if (value === null || typeof value !== 'object' || visited.has(value)) return undefined;
-  visited.add(value);
+  if (value === null || typeof value !== 'object') return undefined;
+
+  // The same nested object can be reachable through ordinary metadata and a
+  // mechanic path. Track each traversal context separately so an earlier
+  // non-mechanic visit cannot hide a Degen-only effect on the mechanic path.
+  const contextMask = insideMechanic ? 2 : 1;
+  const seenContexts = visitedContexts.get(value) ?? 0;
+  if ((seenContexts & contextMask) !== 0) return undefined;
+  visitedContexts.set(value, seenContexts | contextMask);
+
+  // Status/effect collections may encode mechanic IDs as string array entries
+  // instead of named object fields. Reject LEAK there as well.
+  if (insideMechanic && Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      if (typeof item === 'string'
+        && item.normalize('NFKC').trim().toUpperCase() === 'LEAK') {
+        return path ? path + '.' + index : String(index);
+      }
+    }
+  }
 
   for (const [field, nestedValue] of Object.entries(value)) {
     const fieldPath = path ? path + '.' + field : field;
@@ -108,7 +126,7 @@ const findForbiddenDegenOwnedEffect = (
       nestedValue,
       fieldPath,
       mechanicContext,
-      visited,
+      visitedContexts,
     );
     if (nestedForbiddenEffect) return nestedForbiddenEffect;
   }
@@ -127,7 +145,7 @@ export const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
 
   // LEAK is a GLITCHRAT-owned Degen effect, never a monster status or signature.
   // Inspect only mechanical names/IDs; ordinary descriptive prose is not a use.
-  const forbiddenDegenEffect = findForbiddenDegenOwnedEffect(enemy, '', false, new WeakSet<object>());
+  const forbiddenDegenEffect = findForbiddenDegenOwnedEffect(enemy, '', false, new WeakMap<object, number>());
   if (forbiddenDegenEffect) {
     throw new TypeError(
       `Monster definitions cannot use the Degen-owned effect LEAK (${forbiddenDegenEffect}).`,

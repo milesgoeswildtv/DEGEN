@@ -604,6 +604,29 @@ test('monster mechanics cannot use the Degen-only LEAK effect', () => {
       path: 'abilities.0.effect',
       enemy: { ...TUNNEL_MAW, abilities: [{ effect: 'ＬＥＡＫ' }] } as typeof TUNNEL_MAW,
     },
+    {
+      path: 'status.0',
+      enemy: { ...TUNNEL_MAW, status: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'effects.0',
+      enemy: { ...TUNNEL_MAW, effects: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.effects.0',
+      enemy: { ...TUNNEL_MAW, loadout: [{ effects: ['LEAK'] }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.name',
+      enemy: (() => {
+        const sharedMechanic = { name: 'LEAK' };
+        return {
+          ...TUNNEL_MAW,
+          metadata: sharedMechanic,
+          signature: sharedMechanic,
+        } as typeof TUNNEL_MAW;
+      })(),
+    },
   ];
 
   for (const { path, enemy } of forbiddenCases) {
