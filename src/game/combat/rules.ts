@@ -98,23 +98,22 @@ const findForbiddenDegenOwnedEffect = (
   if ((seenContexts & contextMask) !== 0) return undefined;
   visitedContexts.set(value, seenContexts | contextMask);
 
-  // Status/effect collections may encode mechanic IDs as string array entries
-  // instead of named object fields. Reject LEAK there as well.
-  if (insideMechanic && Array.isArray(value)) {
-    for (const [index, item] of value.entries()) {
-      if (typeof item === 'string'
-        && item.normalize('NFKC').trim().toUpperCase() === 'LEAK') {
-        return path ? path + '.' + index : String(index);
-      }
-    }
-  }
-
   for (const [field, nestedValue] of Object.entries(value)) {
     const fieldPath = path ? path + '.' + field : field;
     const normalizedField = normalizeMonsterActionResourceField(field);
     const mechanicContext = insideMechanic || DEGEN_MECHANIC_COLLECTION_FIELDS.has(normalizedField);
     const directMechanicName = DEGEN_MECHANIC_DIRECT_NAME_FIELDS.has(normalizedField);
     const nestedMechanicName = mechanicContext && DEGEN_MECHANIC_NESTED_NAME_FIELDS.has(normalizedField);
+    const mechanicCollection = DEGEN_MECHANIC_COLLECTION_FIELDS.has(normalizedField);
+
+    // Only inspect arrays stored in mechanic/name fields or known mechanic
+    // collections. A prose array inside a move remains descriptive text.
+    if (Array.isArray(nestedValue)
+      && (directMechanicName || nestedMechanicName || mechanicCollection)) {
+      const leakIndex = nestedValue.findIndex((item) => typeof item === 'string'
+        && item.normalize('NFKC').trim().toUpperCase() === 'LEAK');
+      if (leakIndex >= 0) return fieldPath + '.' + leakIndex;
+    }
 
     if (typeof nestedValue === 'string'
       && nestedValue.normalize('NFKC').trim().toUpperCase() === 'LEAK'

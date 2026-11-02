@@ -663,3 +663,21 @@ test('LEAK in monster flavor text is not mistaken for a Degen effect', () => {
     enemy,
   }));
 });
+
+test('LEAK in a move flavor-text array is not treated as a mechanic ID', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    abilities: [{ description: ['LEAK is only a word in this move description.'] }],
+  } as typeof TUNNEL_MAW;
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
+});
