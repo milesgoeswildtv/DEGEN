@@ -34,7 +34,12 @@ function loadController(preview: EventSnapshot) {
     AppController: new (
       root: unknown,
       store: { snapshot: { id: string } },
-      api: { enabled: boolean; getUnderpass: (id: string) => Promise<EventSnapshot> },
+      api: {
+        enabled: boolean;
+        getUnderpass: (id: string) => Promise<EventSnapshot>;
+        hasRecoverableUnderpassStart?: (playerId: string) => boolean;
+        discardUnrecoverableUnderpassStart?: (playerId: string, permitId: string) => void;
+      },
     ) => { refreshWorld: () => Promise<void>; underpassEvent?: EventSnapshot; worldSyncFailed?: boolean; render: () => void };
   };
   return { AppController: loaded.AppController, previewCalls: () => previewCalls };
@@ -501,5 +506,47 @@ test('switching accounts during battle closes the old account view but preserves
   assert.equal(state.battleResumeAttempt, 5, 'pending resume attempts from the old account are invalidated');
   assert.equal(destroyed, 1, 'the old Phaser battle is destroyed exactly once');
   assert.equal(discarded.length, 0, 'the old account recovery key is not discarded');
+  assert.equal(state.underpassEvent?.cycleId, 'player-2-cycle');
+});
+
+test('account refresh preserves a battle already owned by the newly active player', async () => {
+  const loaded = loadController(previewEvent);
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({}, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => ({
+      ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server',
+    }),
+  });
+  const state = controller as unknown as {
+    route: string;
+    battlePermit?: { permitId: string; cycleId: string };
+    battlePermitOwnerId?: string;
+    battleGame?: { destroy: (removeCanvas?: boolean) => void };
+    battleEngine?: unknown;
+    battleActionPending: boolean;
+    underpassEvent?: EventSnapshot;
+    refreshWorld: () => Promise<void>;
+  };
+
+  await state.refreshWorld();
+  state.route = 'battle';
+  const currentPermit = { permitId: 'player-2-permit', cycleId: 'player-2-cycle' };
+  const currentGame = { destroy: () => { throw new Error('the active player battle must remain mounted'); } };
+  state.battlePermit = currentPermit;
+  state.battlePermitOwnerId = 'player-2';
+  state.battleGame = currentGame;
+  state.battleEngine = {};
+  state.battleActionPending = true;
+
+  store.snapshot.id = 'player-2';
+  await state.refreshWorld();
+
+  assert.equal(state.route, 'battle');
+  assert.equal(state.battlePermit, currentPermit);
+  assert.equal(state.battlePermitOwnerId, 'player-2');
+  assert.equal(state.battleGame, currentGame);
+  assert.notEqual(state.battleEngine, undefined);
+  assert.equal(state.battleActionPending, true);
   assert.equal(state.underpassEvent?.cycleId, 'player-2-cycle');
 });
