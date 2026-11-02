@@ -1293,8 +1293,17 @@ try {
   assert.equal(recoveredStartReplay.permitId, startReplayRequestId);
   assert.equal(recoveredStartReplay.expiresAt,
     queryRows("SELECT expires_at FROM battle_permits WHERE id='" + startReplayRequestId + "'")[0]?.expires_at);
-  assert.deepEqual(recoveredStartReplay.initialState, progressedStartReplay,
-    'a closed-cycle start retry must return the persisted progressed snapshot, not reinitialize combat');
+  assert.deepEqual(recoveredStartReplay.initialState, {
+    permitId: progressedStartReplay.permitId,
+    status: progressedStartReplay.status,
+    playerHp: progressedStartReplay.playerHp,
+    playerMana: progressedStartReplay.playerMana,
+    playerShield: progressedStartReplay.playerShield,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: progressedStartReplay.enemyHp,
+    turnCount: progressedStartReplay.turnCount,
+  }, 'a closed-cycle start retry must return persisted combat state without replaying transient turn presentation metadata');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='" + startReplayRequestId + "' AND player_id='start-replay-player'"), 1,
     'start recovery after closure must not issue a second permit');
   assertPersistedPermitState(startReplayRequestId, recoveredStartReplay.initialState);
