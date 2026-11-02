@@ -149,7 +149,10 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
   const playerShield = state.player_shield;
   const lastShieldAbsorbed = state.last_shield_absorbed;
   const lastRetaliationDamage = state.last_retaliation_damage;
-  const hasLegacyShieldAudit = lastShieldAbsorbed === null && lastRetaliationDamage === null;
+  // Migration 0008 gives every pre-Shield permit zero Shield; NULL audit deltas only mark that legacy state.
+  const hasLegacyShieldAudit = lastShieldAbsorbed === null
+    && lastRetaliationDamage === null
+    && playerShield === 0;
   const hasValidShieldAudit = isSafeIntegerBetween(lastShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
     && isSafeIntegerBetween(lastRetaliationDamage, 0, TUNNEL_MAW.damage)
     && lastShieldAbsorbed <= lastRetaliationDamage;
