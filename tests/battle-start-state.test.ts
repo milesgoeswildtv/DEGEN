@@ -51,7 +51,8 @@ test('BattleEngine initializes from the Worker snapshot instead of prototype def
 
 test('an offline zero-Mana preview remains active and zero-cost abilities remain usable', () => {
   const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0 };
-  const engine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => undefined);
+  const previewEnemy = { ...TUNNEL_MAW, maxHp: 51 };
+  const engine = new BattleEngine(zeroManaDegen, previewEnemy, () => undefined);
   engine.useAbility('slash');
 
   assert.equal(engine.snapshot.status, 'active');
@@ -75,7 +76,8 @@ test('the client snapshot follows authoritative action HP, Mana, and enemy HP', 
 
 test('an unaffordable offline preview action changes neither state nor turn count', () => {
   const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0 };
-  const engine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => undefined);
+  const previewEnemy = { ...TUNNEL_MAW, maxHp: 51 };
+  const engine = new BattleEngine(zeroManaDegen, previewEnemy, () => undefined);
   const before = engine.snapshot;
   engine.useAbility('crack');
 
