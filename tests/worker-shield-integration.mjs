@@ -43,12 +43,14 @@ try {
     INSERT INTO players(id,display_name) VALUES
       ('shield-start','Shield Start'),('shield-action','Shield Action'),
       ('shield-carry','Shield Carry'),('shield-kill','Shield Kill'),('shield-defeat','Shield Defeat'),('shield-race','Shield Race'),
-      ('shield-legacy','Shield Legacy'),('shield-corrupt-legacy','Shield Corrupt Legacy');
+      ('shield-legacy','Shield Legacy'),('shield-corrupt-legacy','Shield Corrupt Legacy'),
+      ('shield-impossible-active','Shield Impossible Active');
     INSERT INTO characters(player_id,level,xp,currency,degen_key) VALUES
       ('shield-start',1,0,0,'test-degen'),('shield-action',1,0,0,'test-degen'),
       ('shield-carry',1,0,0,'test-degen'),('shield-kill',1,0,0,'test-degen'),
       ('shield-defeat',1,0,0,'test-degen'),('shield-race',1,0,0,'test-degen'),
-      ('shield-legacy',1,0,0,'test-degen'),('shield-corrupt-legacy',1,0,0,'test-degen');
+      ('shield-legacy',1,0,0,'test-degen'),('shield-corrupt-legacy',1,0,0,'test-degen'),
+      ('shield-impossible-active',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES('shield-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
@@ -60,7 +62,8 @@ try {
       ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',1,0,2,0,0,92,0),
       ('shield-race-permit','shield-race','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,10,0,0,92,0),
       ('shield-legacy-permit','shield-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,0,NULL,NULL,92,0),
-      ('shield-corrupt-legacy-permit','shield-corrupt-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,1,NULL,NULL,92,0);
+      ('shield-corrupt-legacy-permit','shield-corrupt-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,1,NULL,NULL,92,0),
+      ('shield-impossible-active-permit','shield-impossible-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,0,0,0,63,1);
   `);
   cli(['d1','execute','DEGEN','--local','--persist-to='+persist,'--file='+seed]);
   server=spawn(wrangler,['dev','--local','--persist-to='+persist,'--ip=127.0.0.1','--port=8791'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
@@ -90,6 +93,14 @@ try {
   assert.equal('battleState' in corruptLegacy.data,false);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-corrupt-legacy-permit'"),[
     {player_hp:120,player_mana:0,player_shield:1,last_shield_absorbed:null,last_retaliation_damage:null,enemy_hp:92,turn_count:0,battle_status:'active'},
+  ]);
+
+  const impossibleActive=await post('/api/battle/action',{playerId:'shield-impossible-active',permitId:'shield-impossible-active-permit',abilityId:'slash',expectedTurnCount:1});
+  assert.equal(impossibleActive.status,409);
+  assert.equal(impossibleActive.data.error,'Battle state is invalid.');
+  assert.equal('battleState' in impossibleActive.data,false);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-impossible-active-permit'"),[
+    {player_hp:110,player_mana:0,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:63,turn_count:1,battle_status:'active'},
   ]);
 
   const action=await post('/api/battle/action',{playerId:'shield-action',permitId:'shield-action-permit',abilityId:'slash',expectedTurnCount:0,playerShield:999});
