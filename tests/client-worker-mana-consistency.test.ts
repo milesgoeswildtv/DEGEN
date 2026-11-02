@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
 const apiSource = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8');
 const validatorStart = apiSource.indexOf('export const isAuthoritativeBattleActionState =');
 const validatorEnd = apiSource.indexOf('\nconst isRecord', validatorStart);
@@ -30,17 +30,20 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class /g, 'class ');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, isValidManaState, resolveCombatTurn },
+  { canUseAbility, isValidManaState, isValidShield, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,
     enemy: typeof TUNNEL_MAW,
     onComplete: (...args: unknown[]) => void,
-    initialState: {
+    initialState?: {
       permitId: string;
       status: 'active';
       playerHp: number;
       playerMana: number;
+      playerShield?: number;
+      shieldAbsorbed?: number;
+      retaliationDamage?: number;
       enemyHp: number;
       turnCount: number;
     },
@@ -49,6 +52,7 @@ const { BattleEngine } = runInNewContext(
       status: string;
       playerHp: number;
       playerMana: number;
+      playerShield: number;
       enemyHp: number;
       turnCount: number;
       log: string[];
@@ -59,6 +63,9 @@ const { BattleEngine } = runInNewContext(
       status: 'active' | 'victory' | 'defeat';
       playerHp: number;
       playerMana: number;
+      playerShield?: number;
+      shieldAbsorbed?: number;
+      retaliationDamage?: number;
       enemyHp: number;
       turnCount: number;
     }): void;
@@ -67,6 +74,9 @@ const { BattleEngine } = runInNewContext(
       status: 'active' | 'victory' | 'defeat';
       playerHp: number;
       playerMana: number;
+      playerShield?: number;
+      shieldAbsorbed?: number;
+      retaliationDamage?: number;
       enemyHp: number;
       turnCount: number;
     }): void;
@@ -86,14 +96,8 @@ test('client battle engine and shared Worker resolver agree on one paid turn', (
     enemy: TUNNEL_MAW,
   };
   const expected = resolveCombatTurn(input);
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
-    permitId: 'local-consistency-check',
-    status: 'active',
-    playerHp: input.playerHp,
-    playerMana: input.playerMana,
-    enemyHp: input.enemyHp,
-    turnCount: 0,
-  });
+  // No permit means this is the explicitly local/offline preview path.
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined);
 
   engine.useAbility(ability.id);
 
@@ -102,6 +106,7 @@ test('client battle engine and shared Worker resolver agree on one paid turn', (
       status: engine.snapshot.status,
       playerHp: engine.snapshot.playerHp,
       playerMana: engine.snapshot.playerMana,
+      playerShield: engine.snapshot.playerShield,
       enemyHp: engine.snapshot.enemyHp,
       turnCount: engine.snapshot.turnCount,
     },
@@ -109,6 +114,7 @@ test('client battle engine and shared Worker resolver agree on one paid turn', (
       status: expected.status,
       playerHp: expected.playerHp,
       playerMana: expected.playerMana,
+      playerShield: expected.playerShield,
       enemyHp: expected.enemyHp,
       turnCount: 1,
     },
@@ -381,4 +387,92 @@ test('client rejects impossible active Shield audits and preserves the legacy ze
   delete legacy.retaliationDamage;
   assert.equal(isAuthoritativeBattleActionState(legacy, permitId), true,
     'pre-Shield snapshots remain readable when all Shield audit fields are absent');
+});
+
+test('server-backed BattleEngine cannot simulate local actions or emit client rewards', () => {
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  let completions = 0;
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => { completions += 1; }, {
+    permitId: 'permit-server-authority',
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: 1,
+    turnCount: 0,
+  });
+  const before = engine.snapshot;
+  engine.useAbility(ability.id);
+  assert.deepEqual(engine.snapshot, before);
+  assert.equal(completions, 0);
+});
+
+test('BattleEngine rejects malformed initial Worker Shield snapshots', () => {
+  const valid = {
+    permitId: 'permit-shield-start-validation',
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  };
+  const invalid = [
+    { ...valid, playerShield: null as never },
+    { ...valid, shieldAbsorbed: undefined },
+    { ...valid, retaliationDamage: TUNNEL_MAW.damage + 1 },
+    { ...valid, playerShield: 1, turnCount: 1 },
+    { ...valid, playerShield: 1, turnCount: 1, retaliationDamage: 0 },
+    { ...valid, status: 'victory' as const, enemyHp: 0, turnCount: 1, retaliationDamage: 1 },
+    { ...valid, status: 'defeat' as const, playerHp: 0, turnCount: 1, playerShield: 0, shieldAbsorbed: 10, retaliationDamage: 10 },
+  ];
+  for (const state of invalid) {
+    assert.throws(
+      () => new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, state),
+      /Invalid authoritative battle start state/,
+    );
+  }
+});
+
+test('malformed Worker action snapshots cannot mutate engine state or emit completion', () => {
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+    permitId: 'permit-shield-action-validation',
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  const before = engine.snapshot;
+  engine.applyAuthoritativeAction('crack', {
+    permitId: 'permit-shield-action-validation',
+    status: 'active',
+    playerHp: -1,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: 1,
+    turnCount: 1,
+  });
+  engine.synchronizeAuthoritativeState({
+    permitId: 'permit-shield-action-validation',
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana + 1,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  });
+  assert.deepEqual(engine.snapshot, before);
 });
