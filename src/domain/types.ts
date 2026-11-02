@@ -141,7 +141,8 @@ type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer I
 type _MonsterPointResourceAliasesAreGuarded = AssertMonsterResourceGuard<
   Exclude<
     'energyPoint' | 'energyPoints' | 'staminaPoint' | 'staminaPoints'
-      | 'focusPoint' | 'focusPoints' | 'resourcePoint' | 'resourcePoints',
+      | 'focusPoint' | 'focusPoints' | 'resourcePoint' | 'resourcePoints'
+      | 'maxEnergyPoints' | 'startingFocusPoints' | 'baseResourcePoints' | 'initialStaminaPoints',
     KeysMatchingForbiddenMonsterActionResource<{
       signature: {
         energyPoint: number;
@@ -152,6 +153,10 @@ type _MonsterPointResourceAliasesAreGuarded = AssertMonsterResourceGuard<
         focusPoints: number;
         resourcePoint: number;
         resourcePoints: number;
+        maxEnergyPoints: number;
+        startingFocusPoints: number;
+        baseResourcePoints: number;
+        initialStaminaPoints: number;
       };
     }>
   > extends never ? true : false
