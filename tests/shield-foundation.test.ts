@@ -78,3 +78,35 @@ test('authoritative Shield result is presented once and replay does not duplicat
   assert.equal(engine.snapshot.turnCount, 2);
   assert.equal(engine.snapshot.log.length, logLength);
 });
+
+test('server-backed engine cannot simulate local actions or accept impossible Shield snapshots', () => {
+  let completions = 0;
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => { completions += 1; }, {
+    permitId: 'server-only-permit', status: 'active', playerHp: 50, playerMana: 0, playerShield: 4,
+    shieldAbsorbed: 10, retaliationDamage: 10, enemyHp: TUNNEL_MAW.maxHp, turnCount: 1,
+  });
+  const before = engine.snapshot;
+
+  // A server permit makes local simulation and its prototype reward callback unavailable.
+  engine.useAbility('slash');
+  assert.deepEqual(engine.snapshot, before);
+  assert.equal(completions, 0);
+
+  // A partial absorption cannot leave Shield remaining. Neither action nor recovery
+  // presentation may mutate the last accepted snapshot when that invariant is broken.
+  const impossible = {
+    permitId: 'server-only-permit',
+    status: 'active' as const,
+    playerHp: 40,
+    playerMana: 0,
+    playerShield: 4,
+    shieldAbsorbed: 5,
+    retaliationDamage: 10,
+    enemyHp: TUNNEL_MAW.maxHp - 20,
+    turnCount: 2,
+  };
+  engine.applyAuthoritativeAction('slash', impossible);
+  engine.synchronizeAuthoritativeState(impossible);
+  assert.deepEqual(engine.snapshot, before);
+  assert.equal(completions, 0);
+});
