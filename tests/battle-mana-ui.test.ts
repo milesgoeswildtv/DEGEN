@@ -134,3 +134,40 @@ test('Shield ability gains and the authoritative remaining Shield are visible in
   assert.equal(shieldPill.textContent, 'SHIELD 7');
   assert.match(accessibleHud.textContent, /Mana 0 of 12, Shield 7/);
 });
+
+
+const controllerSource = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8');
+const controllerDisableMethod = controllerSource.match(
+  /  private setAbilityButtonsDisabled\\(disabled: boolean\\): void \\{([\\s\\S]*?)\\n  \\/,
+)?.[1];
+assert.ok(controllerDisableMethod, 'AppController ability-disable method must remain available for focused regression coverage');
+const setAbilityButtonsDisabled = runInNewContext(
+  stripTypeScriptTypes(
+    `function setAbilityButtonsDisabled(disabled: boolean): void {\\n${controllerDisableMethod}\\n}\\nsetAbilityButtonsDisabled;`,
+    { mode: 'transform' },
+  ),
+  { isValidManaCost, isValidManaState, isValidShieldGain },
+) as (this: {
+  battleEngine?: { snapshot: BattleSnapshot };
+  root: { querySelectorAll: () => Array<{ dataset: Record<string, string>; disabled: boolean }> };
+}, disabled: boolean) => void;
+
+test('controller re-enabling after a pending action keeps invalid Shield abilities disabled', () => {
+  const buttons = [
+    { dataset: { manaCost: '0', shieldGain: '-1' }, disabled: false },
+    { dataset: { manaCost: '0', shieldGain: '1.5' }, disabled: false },
+    { dataset: { manaCost: '0', shieldGain: '5' }, disabled: true },
+    { dataset: { manaCost: '4', shieldGain: '0' }, disabled: false },
+  ];
+  const controller = {
+    battleEngine: { snapshot: snapshot(0) },
+    root: { querySelectorAll: () => buttons },
+  };
+
+  setAbilityButtonsDisabled.call(controller, false);
+
+  assert.equal(buttons[0].disabled, true, 'negative Shield gain fails closed');
+  assert.equal(buttons[1].disabled, true, 'fractional Shield gain fails closed');
+  assert.equal(buttons[2].disabled, false, 'valid free Shield ability remains usable at zero Mana');
+  assert.equal(buttons[3].disabled, true, 'unaffordable Mana ability remains disabled');
+});
