@@ -178,7 +178,8 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
       const hasConsistentActiveShieldAudit = hasLegacyShieldAudit
         || (turnCount === 0
           ? playerShield === 0 && lastShieldAbsorbed === 0 && lastRetaliationDamage === 0
-          : lastRetaliationDamage > 0);
+          : lastRetaliationDamage > 0
+            && (playerShield === 0 || lastShieldAbsorbed === lastRetaliationDamage));
       // An accepted action must be able to increment turn_count without leaving safe-integer range.
       return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
         && hasConsistentActiveShieldAudit;
