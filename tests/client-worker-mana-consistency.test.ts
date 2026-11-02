@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
 const apiSource = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8');
 const validatorStart = apiSource.indexOf('export const isAuthoritativeBattleActionState =');
 const validatorEnd = apiSource.indexOf('\nconst isRecord', validatorStart);
@@ -30,7 +30,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class /g, 'class ');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, isValidManaState, isValidShield, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,

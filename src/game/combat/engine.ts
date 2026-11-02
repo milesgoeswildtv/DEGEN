@@ -1,5 +1,5 @@
 import type { BattleActionResult, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
-import { canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from './rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from './rules.ts';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
 
@@ -43,6 +43,7 @@ export class BattleEngine {
     onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
     initialState?: BattleActionResult,
   ) {
+    assertNoMonsterActionResource(enemy);
     this.degen = degen;
     this.enemy = enemy;
     this.onComplete = onComplete;
