@@ -812,12 +812,12 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           AND julianday(opens_at) <= julianday(battle_permits.started_at)
           AND julianday(battle_permits.started_at) <= julianday('now')
           AND julianday(battle_permits.started_at) < julianday(closes_at))
-      AND turn_count = ?
+      AND turn_count = ? AND player_shield = ?
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
     RETURNING turn_count`)
     .bind(playerHp, playerMana, playerShield, enemyHp, status, input.permitId, input.playerId,
-      TUNNEL_MAW.id, permit.turn_count, `${input.permitId}:defeat`, `${input.permitId}:victory`);
+      TUNNEL_MAW.id, permit.turn_count, permit.player_shield, `${input.permitId}:defeat`, `${input.permitId}:victory`);
 
   let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
