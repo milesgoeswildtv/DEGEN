@@ -1,3 +1,29 @@
+## Latest run — 2026-11-02 (Shield recovery fixtures exact-head CI PASS)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`. Main remains untouched.
+- **PUSHED / PR #125 OPEN / DRAFT / UNMERGED:** `automation/degen/authoritative-shield-foundation-v02`; code/test head `a622280078211b07f44760d32697b35dc9b4e465`, 94 commits ahead / 0 behind main. This run adds only this continuity record; no combat/runtime source changed in this run.
+- **Exact-head CI — PASS:** [41514842383](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41514842383) completed SUCCESS on exact code/test head `a622280` at 2026-11-02 20:18:56 UTC. All 18 workflow steps passed:
+  - `npm test`: **298/298 deterministic tests**.
+  - Isolated Worker/D1 reward concurrency and transient reward recovery.
+  - Underpass cycle creation and rollover concurrency.
+  - Atomic defeat history.
+  - Shield D1 action/start/kill/defeat integration.
+  - Chromium housing persistence.
+  - Production Vite build.
+  - Real Chromium mobile battle vertical slice with local Worker/D1.
+  - Wrangler Worker dry-run validation (`npm run check:worker`).
+- **Browser / preview evidence:** Cloudflare Pages preview for `a622280` succeeded at [9866f774.degen-8ze.pages.dev](https://9866f774.degen-8ze.pages.dev). The Chromium vertical-slice step passed Map → District → Location → Home/Underpass → Degen battle → Worker reward → Home trophy, including zero-Mana affordability/free-action behavior and server-backed battle recovery. This is CI/local Worker/D1 + Pages preview evidence, not physical-iPhone QA or production deployment.
+- **Failure correction:** prior run [41514125417](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41514125417) failed 2/298 deterministic tests because transplanted Shield recovery fixtures omitted current Worker event/cycle and history-marker audit fields. Commit `a622280` changed only `tests/worker-shield-recovery.test.ts` and this progress record; all seven fixtures now model the current Worker audit contract. No production runtime behavior was weakened.
+- **Task / files changed this run:** `AUTONOMOUS_PROGRESS.md` only. The immediately preceding code/test correction changed `tests/worker-shield-recovery.test.ts` only; the fixture update is pushed on PR #125.
+- **Mana:** COMPLETE / MERGED on main. Main retains Degen-only `maxMana` / bespoke `manaCost`, persisted Worker-owned `player_mana`, authoritative initialization/action CAS, unaffordable rejection without mutation, exact deduction, zero-cost use at zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion. The legacy `sidekick/degen-mana-foundation-v01` remains 11 ahead / 102 behind and divergent; its Mana implementation is superseded by main. No cherry-pick or competing Mana branch.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit ownership, HP/Mana/Shield, enemy HP, action turn CAS, terminal victory/defeat/history, audited reward receipts, XP/currency/inventory, and recoverable exactly-once settlement. Current exact-head CI passed reward concurrency, transient recovery, terminal defeat atomicity, and action/complete integration. Browser receives authoritative results; server-backed combat cannot fall back to local simulation or client rewards.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Latest verified production Worker deployment [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) completed schema → tracked migrations → Worker on `4cc3bcb`; no later production Worker deployment is claimed. Shield migration `0008_degen_shield.sql` exists only on PR #125 and remains unapplied.
+- **Miles blocker:** draft auth PR #14 still proposes `0007_player_sessions.sql`, colliding with main's `0007_player_inventory_quantity_guards.sql`. Migration-preflight PR #114 is open/unmerged; it blocks duplicate versions but does not choose an ordering. Do not renumber, bypass, apply remote migrations, or merge the Shield migration until the sequence is explicitly resolved. Production Discord/Telegram credential and identity-policy decisions also remain outside this implementation slice.
+- **Delivery boundary:** PR #125 remains OPEN / DRAFT / UNMERGED. No direct-main write, merge, force-push, branch deletion, production D1 operation, production Worker deployment, or physical-iPhone QA.
+- **One best next task:** reconcile the duplicate-`0007` preflight/order gate with PR #14 and PR #114, then resume final Shield review without renumbering or applying migration `0008` absent Miles approval.
+
+---
+
 ## Latest run — 2026-11-02 (align Shield recovery fixtures with current Worker audit contract)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; main remains untouched. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285); no production D1 write or Worker deployment.
