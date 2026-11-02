@@ -57,7 +57,7 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
 
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument, isValidManaCost, isValidManaState },
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
@@ -125,7 +125,7 @@ test('battle terminal outcomes announce defeat/victory and disable every ability
   };
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument, isValidManaCost, isValidManaState },
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
@@ -185,8 +185,8 @@ test('malformed Mana costs and snapshots fail closed in battle controls', () => 
     })),
   };
   const markup = ui.battleView({ displayName: 'Player', level: 1, currency: 0 }, malformedDegen as typeof TEST_DEGEN);
-  assert.match(markup, /data-ability="slash" data-mana-cost="" disabled/);
-  assert.match(markup, /data-ability="crack" data-mana-cost="" disabled/);
+  assert.match(markup, /data-ability="slash" data-mana-cost="" data-shield-gain="0" disabled/);
+  assert.match(markup, /data-ability="crack" data-mana-cost="" data-shield-gain="0" disabled/);
   assert.equal((markup.match(/UNAVAILABLE/g) ?? []).length, 2,
     'invalid costs must not be presented as usable abilities before the first snapshot update');
 
@@ -200,7 +200,7 @@ test('malformed Mana costs and snapshots fail closed in battle controls', () => 
   };
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument, isValidManaCost, isValidManaState },
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
