@@ -126,7 +126,7 @@ test('Worker deployment watches every shared runtime module in the transitive im
 
 test('Worker deployment completes the full local QA gate before any remote D1 write', () => {
   const commands = (workflow: string): string[] =>
-    [...workflow.matchAll(/^\\s+run:\\s*(.+?)\\s*$/gm)].map((match) => match[1]!);
+    [...workflow.matchAll(/^\s+run:\s*(.+?)\s*$/gm)].map((match) => match[1]!);
   const ciCommands = commands(ciWorkflow);
   const deployCommands = commands(deployWorkflow);
   const remoteCommands = ['npm run db:apply', 'npm run db:migrate', 'npm run deploy:worker'];
