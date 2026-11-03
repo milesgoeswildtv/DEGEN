@@ -170,35 +170,40 @@ export class BattleEngine {
       return;
     }
 
-    // The Worker owns action resolution, but the client must not present a
-    // response whose Mana transition disagrees with the selected bespoke ability.
-    // This is a consistency guard only; the Worker remains the source of truth.
-    if (!canUseAbility(this.playerMana, ability)
-      || result.playerMana !== this.playerMana - ability.manaCost) return;
+    // The Worker owns action resolution. The client only applies its returned
+    // state after checking that the full transition matches the shared deterministic
+    // rules; it never substitutes this local projection for the Worker response.
+    let expectedTurn: ReturnType<typeof resolveCombatTurn>;
+    try {
+      expectedTurn = resolveCombatTurn({
+        playerHp: this.playerHp,
+        playerMana: this.playerMana,
+        playerShield: this.playerShield,
+        enemyHp: this.enemyHp,
+        enemyShield: this.enemyShield,
+        ability,
+        degen: this.degen,
+        enemy: this.enemy,
+      });
+    } catch {
+      return;
+    }
 
-    // Validate the Worker-reported Shield transition against the last accepted
-    // Shield and the selected Degen ability. This is presentation integrity only:
-    // all state applied below still comes from the Worker response.
     const nextPlayerShield = result.playerShield ?? 0;
     const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
     const shieldAbsorbed = result.shieldAbsorbed ?? 0;
-    const retaliationDamage = result.retaliationDamage ?? Math.max(0, this.playerHp - result.playerHp);
+    const retaliationDamage = result.retaliationDamage ?? 0;
     const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
-    const shieldBeforeRetaliation = this.playerShield + (ability.shieldGain ?? 0);
-    if (!Number.isSafeInteger(shieldBeforeRetaliation)) return;
-    const expectedShieldAbsorbed = result.status === 'victory'
-      ? 0
-      : Math.min(shieldBeforeRetaliation, retaliationDamage);
-    const expectedPlayerShield = shieldBeforeRetaliation - expectedShieldAbsorbed;
-    const expectedEnemyShieldAbsorbed = this.enemyShield - nextEnemyShield;
     if (
-      retaliationDamage < 0
-      || (result.status === 'victory' && retaliationDamage !== 0)
-      || (result.status !== 'victory' && retaliationDamage === 0)
-      || shieldAbsorbed !== expectedShieldAbsorbed
-      || nextPlayerShield !== expectedPlayerShield
-      || expectedEnemyShieldAbsorbed < 0
-      || enemyShieldAbsorbed !== expectedEnemyShieldAbsorbed
+      result.status !== expectedTurn.status
+      || result.playerHp !== expectedTurn.playerHp
+      || result.playerMana !== expectedTurn.playerMana
+      || nextPlayerShield !== expectedTurn.playerShield
+      || shieldAbsorbed !== expectedTurn.shieldAbsorbed
+      || retaliationDamage !== expectedTurn.retaliationDamage
+      || result.enemyHp !== expectedTurn.enemyHp
+      || nextEnemyShield !== expectedTurn.enemyShield
+      || enemyShieldAbsorbed !== expectedTurn.enemyShieldAbsorbed
     ) return;
 
     const playerDamage = Math.max(0, this.enemyHp - result.enemyHp);

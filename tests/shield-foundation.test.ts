@@ -221,6 +221,63 @@ test('server-backed engine rejects player Shield absorption and carry-forward th
 });
 
 
+test('server-backed engine rejects HP and enemy damage deltas that disagree with shared turn math', () => {
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const permitId = 'shield-damage-math-audit';
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => undefined, {
+    permitId,
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 5,
+    turnCount: 0,
+  });
+  const before = engine.snapshot;
+  const turn = resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 5,
+    ability: ability('slash'),
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  const valid = {
+    permitId,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    enemyShield: turn.enemyShield,
+    enemyShieldAbsorbed: turn.enemyShieldAbsorbed,
+    turnCount: 1,
+  } as const;
+
+  // Both payloads satisfy broad type/range and Shield-delta checks, but invent
+  // HP outcomes that the accepted ability and current combat snapshot cannot produce.
+  for (const impossible of [
+    { ...valid, playerHp: valid.playerHp - 1 },
+    { ...valid, enemyHp: enemy.maxHp },
+  ]) {
+    engine.applyAuthoritativeAction('slash', impossible);
+    assert.deepEqual(engine.snapshot, before, 'an impossible Worker damage result must not replace the last accepted snapshot');
+  }
+
+  engine.applyAuthoritativeAction('slash', valid);
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
+  assert.equal(engine.snapshot.enemyShield, undefined);
+  assert.equal(engine.snapshot.turnCount, 1);
+});
+
 test('Shield gain cannot bypass Mana costs and free Shield actions keep the Degen manifested at zero Mana', () => {
   const zeroManaDegen = {
     ...TEST_DEGEN,
