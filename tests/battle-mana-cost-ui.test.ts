@@ -96,7 +96,9 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
   assert.equal(buttons[1]?.costLabel.textContent, 'NEED 4 MANA',
     'an unaffordable paid move must explain why it is unavailable');
   assert.match(accessibleHud.textContent, /TEST_DEGEN: HP 73 of 120, Mana 0 of 12/);
-  assert.match(accessibleHud.textContent, /Tunnel Maw: HP 51 of 92, Shield 0\. Turn 2\. Choose an action\./);
+  assert.match(accessibleHud.textContent, /Tunnel Maw: HP 51 of 92\. Turn 2\. Choose an action\./);
+  assert.doesNotMatch(accessibleHud.textContent, /Tunnel Maw: HP 51 of 92, Shield 0/,
+    'zero enemy Shield must stay out of the accessible HUD');
 
   boundUi.updateBattleDom(snapshot(4));
   assert.equal(buttons[0]?.disabled, false);
