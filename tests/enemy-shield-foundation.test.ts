@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/testDegen.ts';
+import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { BattleEngine } from '../src/game/combat/engine.ts';
 import { assertNoMonsterActionResource, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import { battleView, updateBattleDom } from '../src/ui/views.ts';
