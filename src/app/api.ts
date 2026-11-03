@@ -15,7 +15,10 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
   const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
   const enemyShield = state.enemyShield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemyShield;
+  const requiresExplicitEnemyShield = (TUNNEL_MAW.startingShield ?? 0) > 0;
   const turnCount = state.turnCount;
+  // A shielded enemy's current Shield is authoritative state, not a value the client may reinitialize.
+  if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
   // A 0/0 audit with zero Shield is also the compatibility projection
   // for migrated pre-Shield permits; Worker validation checks the underlying NULLs.
   const hasLegacyShieldAuditSentinel = playerShield === 0
@@ -62,7 +65,10 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
   const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
   const enemyShield = state.enemyShield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemyShield;
+  const requiresExplicitEnemyShield = (TUNNEL_MAW.startingShield ?? 0) > 0;
   const enemyHp = state.enemyHp;
+  // Missing current Shield must fail closed; falling back to the starting value can resurrect it on recovery.
+  if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
   const turnCount = state.turnCount;
   if (state.permitId !== permitId
     || (state.status !== 'active' && state.status !== 'victory' && state.status !== 'defeat')

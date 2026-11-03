@@ -86,6 +86,7 @@ export class BattleEngine {
     if (!Number.isSafeInteger(result.enemyHp)
       || result.enemyHp < 0 || result.enemyHp > this.enemy.maxHp) return false;
     const enemyShield = result.enemyShield === undefined ? (this.enemy.startingShield ?? 0) : result.enemyShield;
+    if ((this.enemy.startingShield ?? 0) > 0 && result.enemyShield === undefined) return false;
     if (!isValidShield(enemyShield)
       || (result.enemyShieldAbsorbed !== undefined && !isValidShield(result.enemyShieldAbsorbed))) return false;
 

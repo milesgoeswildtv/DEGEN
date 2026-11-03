@@ -7,21 +7,24 @@ import test from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
 import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
 const apiSource = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8');
-const validatorStart = apiSource.indexOf('export const isAuthoritativeBattleActionState =');
+const validatorStart = apiSource.indexOf('const isAuthoritativeBattleStartState =');
 const validatorEnd = apiSource.indexOf('\nconst isRecord', validatorStart);
-if (validatorStart < 0 || validatorEnd < 0) throw new Error('Authoritative battle validator source was not found.');
+if (validatorStart < 0 || validatorEnd < 0) throw new Error('Authoritative battle validators were not found.');
 const validatorSource = apiSource.slice(validatorStart, validatorEnd).replace('export const ', 'const ');
-const { isAuthoritativeBattleActionState } = runInNewContext(
+type BattleValidators = {
+  isAuthoritativeBattleStartState(value: unknown, permitId: string): boolean;
+  isAuthoritativeBattleActionState(value: unknown, permitId: string): boolean;
+};
+const createBattleValidators = (enemy: typeof TUNNEL_MAW): BattleValidators => runInNewContext(
   stripTypeScriptTypes(`
     const isBoundedSafeInteger = (value, minimum, maximum) =>
       typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
     ${validatorSource}
-    ({ isAuthoritativeBattleActionState });
+    ({ isAuthoritativeBattleStartState, isAuthoritativeBattleActionState });
   `, { mode: 'transform' }),
-  { TEST_DEGEN, TUNNEL_MAW },
-) as {
-  isAuthoritativeBattleActionState(value: unknown, permitId: string): boolean;
-};
+  { TEST_DEGEN, TUNNEL_MAW: enemy },
+) as BattleValidators;
+const { isAuthoritativeBattleActionState } = createBattleValidators(TUNNEL_MAW);
 
 // Execute the real client engine with the same deterministic resolver imported by
 // the Worker. This deliberately compares behavior, not duplicated expected math.
@@ -44,6 +47,8 @@ const { BattleEngine } = runInNewContext(
       playerShield?: number;
       shieldAbsorbed?: number;
       retaliationDamage?: number;
+      enemyShield?: number;
+      enemyShieldAbsorbed?: number;
       enemyHp: number;
       turnCount: number;
     },
@@ -495,4 +500,51 @@ test('malformed Worker action snapshots cannot mutate engine state or emit compl
     turnCount: 1,
   });
   assert.deepEqual(engine.snapshot, before);
+});
+
+
+test('shielded-enemy start and recovery snapshots require the explicit current enemy Shield', () => {
+  const shieldedEnemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const validators = createBattleValidators(shieldedEnemy);
+  const permitId = 'permit-explicit-enemy-shield';
+  const initial = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: shieldedEnemy.maxHp,
+    enemyShield: 5,
+    turnCount: 0,
+  };
+  assert.equal(validators.isAuthoritativeBattleStartState(initial, permitId), true);
+  const missingStartShield = { ...initial } as Record<string, unknown>;
+  delete missingStartShield.enemyShield;
+  assert.equal(validators.isAuthoritativeBattleStartState(missingStartShield, permitId), false,
+    'the client must not invent a starting Shield when a shielded enemy snapshot omits it');
+
+  const advanced = {
+    ...initial,
+    playerHp: TEST_DEGEN.maxHp - 10,
+    enemyHp: shieldedEnemy.maxHp - 24,
+    enemyShield: 0,
+    enemyShieldAbsorbed: 5,
+    retaliationDamage: 10,
+    turnCount: 1,
+  };
+  assert.equal(validators.isAuthoritativeBattleActionState(advanced, permitId), true);
+  const missingActionShield = { ...advanced } as Record<string, unknown>;
+  delete missingActionShield.enemyShield;
+  assert.equal(validators.isAuthoritativeBattleActionState(missingActionShield, permitId), false,
+    'the action validator must not project a depleted enemy Shield back to its starting value');
+
+  const engine = new BattleEngine(TEST_DEGEN, shieldedEnemy, () => undefined, initial);
+  engine.synchronizeAuthoritativeState(missingActionShield as never);
+  assert.deepEqual(
+    [engine.snapshot.turnCount, engine.snapshot.enemyHp, engine.snapshot.enemyShield],
+    [0, shieldedEnemy.maxHp, 5],
+    'a recovery snapshot without current enemy Shield must not advance or restore the starting Shield',
+  );
 });
