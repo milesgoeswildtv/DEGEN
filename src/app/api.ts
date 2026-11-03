@@ -14,6 +14,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const playerShield = state.playerShield === undefined ? 0 : state.playerShield;
   const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
   const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
+  const enemyShield = state.enemyShield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemyShield;
   const turnCount = state.turnCount;
   // A 0/0 audit with zero Shield is also the compatibility projection
   // for migrated pre-Shield permits; Worker validation checks the underlying NULLs.
@@ -36,10 +37,13 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     && isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
     && isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
     && isBoundedSafeInteger(retaliationDamage, 0, TUNNEL_MAW.damage)
+    && isBoundedSafeInteger(enemyShield, 0, Number.MAX_SAFE_INTEGER)
+    && (state.enemyShieldAbsorbed === undefined || isBoundedSafeInteger(state.enemyShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER))
     && shieldAbsorbed <= retaliationDamage
     // A fresh start has no Shield or retaliation. An idempotent retry may return
     // the current Shield and last-action audit after one or more accepted turns.
     && hasConsistentActiveShieldAudit
+    && (turnCount !== 0 || enemyShield === (TUNNEL_MAW.startingShield ?? 0))
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
 };
 
@@ -56,6 +60,7 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   const playerShield = state.playerShield === undefined ? 0 : state.playerShield;
   const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
   const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
+  const enemyShield = state.enemyShield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemyShield;
   const enemyHp = state.enemyHp;
   const turnCount = state.turnCount;
   if (state.permitId !== permitId
@@ -65,6 +70,8 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
     || !isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
     || !isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
     || !isBoundedSafeInteger(retaliationDamage, 0, TUNNEL_MAW.damage)
+    || !isBoundedSafeInteger(enemyShield, 0, Number.MAX_SAFE_INTEGER)
+    || (state.enemyShieldAbsorbed !== undefined && !isBoundedSafeInteger(state.enemyShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER))
     || shieldAbsorbed > retaliationDamage
     || !isBoundedSafeInteger(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
@@ -81,9 +88,11 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
         : retaliationDamage > 0
           && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
     return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
-      && hasConsistentActiveShieldAudit;
+      && hasConsistentActiveShieldAudit
+      && (turnCount !== 0 || enemyShield === (TUNNEL_MAW.startingShield ?? 0));
   }
-  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
+  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0
+    && enemyShield === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
   // Legacy permits predate the Shield audit columns and use a zero/zero sentinel.
   // New-format defeat snapshots carry persisted deltas and must show residual damage.
   const recoveredTerminalSnapshot = shieldAbsorbed === 0 && retaliationDamage === 0;
