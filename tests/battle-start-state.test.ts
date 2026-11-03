@@ -61,16 +61,36 @@ test('an offline zero-Mana preview remains active and zero-cost abilities remain
   assert.equal(engine.snapshot.turnCount, 1);
 });
 
-test('the client snapshot follows authoritative action HP, Mana, and enemy HP', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState());
+test('the client snapshot follows an exact legacy Worker action result', () => {
+  const initial = startState();
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initial);
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    playerShield: 0,
+    enemyHp: initial.enemyHp,
+    enemyShield: 0,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  // Pre-Shield Worker snapshots omit all Shield audit fields. The engine infers
+  // retaliation from the returned HP delta, then validates the complete shared turn.
   engine.applyAuthoritativeAction('crack', {
-    permitId: 'permit-1', status: 'active', playerHp: 62, playerMana: 0, enemyHp: 25, turnCount: 1,
+    permitId: 'permit-1',
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    enemyHp: turn.enemyHp,
+    turnCount: 1,
   });
 
-  assert.equal(engine.snapshot.playerHp, 62);
-  assert.equal(engine.snapshot.playerMana, 0);
-  assert.equal(engine.snapshot.enemyHp, 25);
-  assert.equal(engine.snapshot.status, 'active');
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
+  assert.equal(engine.snapshot.playerMana, turn.playerMana);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
+  assert.equal(engine.snapshot.status, turn.status);
   assert.equal(engine.snapshot.turnCount, 1);
 });
 
