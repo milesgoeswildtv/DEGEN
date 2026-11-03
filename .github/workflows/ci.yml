@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, automation/degen/d1-migration-number-guard-v01]
 
 jobs:
   build:
