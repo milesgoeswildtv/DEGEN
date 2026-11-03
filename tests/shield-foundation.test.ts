@@ -176,6 +176,13 @@ test('conflict recovery rejects enemy Shield gains but accepts a consumed Shield
   engine.synchronizeAuthoritativeState({
     ...impossible,
     enemyShield: 0,
+    enemyShieldAbsorbed: 4,
+  });
+  assert.deepEqual(engine.snapshot, before, 'conflict recovery cannot report an impossible absorption delta');
+
+  engine.synchronizeAuthoritativeState({
+    ...impossible,
+    enemyShield: 0,
     enemyShieldAbsorbed: 5,
   });
   assert.equal(engine.snapshot.turnCount, 2);
