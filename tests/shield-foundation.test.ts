@@ -153,3 +153,62 @@ test('authoritative actions reject impossible enemy Shield absorption and gains'
   assert.equal(engine.snapshot.enemyShield, undefined);
   assert.ok(engine.snapshot.log.some((line) => line.includes('Shield absorbs 5')));
 });
+
+test('server-backed engine rejects player Shield absorption and carry-forward that disagree with shared turn math', () => {
+  const permitId = 'player-shield-audit';
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+    permitId,
+    status: 'active',
+    playerHp: 50,
+    playerMana: 0,
+    playerShield: 4,
+    shieldAbsorbed: 10,
+    retaliationDamage: 10,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 1,
+  });
+  const before = engine.snapshot;
+  const turn = resolveCombatTurn({
+    playerHp: 50,
+    playerMana: 0,
+    playerShield: 4,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: ability('slash', 3),
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  assert.equal(turn.shieldAbsorbed, 7);
+  assert.equal(turn.playerShield, 0);
+  assert.equal(turn.playerHp, 47);
+
+  const valid = {
+    permitId,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    enemyShield: turn.enemyShield,
+    enemyShieldAbsorbed: turn.enemyShieldAbsorbed,
+    turnCount: 2,
+  } as const;
+
+  // Each malformed result passes the broad snapshot bounds/audit checks but
+  // contradicts the accepted starting Shield plus this ability's Shield gain.
+  const impossibleResults = [
+    { ...valid, playerHp: 50, playerShield: 1, shieldAbsorbed: 10 },
+    { ...valid, playerHp: 40, playerShield: 0, shieldAbsorbed: 0 },
+    { ...valid, playerHp: 50, playerShield: 0, shieldAbsorbed: 10 },
+  ];
+  for (const impossible of impossibleResults) {
+    engine.applyAuthoritativeAction('slash', impossible);
+    assert.deepEqual(engine.snapshot, before, 'an impossible Worker Shield delta must not change the displayed battle');
+  }
+
+  engine.applyAuthoritativeAction('slash', valid);
+  assert.equal(engine.snapshot.playerHp, 47);
+  assert.equal(engine.snapshot.playerShield, 0);
+  assert.equal(engine.snapshot.turnCount, 2);
+});
