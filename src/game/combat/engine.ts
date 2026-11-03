@@ -159,20 +159,10 @@ export class BattleEngine {
     return () => this.listeners.delete(listener);
   }
 
-  // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
-  applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
-    if (this.status !== 'active') return;
-    const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
-    if (!ability || !this.isValidAuthoritativeState(result)) return;
-    if (!this.permitId || result.permitId !== this.permitId) return;
-    if (result.turnCount !== this.turnCount + 1) {
-      this.synchronizeAuthoritativeState(result);
-      return;
-    }
-
-    // The Worker owns action resolution. The client only applies its returned
-    // state after checking that the full transition matches the shared deterministic
-    // rules; it never substitutes this local projection for the Worker response.
+  private resolveAuthoritativeTurn(
+    result: BattleActionResult,
+    ability: DegenDefinition['abilities'][number],
+  ): ReturnType<typeof resolveCombatTurn> | undefined {
     let expectedTurn: ReturnType<typeof resolveCombatTurn>;
     try {
       expectedTurn = resolveCombatTurn({
@@ -186,7 +176,7 @@ export class BattleEngine {
         enemy: this.enemy,
       });
     } catch {
-      return;
+      return undefined;
     }
 
     const hasLegacyShieldResult = result.playerShield === undefined
@@ -210,8 +200,28 @@ export class BattleEngine {
       || result.enemyHp !== expectedTurn.enemyHp
       || nextEnemyShield !== expectedTurn.enemyShield
       || enemyShieldAbsorbed !== expectedTurn.enemyShieldAbsorbed
-    ) return;
+    ) return undefined;
 
+    return expectedTurn;
+  }
+
+  // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
+  applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
+    if (this.status !== 'active') return;
+    const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
+    if (!ability || !this.isValidAuthoritativeState(result)) return;
+    if (!this.permitId || result.permitId !== this.permitId) return;
+    if (result.turnCount !== this.turnCount + 1) {
+      this.synchronizeAuthoritativeState(result);
+      return;
+    }
+
+    const expectedTurn = this.resolveAuthoritativeTurn(result, ability);
+    if (!expectedTurn) return;
+
+    const nextPlayerShield = result.playerShield ?? 0;
+    const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
+    const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
     const playerDamage = Math.max(0, this.enemyHp - result.enemyHp);
     const manaSpent = Math.max(0, this.playerMana - result.playerMana);
     const shieldGained = Math.max(0, nextPlayerShield + shieldAbsorbed - this.playerShield);
@@ -238,8 +248,8 @@ export class BattleEngine {
       return;
     }
 
-    if (retaliationDamage > 0) {
-      this.log.push(`${this.enemy.name} hits back for ${retaliationDamage}.`);
+    if (expectedTurn.retaliationDamage > 0) {
+      this.log.push(`${this.enemy.name} hits back for ${expectedTurn.retaliationDamage}.`);
     }
     if (result.status === 'defeat') {
       this.status = 'defeat';
@@ -271,6 +281,13 @@ export class BattleEngine {
       || (result.enemyShield ?? this.enemy.startingShield ?? 0) !== this.enemyShield
       || result.status !== this.status
     )) return;
+
+    // When exactly one turn is missing, the current snapshot is sufficient to
+    // verify the competing tab's result against any bespoke Degen ability. For
+    // multi-turn catch-up, intermediate actions are unavailable, so Worker state
+    // remains the authority after the structural snapshot checks above.
+    if (result.turnCount === this.turnCount + 1
+      && !this.degen.abilities.some((ability) => this.resolveAuthoritativeTurn(result, ability))) return;
 
     const changed = this.playerHp !== result.playerHp
       || this.playerMana !== result.playerMana

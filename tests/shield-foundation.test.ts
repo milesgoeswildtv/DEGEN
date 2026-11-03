@@ -278,6 +278,62 @@ test('server-backed engine rejects HP and enemy damage deltas that disagree with
   assert.equal(engine.snapshot.turnCount, 1);
 });
 
+test('one-turn conflict recovery validates the result against any bespoke Degen ability', () => {
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const permitId = 'one-turn-conflict-math';
+  const initial = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 5,
+    turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => undefined, initial);
+  const before = engine.snapshot;
+  const paidAbility = ability('crack');
+  const turn = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    playerShield: initial.playerShield,
+    enemyHp: initial.enemyHp,
+    enemyShield: initial.enemyShield,
+    ability: paidAbility,
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  const valid = {
+    ...turn,
+    permitId,
+    turnCount: 1,
+  };
+
+  // These snapshots satisfy broad range/audit validation, but cannot result
+  // from the current state and any available ability.
+  for (const impossible of [
+    { ...valid, playerHp: valid.playerHp - 1 },
+    { ...valid, enemyHp: enemy.maxHp },
+  ]) {
+    engine.synchronizeAuthoritativeState(impossible);
+    assert.deepEqual(engine.snapshot, before,
+      'an impossible one-turn conflict snapshot must not replace the last accepted state');
+  }
+
+  // The conflict response does not identify which ability the other tab used;
+  // a valid result is accepted when any bespoke ability resolves to it.
+  engine.synchronizeAuthoritativeState(valid);
+  assert.equal(engine.snapshot.status, turn.status);
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
+  assert.equal(engine.snapshot.playerMana, turn.playerMana);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
+  assert.equal(engine.snapshot.enemyShield, undefined);
+  assert.equal(engine.snapshot.turnCount, 1);
+});
+
 test('Shield gain cannot bypass Mana costs and free Shield actions keep the Degen manifested at zero Mana', () => {
   const zeroManaDegen = {
     ...TEST_DEGEN,
