@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
@@ -23,7 +24,7 @@ const runtimeImportSpecifiers = (source: string): string[] => {
   return [...specifiers];
 };
 
-const resolveLocalImport = (importerPath: string, specifier: string): string => {
+const resolveLocalImport = (importerPath: string, specifier: string, root: string): string => {
   const target = resolve(dirname(importerPath), specifier);
   const extension = extname(target);
   const candidates = extension
@@ -45,12 +46,12 @@ const resolveLocalImport = (importerPath: string, specifier: string): string => 
   const resolvedPath = candidates.find(existsSync);
   assert.ok(
     resolvedPath,
-    'Worker runtime import "' + specifier + '" from ' + relative(repoRoot, importerPath) + ' must resolve to a tracked local file',
+    'Worker runtime import "' + specifier + '" from ' + relative(root, importerPath) + ' must resolve to a tracked local file',
   );
   return resolvedPath;
 };
 
-const collectWorkerRuntimeFiles = (): string[] => {
+const collectWorkerRuntimeFiles = (entryPath = workerEntryPath, root = repoRoot): string[] => {
   const visited = new Set<string>();
 
   const visit = (filePath: string): void => {
@@ -62,16 +63,47 @@ const collectWorkerRuntimeFiles = (): string[] => {
 
     const source = readFileSync(absolutePath, 'utf8');
     for (const specifier of runtimeImportSpecifiers(source)) {
-      visit(resolveLocalImport(absolutePath, specifier));
+      visit(resolveLocalImport(absolutePath, specifier, root));
     }
   };
 
-  visit(workerEntryPath);
+  visit(entryPath);
   return [...visited]
-    .map((filePath) => relative(repoRoot, filePath).split(sep).join('/'))
+    .map((filePath) => relative(root, filePath).split(sep).join('/'))
     .filter((filePath) => filePath.startsWith('src/'))
     .sort();
 };
+
+test('Worker import graph follows transitive runtime imports and excludes type-only imports', () => {
+  const root = mkdtempSync(join(tmpdir(), 'degen-worker-import-graph-'));
+  const workerDir = join(root, 'worker');
+  const sharedDir = join(root, 'src', 'shared');
+  const typesDir = join(root, 'src', 'types');
+
+  try {
+    mkdirSync(workerDir, { recursive: true });
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(typesDir, { recursive: true });
+    writeFileSync(join(workerDir, 'index.ts'), "import { run } from './runtime';\n");
+    writeFileSync(
+      join(workerDir, 'runtime.ts'),
+      "import { execute } from '../src/shared/entry';\n" +
+        "import type { Contract } from '../src/types/contract';\n" +
+        "const load = () => import('../src/shared/lazy');\n",
+    );
+    writeFileSync(join(sharedDir, 'entry.ts'), "export { execute } from './nested';\n");
+    writeFileSync(join(sharedDir, 'nested.ts'), 'export const execute = () => undefined;\n');
+    writeFileSync(join(sharedDir, 'lazy.ts'), 'export const lazy = true;\n');
+    writeFileSync(join(typesDir, 'contract.ts'), 'export interface Contract {}\n');
+
+    assert.deepEqual(
+      collectWorkerRuntimeFiles(join(workerDir, 'index.ts'), root),
+      ['src/shared/entry.ts', 'src/shared/lazy.ts', 'src/shared/nested.ts'],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('Worker deployment watches every shared runtime module in the transitive import graph', () => {
   const sharedRuntimeFiles = collectWorkerRuntimeFiles();
