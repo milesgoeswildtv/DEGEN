@@ -231,6 +231,92 @@ test('BattleEngine deducts paid Mana once and an unaffordable retry changes no c
   assert.match(afterRejectedAction.log.at(-1) ?? '', /Not enough Mana/);
 });
 
+test('Degen Shield gain absorbs retaliation before HP, including at zero Mana', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  // Test-only Shield gain exercises the shared rule without inventing a production Degen kit.
+  const shieldAbility = { ...free, shieldGain: 8 };
+  const shieldDegen = { ...TEST_DEGEN, maxMana: 0, abilities: [shieldAbility] };
+
+  const result = resolveCombatTurn({
+    playerHp: 10,
+    playerMana: 0,
+    playerShield: 3,
+    enemyHp: TUNNEL_MAW.maxHp,
+    enemyShield: 0,
+    ability: shieldAbility,
+    degen: shieldDegen,
+    enemy: TUNNEL_MAW,
+  });
+
+  assert.equal(result.playerMana, 0);
+  assert.equal(result.status, 'active');
+  assert.equal(result.playerHp, 10, 'the gained and existing Shield absorb the full retaliation');
+  assert.equal(result.playerShield, 1, 'Shield is consumed only by the absorbed retaliation');
+  assert.equal(result.retaliationDamage, 10);
+  assert.equal(result.shieldAbsorbed, 10);
+  assert.equal(result.enemyHp, TUNNEL_MAW.maxHp - result.playerDamage);
+});
+
+test('enemy Shield absorbs incoming damage before HP and a killing blow skips retaliation', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const shieldDegen = { ...TEST_DEGEN, maxMana: 0, abilities: [free] };
+
+  const result = resolveCombatTurn({
+    playerHp: 1,
+    playerMana: 0,
+    playerShield: 4,
+    enemyHp: 24,
+    enemyShield: 5,
+    ability: free,
+    degen: shieldDegen,
+    enemy: TUNNEL_MAW,
+  });
+
+  assert.equal(result.status, 'victory');
+  assert.equal(result.playerMana, 0);
+  assert.equal(result.enemyShieldAbsorbed, 5);
+  assert.equal(result.enemyShield, 0);
+  assert.equal(result.enemyHp, 0);
+  assert.equal(result.playerHp, 1);
+  assert.equal(result.playerShield, 4, 'a killing blow does not consume player Shield');
+  assert.equal(result.retaliationDamage, 0);
+  assert.equal(result.shieldAbsorbed, 0);
+});
+
+test('Shield values and accumulated gains reject invalid or unsafe integers', () => {
+  assert.equal(isValidShield(0), true);
+  assert.equal(isValidShield(Number.MAX_SAFE_INTEGER), true);
+  assert.equal(isValidShield(-1), false);
+  assert.equal(isValidShield(0.5), false);
+  assert.equal(isValidShield(Number.MAX_SAFE_INTEGER + 1), false);
+
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const shieldAbility = { ...free, shieldGain: 1 };
+  const shieldDegen = { ...TEST_DEGEN, abilities: [shieldAbility] };
+  const input = {
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: Number.MAX_SAFE_INTEGER,
+    enemyHp: TUNNEL_MAW.maxHp,
+    enemyShield: 0,
+    ability: shieldAbility,
+    degen: shieldDegen,
+    enemy: TUNNEL_MAW,
+  };
+
+  assert.throws(() => resolveCombatTurn(input), /safe integer/);
+  assert.throws(() => resolveCombatTurn({ ...input, playerShield: 0, enemyShield: -1 }), /Invalid enemy Shield/);
+  assert.throws(() => resolveCombatTurn({
+    ...input,
+    playerShield: 0,
+    ability: { ...free, shieldGain: -1 },
+    degen: { ...shieldDegen, abilities: [{ ...free, shieldGain: -1 }] },
+  }), /Invalid Shield gain/);
+});
+
 test('Underpass rewards are full for the first three clears and reduced after', () => {
   for (let clear = 1; clear <= UNDERPASS_FULL_REWARD_LIMIT; clear += 1) {
     const reward = underpassRewardForClear(clear);
