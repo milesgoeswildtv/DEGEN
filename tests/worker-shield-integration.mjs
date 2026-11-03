@@ -41,12 +41,12 @@ try {
   const seed=join(scratch,'seed.sql');
   writeFileSync(seed,`
     INSERT INTO players(id,display_name) VALUES
-      ('shield-start','Shield Start'),('shield-action','Shield Action'),('shield-enemy','Shield Enemy'),
+      ('shield-start','Shield Start'),('shield-action','Shield Action'),('shield-enemy','Shield Enemy'),('shield-enemy-kill','Shield Enemy Kill'),
       ('shield-carry','Shield Carry'),('shield-kill','Shield Kill'),('shield-defeat','Shield Defeat'),('shield-race','Shield Race'),
       ('shield-legacy','Shield Legacy'),('shield-corrupt-legacy','Shield Corrupt Legacy'),
       ('shield-impossible-active','Shield Impossible Active'),('shield-partial-active','Shield Partial Active');
     INSERT INTO characters(player_id,level,xp,currency,degen_key) VALUES
-      ('shield-start',1,0,0,'test-degen'),('shield-action',1,0,0,'test-degen'),('shield-enemy',1,0,0,'test-degen'),
+      ('shield-start',1,0,0,'test-degen'),('shield-action',1,0,0,'test-degen'),('shield-enemy',1,0,0,'test-degen'),('shield-enemy-kill',1,0,0,'test-degen'),
       ('shield-carry',1,0,0,'test-degen'),('shield-kill',1,0,0,'test-degen'),
       ('shield-defeat',1,0,0,'test-degen'),('shield-race',1,0,0,'test-degen'),
       ('shield-legacy',1,0,0,'test-degen'),('shield-corrupt-legacy',1,0,0,'test-degen'),
@@ -59,6 +59,7 @@ try {
     VALUES
       ('shield-action-permit','shield-action','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,5,10,10,63,1),
       ('shield-enemy-permit','shield-enemy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,12,0,0,10,92,1),
+      ('shield-enemy-kill-permit','shield-enemy-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,12,0,0,10,30,1),
       ('shield-carry-permit','shield-carry','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,12,10,10,63,1),
       ('shield-kill-permit','shield-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',5,12,5,10,10,1,1),
       ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',8,0,2,10,10,63,1),
@@ -69,7 +70,7 @@ try {
       ('shield-partial-active-permit','shield-partial-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,5,0,10,63,1);
   `);
   cli(['d1','execute','DEGEN','--local','--persist-to='+persist,'--file='+seed]);
-  sql("UPDATE battle_permits SET enemy_shield=5 WHERE id='shield-enemy-permit'");
+  sql("UPDATE battle_permits SET enemy_shield=5 WHERE id IN ('shield-enemy-permit','shield-enemy-kill-permit')");
   server=spawn(wrangler,['dev','--local','--persist-to='+persist,'--ip=127.0.0.1','--port=8791'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
   for(const stream of [server.stdout,server.stderr]) stream.on('data',d=>{logs=(logs+d.toString()).slice(-10000);});
   await until(async()=>{const r=await fetch(base+'/api/health',{signal:AbortSignal.timeout(600)});return r.ok&&(await r.json()).ok;});
@@ -153,6 +154,38 @@ try {
     {enemy_shield:0,enemy_hp:68,turn_count:2},
   ]);
   assert.equal('reward' in enemyShieldAction.data,false,'client reward fields remain ignored');
+
+  // A paid killing blow must consume the remaining enemy Shield, skip retaliation,
+  // persist the terminal state, and settle its reward receipt exactly once.
+  const enemyShieldKill=await post('/api/battle/action',{
+    playerId:'shield-enemy-kill',permitId:'shield-enemy-kill-permit',abilityId:'crack',expectedTurnCount:1,
+    playerMana:0,enemyShield:0,enemyShieldAbsorbed:0,enemyHp:0,playerHp:0,turnCount:99,status:'defeat',
+    reward:{xp:999999,currency:999999,items:['forged-item']},
+  });
+  assert.equal(enemyShieldKill.status,200);
+  assert.deepEqual([
+    enemyShieldKill.data.playerHp,enemyShieldKill.data.playerMana,enemyShieldKill.data.playerShield,
+    enemyShieldKill.data.shieldAbsorbed,enemyShieldKill.data.retaliationDamage,
+    enemyShieldKill.data.enemyShieldAbsorbed,enemyShieldKill.data.enemyHp,
+    enemyShieldKill.data.turnCount,enemyShieldKill.data.status,
+  ],[110,8,0,0,0,5,0,2,'victory']);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,turn_count,battle_status FROM battle_permits WHERE id='shield-enemy-kill-permit'"),[
+    {player_hp:110,player_mana:8,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:0,enemy_shield:0,turn_count:2,battle_status:'victory'},
+  ]);
+
+  const enemyKillCompletion=await post('/api/battle/complete',{playerId:'shield-enemy-kill',permitId:'shield-enemy-kill-permit'});
+  assert.equal(enemyKillCompletion.status,200);
+  const settledCharacter=sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-enemy-kill'");
+  const enemyKillReplay=await post('/api/battle/complete',{playerId:'shield-enemy-kill',permitId:'shield-enemy-kill-permit'});
+  assert.equal(enemyKillReplay.status,200);
+  assert.deepEqual(sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-enemy-kill'"),settledCharacter,
+    'replaying completion after an enemy-Shield killing blow must not award progression twice');
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='shield-enemy-kill-permit:victory'"),[
+    {count:1},
+  ]);
+  assert.deepEqual(sql("SELECT reward_state,battle_status FROM battle_permits WHERE id='shield-enemy-kill-permit'"),[
+    {reward_state:'awarded',battle_status:'victory'},
+  ]);
 
   const rejected=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'crack',expectedTurnCount:1});
   assert.equal(rejected.status,409);
