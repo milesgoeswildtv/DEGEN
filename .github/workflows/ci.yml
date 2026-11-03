@@ -18,6 +18,8 @@ jobs:
           node-version: 22
       - name: Install
         run: npm install
+      - name: Validate tracked D1 migration versions
+        run: npm run check:migrations
       - name: Run deterministic game tests
         run: npm test
       - name: Exercise isolated local Worker/D1 reward concurrency
