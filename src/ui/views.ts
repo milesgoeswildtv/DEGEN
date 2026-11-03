@@ -1,8 +1,9 @@
-import { renderIsometricCity, renderIsometricDistrict } from './isometricCity';
-import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
-import { isValidManaCost, isValidManaState, isValidShieldGain } from '../game/combat/rules';
+import { renderIsometricCity, renderIsometricDistrict } from './isometricCity.ts';
+import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world.ts';
+import { isValidManaCost, isValidManaState, isValidShieldGain } from '../game/combat/rules.ts';
 import type { BattleSnapshot } from '../game/combat/engine';
 import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
+
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>'\"]/g, (char) => ({
