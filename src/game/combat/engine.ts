@@ -224,9 +224,12 @@ export class BattleEngine {
     if (result.turnCount < this.turnCount) return;
 
     const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
-    // Conflict recovery must obey the same no-regeneration boundary as a direct
-    // action; otherwise a stale or malformed snapshot could silently restore Shield.
-    if (nextEnemyShield > this.enemyShield) return;
+    // Conflict recovery must obey the same Shield-consumption invariant as a direct
+    // action; otherwise a malformed snapshot could restore Shield or report a false delta.
+    const expectedEnemyShieldAbsorbed = this.enemyShield - nextEnemyShield;
+    if (expectedEnemyShieldAbsorbed < 0
+      || (result.enemyShieldAbsorbed !== undefined
+        && result.enemyShieldAbsorbed !== expectedEnemyShieldAbsorbed)) return;
 
     // A turn count identifies one immutable combat snapshot. Same-turn retries
     // are idempotent only when every authoritative field agrees; a conflicting
