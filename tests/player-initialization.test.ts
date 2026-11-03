@@ -12,10 +12,10 @@ const localStorage = {
 };
 
 const source = readFileSync(new URL('../src/app/state.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
-  .replace(/\\bexport class /g, 'class ');
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/\bexport class /g, 'class ');
 const { PlayerStore } = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ PlayerStore });',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ PlayerStore });',
   {
     advanceLevel: (level: number, xp: number, rewardXp: number) => ({ level, xp: xp + rewardXp }),
     localStorage,
