@@ -121,3 +121,34 @@ test('Worker deployment watches every shared runtime module in the transitive im
     'Worker-local runtime modules must remain covered by the deploy path filter',
   );
 });
+
+
+test('Worker deployment completes the full local QA gate before any remote D1 write', () => {
+  const preflightCommands = [
+    'npm test',
+    'node tests/worker-d1-concurrency.mjs',
+    'node tests/worker-d1-reward-recovery.mjs',
+    'node tests/worker-d1-cycle-race.mjs',
+    'node tests/worker-d1-cycle-rollover.mjs',
+    'node tests/worker-d1-defeat-atomic.mjs',
+    'node tests/browser-housing-persistence.mjs',
+    'npm run build',
+    'node tests/browser-battle-vertical-slice.mjs',
+    'npm run check:worker',
+  ];
+  const schemaApply = deployWorkflow.indexOf('npm run db:apply');
+  const migrationApply = deployWorkflow.indexOf('npm run db:migrate');
+  const workerDeploy = deployWorkflow.indexOf('npm run deploy:worker');
+
+  assert.ok(schemaApply >= 0, 'expected remote schema apply after local QA');
+  assert.ok(migrationApply > schemaApply, 'tracked migrations must follow schema apply');
+  assert.ok(workerDeploy > migrationApply, 'Worker deployment must follow tracked migrations');
+
+  let previous = -1;
+  for (const command of preflightCommands) {
+    const position = deployWorkflow.indexOf('run: ' + command);
+    assert.ok(position > previous, 'deployment preflight command must be present in CI order: ' + command);
+    assert.ok(position < schemaApply, 'deployment preflight must finish before remote D1 writes: ' + command);
+    previous = position;
+  }
+});
