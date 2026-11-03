@@ -44,15 +44,19 @@ try {
       ('shield-start','Shield Start'),('shield-action','Shield Action'),('shield-enemy','Shield Enemy'),('shield-enemy-kill','Shield Enemy Kill'),
       ('shield-carry','Shield Carry'),('shield-kill','Shield Kill'),('shield-defeat','Shield Defeat'),('shield-race','Shield Race'),
       ('shield-legacy','Shield Legacy'),('shield-corrupt-legacy','Shield Corrupt Legacy'),
-      ('shield-impossible-active','Shield Impossible Active'),('shield-partial-active','Shield Partial Active');
+      ('shield-impossible-active','Shield Impossible Active'),('shield-partial-active','Shield Partial Active'),
+      ('shield-closure','Shield Closure');
     INSERT INTO characters(player_id,level,xp,currency,degen_key) VALUES
       ('shield-start',1,0,0,'test-degen'),('shield-action',1,0,0,'test-degen'),('shield-enemy',1,0,0,'test-degen'),('shield-enemy-kill',1,0,0,'test-degen'),
       ('shield-carry',1,0,0,'test-degen'),('shield-kill',1,0,0,'test-degen'),
       ('shield-defeat',1,0,0,'test-degen'),('shield-race',1,0,0,'test-degen'),
       ('shield-legacy',1,0,0,'test-degen'),('shield-corrupt-legacy',1,0,0,'test-degen'),
-      ('shield-impossible-active',1,0,0,'test-degen'),('shield-partial-active',1,0,0,'test-degen');
+      ('shield-impossible-active',1,0,0,'test-degen'),('shield-partial-active',1,0,0,'test-degen'),
+      ('shield-closure',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
-      VALUES('shield-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
+      VALUES
+        ('shield-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes')),
+        ('shield-closure-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));
     -- Shield-bearing rows below are valid post-turn snapshots, not fresh turn-zero permits.
     INSERT INTO battle_permits(id,player_id,event_key,cycle_id,encounter_key,started_at,expires_at,
       battle_status,player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count)
@@ -67,10 +71,11 @@ try {
       ('shield-legacy-permit','shield-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,0,NULL,NULL,92,0),
       ('shield-corrupt-legacy-permit','shield-corrupt-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,1,NULL,NULL,92,0),
       ('shield-impossible-active-permit','shield-impossible-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,0,0,0,63,1),
-      ('shield-partial-active-permit','shield-partial-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,5,0,10,63,1);
+      ('shield-partial-active-permit','shield-partial-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,5,0,10,63,1),
+      ('shield-closure-permit','shield-closure','underpass','shield-closure-cycle','tunnel-maw',datetime('now','-5 minutes'),datetime('now','+20 minutes'),'active',120,0,4,10,10,63,1);
   `);
   cli(['d1','execute','DEGEN','--local','--persist-to='+persist,'--file='+seed]);
-  sql("UPDATE battle_permits SET enemy_shield=5 WHERE id IN ('shield-enemy-permit','shield-enemy-kill-permit')");
+  sql("UPDATE battle_permits SET enemy_shield=5 WHERE id IN ('shield-enemy-permit','shield-enemy-kill-permit','shield-closure-permit')");
   server=spawn(wrangler,['dev','--local','--persist-to='+persist,'--ip=127.0.0.1','--port=8791'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
   for(const stream of [server.stdout,server.stderr]) stream.on('data',d=>{logs=(logs+d.toString()).slice(-10000);});
   await until(async()=>{const r=await fetch(base+'/api/health',{signal:AbortSignal.timeout(600)});return r.ok&&(await r.json()).ok;});
@@ -84,6 +89,25 @@ try {
   assert.deepEqual(sql(`SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='${start.data.permitId}'`),[
     {player_hp:120,player_mana:12,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:92,turn_count:0,battle_status:'active'},
   ]);
+
+  // Closing an event does not invalidate a still-unexpired permit issued during that cycle.
+  // Exercise the Shield-bearing snapshot and both Shield pools through the real Worker action path.
+  sql("UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='shield-closure-cycle'");
+  const afterClosure=await post('/api/battle/action',{
+    playerId:'shield-closure',permitId:'shield-closure-permit',abilityId:'slash',expectedTurnCount:1,
+  });
+  assert.equal(afterClosure.status,200);
+  assert.deepEqual([
+    afterClosure.data.playerHp,afterClosure.data.playerMana,afterClosure.data.playerShield,
+    afterClosure.data.shieldAbsorbed,afterClosure.data.retaliationDamage,
+    afterClosure.data.enemyShield,afterClosure.data.enemyShieldAbsorbed,
+    afterClosure.data.enemyHp,afterClosure.data.turnCount,afterClosure.data.status,
+  ],[114,0,0,4,10,0,5,39,2,'active']);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,turn_count,battle_status FROM battle_permits WHERE id='shield-closure-permit'"),[
+    {player_hp:114,player_mana:0,player_shield:0,last_shield_absorbed:4,last_retaliation_damage:10,enemy_hp:39,enemy_shield:0,turn_count:2,battle_status:'active'},
+  ],'closed-cycle combat must preserve the accepted Shield and HP transition in the original permit');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM world_event_cycles WHERE id='shield-closure-cycle' AND julianday(closes_at) < julianday('now')")[0]?.count,1);
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE id='shield-closure-permit' AND julianday(expires_at) > julianday('now')")[0]?.count,1);
 
   const legacy=await post('/api/battle/action',{playerId:'shield-legacy',permitId:'shield-legacy-permit',abilityId:'slash',expectedTurnCount:0});
   assert.equal(legacy.status,200);
