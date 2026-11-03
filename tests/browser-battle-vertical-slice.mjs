@@ -198,6 +198,9 @@ try {
       window.__degenLostStartResponsesRemaining = 0;
       window.__degenLostStartResponses = 0;
       window.__degenStartRequestIds = [];
+      window.__degenHoldBootstrapResponse = true;
+      window.__degenBootstrapResponseHeld = false;
+      window.__degenReleaseBootstrap = null;
       window.__degenHoldWorldSnapshot = true;
       window.__degenWorldSnapshotResponseHeld = false;
       window.__degenReleaseWorldSnapshot = null;
@@ -213,6 +216,11 @@ try {
         const response = await originalFetch(input, init);
         const requestUrl = input instanceof Request ? input.url : String(input);
         const requestPath = new URL(requestUrl, window.location.href).pathname;
+        if (window.__degenHoldBootstrapResponse && requestPath === '/api/player/bootstrap') {
+          window.__degenHoldBootstrapResponse = false;
+          window.__degenBootstrapResponseHeld = true;
+          await new Promise(resolve => { window.__degenReleaseBootstrap = resolve; });
+        }
         if (window.__degenHoldWorldSnapshot && requestPath === '/api/world/underpass') {
           window.__degenHoldWorldSnapshot = false;
           window.__degenWorldSnapshotResponseHeld = true;
@@ -297,12 +305,16 @@ try {
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
-  await until('initial world snapshot response held', () => cdp.evaluate('window.__degenWorldSnapshotResponseHeld === true'));
-  await until('Map renders before live world snapshot resolves', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await until('player bootstrap response held', () => cdp.evaluate('window.__degenBootstrapResponseHeld === true'));
+  await until('Map renders while player bootstrap is pending', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   assert.ok(await cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // SYNCING") === true'),
-    'the first Map render must show a safe syncing state while live world data is pending');
+    'the first Map render must show a safe syncing state while player identity/bootstrap is pending');
   assert.ok(await cdp.evaluate('document.querySelector("[role=status][aria-live=polite]")?.textContent.includes("UNDERPASS STATUS: SYNCING") === true'),
     'the initial syncing state must be announced to assistive technology');
+  assert.deepEqual(await loadedPhaserResources(), [],
+    'neither Phaser nor the live world request should block the first Map render');
+  await cdp.evaluate('window.__degenReleaseBootstrap?.()');
+  await until('initial world snapshot response held after player bootstrap', () => cdp.evaluate('window.__degenWorldSnapshotResponseHeld === true'));
   await cdp.evaluate('window.__degenReleaseWorldSnapshot?.()');
   await until('Map reflects authoritative world snapshot', () => cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // OPEN") === true'));
   assert.ok(await cdp.evaluate('document.querySelector("[role=status][aria-live=polite]")?.textContent.includes("UNDERPASS STATUS: OPEN") === true'),
