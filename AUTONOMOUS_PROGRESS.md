@@ -1,3 +1,17 @@
+## Latest run — 2026-11-03 (correct guarded migration-script regression)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #126 OPEN / READY FOR REVIEW / UNMERGED:** `automation/degen/worker-shared-runtime-deploy-triggers-v01`. Code/test head before this continuity commit: `641deb6c83f9d8ed5538f996fed48b80fcf9007c`.
+- **QA correction:** exact-head CI [41655101985](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41655101985) ran the new migration guard and 267 deterministic tests, but failed one existing assertion in `tests/mana-deploy-order.test.ts`: it still expected the unguarded `db:migrate` command. The implementation's guarded script was correct; updated that assertion to require `npm run check:migrations && wrangler d1 migrations apply DEGEN --remote`. No Worker/D1 runtime test failed; downstream integration/build steps were skipped after the deterministic test gate. This follow-up requires fresh exact-head CI.
+- **Files in the implementation slice:** `package.json`, `.github/workflows/deploy-worker.yml`, `tests/worker-deploy-trigger.test.ts`, `tests/d1-migration-order.test.ts`, `tests/d1-migration-command-guard.test.ts`, and `tests/mana-deploy-order.test.ts`. Manual remote D1/Worker npm commands and the deploy workflow now fail closed on duplicate/malformed migration versions; the fake-Wrangler test proves no remote command is invoked on a duplicate `0007`.
+- **Mana:** COMPLETE / MERGED on main; Degen-only persisted Mana, server initialization/action CAS, affordability, exact deduction, zero-cost actions, terminal outcomes, client presentation, and no-monster-resource/no-reversion boundaries remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 still owns combat state and settlement; this slice changes deployment preflight only. Existing main/Shield CI coverage remains the evidence for reward concurrency, transient recovery, cycle/rollover, defeat, and level-up behavior.
+- **D1 assumptions / blockers:** binding `DB` → `DEGEN`, migration directory `db/migrations`; main has unique versions through `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still collides at `0007`; guard blocks duplicate versions but does not renumber or choose an order. Shield migrations `0008` / `0009` remain branch-only/unapplied. No remote D1 operation or Worker deployment occurred.
+- **Delivery:** **PUSHED / PR:** migration preflight and regression fix on #126. **MERGED / LIVE:** none. **Miles blocker:** explicit duplicate-`0007` decision and auth release gates remain.
+- **One best next task:** verify exact-head CI after the stale migration assertion fix, then reconcile the deploy gate with Shield PR #125 without applying migrations.
+
+---
+
 ## Latest run — 2026-11-03 (block duplicate D1 migration versions before deploy writes)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`. Main CI [41244799185](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41244799185) passed; latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`. No production operation occurred in this run.
