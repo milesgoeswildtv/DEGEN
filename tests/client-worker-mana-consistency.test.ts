@@ -308,6 +308,82 @@ test('replaying the same authoritative action result does not deduct Mana or app
 });
 
 
+test('client applies a Worker action only when Mana falls by the selected ability cost exactly', () => {
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const permitId = 'permit-exact-mana-delta';
+  const initial = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    enemyShield: 0,
+    turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initial);
+  const expected = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    enemyHp: initial.enemyHp,
+    enemyShield: initial.enemyShield,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  const validResult = { ...expected, permitId, turnCount: 1 };
+  const before = engine.snapshot;
+
+  for (const incorrectMana of [initial.playerMana, expected.playerMana - 1, 0]) {
+    engine.applyAuthoritativeAction(ability.id, { ...validResult, playerMana: incorrectMana });
+    assert.deepEqual(engine.snapshot, before,
+      `a Worker response with player Mana ${incorrectMana} must not be presented for a ${ability.manaCost}-Mana ability`);
+  }
+
+  engine.applyAuthoritativeAction(ability.id, validResult);
+  assert.equal(engine.snapshot.playerMana, expected.playerMana);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(engine.snapshot.enemyHp, expected.enemyHp);
+});
+
+test('client accepts a zero-cost Worker action at zero Mana without inventing a deduction', () => {
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
+  assert.ok(ability);
+  assert.equal(ability.manaCost, 0);
+  const permitId = 'permit-zero-mana-free-action';
+  const initial = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    enemyShield: 0,
+    turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initial);
+  const expected = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    enemyHp: initial.enemyHp,
+    enemyShield: initial.enemyShield,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+
+  engine.applyAuthoritativeAction(ability.id, { ...expected, permitId, turnCount: 1 });
+
+  assert.equal(engine.snapshot.playerMana, 0);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(engine.snapshot.enemyHp, expected.enemyHp);
+});
+
 test('a terminal authoritative result cannot be reopened by a later active snapshot', () => {
   let completions = 0;
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {

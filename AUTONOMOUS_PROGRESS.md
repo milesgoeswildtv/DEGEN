@@ -1,3 +1,17 @@
+## Latest run — 2026-11-03 (guard exact Mana deduction in authoritative client actions)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #125:** continuing `automation/degen/authoritative-shield-foundation-v02` at the exact inspected head `929743370f8ae23ac491840fea73bb4daa64f8c1`; no competing Mana branch was created. The legacy `sidekick/degen-mana-foundation-v01` compares as 11 ahead / 102 behind and diverged from main; its Mana work is superseded and is not cherry-picked.
+- **Task / files changed:** `src/game/combat/engine.ts` now refuses to present a one-turn Worker response unless the selected Degen ability is affordable from the last accepted snapshot and the returned player Mana equals the exact once-only deduction. This is client presentation-integrity validation only; Worker/D1 remains authoritative. `tests/client-worker-mana-consistency.test.ts` covers under-deduction, over-deduction, exact paid deduction, and zero-cost use at 0 Mana. No universal move pool, monster resource, balance change, schema change, or reward-authority change.
+- **QA:** previous exact-head Shield branch CI [41697486099](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41697486099) completed SUCCESS on `929743370f8ae23ac491840fea73bb4daa64f8c1`, including deterministic tests, isolated Worker/D1 reward/recovery and concurrency, Shield integration, housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler dry-run. This new code/test commit requires its own exact-head CI; no local-shell run or new browser result is claimed yet.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, server initialization, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal victory/defeat, cost-aware UI, and no Mana-triggered reversion remain intact. Monsters have no Mana or equivalent resource.
+- **Battle authority / reward idempotency:** Worker/D1 continues to own permit state, HP/Mana/Shield, enemy HP/Shield, action turn-CAS, terminal outcomes/history, audited reward receipts, XP/currency/inventory, and recoverable exactly-once settlement. This guard cannot authorize an action or grant a reward.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`. Shield migrations `0008_degen_shield.sql` / `0009_enemy_shield.sql` remain branch-only and unapplied. Main `0007_player_inventory_quantity_guards.sql` still conflicts by version with draft auth PR #14's `0007_player_sessions.sql`; no sequence was selected or renumbered. No production D1 operation or Worker deployment occurred.
+- **Miles blockers / delivery:** PR #125 remains OPEN / DRAFT / UNMERGED while duplicate-`0007` ordering and overlapping PR #122–124 review ownership are reconciled. Production Discord/Telegram credentials and identity/session policy remain separate auth gates. **LOCAL/STAGED:** none. **PUSHED/PR:** this exact-deduction guard and deterministic regressions are committed on PR #125; fresh exact-head CI pending. **MERGED/LIVE:** no change.
+- **One best next task:** verify the new exact-head CI; if green, keep the Shield PR gated on explicit migration-order/review-ownership resolution rather than applying branch-only migrations.
+
+---
+
 ## Latest run — 2026-11-03 (preserve deploy import-graph guard in Shield branch)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.

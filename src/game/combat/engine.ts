@@ -170,6 +170,12 @@ export class BattleEngine {
       return;
     }
 
+    // The Worker owns action resolution, but the client must not present a
+    // response whose Mana transition disagrees with the selected bespoke ability.
+    // This is a consistency guard only; the Worker remains the source of truth.
+    if (!canUseAbility(this.playerMana, ability)
+      || result.playerMana !== this.playerMana - ability.manaCost) return;
+
     // Validate the Worker-reported Shield transition against the last accepted
     // Shield and the selected Degen ability. This is presentation integrity only:
     // all state applied below still comes from the Worker response.
