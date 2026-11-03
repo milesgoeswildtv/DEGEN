@@ -175,7 +175,11 @@ export class BattleEngine {
     const nextPlayerShield = result.playerShield ?? 0;
     const shieldGained = Math.max(0, nextPlayerShield + (result.shieldAbsorbed ?? 0) - this.playerShield);
     const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
-    const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? Math.max(0, this.enemyShield - nextEnemyShield);
+    // A single accepted action can only consume existing enemy Shield. Reject
+    // forged or malformed Shield deltas before presenting the Worker snapshot.
+    const expectedEnemyShieldAbsorbed = this.enemyShield - nextEnemyShield;
+    const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? expectedEnemyShieldAbsorbed;
+    if (expectedEnemyShieldAbsorbed < 0 || enemyShieldAbsorbed !== expectedEnemyShieldAbsorbed) return;
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
     this.playerShield = nextPlayerShield;
