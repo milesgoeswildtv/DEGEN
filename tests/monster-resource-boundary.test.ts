@@ -152,7 +152,7 @@ test('nested monster resource aliases fail closed in signatures and loadouts, in
       playerHp: TEST_DEGEN.maxHp, playerMana: TEST_DEGEN.maxMana, playerShield: 0,
       enemyHp: TUNNEL_MAW.maxHp, ability: freeAbility, degen: TEST_DEGEN, enemy: cyclic,
     }),
-    /universal action resource \\(signature\\.mana\\)/,
+    ((error: unknown) => error instanceof TypeError && error.message.includes('universal action resource (signature.mana)')),
   );
 });
 
