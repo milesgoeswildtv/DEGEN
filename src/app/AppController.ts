@@ -59,8 +59,11 @@ export class AppController {
   ) {}
 
   async start(): Promise<void> {
-    // Render the Map immediately; live world state can synchronize in the background.
+    // Render the Map before platform identity and Worker bootstrap can delay startup.
     this.render();
+  }
+
+  onPlayerInitialized(): void {
     void this.refreshWorld(true);
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
@@ -68,7 +71,18 @@ export class AppController {
       for (const permitId of localPending) void this.queueRewardCompletion(permitId, playerId);
       void this.discoverPendingBattleRewards(playerId);
     }
-    this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
+    if (this.worldRefreshTimer === undefined) {
+      this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
+    }
+  }
+
+  onPlayerInitializationFailed(): void {
+    if (!this.api.enabled) {
+      this.onPlayerInitialized();
+      return;
+    }
+    this.worldSyncFailed = true;
+    this.render();
   }
 
   private navigate(route: RouteKey): void {
