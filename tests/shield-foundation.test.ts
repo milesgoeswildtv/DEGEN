@@ -153,3 +153,32 @@ test('authoritative actions reject impossible enemy Shield absorption and gains'
   assert.equal(engine.snapshot.enemyShield, undefined);
   assert.ok(engine.snapshot.log.some((line) => line.includes('Shield absorbs 5')));
 });
+
+test('conflict recovery rejects enemy Shield gains but accepts a consumed Shield snapshot', () => {
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => undefined, {
+    permitId: 'enemy-shield-resync', status: 'active',
+    playerHp: TEST_DEGEN.maxHp - 10, playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
+    enemyHp: enemy.maxHp - 24, enemyShield: 5, turnCount: 1,
+  });
+  const before = engine.snapshot;
+  const impossible = {
+    permitId: 'enemy-shield-resync', status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp - 20, playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
+    enemyHp: enemy.maxHp - 24, enemyShield: 6, turnCount: 2,
+  };
+
+  engine.synchronizeAuthoritativeState(impossible);
+  assert.deepEqual(engine.snapshot, before, 'conflict recovery cannot increase enemy Shield');
+
+  engine.synchronizeAuthoritativeState({
+    ...impossible,
+    enemyShield: 0,
+    enemyShieldAbsorbed: 5,
+  });
+  assert.equal(engine.snapshot.turnCount, 2);
+  assert.equal(engine.snapshot.enemyHp, before.enemyHp, 'fully absorbed damage does not reduce enemy HP');
+  assert.equal(engine.snapshot.enemyShield, undefined, 'consumed enemy Shield is removed from the HUD snapshot');
+});
