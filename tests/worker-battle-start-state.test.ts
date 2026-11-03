@@ -126,7 +126,7 @@ test('battle start ignores forged client combat state and returns exactly the De
     turnCount: 0,
   });
   assert.equal(inserts.length, 1);
-  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, playerShield, enemyHp,
+  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, playerShield, enemyHp, enemyShield,
     cycleGuardId, activePlayerGuardId, victoryMarkerGuardId, defeatMarkerGuardId] = inserts[0] as unknown[];
   assert.equal(permitId, result.permitId);
   assert.equal(cycleGuardId, cycle.id);
@@ -137,9 +137,9 @@ test('battle start ignores forged client combat state and returns exactly the De
     'start/expiry timestamps come from D1 and the atomic insert binds cycle, owner, and terminal-history guards');
   assert.equal(result.expiresAt, persistedExpiry, 'the API must return the expiry returned from the persisted D1 row');
   assert.deepEqual(
-    [playerId, cycleId, encounterKey, playerHp, playerMana, playerShield, enemyHp],
+    [playerId, cycleId, encounterKey, playerHp, playerMana, playerShield, enemyHp, enemyShield],
     ['player-1', cycle.id, TUNNEL_MAW.id, result.initialState.playerHp,
-      result.initialState.playerMana, result.initialState.playerShield, result.initialState.enemyHp],
+      result.initialState.playerMana, result.initialState.playerShield, result.initialState.enemyHp, TUNNEL_MAW.startingShield ?? 0],
   );
 });
 
