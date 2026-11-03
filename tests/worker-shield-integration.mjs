@@ -58,7 +58,7 @@ try {
       battle_status,player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count)
     VALUES
       ('shield-action-permit','shield-action','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,5,10,10,63,1),
-      ('shield-enemy-permit','shield-enemy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,12,0,0,0,92,0),
+      ('shield-enemy-permit','shield-enemy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,12,0,0,10,92,1),
       ('shield-carry-permit','shield-carry','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,12,10,10,63,1),
       ('shield-kill-permit','shield-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',5,12,5,10,10,1,1),
       ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',8,0,2,10,10,63,1),
@@ -141,14 +141,14 @@ try {
   ],'forged XP, currency, and victory fields must not mutate progression');
 
   const enemyShieldAction=await post('/api/battle/action',{
-    playerId:'shield-enemy',permitId:'shield-enemy-permit',abilityId:'slash',expectedTurnCount:0,
+    playerId:'shield-enemy',permitId:'shield-enemy-permit',abilityId:'slash',expectedTurnCount:1,
     enemyShield:0,enemyShieldAbsorbed:999,enemyHp:0,playerHp:0,turnCount:99,status:'victory',
     reward:{xp:999999,currency:999999,items:['forged-item']},
   });
   assert.equal(enemyShieldAction.status,200);
   assert.equal(enemyShieldAction.data.enemyShieldAbsorbed,5,'Worker damage must consume persisted enemy Shield before HP');
   assert.equal(enemyShieldAction.data.enemyHp,68,'only damage remaining after Shield reaches enemy HP');
-  assert.equal(enemyShieldAction.data.playerHp,110,'enemy retaliation still resolves after the Shield absorbs the hit');
+  assert.equal(enemyShieldAction.data.playerHp,100,'enemy retaliation still resolves after the Shield absorbs the hit');
   assert.deepEqual(sql("SELECT enemy_shield,enemy_hp,turn_count FROM battle_permits WHERE id='shield-enemy-permit'"),[
     {enemy_shield:0,enemy_hp:68,turn_count:1},
   ]);
