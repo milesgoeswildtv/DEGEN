@@ -129,7 +129,7 @@ test('EnemyDefinition remains free of Mana-equivalent resources', () => {
 });
 test('Worker deployment completes the exact CI QA sequence before remote D1 writes', () => {
   const commands = (workflow: string): string[] =>
-    [...workflow.matchAll(/^\\s+run:\\s*(.+?)\\s*$/gm)].map((match) => match[1]!);
+    [...workflow.matchAll(/^\s+run:\s*(.+?)\s*$/gm)].map((match) => match[1]!);
   const ciCommands = commands(ciWorkflow);
   const deployCommands = commands(deployWorkflow);
   const remoteCommands = ['npm run db:apply', 'npm run db:migrate', 'npm run deploy:worker'];
