@@ -8,6 +8,7 @@ import test from 'node:test';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workerEntryPath = resolve(repoRoot, 'worker/index.ts');
 const deployWorkflow = readFileSync(resolve(repoRoot, '.github/workflows/deploy-worker.yml'), 'utf8');
+const ciWorkflow = readFileSync(resolve(repoRoot, '.github/workflows/ci.yml'), 'utf8');
 const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs']);
 
 const runtimeImportSpecifiers = (source: string): string[] => {
@@ -124,32 +125,24 @@ test('Worker deployment watches every shared runtime module in the transitive im
 
 
 test('Worker deployment completes the full local QA gate before any remote D1 write', () => {
-  const preflightCommands = [
-    'npm run check:migrations',
-    'npm test',
-    'node tests/worker-d1-concurrency.mjs',
-    'node tests/worker-d1-reward-recovery.mjs',
-    'node tests/worker-d1-cycle-race.mjs',
-    'node tests/worker-d1-cycle-rollover.mjs',
-    'node tests/worker-d1-defeat-atomic.mjs',
-    'node tests/browser-housing-persistence.mjs',
-    'npm run build',
-    'node tests/browser-battle-vertical-slice.mjs',
-    'npm run check:worker',
-  ];
-  const schemaApply = deployWorkflow.indexOf('npm run db:apply');
-  const migrationApply = deployWorkflow.indexOf('npm run db:migrate');
-  const workerDeploy = deployWorkflow.indexOf('npm run deploy:worker');
+  const commands = (workflow: string): string[] =>
+    [...workflow.matchAll(/^\\s+run:\\s*(.+?)\\s*$/gm)].map((match) => match[1]!);
+  const ciCommands = commands(ciWorkflow);
+  const deployCommands = commands(deployWorkflow);
+  const remoteCommands = ['npm run db:apply', 'npm run db:migrate', 'npm run deploy:worker'];
 
-  assert.ok(schemaApply >= 0, 'expected remote schema apply after local QA');
-  assert.ok(migrationApply > schemaApply, 'tracked migrations must follow schema apply');
-  assert.ok(workerDeploy > migrationApply, 'Worker deployment must follow tracked migrations');
-
-  let previous = -1;
-  for (const command of preflightCommands) {
-    const position = deployWorkflow.indexOf('run: ' + command);
-    assert.ok(position > previous, 'deployment preflight command must be present in CI order: ' + command);
-    assert.ok(position < schemaApply, 'deployment preflight must finish before remote D1 writes: ' + command);
-    previous = position;
-  }
+  assert.ok(ciCommands.includes('npm run check:migrations'),
+    'CI must exercise the same tracked migration preflight used by deployment');
+  assert.ok(!ciCommands.some((command) => /(?:--remote|db:apply|db:migrate|deploy:worker)/.test(command)),
+    'CI must not perform remote D1 or Worker writes');
+  assert.deepEqual(
+    deployCommands.slice(0, ciCommands.length),
+    ciCommands,
+    'Worker deployment must complete the exact CI command sequence before remote writes',
+  );
+  assert.deepEqual(
+    deployCommands.slice(ciCommands.length),
+    remoteCommands,
+    'only schema → tracked migrations → Worker deployment may follow the QA gate',
+  );
 });
