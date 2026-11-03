@@ -223,6 +223,11 @@ export class BattleEngine {
     if (!this.permitId || result.permitId !== this.permitId) return;
     if (result.turnCount < this.turnCount) return;
 
+    const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
+    // Conflict recovery must obey the same no-regeneration boundary as a direct
+    // action; otherwise a stale or malformed snapshot could silently restore Shield.
+    if (nextEnemyShield > this.enemyShield) return;
+
     // A turn count identifies one immutable combat snapshot. Same-turn retries
     // are idempotent only when every authoritative field agrees; a conflicting
     // same-turn response must not roll back or rewrite the displayed battle.
@@ -233,7 +238,7 @@ export class BattleEngine {
       || (result.shieldAbsorbed ?? 0) !== this.shieldAbsorbed
       || (result.retaliationDamage ?? 0) !== this.retaliationDamage
       || result.enemyHp !== this.enemyHp
-      || (result.enemyShield ?? this.enemy.startingShield ?? 0) !== this.enemyShield
+      || nextEnemyShield !== this.enemyShield
       || result.status !== this.status
     )) return;
 
@@ -243,7 +248,7 @@ export class BattleEngine {
       || this.shieldAbsorbed !== (result.shieldAbsorbed ?? 0)
       || this.retaliationDamage !== (result.retaliationDamage ?? 0)
       || this.enemyHp !== result.enemyHp
-      || this.enemyShield !== (result.enemyShield ?? this.enemy.startingShield ?? 0)
+      || this.enemyShield !== nextEnemyShield
       || this.turnCount !== result.turnCount
       || this.status !== result.status;
     this.playerHp = result.playerHp;
@@ -252,7 +257,7 @@ export class BattleEngine {
     this.shieldAbsorbed = result.shieldAbsorbed ?? 0;
     this.retaliationDamage = result.retaliationDamage ?? 0;
     this.enemyHp = result.enemyHp;
-    this.enemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
+    this.enemyShield = nextEnemyShield;
     this.turnCount = result.turnCount;
     this.status = result.status;
     if (changed) this.log.push('Battle state synchronized with server.');
