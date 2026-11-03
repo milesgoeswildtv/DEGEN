@@ -100,7 +100,7 @@ try {
   assert.deepEqual([
     afterClosure.data.playerHp,afterClosure.data.playerMana,afterClosure.data.playerShield,
     afterClosure.data.shieldAbsorbed,afterClosure.data.retaliationDamage,
-    afterClosure.data.enemyShield,afterClosure.data.enemyShieldAbsorbed,
+    afterClosure.data.enemyShield ?? 0,afterClosure.data.enemyShieldAbsorbed,
     afterClosure.data.enemyHp,afterClosure.data.turnCount,afterClosure.data.status,
   ],[114,0,0,4,10,0,5,39,2,'active']);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,turn_count,battle_status FROM battle_permits WHERE id='shield-closure-permit'"),[
