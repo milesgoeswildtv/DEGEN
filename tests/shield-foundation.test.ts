@@ -219,3 +219,42 @@ test('server-backed engine rejects player Shield absorption and carry-forward th
   assert.equal(engine.snapshot.playerShield, 0);
   assert.equal(engine.snapshot.turnCount, 2);
 });
+
+
+test('Shield gain cannot bypass Mana costs and free Shield actions keep the Degen manifested at zero Mana', () => {
+  const zeroManaDegen = {
+    ...TEST_DEGEN,
+    maxMana: 0,
+    abilities: TEST_DEGEN.abilities.map((candidate) => ({
+      ...candidate,
+      ...(candidate.id === 'slash' ? { shieldGain: 3 } : {}),
+      ...(candidate.id === 'crack' ? { shieldGain: 9 } : {}),
+    })),
+  };
+
+  const paidEngine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => undefined);
+  const beforePaidAction = paidEngine.snapshot;
+  paidEngine.useAbility('crack');
+  const rejected = paidEngine.snapshot;
+
+  assert.equal(rejected.status, 'active');
+  assert.equal(rejected.playerName, zeroManaDegen.name);
+  assert.equal(rejected.playerHp, beforePaidAction.playerHp);
+  assert.equal(rejected.playerMana, 0);
+  assert.equal(rejected.playerShield, 0);
+  assert.equal(rejected.enemyHp, beforePaidAction.enemyHp);
+  assert.equal(rejected.turnCount, 0);
+  assert.ok(rejected.log.some((line) => line.includes('Not enough Mana')),
+    'the paid Shield ability must fail before gaining Shield or resolving retaliation');
+
+  const freeEngine = new BattleEngine(zeroManaDegen, TUNNEL_MAW, () => undefined);
+  freeEngine.useAbility('slash');
+  const freeResult = freeEngine.snapshot;
+
+  assert.equal(freeResult.status, 'active');
+  assert.equal(freeResult.playerName, zeroManaDegen.name);
+  assert.equal(freeResult.playerMana, 0);
+  assert.equal(freeResult.turnCount, 1);
+  assert.ok(freeResult.log.some((line) => line.includes('Shield +3.')));
+  assert.ok(freeResult.log.some((line) => line.includes('Shield absorbs 3.')));
+});
