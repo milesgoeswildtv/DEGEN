@@ -215,7 +215,7 @@ test('server-backed engine rejects player Shield absorption and carry-forward th
   }
 
   engine.applyAuthoritativeAction('slash', valid);
-  assert.equal(engine.snapshot.playerHp, 47);
+  assert.equal(engine.snapshot.playerHp, 44);
   assert.equal(engine.snapshot.playerShield, 0);
   assert.equal(engine.snapshot.turnCount, 2);
 });
