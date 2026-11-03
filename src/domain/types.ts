@@ -38,6 +38,8 @@ export interface EnemyDefinition {
   level: number;
   maxHp: number;
   damage: number;
+  /** Optional temporary protection present when this enemy enters combat. */
+  startingShield?: number;
 }
 
 // A monster may have archetype-specific signature state, but never a universal
@@ -286,6 +288,10 @@ export interface BattleActionResult {
   /** Server-resolved Shield absorption and full retaliation for the accepted action. */
   shieldAbsorbed?: number;
   retaliationDamage?: number;
+  /** Optional enemy Shield; absent means the definition's starting value (normally zero). */
+  enemyShield?: number;
+  /** Amount of Degen damage absorbed by enemy Shield on this accepted action. */
+  enemyShieldAbsorbed?: number;
   enemyHp: number;
   turnCount: number;
 }
