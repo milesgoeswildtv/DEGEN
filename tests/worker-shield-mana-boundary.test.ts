@@ -25,10 +25,10 @@ const degenWithShieldCosts = {
 
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
-  .replace(/^export default\\s*\\{/m, 'const worker = {');
+  .replace(/^export default\s*\{/m, 'const worker = {');
 
 const handleBattleAction = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\nhandleBattleAction;',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
     TEST_DEGEN: degenWithShieldCosts,
     TUNNEL_MAW,
@@ -133,6 +133,6 @@ test('Worker rejects a paid Shield-gain ability at zero Mana without mutating th
     turnCount: 0,
   });
   assert.equal(statements.length, 2, 'the Worker reads the permit and its latest conflict snapshot only');
-  assert.ok(statements.every((sql) => !/\\b(?:UPDATE|INSERT|DELETE)\\b/i.test(sql)),
+  assert.ok(statements.every((sql) => !/\b(?:UPDATE|INSERT|DELETE)\b/i.test(sql)),
     'no D1 mutation may occur for an unaffordable Shield-gain ability');
 });
