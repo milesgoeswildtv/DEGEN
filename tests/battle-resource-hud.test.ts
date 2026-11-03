@@ -8,8 +8,8 @@ import { TEST_DEGEN } from '../src/data/combatPrototype.ts';
 import { isValidManaCost, isValidManaState, isValidShieldGain } from '../src/game/combat/rules.ts';
 
 const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf8')
-  .replace(/^import .*;\\r?\\n/gm, '')
-  .replace(/\\bexport const /g, 'const ');
+  .replace(/^import .*;\r?\n/gm, '')
+  .replace(/\bexport const /g, 'const ');
 const hpPill = { textContent: '' };
 const manaPill = { textContent: '' };
 const shieldPill = { textContent: '' };
@@ -30,7 +30,7 @@ const fakeDocument = {
   querySelectorAll: () => [],
 };
 const { battleView, updateBattleDom } = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ battleView, updateBattleDom });',
+  stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ battleView, updateBattleDom });',
   { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
 ) as {
   battleView: (player: { displayName: string; level: number; currency: number }, degen: typeof TEST_DEGEN) => string;
@@ -47,7 +47,7 @@ const player = { displayName: 'Player', level: 1, currency: 0 };
 
 test('battle resource HUD starts with the Degen maximum HP', () => {
   const html = battleView(player, TEST_DEGEN);
-  assert.match(html, /id="battle-hp" class="battle-resource">HP 120\\/120/);
+  assert.ok(html.includes('id="battle-hp" class="battle-resource">HP 120/120'));
 });
 
 test('visible HP pill follows the Worker-backed battle snapshot on every update', () => {
