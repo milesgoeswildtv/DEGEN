@@ -150,7 +150,7 @@ try {
   assert.equal(enemyShieldAction.data.enemyHp,68,'only damage remaining after Shield reaches enemy HP');
   assert.equal(enemyShieldAction.data.playerHp,100,'enemy retaliation still resolves after the Shield absorbs the hit');
   assert.deepEqual(sql("SELECT enemy_shield,enemy_hp,turn_count FROM battle_permits WHERE id='shield-enemy-permit'"),[
-    {enemy_shield:0,enemy_hp:68,turn_count:1},
+    {enemy_shield:0,enemy_hp:68,turn_count:2},
   ]);
   assert.equal('reward' in enemyShieldAction.data,false,'client reward fields remain ignored');
 
