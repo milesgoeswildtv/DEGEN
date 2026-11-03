@@ -644,6 +644,66 @@ try {
     return document.querySelector('#battle-hp')?.textContent === 'HP 100/120' && document.querySelector('#battle-enemy-hp')?.textContent === 'ENEMY HP 28/92' && mana === 'MANA 0/12' && rendered.includes('MANIFESTED');
   })()`));
 
+  // Exercise the actual Vite-served combat engine and DOM in Chromium with a
+  // Worker-shaped authoritative result. The Worker/D1 Shield integration above
+  // independently verifies that the same result is produced and persisted.
+  const shieldLog = await cdp.evaluate(`(async () => {
+    const [engineModule, contentModule, viewModule] = await Promise.all([
+      import('/src/game/combat/engine.ts'),
+      import('/src/data/combatPrototype.ts'),
+      import('/src/ui/views.ts'),
+    ]);
+    const { BattleEngine } = engineModule;
+    const { TEST_DEGEN, TUNNEL_MAW } = contentModule;
+    const { battleView, updateBattleDom } = viewModule;
+    const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+    const player = {
+      id: 'shield-browser-player',
+      displayName: 'Shield Tester',
+      level: 1,
+      xp: 0,
+      currency: 0,
+      degenId: TEST_DEGEN.id,
+      inventory: [],
+      unlockedLocations: ['home'],
+      housing: { inventory: [], placements: [] },
+      defeatedBosses: [],
+    };
+    document.body.innerHTML = battleView(player, TEST_DEGEN);
+    const permitId = 'browser-shield-damage-log';
+    const battle = new BattleEngine(TEST_DEGEN, enemy, () => undefined, {
+      permitId,
+      status: 'active',
+      playerHp: TEST_DEGEN.maxHp,
+      playerMana: 0,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 0,
+      enemyHp: enemy.maxHp,
+      enemyShield: 5,
+      turnCount: 0,
+    });
+    battle.subscribe(updateBattleDom);
+    battle.applyAuthoritativeAction('slash', {
+      permitId,
+      status: 'active',
+      playerHp: TEST_DEGEN.maxHp - 10,
+      playerMana: 0,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 10,
+      enemyHp: enemy.maxHp - 24,
+      enemyShield: 0,
+      enemyShieldAbsorbed: 5,
+      turnCount: 1,
+    });
+    return document.querySelector('#battle-log')?.textContent ?? '';
+  })()`);
+  assert.match(shieldLog, /uses Slash: 29 damage\./,
+    'Chromium must render total ability damage rather than only enemy HP reduction');
+  assert.match(shieldLog, /Tunnel Maw Shield absorbs 5\./,
+    'Chromium must separately render the enemy Shield absorption');
+
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback and free-action continuation');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
