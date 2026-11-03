@@ -6,6 +6,10 @@ on:
     branches: [main]
     paths:
       - 'worker/**'
+      # Worker imports these shared runtime modules directly; changing them must deploy the new Worker bundle.
+      - 'src/data/combatPrototype.ts'
+      - 'src/game/combat/rules.ts'
+      - 'src/game/progression.ts'
       - 'db/**'
       - 'wrangler.toml'
       - 'package.json'
