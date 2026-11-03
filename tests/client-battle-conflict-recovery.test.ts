@@ -164,12 +164,32 @@ test('lost action response followed by authoritative victory snapshot completes 
     applyReward(_reward: unknown) { this.localRewards += 1; },
     markBossDefeated(_bossId: string) {},
   };
+  const enemy = { ...TUNNEL_MAW, maxHp: 1 };
+  const initialState = {
+    permitId: 'permit-1',
+    status: 'active' as const,
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: enemy.maxHp,
+    turnCount: 0,
+  };
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initialState.playerHp,
+    playerMana: initialState.playerMana,
+    enemyHp: initialState.enemyHp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  assert.equal(turn.status, 'victory');
   const authoritativeVictory = {
     permitId: 'permit-1',
-    status: 'victory' as const,
-    playerHp: 80,
-    playerMana: 4,
-    enemyHp: 0,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    enemyHp: turn.enemyHp,
     turnCount: 1,
   };
   let actionCalls = 0;
@@ -192,17 +212,10 @@ test('lost action response followed by authoritative victory snapshot completes 
 
   let terminalCallbacks = 0;
   let controller!: InstanceType<typeof AppController>;
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+  const engine = new BattleEngine(TEST_DEGEN, enemy, (status) => {
     terminalCallbacks += 1;
     void controller.finishBattle(status);
-  }, {
-    permitId: 'permit-1',
-    status: 'active',
-    playerHp: 100,
-    playerMana: 8,
-    enemyHp: TUNNEL_MAW.maxHp,
-    turnCount: 0,
-  });
+  }, initialState);
 
   controller = new AppController(root, store, api);
   controller.route = 'battle';
@@ -338,13 +351,42 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
     applyReward(_reward: unknown) { this.localRewards += 1; },
     markBossDefeated(_bossId: string) {},
   };
-  const latest = {
+  const enemy = { ...TUNNEL_MAW, startingShield: 42 };
+  const initialState = {
     permitId: 'permit-1',
     status: 'active' as const,
-    playerHp: 70,
-    playerMana: 0,
-    enemyHp: 63,
-    enemyShield: 7,
+    playerHp: 100,
+    playerMana: 4,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 42,
+    turnCount: 0,
+  };
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initialState.playerHp,
+    playerMana: initialState.playerMana,
+    playerShield: initialState.playerShield,
+    enemyHp: initialState.enemyHp,
+    enemyShield: initialState.enemyShield,
+    ability,
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  assert.equal(turn.status, 'active');
+  const latest = {
+    permitId: 'permit-1',
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    enemyShield: turn.enemyShield,
     turnCount: 1,
   };
   const api = {
@@ -357,16 +399,9 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
     },
     async completeUnderpass() { throw new Error('completion must not run for an active battle'); },
   };
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => {
     assert.fail('an active authoritative snapshot must not resolve the encounter');
-  }, {
-    permitId: 'permit-1',
-    status: 'active',
-    playerHp: 100,
-    playerMana: 8,
-    enemyHp: TUNNEL_MAW.maxHp,
-    turnCount: 0,
-  });
+  }, initialState);
   const controller = new AppController(root, store, api);
   controller.route = 'battle';
   controller.battlePermit = { permitId: 'permit-1' };
@@ -378,8 +413,9 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
   assert.equal(actionStatus.hidden, false);
   assert.equal(actionStatus.textContent, 'Not enough Mana for that ability.');
   assert.equal(engine.snapshot.playerMana, 0);
-  assert.equal(engine.snapshot.enemyHp, 63);
-  assert.equal(engine.snapshot.enemyShield, 7, 'conflict resync must preserve the server-owned enemy Shield');
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
+  assert.equal(engine.snapshot.enemyShield, turn.enemyShield, 'conflict resync must preserve the server-owned enemy Shield');
   assert.equal(engine.snapshot.turnCount, 1);
   assert.equal(store.localRewards, 0);
 });

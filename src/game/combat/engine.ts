@@ -189,7 +189,7 @@ export class BattleEngine {
     // that all-fields-omitted legacy shape, then validate the same shared turn.
     const retaliationDamage = result.retaliationDamage
       ?? (hasLegacyShieldResult ? Math.max(0, this.playerHp - result.playerHp) : 0);
-    const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
+    const enemyShieldAbsorbed = result.enemyShieldAbsorbed;
     if (
       result.status !== expectedTurn.status
       || result.playerHp !== expectedTurn.playerHp
@@ -199,7 +199,7 @@ export class BattleEngine {
       || retaliationDamage !== expectedTurn.retaliationDamage
       || result.enemyHp !== expectedTurn.enemyHp
       || nextEnemyShield !== expectedTurn.enemyShield
-      || enemyShieldAbsorbed !== expectedTurn.enemyShieldAbsorbed
+      || (enemyShieldAbsorbed !== undefined && enemyShieldAbsorbed !== expectedTurn.enemyShieldAbsorbed)
     ) return undefined;
 
     return expectedTurn;
@@ -224,7 +224,7 @@ export class BattleEngine {
     const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
     const playerDamage = Math.max(0, this.enemyHp - result.enemyHp);
     const manaSpent = Math.max(0, this.playerMana - result.playerMana);
-    const shieldGained = Math.max(0, nextPlayerShield + shieldAbsorbed - this.playerShield);
+    const shieldGained = Math.max(0, nextPlayerShield + expectedTurn.shieldAbsorbed - this.playerShield);
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
     this.playerShield = nextPlayerShield;

@@ -153,22 +153,36 @@ test('a recovered authoritative victory snapshot completes the client battle exa
 
 test('a recovered authoritative defeat snapshot ends the client battle exactly once', () => {
   const completions: Array<'victory' | 'defeat'> = [];
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, status => completions.push(status), startState());
+  const initial = { ...startState(), playerHp: 10, playerMana: 4 };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, status => completions.push(status), initial);
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    enemyHp: initial.enemyHp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  assert.equal(turn.status, 'defeat');
 
+  // Pre-Shield recovery snapshots omit Shield audit fields. Use the shared resolver
+  // to prove this is a real one-turn defeat rather than a fabricated terminal state.
   const completedDefeat: BattleActionResult = {
     permitId: 'permit-1',
-    status: 'defeat',
-    playerHp: 0,
-    playerMana: 0,
-    enemyHp: 63,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    enemyHp: turn.enemyHp,
     turnCount: 1,
   };
   engine.synchronizeAuthoritativeState(completedDefeat);
 
   assert.equal(engine.snapshot.status, 'defeat');
-  assert.equal(engine.snapshot.playerHp, 0);
-  assert.equal(engine.snapshot.playerMana, 0);
-  assert.equal(engine.snapshot.enemyHp, 63);
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
+  assert.equal(engine.snapshot.playerMana, turn.playerMana);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
   assert.equal(engine.snapshot.turnCount, 1);
   assert.deepEqual(completions, ['defeat']);
 
