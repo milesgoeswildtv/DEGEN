@@ -43,13 +43,13 @@ async function complete(permitId, playerId = 'integration-player', extraFields =
       }
       throw new Error(
         `Battle completion request ${permitId} failed or timed out: ${String(error)}` +
-        `\\nWorker exit code: ${server?.exitCode ?? 'running'}` +
-        `\\nCaptured Worker logs:\\n${logs}`,
+        `\nWorker exit code: ${server?.exitCode ?? 'running'}` +
+        `\nCaptured Worker logs:\n${logs}`,
       );
     }
   }
   if (!r) {
-    throw new Error(`Battle completion request ${permitId} produced no response.\\nCaptured Worker logs:\\n${logs}`);
+    throw new Error(`Battle completion request ${permitId} produced no response.\nCaptured Worker logs:\n${logs}`);
   }
   assert.equal(r.headers.get('cache-control'), 'no-store',
     '/api/battle/complete success and error responses must not be cached');
