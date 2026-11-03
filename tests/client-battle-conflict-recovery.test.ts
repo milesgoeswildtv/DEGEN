@@ -344,6 +344,7 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
     playerHp: 70,
     playerMana: 0,
     enemyHp: 63,
+    enemyShield: 7,
     turnCount: 1,
   };
   const api = {
@@ -378,6 +379,7 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
   assert.equal(actionStatus.textContent, 'Not enough Mana for that ability.');
   assert.equal(engine.snapshot.playerMana, 0);
   assert.equal(engine.snapshot.enemyHp, 63);
+  assert.equal(engine.snapshot.enemyShield, 7, 'conflict resync must preserve the server-owned enemy Shield');
   assert.equal(engine.snapshot.turnCount, 1);
   assert.equal(store.localRewards, 0);
 });
