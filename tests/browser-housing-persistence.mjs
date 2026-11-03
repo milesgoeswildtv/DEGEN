@@ -120,12 +120,25 @@ async function click(selector) {
   assert.equal(await cdp.evaluate(expression), true, 'expected browser control: ' + selector);
 }
 
+async function waitForExit(child, timeout) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return Promise.race([
+    new Promise(resolveExit => child.once('exit', () => resolveExit(true))),
+    sleep(timeout).then(() => false),
+  ]);
+}
+
 async function stopAll() {
   for (const child of children.reverse()) {
-    if (child.exitCode !== null) continue;
+    if (child.exitCode !== null || child.signalCode !== null) continue;
     child.kill('SIGTERM');
-    await Promise.race([new Promise(resolveExit => child.once('exit', resolveExit)), sleep(1500)]);
-    if (child.exitCode === null) child.kill('SIGKILL');
+    if (await waitForExit(child, 1500)) continue;
+    child.kill('SIGKILL');
+    assert.equal(
+      await waitForExit(child, 5000),
+      true,
+      'child process must exit before its browser profile is removed',
+    );
   }
 }
 
@@ -227,5 +240,5 @@ try {
 } finally {
   if (cdp) cdp.ws.close();
   await stopAll();
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
 }
