@@ -44,6 +44,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     // the current Shield and last-action audit after one or more accepted turns.
     && hasConsistentActiveShieldAudit
     && (turnCount !== 0 || enemyShield === (TUNNEL_MAW.startingShield ?? 0))
+    && (turnCount !== 0 || state.enemyShieldAbsorbed === undefined || state.enemyShieldAbsorbed === 0)
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
 };
 
@@ -89,7 +90,8 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
           && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
     return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
       && hasConsistentActiveShieldAudit
-      && (turnCount !== 0 || enemyShield === (TUNNEL_MAW.startingShield ?? 0));
+      && (turnCount !== 0 || enemyShield === (TUNNEL_MAW.startingShield ?? 0))
+      && (turnCount !== 0 || state.enemyShieldAbsorbed === undefined || state.enemyShieldAbsorbed === 0);
   }
   if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0
     && enemyShield === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
