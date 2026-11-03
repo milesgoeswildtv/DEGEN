@@ -57,13 +57,20 @@ test('invalid Shield gain and safe-integer overflow fail before combat state can
 });
 
 test('authoritative Shield result is presented once and replay does not duplicate the turn log', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+  const degenWithShieldGain = {
+    ...TEST_DEGEN,
+    abilities: TEST_DEGEN.abilities.map((candidate) =>
+      candidate.id === 'slash' ? { ...candidate, shieldGain: 3 } : candidate),
+  };
+  const slash = degenWithShieldGain.abilities.find((candidate) => candidate.id === 'slash');
+  assert.ok(slash);
+  const engine = new BattleEngine(degenWithShieldGain, TUNNEL_MAW, () => undefined, {
     permitId: 'shield-permit', status: 'active', playerHp: 50, playerMana: 0, playerShield: 4,
     shieldAbsorbed: 10, retaliationDamage: 10, enemyHp: TUNNEL_MAW.maxHp, turnCount: 1,
   });
   const turn = resolveCombatTurn({
     playerHp: 50, playerMana: 0, playerShield: 4, enemyHp: TUNNEL_MAW.maxHp,
-    ability: ability('slash', 3), degen: TEST_DEGEN, enemy: TUNNEL_MAW,
+    ability: slash, degen: degenWithShieldGain, enemy: TUNNEL_MAW,
   });
   const result = {
     permitId: 'shield-permit', status: turn.status, playerHp: turn.playerHp, playerMana: turn.playerMana,
@@ -173,13 +180,13 @@ test('server-backed engine rejects player Shield absorption and carry-forward th
     playerMana: 0,
     playerShield: 4,
     enemyHp: TUNNEL_MAW.maxHp,
-    ability: ability('slash', 3),
+    ability: ability('slash'),
     degen: TEST_DEGEN,
     enemy: TUNNEL_MAW,
   });
-  assert.equal(turn.shieldAbsorbed, 7);
+  assert.equal(turn.shieldAbsorbed, 4);
   assert.equal(turn.playerShield, 0);
-  assert.equal(turn.playerHp, 47);
+  assert.equal(turn.playerHp, 44);
 
   const valid = {
     permitId,
