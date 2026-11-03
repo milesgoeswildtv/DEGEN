@@ -48,7 +48,7 @@ type KeysContainingMana<T> = T extends readonly (infer Item)[]
   ? KeysContainingMana<Item>
   : T extends object
     ? {
-        [Key in keyof T]: Key extends string
+        [Key in keyof T]-?: Key extends string
           ? Lowercase<Key> extends `${string}mana${string}` ? Key : KeysContainingMana<T[Key]>
           : never;
       }[keyof T]
@@ -134,7 +134,7 @@ type KeysMatchingForbiddenMonsterActionResource<T> = T extends readonly (infer I
   ? KeysMatchingForbiddenMonsterActionResource<Item>
   : T extends object
     ? {
-        [Key in keyof T]: Key extends string
+        [Key in keyof T]-?: Key extends string
           ? NormalizeMonsterActionResourceKey<Key> extends ForbiddenNormalizedMonsterActionResourceField
             ? Key
             : KeysMatchingForbiddenMonsterActionResource<T[Key]>
@@ -203,6 +203,18 @@ type ForbiddenMonsterActionResourceField =
   | KeysMatchingForbiddenMonsterActionResource<EnemyDefinition>;
 
 type AssertNoMonsterActionResource<T extends never> = T;
+type _OptionalNestedManaAliasesRemainGuarded = AssertMonsterResourceGuard<
+  Extract<
+    KeysContainingMana<{ signature?: { maxMana?: number } }>,
+    'maxMana'
+  > extends never ? false : true
+>;
+type _OptionalNestedActionResourceAliasesRemainGuarded = AssertMonsterResourceGuard<
+  Extract<
+    KeysMatchingForbiddenMonsterActionResource<{ signature?: { energy?: number } }>,
+    'energy'
+  > extends never ? false : true
+>;
 type _EnemyDefinitionHasNoUniversalActionResource = AssertNoMonsterActionResource<
   ForbiddenMonsterActionResourceField
 >;
