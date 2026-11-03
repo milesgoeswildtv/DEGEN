@@ -125,6 +125,7 @@ test('Worker deployment watches every shared runtime module in the transitive im
 
 test('Worker deployment completes the full local QA gate before any remote D1 write', () => {
   const preflightCommands = [
+    'npm run check:migrations',
     'npm test',
     'node tests/worker-d1-concurrency.mjs',
     'node tests/worker-d1-reward-recovery.mjs',
