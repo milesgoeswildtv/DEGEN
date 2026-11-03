@@ -370,7 +370,7 @@ try {
     'a persisted uncertain start must offer resume, not mint a second permit');
   await tap("[data-resume-battle]");
   await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
-  await until('rendered initial HP, Mana and Shield resource HUD', () => cdp.evaluate("document.querySelector('#battle-hp')?.textContent === 'HP 120/120' && document.querySelector('#battle-mana')?.textContent === 'MANA 12/12' && document.querySelector('#battle-shield')?.textContent === 'SHIELD 0' && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
+  await until('rendered initial combat status HUD', () => cdp.evaluate("document.querySelector('#battle-hp')?.textContent === 'HP 120/120' && document.querySelector('#battle-mana')?.textContent === 'MANA 12/12' && document.querySelector('#battle-shield')?.textContent === 'SHIELD 0' && document.querySelector('#battle-enemy-hp')?.textContent === 'ENEMY HP 92/92' && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
   assert.equal(initialAccessibleHud,
     'TEST_DEGEN: HP 120 of 120, Mana 12 of 12, Shield 0. Tunnel Maw: HP 92 of 92. Turn 0. Choose an action.',
@@ -452,14 +452,16 @@ try {
     for (const [key, value] of Object.entries(expected)) assert.equal(persisted[key], value, 'persisted turn ' + turn + ' ' + key);
     const displayedMana = `MANA ${expected.player_mana}/12`;
     await until('rendered authoritative Mana and Shield HUD after turn ' + turn,
-      () => cdp.evaluate(`document.querySelector('#battle-hp')?.textContent === ${JSON.stringify(`HP ${expected.player_hp}/120`)} && document.querySelector('#battle-mana')?.textContent === ${JSON.stringify(displayedMana)} && document.querySelector('#battle-shield')?.textContent === 'SHIELD 0'`));
+      () => cdp.evaluate(`document.querySelector('#battle-hp')?.textContent === ${JSON.stringify(`HP ${expected.player_hp}/120`)} && document.querySelector('#battle-enemy-hp')?.textContent === ${JSON.stringify(`ENEMY HP ${expected.enemy_hp}/92`)} && document.querySelector('#battle-mana')?.textContent === ${JSON.stringify(displayedMana)} && document.querySelector('#battle-shield')?.textContent === 'SHIELD 0'`));
     const hudState = await cdp.evaluate(`(() => ({
       hp: document.querySelector('#battle-hp')?.textContent ?? '',
+      enemyHp: document.querySelector('#battle-enemy-hp')?.textContent ?? '',
       mana: document.querySelector('#battle-mana')?.textContent ?? '',
       shield: document.querySelector('#battle-shield')?.textContent ?? '',
       manifested: (window.__degenRenderedBattleText || []).includes('MANIFESTED'),
     }))()`);
     assert.equal(hudState.hp, `HP ${expected.player_hp}/120`, 'the current authoritative HP value must be rendered');
+    assert.equal(hudState.enemyHp, `ENEMY HP ${expected.enemy_hp}/92`, 'the current authoritative enemy HP value must be rendered');
     assert.equal(hudState.mana, displayedMana, 'the current authoritative Mana value must be rendered');
     assert.equal(hudState.shield, 'SHIELD 0', 'the current authoritative Shield value must be rendered');
     assert.equal(hudState.manifested, true, 'MANIFESTED remains rendered, including at zero Mana');
@@ -639,7 +641,7 @@ try {
   await until('Phaser keeps the Degen manifested at zero Mana in the running app', () => cdp.evaluate(`(() => {
     const rendered = window.__degenRenderedBattleText || [];
     const mana = document.querySelector('#battle-mana')?.textContent;
-    return document.querySelector('#battle-hp')?.textContent === 'HP 100/120' && mana === 'MANA 0/12' && rendered.includes('MANIFESTED');
+    return document.querySelector('#battle-hp')?.textContent === 'HP 100/120' && document.querySelector('#battle-enemy-hp')?.textContent === 'ENEMY HP 28/92' && mana === 'MANA 0/12' && rendered.includes('MANIFESTED');
   })()`));
 
   console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback and free-action continuation');
