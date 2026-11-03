@@ -179,9 +179,9 @@ export const resolveCombatTurn = (input: CombatTurnInput): CombatTurnResult => {
   const {
     playerHp, playerMana, playerShield = 0, enemyHp, ability, degen, enemy,
   } = input;
-  const enemyShield = input.enemyShield ?? enemy.startingShield ?? 0;
+  const enemyShield = input.enemyShield === undefined ? (enemy.startingShield ?? 0) : input.enemyShield;
   assertNoMonsterActionResource(enemy);
-  if (!isValidShield(enemy.startingShield ?? 0)) throw new RangeError('Invalid enemy starting Shield');
+  if (enemy.startingShield !== undefined && !isValidShield(enemy.startingShield)) throw new RangeError('Invalid enemy starting Shield');
   if (!isValidShield(enemyShield)) throw new RangeError('Invalid enemy Shield');
   if (!isValidManaCost(ability.manaCost)) throw new RangeError(`Invalid Mana cost for ${ability.name}`);
   if (!isValidManaState(playerMana, degen.maxMana)) throw new RangeError('Invalid player Mana');
