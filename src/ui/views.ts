@@ -193,9 +193,10 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot, h
 export const battleView = (player: PlayerState, degen: DegenDefinition): string => appShell(player, `
   <section class="battle-layout">
     <div class="battle-arena">
-      <div class="battle-resources" role="status" aria-label="Degen combat resources" aria-live="polite">
+      <div class="battle-resources" role="status" aria-label="Combat resources" aria-live="polite">
         <span id="battle-mana" class="battle-resource">MANA ${degen.maxMana}/${degen.maxMana}</span>
         <span id="battle-shield" class="battle-resource">SHIELD 0</span>
+        <span id="battle-enemy-shield" class="battle-resource" hidden>ENEMY SHIELD 0</span>
       </div>
       <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
     </div>
@@ -238,13 +239,18 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
     const manaSummary = validManaState
       ? `Mana ${snapshot.playerMana} of ${snapshot.playerMaxMana}`
       : 'Mana unavailable';
-    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, ${manaSummary}, Shield ${snapshot.playerShield}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}. Turn ${snapshot.turnCount}. ${outcome}`;
+    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, ${manaSummary}, Shield ${snapshot.playerShield}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}, Shield ${snapshot.enemyShield ?? 0}. Turn ${snapshot.turnCount}. ${outcome}`;
   }
 
   const manaPill = document.querySelector<HTMLElement>('#battle-mana');
   if (manaPill) manaPill.textContent = validManaState ? `MANA ${snapshot.playerMana}/${snapshot.playerMaxMana}` : 'MANA —';
   const shieldPill = document.querySelector<HTMLElement>('#battle-shield');
   if (shieldPill) shieldPill.textContent = `SHIELD ${snapshot.playerShield}`;
+  const enemyShieldPill = document.querySelector<HTMLElement>('#battle-enemy-shield');
+  if (enemyShieldPill) {
+    enemyShieldPill.textContent = `ENEMY SHIELD ${snapshot.enemyShield ?? 0}`;
+    enemyShieldPill.hidden = (snapshot.enemyShield ?? 0) === 0;
+  }
 
   const log = document.querySelector<HTMLElement>('#battle-log');
   if (!log) return;
