@@ -57,12 +57,31 @@ async function start() {
   }
   throw new Error('Worker did not start: ' + logs);
 }
+async function waitForExit(child, timeout) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return Promise.race([
+    new Promise(resolveExit => child.once('exit', () => resolveExit(true))),
+    sleep(timeout).then(() => false),
+  ]);
+}
+
 async function stop() {
-  if (!worker || worker.exitCode !== null) return;
   const child = worker;
+  if (!child) return;
+  if (child.exitCode !== null || child.signalCode !== null) {
+    worker = undefined;
+    return;
+  }
+
   child.kill('SIGTERM');
-  await Promise.race([new Promise(done => child.once('exit', done)), sleep(2_000)]);
-  if (child.exitCode === null) child.kill('SIGKILL');
+  if (!await waitForExit(child, 2_000)) {
+    child.kill('SIGKILL');
+    assert.equal(
+      await waitForExit(child, 5_000),
+      true,
+      'Worker must exit before D1 persistence is accessed again',
+    );
+  }
   worker = undefined;
 }
 async function complete(permitId = 'permit-recovery') {
@@ -1714,5 +1733,5 @@ try {
   console.log('PASS local Worker/D1 reward recovery, conflicting victory history marker rejection, stale/fresh claim races, premature completion rejection, action/completion concurrency, terminal action replay rejection, and exactly-once rewards');
 } finally {
   await stop();
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
 }
