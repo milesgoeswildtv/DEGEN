@@ -290,7 +290,7 @@ test('replaying the same authoritative action result does not deduct Mana or app
     permitId: 'permit-replay',
     status: 'active' as const,
     playerHp: 85,
-    playerMana: 5,
+    playerMana: 4,
     enemyHp: 60,
     turnCount: 1,
   };
@@ -299,7 +299,7 @@ test('replaying the same authoritative action result does not deduct Mana or app
   const firstLog = [...engine.snapshot.log];
   engine.applyAuthoritativeAction('crack', result);
 
-  assert.equal(engine.snapshot.playerMana, 5);
+  assert.equal(engine.snapshot.playerMana, 4);
   assert.equal(engine.snapshot.turnCount, 1);
   assert.equal(engine.snapshot.enemyHp, 60);
   assert.equal(engine.snapshot.log.filter((entry) => entry.includes('uses')).length, 1);
@@ -402,7 +402,7 @@ test('a terminal authoritative result cannot be reopened by a later active snaps
     permitId: 'permit-terminal',
     status: 'victory',
     playerHp: 80,
-    playerMana: 5,
+    playerMana: 4,
     enemyHp: 0,
     turnCount: 1,
   });

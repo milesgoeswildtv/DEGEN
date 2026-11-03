@@ -1,3 +1,16 @@
+## Latest run — 2026-11-03 (align existing action fixtures with exact Mana cost)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #125:** `automation/degen/authoritative-shield-foundation-v02`; the first exact-deduction implementation commit is `c682cc177c0362dd0848011707346da8f855ee28`. CI [41714611214](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41714611214) started on that head while install was running; it is not accepted as evidence for this follow-up.
+- **Task / files changed:** corrected two pre-existing `crack` authoritative-action fixtures in `tests/client-worker-mana-consistency.test.ts`: the prototype ability costs 4 Mana, so valid paid action/terminal snapshots now show 8 → 4 rather than 8 → 5. This makes replay and terminal tests conform to the new exact-deduction guard. The runtime guard remains in `src/game/combat/engine.ts`; the new paid mismatch and zero-cost-at-zero tests remain.
+- **QA:** new head requires fresh exact-head CI. The prior PR #125 head `929743370f8ae23ac491840fea73bb4daa64f8c1` passed full CI [41697486099](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41697486099), but that does not prove these new changes. No local-shell run or production deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main; this follow-up hardens client presentation consistency only. Worker/D1 still initializes and spends player Mana authoritatively; zero-cost abilities remain legal at 0; no reversion and no monster Mana.
+- **Battle authority / rewards:** Worker/D1 continues to own permit state, action CAS, terminal outcome, history, audited receipts, XP/currency/inventory, and exactly-once recovery. No client reward authority changed.
+- **D1 / blockers:** `DB` remains `DEGEN` with `db/migrations`. Shield migrations `0008` / `0009` are branch-only; duplicate main/auth `0007` and PR #122–124 review overlap remain unresolved. No renumbering or remote D1 operation.
+- **One best next task:** verify fresh CI on this corrected head, then keep PR #125 draft until migration sequencing and overlapping review ownership are explicitly reconciled.
+
+---
+
 ## Latest run — 2026-11-03 (guard exact Mana deduction in authoritative client actions)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
