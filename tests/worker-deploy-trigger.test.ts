@@ -131,6 +131,8 @@ test('Worker deployment completes the full local QA gate before any remote D1 wr
   const deployCommands = commands(deployWorkflow);
   const remoteCommands = ['npm run db:apply', 'npm run db:migrate', 'npm run deploy:worker'];
 
+  assert.ok(ciWorkflow.includes('branches: [main, automation/degen/d1-migration-number-guard-v01]'),
+    'CI must run for both main and the stacked migration-guard base branch');
   assert.ok(ciCommands.includes('npm run check:migrations'),
     'CI must exercise the same tracked migration preflight used by deployment');
   assert.ok(!ciCommands.some((command) => /(?:--remote|db:apply|db:migrate|deploy:worker)/.test(command)),
