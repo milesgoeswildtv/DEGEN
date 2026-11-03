@@ -50,7 +50,7 @@ export class BattleEngine {
     this.enemy = enemy;
     this.onComplete = onComplete;
     this.permitId = initialState?.permitId;
-    if (!isValidShield(enemy.startingShield ?? 0)) throw new Error('Invalid enemy starting Shield.');
+    if (enemy.startingShield !== undefined && !isValidShield(enemy.startingShield)) throw new Error('Invalid enemy starting Shield.');
     // Distinguish an omitted offline-preview state from a supplied but malformed
     // Worker payload. A server permit must never silently become a local battle.
     if (initialState !== undefined && (
