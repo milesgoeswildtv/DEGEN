@@ -19,8 +19,9 @@ const controller = new AppController(root, store, api);
 await controller.start();
 void platform.getIdentity()
   .then(async (identity) => {
-    await store.initialize(identity);
-    controller.onPlayerInitialized();
+    const initialized = await store.initialize(identity);
+    if (initialized) controller.onPlayerInitialized();
+    else controller.onPlayerInitializationFailed();
   })
   .catch((error) => {
     console.warn('DEGEN platform identity could not be initialized.', error);
