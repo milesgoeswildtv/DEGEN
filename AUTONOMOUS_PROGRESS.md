@@ -1,3 +1,16 @@
+## Latest run — 2026-11-03 (restore CI on stacked PR base)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #126 OPEN / UNMERGED / STACKED ON #114:** `automation/degen/worker-shared-runtime-deploy-triggers-v01`; code head before this continuity commit `6b4b29a28931e36341a166890d415b269af7da2e`, base `automation/degen/d1-migration-number-guard-v01`. PR #114's CI workflow now includes this base branch in its pull-request trigger and runs the migration check; PR #126 carries the same workflow and a regression assertion for that trigger. This prevents the stacked follow-up from silently losing CI because the base is not main.
+- **Task / files changed:** `.github/workflows/ci.yml` on both stacked branches now runs `npm run check:migrations` before deterministic tests and accepts PRs targeting main or the migration-guard branch. `tests/worker-deploy-trigger.test.ts` asserts the stacked-base trigger and continues to require exact CI/deploy command parity.
+- **QA:** previous #126 exact-head run [41656084806](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41656084806) passed migration preflight and deterministic tests before its Worker/D1 reward-concurrency stage. New CI-trigger changes require fresh exact-head checks on both PRs. No production D1 or Worker operation.
+- **Mana:** COMPLETE / MERGED on main; no runtime changes.
+- **Battle authority / D1:** Worker/D1 authority and exactly-once settlement unchanged. Main migration guard remains inherited from #114; duplicate `0007` is blocked without renumbering. Shield migrations `0008` / `0009` remain unapplied.
+- **Blockers:** #14 duplicate migration sequence decision; review #114 before #126; reconcile Shield CI integration with deploy preflight. No merge or production write.
+- **One best next task:** run exact-head CI for both stacked branches and verify the deploy preflight still mirrors the expanded CI command list.
+
+---
+
 ## Latest run — 2026-11-03 (stack deploy gate on authoritative migration guard)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
