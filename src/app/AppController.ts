@@ -64,6 +64,9 @@ export class AppController {
   }
 
   onPlayerInitialized(): void {
+    // Bootstrap may finish after the player has navigated away from the Map.
+    // Re-render the active route with the authoritative player snapshot first.
+    this.render();
     void this.refreshWorld(true);
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
