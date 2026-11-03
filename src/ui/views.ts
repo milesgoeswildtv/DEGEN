@@ -194,10 +194,11 @@ export const underpassView = (player: PlayerState, event?: WorldEventSnapshot, h
 export const battleView = (player: PlayerState, degen: DegenDefinition): string => appShell(player, `
   <section class="battle-layout">
     <div class="battle-arena">
-      <div class="battle-resources" role="status" aria-label="Combat resources" aria-live="polite">
+      <div class="battle-resources" role="group" aria-label="Combat status">
         <span id="battle-hp" class="battle-resource">HP ${degen.maxHp}/${degen.maxHp}</span>
         <span id="battle-mana" class="battle-resource">MANA ${degen.maxMana}/${degen.maxMana}</span>
         <span id="battle-shield" class="battle-resource">SHIELD 0</span>
+        <span id="battle-enemy-hp" class="battle-resource">ENEMY HP ${enemy.maxHp}/${enemy.maxHp}</span>
         <span id="battle-enemy-shield" class="battle-resource" hidden>ENEMY SHIELD 0</span>
       </div>
       <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
@@ -253,6 +254,8 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
   if (manaPill) manaPill.textContent = validManaState ? `MANA ${snapshot.playerMana}/${snapshot.playerMaxMana}` : 'MANA —';
   const shieldPill = document.querySelector<HTMLElement>('#battle-shield');
   if (shieldPill) shieldPill.textContent = `SHIELD ${snapshot.playerShield}`;
+  const enemyHpPill = document.querySelector<HTMLElement>('#battle-enemy-hp');
+  if (enemyHpPill) enemyHpPill.textContent = `ENEMY HP ${snapshot.enemyHp}/${snapshot.enemyMaxHp}`;
   const enemyShieldPill = document.querySelector<HTMLElement>('#battle-enemy-shield');
   if (enemyShieldPill) {
     enemyShieldPill.textContent = `ENEMY SHIELD ${snapshot.enemyShield ?? 0}`;
