@@ -1,3 +1,17 @@
+## Latest run — 2026-11-03 (preserve deploy import-graph guard in Shield branch)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #125:** continuing `automation/degen/authoritative-shield-foundation-v02`. Added the same migration-guard pull-request CI base and recursive Worker import-graph/deploy-trigger regression from PR #126, so a later #126 merge will not be undone by this divergent Shield branch. The Shield-specific deploy workflow still adds its Worker/D1 Shield integration step before remote writes.
+- **Task / files changed:** `.github/workflows/ci.yml` now runs the migration-guard base branch as well as main; new `tests/worker-deploy-trigger.test.ts` verifies the complete transitive Worker runtime import graph is covered by deploy path filters and the full local CI QA command sequence finishes before remote D1 writes. Existing `tests/degen-shield-migration-deploy-order.test.ts` continues to cover the Shield migration sequence and Shield-specific QA/deploy parity. No runtime or migration file changed in this integration.
+- **QA:** earlier exact-head runs [41695372100](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41695372100), [41696017247](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41696017247), and [41696022556](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41696022556) were still running at Worker/D1 concurrency or recovery when this commit was prepared. This new workflow/test commit requires fresh exact-head CI. Cloudflare Pages preview for the previous head `854cf31800841216f5a9bc3cf5ecd2f68b3f2d36` was still building; no visual or production deployment proof is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, authoritative persisted player_mana, zero-cost-at-zero, rejection atomicity, and no depletion reversion remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 still owns battle state, Shield/Mana resolution, turn CAS, terminal history, audited reward receipts, XP/currency/inventory, and recovery. Client reward/economy authority remains absent.
+- **D1 / migration assumptions:** Shield migrations `0008_degen_shield.sql` and `0009_enemy_shield.sql` remain branch-only/unapplied; main `0007` conflicts with draft auth PR #14. PRs #114 and #126 are open/ready-for-review with green exact-head CI but remain separate; #125 still requires normal review-order reconciliation. No migration renumbering, remote D1 write, or Worker deployment occurred.
+- **Miles blockers:** PR #125 remains DRAFT because its 220-commit branch diverges from the #114/#126 ancestry and includes overlapping #122–124 changes. PR #20 is a stale 171-ahead/38-behind Shield branch and remains draft; it is not the active Shield slice. The requested Monster Log v0.11 is absent from the accessible Library and repo tree; no monster/status canon was invented.
+- **One best next task:** verify exact-head CI for the new Worker deploy import-graph guard plus Shield tests; then refresh PR #125's review handoff with the final green code/test SHA.
+
+---
+
 ## Latest run — 2026-11-03 (Worker free Shield action at zero Mana)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
