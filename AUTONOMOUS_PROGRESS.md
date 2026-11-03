@@ -1,3 +1,18 @@
+## Latest run — 2026-11-03 (make deploy preflight mirror CI command-for-command)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #126 OPEN / READY FOR REVIEW / UNMERGED:** `automation/degen/worker-shared-runtime-deploy-triggers-v01`. Current code/test head before this continuity commit: `cd1180cbce503bdcfd2b063bdcee1f910cd39484`.
+- **Task / files changed:** `.github/workflows/ci.yml` now runs `npm run check:migrations` explicitly after install. `tests/worker-deploy-trigger.test.ts` parses the `run:` commands from CI and the production deploy workflow, asserts the deploy preflight exactly matches the CI command sequence, and permits only schema → tracked migrations → Worker deployment after that sequence. This replaces a manually maintained list that could silently drift when CI gains a new integration stage. The earlier changes remain: `package.json` guards all manual remote write scripts, `deploy-worker.yml` runs migration validation before QA and remote writes, and the two migration-order/command-guard tests verify duplicate versions stop writes before Wrangler.
+- **QA:** exact-head CI [41655410571](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41655410571) passed the deterministic `npm test` stage after correcting the stale `tests/mana-deploy-order.test.ts` expectation; Worker/D1 reward concurrency was still running when this follow-up was created. The command-for-command CI/deploy test and explicit CI migration step are newer and require their own exact-head run. No local-shell test/build, production D1 operation, migration apply, Worker deployment, or physical-device QA is claimed.
+- **Mana:** COMPLETE / MERGED on main; Degen-only persisted Mana, Worker initialization and action CAS, affordability, exact deduction, zero-cost use, terminal outcomes, client UI, no monster Mana/equivalent resource, and no reversion remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 remains the only owner of permit state, combat outcomes, reward receipts, XP/currency/inventory, and recovery. The new workflow checks change no runtime combat/economy behavior; existing integration suites continue to cover concurrent reward/action/completion and transient recovery.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`. Main migration versions are unique through `0007_player_inventory_quantity_guards.sql`. Auth PR #14 still proposes duplicate `0007_player_sessions.sql`; the guard blocks the conflict but does not select an order or renumber. Shield migrations `0008` / `0009` remain branch-only/unapplied. No remote D1 write occurred.
+- **Miles blockers:** explicit duplicate-`0007` migration decision; deployment workflow reconciliation with Shield PR #125; platform-auth credentials and legacy identity-collision policy. No design canon or balance was invented.
+- **Delivery:** **PUSHED / PR:** migration preflight, CI/deploy parity test, and exact-head QA follow-up on #126. **MERGED / LIVE:** none.
+- **One best next task:** verify exact-head CI for the dynamic CI/deploy parity test, then ensure any later Shield integration stage is also in both CI and the remote-deploy preflight before PR #125 can deploy.
+
+---
+
 ## Latest run — 2026-11-03 (correct guarded migration-script regression)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
