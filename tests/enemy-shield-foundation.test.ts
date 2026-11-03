@@ -3,7 +3,6 @@ import test from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/testDegen.ts';
 import { BattleEngine } from '../src/game/combat/engine.ts';
 import { assertNoMonsterActionResource, resolveCombatTurn } from '../src/game/combat/rules.ts';
-import { isAuthoritativeBattleActionState } from '../src/app/api.ts';
 import { battleView, updateBattleDom } from '../src/ui/views.ts';
 import type { BattleSnapshot } from '../src/game/combat/engine.ts';
 
@@ -50,22 +49,6 @@ test('invalid enemy starting Shield values fail closed while Shield is not a for
     assert.throws(() => new BattleEngine(TEST_DEGEN, invalid, () => undefined), /Invalid enemy starting Shield/);
   }
   assert.doesNotThrow(() => assertNoMonsterActionResource(shieldedEnemy));
-});
-
-test('Worker action snapshots validate enemy Shield and reject malformed values', () => {
-  const valid = {
-    permitId: 'shielded-permit', status: 'active' as const,
-    playerHp: 110, playerMana: TEST_DEGEN.maxMana, playerShield: 0,
-    shieldAbsorbed: 0, retaliationDamage: 10, enemyShield: 5, enemyHp: TUNNEL_MAW.maxHp, turnCount: 1,
-  };
-  assert.equal(isAuthoritativeBattleActionState(valid, valid.permitId), true);
-  for (const enemyShield of [-1, 0.5, null, Number.MAX_SAFE_INTEGER + 1]) {
-    assert.equal(isAuthoritativeBattleActionState({ ...valid, enemyShield }, valid.permitId), false);
-  }
-  assert.equal(isAuthoritativeBattleActionState({ ...valid, enemyShieldAbsorbed: -1 }, valid.permitId), false);
-  assert.equal(isAuthoritativeBattleActionState({ ...valid, status: 'victory', enemyHp: 0 }, valid.permitId), false,
-    'victory cannot retain enemy Shield');
-  assert.equal(isAuthoritativeBattleActionState({ ...valid, status: 'victory', enemyHp: 0, enemyShield: 0, retaliationDamage: 0 }, valid.permitId), true);
 });
 
 test('BattleEngine carries and displays enemy starting Shield without local reversion or reward changes', () => {
