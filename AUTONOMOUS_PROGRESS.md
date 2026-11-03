@@ -1,3 +1,17 @@
+## Latest run — 2026-11-03 (deterministic Shield edge coverage)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #125:** continuing `automation/degen/authoritative-shield-foundation-v02`; the prior exact branch head `022634599f4cab1e224c914043bc4c95fcef651d` has exact-head CI [41688560934](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41688560934) SUCCESS. This run adds a new test commit and therefore requires its own exact-head CI.
+- **Task / file changed:** `tests/combat-progression.test.ts` adds deterministic coverage for (1) combining existing and ability-granted Degen Shield before retaliation at zero Mana, (2) enemy Shield absorbing damage before HP while a killing blow skips retaliation, and (3) invalid/unsafe Shield values and accumulation overflow. The Shield-granting ability is test-only; no Degen kit or balance canon was added.
+- **QA:** prior branch head CI [41688560934](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41688560934) passed migration preflight, deterministic tests, Worker/D1 reward concurrency/recovery, Underpass cycle and rollover concurrency, atomic defeat, Shield Worker/D1 integration, housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler validation. The new deterministic tests are pending their own CI run; no local-shell execution, production D1 operation, or Worker deployment is claimed.
+- **Mana:** COMPLETE / MERGED on main; Degen-only authoritative Mana and zero-cost-at-zero behavior remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for HP/Mana/Shield, enemy HP/Shield, turn CAS, terminal outcomes, reward receipts, progression, currency, and inventory. Existing isolated Worker/D1 concurrency and transient-recovery suites remain green on the previous head.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` and `db/migrations`. Shield migrations `0008_degen_shield.sql` and `0009_enemy_shield.sql` remain branch-only and unapplied. The `0007` auth migration collision remains unresolved; no renumbering, remote D1 operation, or Worker deployment occurred.
+- **Miles blockers:** PRs #122–124 overlap the accumulated Shield branch; duplicate-`0007` sequencing and production platform-auth credentials/identity policy still need explicit resolution. The requested Monster Log v0.11 remains unavailable in the accessible Library; no monster content or status canon was invented.
+- **One best next task:** verify exact-head CI for the new deterministic Shield tests, then continue the smallest missing Shield/Worker integration edge on this same branch.
+
+---
+
 ## Latest verification — 2026-11-03 (Shield event-closure regression CI PASS)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; no main mutation.
