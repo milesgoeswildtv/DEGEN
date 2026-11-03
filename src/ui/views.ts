@@ -195,6 +195,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
   <section class="battle-layout">
     <div class="battle-arena">
       <div class="battle-resources" role="status" aria-label="Combat resources" aria-live="polite">
+        <span id="battle-hp" class="battle-resource">HP ${degen.maxHp}/${degen.maxHp}</span>
         <span id="battle-mana" class="battle-resource">MANA ${degen.maxMana}/${degen.maxMana}</span>
         <span id="battle-shield" class="battle-resource">SHIELD 0</span>
         <span id="battle-enemy-shield" class="battle-resource" hidden>ENEMY SHIELD 0</span>
@@ -246,6 +247,8 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
     accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, ${manaSummary}, Shield ${snapshot.playerShield}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}${enemyShieldSummary}. Turn ${snapshot.turnCount}. ${outcome}`;
   }
 
+  const hpPill = document.querySelector<HTMLElement>('#battle-hp');
+  if (hpPill) hpPill.textContent = `HP ${snapshot.playerHp}/${snapshot.playerMaxHp}`;
   const manaPill = document.querySelector<HTMLElement>('#battle-mana');
   if (manaPill) manaPill.textContent = validManaState ? `MANA ${snapshot.playerMana}/${snapshot.playerMaxMana}` : 'MANA —';
   const shieldPill = document.querySelector<HTMLElement>('#battle-shield');
