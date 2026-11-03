@@ -325,3 +325,101 @@ test('expired terminal recovery rejects retaliation audit above the supported mo
   assert.equal('battleState' in result, false,
     'a persisted retaliation value impossible for the supported enemy must not be echoed as authoritative');
 });
+
+
+test('legacy terminal permits with NULL Mana and pre-Shield audit remain recoverable after Shield migrations', async () => {
+  const legacyTerminalStates = [
+    {
+      permitId: 'legacy-pre-mana-victory',
+      status: 'victory',
+      error: 'Battle victory is awaiting reward completion.',
+      playerHp: 120,
+      enemyHp: 0,
+      row: {
+        cycle_id: 'cycle-1',
+        event_key: 'underpass',
+        cycle_event_key: 'underpass',
+        encounter_key: TUNNEL_MAW.id,
+        player_hp: 120,
+        player_mana: null,
+        player_shield: 0,
+        last_shield_absorbed: null,
+        last_retaliation_damage: null,
+        enemy_hp: 0,
+        enemy_shield: 0,
+        battle_status: 'victory',
+        turn_count: 1,
+        completed_at: null,
+        reward_state: 'pending',
+        victory_history_marker_count: 0,
+        defeat_history_marker_count: 0,
+      },
+    },
+    {
+      permitId: 'legacy-pre-mana-defeat',
+      status: 'defeat',
+      error: 'Battle is already defeated.',
+      playerHp: 0,
+      enemyHp: TUNNEL_MAW.maxHp,
+      row: {
+        cycle_id: 'cycle-1',
+        event_key: 'underpass',
+        cycle_event_key: 'underpass',
+        encounter_key: TUNNEL_MAW.id,
+        player_hp: 0,
+        player_mana: null,
+        player_shield: 0,
+        last_shield_absorbed: null,
+        last_retaliation_damage: null,
+        enemy_hp: TUNNEL_MAW.maxHp,
+        enemy_shield: 0,
+        battle_status: 'defeat',
+        turn_count: 1,
+        completed_at: null,
+        reward_state: 'pending',
+        victory_history_marker_count: 0,
+        defeat_history_marker_count: 0,
+      },
+    },
+  ];
+
+  for (const { permitId, status, error, playerHp, enemyHp, row } of legacyTerminalStates) {
+    const reads: string[] = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              first: async () => {
+                reads.push(sql);
+                assert.deepEqual(params.slice(0, 2), [permitId, 'shield-player']);
+                if (sql.includes("battle_status IN ('victory', 'defeat')")) return row;
+                if (sql.includes('completed_at IS NOT NULL')) return null;
+                if (sql.includes('completed_at IS NULL')) return null;
+                throw new Error('Unexpected query in legacy Shield terminal recovery: ' + sql);
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const response = await handleBattleAction(actionRequest(permitId, 1), { DB: db });
+    const result = await response.json() as { error: string; battleState?: unknown };
+
+    assert.equal(response.status, 409);
+    assert.equal(result.error, error);
+    assert.deepEqual(result.battleState, {
+      permitId,
+      status,
+      playerHp,
+      playerMana: TEST_DEGEN.maxMana,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 0,
+      enemyHp,
+      turnCount: 1,
+    }, 'legacy terminal state is projected safely without inventing prior Mana or Shield activity');
+    assert.equal(reads.length, 3, 'legacy terminal recovery only reads persisted state and never applies an action');
+  }
+});
