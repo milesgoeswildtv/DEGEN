@@ -21,14 +21,35 @@ function cli(args) {
 }
 async function complete(permitId, playerId = 'integration-player', extraFields = {}) {
   let r;
-  try {
-    r = await fetch(base + '/api/battle/complete', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...extraFields, playerId, permitId }),
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch (error) {
-    throw new Error(`Battle completion request ${permitId} failed or timed out: ${String(error)}`);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      r = await fetch(base + '/api/battle/complete', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...extraFields, playerId, permitId }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      break;
+    } catch (error) {
+      // The isolated Wrangler D1 CLI and Miniflare share local persistence; a
+      // CLI read can briefly drop the local HTTP socket while the Worker stays
+      // healthy. Completion is idempotent, so retry the same permit once only
+      // after a health check confirms that the same Worker still serves.
+      if (attempt === 0 && server?.exitCode === null) {
+        await sleep(100);
+        try {
+          const health = await fetch(base + '/api/health', { signal: AbortSignal.timeout(2_000) });
+          if (health.ok && (await health.json()).ok) continue;
+        } catch {}
+      }
+      throw new Error(
+        `Battle completion request ${permitId} failed or timed out: ${String(error)}` +
+        `\\nWorker exit code: ${server?.exitCode ?? 'running'}` +
+        `\\nCaptured Worker logs:\\n${logs}`,
+      );
+    }
+  }
+  if (!r) {
+    throw new Error(`Battle completion request ${permitId} produced no response.\\nCaptured Worker logs:\\n${logs}`);
   }
   assert.equal(r.headers.get('cache-control'), 'no-store',
     '/api/battle/complete success and error responses must not be cached');
