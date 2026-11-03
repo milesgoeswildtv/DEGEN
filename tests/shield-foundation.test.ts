@@ -110,3 +110,46 @@ test('server-backed engine cannot simulate local actions or accept impossible Sh
   assert.deepEqual(engine.snapshot, before);
   assert.equal(completions, 0);
 });
+
+
+test('authoritative actions reject impossible enemy Shield absorption and gains', () => {
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => undefined, {
+    permitId: 'enemy-shield-audit', status: 'active',
+    playerHp: TEST_DEGEN.maxHp, playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    enemyHp: enemy.maxHp, enemyShield: 5, turnCount: 0,
+  });
+  const before = engine.snapshot;
+  const common = {
+    permitId: 'enemy-shield-audit', status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp - 10, playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
+    enemyHp: enemy.maxHp - 24, turnCount: 1,
+  };
+
+  for (const impossible of [
+    { ...common, enemyShield: 4, enemyShieldAbsorbed: 6 },
+    { ...common, enemyShield: 4, enemyShieldAbsorbed: 2 },
+    { ...common, enemyShield: 6, enemyShieldAbsorbed: 0 },
+  ]) {
+    engine.applyAuthoritativeAction('slash', impossible);
+    assert.deepEqual(engine.snapshot, before);
+  }
+
+  const validTurn = resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp, playerMana: TEST_DEGEN.maxMana, playerShield: 0,
+    enemyHp: enemy.maxHp, enemyShield: 5, ability: ability('slash'),
+    degen: TEST_DEGEN, enemy,
+  });
+  engine.applyAuthoritativeAction('slash', {
+    permitId: 'enemy-shield-audit', status: validTurn.status,
+    playerHp: validTurn.playerHp, playerMana: validTurn.playerMana,
+    playerShield: validTurn.playerShield, shieldAbsorbed: validTurn.shieldAbsorbed,
+    retaliationDamage: validTurn.retaliationDamage, enemyHp: validTurn.enemyHp,
+    enemyShield: validTurn.enemyShield, enemyShieldAbsorbed: validTurn.enemyShieldAbsorbed,
+    turnCount: 1,
+  });
+  assert.equal(engine.snapshot.enemyShield, undefined);
+  assert.ok(engine.snapshot.log.some((line) => line.includes('Shield absorbs 5')));
+});
