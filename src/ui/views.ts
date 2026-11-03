@@ -198,7 +198,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
         <span id="battle-hp" class="battle-resource">HP ${degen.maxHp}/${degen.maxHp}</span>
         <span id="battle-mana" class="battle-resource">MANA ${degen.maxMana}/${degen.maxMana}</span>
         <span id="battle-shield" class="battle-resource">SHIELD 0</span>
-        <span id="battle-enemy-hp" class="battle-resource">ENEMY HP ${enemy.maxHp}/${enemy.maxHp}</span>
+        <span id="battle-enemy-hp" class="battle-resource">ENEMY HP —</span>
         <span id="battle-enemy-shield" class="battle-resource" hidden>ENEMY SHIELD 0</span>
       </div>
       <div id="phaser-battle" class="battle-canvas" aria-label="Battle scene"></div>
