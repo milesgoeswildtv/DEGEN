@@ -189,10 +189,16 @@ export class BattleEngine {
       return;
     }
 
+    const hasLegacyShieldResult = result.playerShield === undefined
+      && result.shieldAbsorbed === undefined
+      && result.retaliationDamage === undefined;
     const nextPlayerShield = result.playerShield ?? 0;
     const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
     const shieldAbsorbed = result.shieldAbsorbed ?? 0;
-    const retaliationDamage = result.retaliationDamage ?? 0;
+    // Pre-Shield Workers did not report audit deltas; infer retaliation only for
+    // that all-fields-omitted legacy shape, then validate the same shared turn.
+    const retaliationDamage = result.retaliationDamage
+      ?? (hasLegacyShieldResult ? Math.max(0, this.playerHp - result.playerHp) : 0);
     const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
     if (
       result.status !== expectedTurn.status

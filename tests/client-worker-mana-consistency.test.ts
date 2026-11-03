@@ -278,20 +278,42 @@ test('a same-turn status-only conflict cannot forge a terminal outcome', () => {
 });
 
 test('replaying the same authoritative action result does not deduct Mana or append action logs twice', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const initial = {
     permitId: 'permit-replay',
-    status: 'active',
+    status: 'active' as const,
     playerHp: 100,
     playerMana: 8,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: TUNNEL_MAW.maxHp,
+    enemyShield: 0,
     turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initial);
+  const turn = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    playerShield: initial.playerShield,
+    enemyHp: initial.enemyHp,
+    enemyShield: initial.enemyShield,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
   });
   const result = {
     permitId: 'permit-replay',
-    status: 'active' as const,
-    playerHp: 85,
-    playerMana: 4,
-    enemyHp: 60,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    enemyShield: turn.enemyShield,
+    enemyShieldAbsorbed: turn.enemyShieldAbsorbed,
     turnCount: 1,
   };
 
@@ -301,7 +323,8 @@ test('replaying the same authoritative action result does not deduct Mana or app
 
   assert.equal(engine.snapshot.playerMana, 4);
   assert.equal(engine.snapshot.turnCount, 1);
-  assert.equal(engine.snapshot.enemyHp, 60);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
   assert.equal(engine.snapshot.log.filter((entry) => entry.includes('uses')).length, 1);
   assert.equal(engine.snapshot.log.filter((entry) => entry.startsWith('Mana -')).length, 1);
   assert.deepEqual(Array.from(engine.snapshot.log), firstLog);
@@ -386,24 +409,47 @@ test('client accepts a zero-cost Worker action at zero Mana without inventing a 
 
 test('a terminal authoritative result cannot be reopened by a later active snapshot', () => {
   let completions = 0;
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
-    assert.equal(status, 'victory');
-    completions += 1;
-  }, {
+  const enemy = { ...TUNNEL_MAW, maxHp: 1 };
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const initial = {
     permitId: 'permit-terminal',
-    status: 'active',
+    status: 'active' as const,
     playerHp: 80,
     playerMana: 8,
-    enemyHp: TUNNEL_MAW.maxHp,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 0,
     turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, enemy, (status) => {
+    assert.equal(status, 'victory');
+    completions += 1;
+  }, initial);
+  const turn = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    playerShield: initial.playerShield,
+    enemyHp: initial.enemyHp,
+    enemyShield: initial.enemyShield,
+    ability,
+    degen: TEST_DEGEN,
+    enemy,
   });
-
+  assert.equal(turn.status, 'victory');
   engine.applyAuthoritativeAction('crack', {
     permitId: 'permit-terminal',
-    status: 'victory',
-    playerHp: 80,
-    playerMana: 4,
-    enemyHp: 0,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    enemyShield: turn.enemyShield,
+    enemyShieldAbsorbed: turn.enemyShieldAbsorbed,
     turnCount: 1,
   });
   const terminal = {
