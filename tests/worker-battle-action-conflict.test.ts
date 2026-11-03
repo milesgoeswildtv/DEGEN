@@ -40,6 +40,7 @@ enemy_hp: 50,
     player_hp: 70,
     last_retaliation_damage: 10,
     enemy_hp: 63,
+    enemy_shield: 7,
     turn_count: 1,
     permit_is_unexpired: 1,
   };
@@ -77,7 +78,7 @@ enemy_hp: 50,
     error: string;
     battleState?: {
       permitId: string; status: string; playerHp: number; playerMana: number;
-      enemyHp: number; turnCount: number;
+      enemyShield?: number; enemyHp: number; turnCount: number;
     };
   };
 
@@ -91,6 +92,7 @@ enemy_hp: 50,
       playerShield: 0,
       shieldAbsorbed: 0,
       retaliationDamage: 10,
+      enemyShield: 7,
     enemyHp: 63,
     turnCount: 1,
   }, 'a rejected request must not resynchronize the client to a pre-race snapshot');
