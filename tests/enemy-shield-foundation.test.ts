@@ -60,6 +60,41 @@ test('BattleEngine carries and displays enemy starting Shield without local reve
   assert.match(engine.snapshot.log.join(' '), /Tunnel Maw Shield absorbs 5/);
 });
 
+test('server-backed battle log reports total damage and enemy Shield absorption separately', () => {
+  const permitId = 'shield-damage-log-permit';
+  const engine = new BattleEngine(TEST_DEGEN, shieldedEnemy, () => undefined, {
+    permitId,
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: shieldedEnemy.maxHp,
+    enemyShield: 5,
+    turnCount: 0,
+  });
+
+  engine.applyAuthoritativeAction('slash', {
+    permitId,
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp - 10,
+    playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 10,
+    enemyHp: shieldedEnemy.maxHp - 24,
+    enemyShield: 0,
+    enemyShieldAbsorbed: 5,
+    turnCount: 1,
+  });
+
+  assert.match(engine.snapshot.log.join(' '), /uses Slash: 29 damage\./,
+    'the combat log must report full ability damage, not only the portion that reached enemy HP');
+  assert.match(engine.snapshot.log.join(' '), /Tunnel Maw Shield absorbs 5\./,
+    'the same action must separately disclose the enemy Shield absorption');
+});
+
 test('battle DOM exposes enemy Shield only when present and includes it in the accessible HUD', () => {
   const markup = battleView({
     id: 'enemy-shield-player', displayName: 'Shield Tester', level: 1, xp: 0, currency: 0,
