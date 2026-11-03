@@ -823,6 +823,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         playerShield: latest.player_shield ?? 0,
         shieldAbsorbed: latest.last_shield_absorbed ?? 0,
         retaliationDamage: latest.last_retaliation_damage ?? 0,
+        ...projectEnemyShield(latest.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
         enemyHp: latest.enemy_hp,
         turnCount: latest.turn_count,
       },
