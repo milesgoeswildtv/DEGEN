@@ -11,8 +11,8 @@ const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs']);
 
 const runtimeImportSpecifiers = (source: string): string[] => {
   const specifiers = new Set<string>();
-  const staticImports = /^\s*(?:import|export)\s+(?!type\\b)(?:[\\s\\S]*?\\s+from\\s*)?['"]((?:\\.{1,2})\\/[^'"]+)['"]/gm;
-  const dynamicImports = /\\bimport\\s*\\(\\s*['"]((?:\\.{1,2})\\/[^'"]+)['"]\\s*\\)/g;
+  const staticImports = /^\s*(?:import|export)\s+(?!type\b)(?:[\s\S]*?\s+from\s*)?['"]((?:\.{1,2})\/[^'"]+)['"]/gm;
+  const dynamicImports = /\bimport\s*\(\s*['"]((?:\.{1,2})\/[^'"]+)['"]\s*\)/g;
 
   for (const match of source.matchAll(staticImports)) {
     if (match[1]) specifiers.add(match[1]);
@@ -30,14 +30,14 @@ const resolveLocalImport = (importerPath: string, specifier: string): string => 
     ? [
       target,
       ...(extension === '.js' || extension === '.mjs' || extension === '.cjs'
-        ? [target.replace(/\\.(?:m?js|cjs)$/, '.ts')]
+        ? [target.replace(/\.(?:m?js|cjs)$/, '.ts')]
         : []),
     ]
     : [
-      `${target}.ts`,
-      `${target}.tsx`,
-      `${target}.js`,
-      `${target}.mjs`,
+      target + '.ts',
+      target + '.tsx',
+      target + '.js',
+      target + '.mjs',
       join(target, 'index.ts'),
       join(target, 'index.tsx'),
       join(target, 'index.js'),
@@ -45,7 +45,7 @@ const resolveLocalImport = (importerPath: string, specifier: string): string => 
   const resolvedPath = candidates.find(existsSync);
   assert.ok(
     resolvedPath,
-    `Worker runtime import "${specifier}" from ${relative(repoRoot, importerPath)} must resolve to a tracked local file`,
+    'Worker runtime import "' + specifier + '" from ' + relative(repoRoot, importerPath) + ' must resolve to a tracked local file',
   );
   return resolvedPath;
 };
@@ -79,8 +79,8 @@ test('Worker deployment watches every shared runtime module in the transitive im
 
   for (const sourcePath of sharedRuntimeFiles) {
     assert.ok(
-      deployWorkflow.includes(`      - '${sourcePath}'`),
-      `Worker deployment must run when transitive runtime dependency ${sourcePath} changes`,
+      deployWorkflow.includes("      - '" + sourcePath + "'"),
+      'Worker deployment must run when transitive runtime dependency ' + sourcePath + ' changes',
     );
   }
 
