@@ -7,6 +7,7 @@ const read = (path: string): string => readFileSync(new URL(path, import.meta.ur
 const shieldMigration = read('../db/migrations/0008_degen_shield.sql');
 const enemyShieldMigration = read('../db/migrations/0009_enemy_shield.sql');
 const deployWorkflow = read('../.github/workflows/deploy-worker.yml');
+const ciWorkflow = read('../.github/workflows/ci.yml');
 const wranglerConfig = read('../wrangler.toml');
 const packageJson = JSON.parse(read('../package.json')) as { scripts: Record<string, string> };
 const domainTypes = read('../src/domain/types.ts');
@@ -125,4 +126,28 @@ test('EnemyDefinition remains free of Mana-equivalent resources', () => {
   assert.equal(/mana|maxMana|currentMana|energy|stamina|focus/i.test(enemyDefinition), false);
   assert.match(domainTypes, /type _EnemyDefinitionHasNoUniversalActionResource/,
     'the recursive compile-time monster resource guard must remain active');
+});
+test('Worker deployment completes the exact CI QA sequence before remote D1 writes', () => {
+  const commands = (workflow: string): string[] =>
+    [...workflow.matchAll(/^\\s+run:\\s*(.+?)\\s*$/gm)].map((match) => match[1]!);
+  const ciCommands = commands(ciWorkflow);
+  const deployCommands = commands(deployWorkflow);
+  const remoteCommands = ['npm run db:apply', 'npm run db:migrate', 'npm run deploy:worker'];
+
+  assert.ok(ciCommands.includes('npm run check:migrations'),
+    'CI must exercise the tracked migration preflight before any deployment');
+  assert.ok(ciCommands.includes('node tests/worker-shield-integration.mjs'),
+    'CI must exercise the isolated Worker/D1 Shield integration');
+  assert.equal(ciCommands.some((command) => /(?:--remote|db:apply|db:migrate|deploy:worker)/.test(command)), false,
+    'CI must not perform remote D1 or Worker writes');
+  assert.deepEqual(
+    deployCommands.slice(0, ciCommands.length),
+    ciCommands,
+    'Worker deployment must complete the exact CI command sequence before remote writes',
+  );
+  assert.deepEqual(
+    deployCommands.slice(ciCommands.length),
+    remoteCommands,
+    'only schema → tracked migrations → Worker deployment may follow the QA gate',
+  );
 });
