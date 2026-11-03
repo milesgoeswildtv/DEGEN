@@ -146,6 +146,18 @@
 
 ---
 
+## Latest run — 2026-11-03 (enable CI for stacked deploy-gate follow-up)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #114 OPEN / UNMERGED:** `automation/degen/d1-migration-number-guard-v01`; current head before this update `62f3717af6ea19ab82ef51c05e96f861a866fcc8`. Existing migration guard remains the sole owner of `check:migrations`, guarded npm write scripts, and duplicate-version tests.
+- **Task / files changed:** `.github/workflows/ci.yml` now runs `npm run check:migrations` before deterministic tests and accepts PRs targeting either main or this migration-guard branch. This allows stacked PR #126 to receive normal CI while using #114 as its base, without copying the migration guard into a competing implementation.
+- **QA:** PR #114 exact-head CI [41262111205](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41262111205) passed all 17 steps before this CI-workflow-only update. This new head requires its own exact-head CI. No remote D1 write, migration apply, or Worker deployment.
+- **Mana:** COMPLETE / MERGED on main. No Mana runtime changes.
+- **D1 / blockers:** migration versions remain unique on main through `0007_player_inventory_quantity_guards.sql`; draft auth PR #14 still proposes conflicting `0007_player_sessions.sql`. The guard blocks rather than renumbers. No production DB operation.
+- **One best next task:** verify #114 exact-head CI, then review #114 before its stacked #126 follow-up.
+
+---
+
 ## Latest run — 2026-10-31 (fail closed on Worker shutdown before direct D1 probes)
 
 - **Authoritative main SHA:** `61da708f42ef9615e0b253a68817821eaf23b838`. Main's last verified CI/Pages evidence is recorded below; latest verified production Worker deployment remains `40959555285` on `4cc3bcb`. No later Worker deployment is claimed.
