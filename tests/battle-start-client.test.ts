@@ -667,6 +667,23 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
     'an explicit null absorption value is malformed');
   assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, retaliationDamage: null }, 'permit-1'), false,
     'an explicit null retaliation value is malformed');
+
+  const enemyShieldSnapshot = {
+    ...active, playerHp: 70, playerMana: 0, enemyHp: 20, turnCount: 1,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 5, enemyShield: 5,
+  };
+  assert.equal(isAuthoritativeBattleActionState(enemyShieldSnapshot, 'permit-1'), true);
+  for (const enemyShield of [-1, 0.5, null, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, enemyShield }, 'permit-1'), false);
+  }
+  assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, enemyShieldAbsorbed: -1 }, 'permit-1'), false);
+  assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, status: 'victory', enemyHp: 0 }, 'permit-1'), false,
+    'a terminal victory cannot retain enemy Shield');
+  assert.equal(isAuthoritativeBattleActionState({
+    ...enemyShieldSnapshot, status: 'victory', enemyHp: 0, enemyShield: 0, retaliationDamage: 0,
+  }, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, turnCount: 0 }, 'permit-1'), false,
+    'a fresh permit cannot claim enemy Shield absent from the server encounter definition');
 });
 
 
