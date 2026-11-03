@@ -222,7 +222,8 @@ export class BattleEngine {
     const nextPlayerShield = result.playerShield ?? 0;
     const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
     const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
-    const playerDamage = Math.max(0, this.enemyHp - result.enemyHp);
+    // The validated shared turn includes damage absorbed by enemy Shield; HP delta alone does not.
+    const playerDamage = expectedTurn.playerDamage;
     const manaSpent = Math.max(0, this.playerMana - result.playerMana);
     const shieldGained = Math.max(0, nextPlayerShield + expectedTurn.shieldAbsorbed - this.playerShield);
     this.playerHp = result.playerHp;
