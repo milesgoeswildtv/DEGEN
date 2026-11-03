@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const shieldMigration = read('../db/migrations/0008_degen_shield.sql');
+const enemyShieldMigration = read('../db/migrations/0009_enemy_shield.sql');
 const deployWorkflow = read('../.github/workflows/deploy-worker.yml');
 const wranglerConfig = read('../wrangler.toml');
 const packageJson = JSON.parse(read('../package.json')) as { scripts: Record<string, string> };
@@ -15,10 +16,18 @@ test('Shield migration follows the current tracked inventory guard with unique v
     .filter((name) => name.endsWith('.sql') && name.slice(0, 4).split('').every((char) => char >= '0' && char <= '9')).sort();
   const inventoryIndex = names.indexOf('0007_player_inventory_quantity_guards.sql');
   const shieldIndex = names.indexOf('0008_degen_shield.sql');
+  const enemyShieldIndex = names.indexOf('0009_enemy_shield.sql');
   assert.ok(inventoryIndex >= 0, 'current main migration 0007 must remain tracked');
   assert.ok(shieldIndex > inventoryIndex, 'Shield must follow the current main migration chain');
+  assert.ok(enemyShieldIndex > shieldIndex, 'enemy Shield must follow Degen Shield');
   const versions = names.map((name) => name.slice(0, 4));
   assert.equal(new Set(versions).size, versions.length, 'migration versions must be unique');
+});
+
+test('enemy Shield migration is tracked before Worker deployment', () => {
+  assert.match(enemyShieldMigration, /ADD COLUMN enemy_shield INTEGER NOT NULL DEFAULT 0/);
+  assert.match(enemyShieldMigration, /typeof\(enemy_shield\) = 'integer'/);
+  assert.match(deployWorkflow, /npm run db:migrate[\s\S]*npm run deploy:worker/);
 });
 
 test('Shield migration defaults existing permits to zero without resetting battle state', () => {
