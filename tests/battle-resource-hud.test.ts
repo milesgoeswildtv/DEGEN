@@ -53,7 +53,7 @@ test('battle resource HUD starts with the Degen maximum HP', () => {
   assert.doesNotMatch(html, /class="battle-resources"[^>]*aria-live=/,
     'the hidden combined HUD is the single live region, avoiding duplicate status announcements');
   assert.ok(html.includes('id="battle-hp" class="battle-resource">HP 120/120'));
-  assert.ok(html.includes('id="battle-enemy-hp" class="battle-resource">ENEMY HP 92/92'));
+  assert.ok(html.includes('id="battle-enemy-hp" class="battle-resource">ENEMY HP —'));
 });
 
 test('visible HP pill follows the Worker-backed battle snapshot on every update', () => {
