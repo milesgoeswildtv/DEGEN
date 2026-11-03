@@ -59,6 +59,7 @@ const { BattleEngine } = runInNewContext(
       playerMana: number;
       playerShield: number;
       enemyHp: number;
+      enemyShield?: number;
       turnCount: number;
       log: string[];
     };
@@ -71,6 +72,8 @@ const { BattleEngine } = runInNewContext(
       playerShield?: number;
       shieldAbsorbed?: number;
       retaliationDamage?: number;
+      enemyShield?: number;
+      enemyShieldAbsorbed?: number;
       enemyHp: number;
       turnCount: number;
     }): void;
@@ -82,6 +85,8 @@ const { BattleEngine } = runInNewContext(
       playerShield?: number;
       shieldAbsorbed?: number;
       retaliationDamage?: number;
+      enemyShield?: number;
+      enemyShieldAbsorbed?: number;
       enemyHp: number;
       turnCount: number;
     }): void;
