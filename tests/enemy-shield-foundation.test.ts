@@ -91,8 +91,15 @@ test('battle DOM exposes enemy Shield only when present and includes it in the a
     assert.equal(elements.get('#battle-enemy-shield')?.textContent, 'ENEMY SHIELD 5');
     assert.equal(elements.get('#battle-enemy-shield')?.hidden, false);
     assert.match(elements.get('#battle-accessible-hud')?.textContent ?? '', /Tunnel Maw: HP .* Shield 5/);
-    updateBattleDom({ ...snapshot, enemyShield: undefined });
+    updateBattleDom({ ...snapshot, enemyShield: 0 });
     assert.equal(elements.get('#battle-enemy-shield')?.hidden, true, 'zero enemy Shield is not shown as a false active resource');
+    assert.doesNotMatch(
+      elements.get('#battle-accessible-hud')?.textContent ?? '',
+      /Tunnel Maw: HP .* Shield 0/,
+      'zero enemy Shield must not be announced as an active resource',
+    );
+    updateBattleDom({ ...snapshot, enemyShield: undefined });
+    assert.equal(elements.get('#battle-enemy-shield')?.hidden, true, 'missing enemy Shield remains hidden');
   } finally {
     globalThis.document = originalDocument;
   }

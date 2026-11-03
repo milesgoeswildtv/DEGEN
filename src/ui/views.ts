@@ -240,7 +240,10 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
     const manaSummary = validManaState
       ? `Mana ${snapshot.playerMana} of ${snapshot.playerMaxMana}`
       : 'Mana unavailable';
-    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, ${manaSummary}, Shield ${snapshot.playerShield}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}, Shield ${snapshot.enemyShield ?? 0}. Turn ${snapshot.turnCount}. ${outcome}`;
+    const enemyShieldSummary = (snapshot.enemyShield ?? 0) > 0
+      ? `, Shield ${snapshot.enemyShield}`
+      : '';
+    accessibleHud.textContent = `${snapshot.playerName}: HP ${snapshot.playerHp} of ${snapshot.playerMaxHp}, ${manaSummary}, Shield ${snapshot.playerShield}. ${snapshot.enemyName}: HP ${snapshot.enemyHp} of ${snapshot.enemyMaxHp}${enemyShieldSummary}. Turn ${snapshot.turnCount}. ${outcome}`;
   }
 
   const manaPill = document.querySelector<HTMLElement>('#battle-mana');
