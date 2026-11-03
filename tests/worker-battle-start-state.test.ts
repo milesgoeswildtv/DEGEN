@@ -133,7 +133,7 @@ test('battle start ignores forged client combat state and returns exactly the De
   assert.equal(activePlayerGuardId, 'player-1', 'the same-player active-permit guard must bind the current owner');
   assert.equal(victoryMarkerGuardId, result.permitId, 'the insert must bind the victory history key guard');
   assert.equal(defeatMarkerGuardId, result.permitId, 'the insert must bind the defeat history key guard');
-  assert.equal(inserts[0]?.length, 12,
+  assert.equal(inserts[0]?.length, 13,
     'start/expiry timestamps come from D1 and the atomic insert binds cycle, owner, and terminal-history guards');
   assert.equal(result.expiresAt, persistedExpiry, 'the API must return the expiry returned from the persisted D1 row');
   assert.deepEqual(
