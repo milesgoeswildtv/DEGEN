@@ -1,3 +1,17 @@
+## Latest run follow-up — 2026-11-03 (wait for reward-recovery Worker shutdown)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; no main mutation.
+- **PUSHED / PR #125 OPEN / DRAFT / UNMERGED:** `automation/degen/authoritative-shield-foundation-v02`. New test-harness commit `c0ddac46b7b0032ffc840791a62a2fbabf40daf5` follows the Chromium profile cleanup fix `8abbd8a`.
+- **Task / files changed:** `tests/worker-d1-reward-recovery.mjs` now waits for the local Wrangler Worker to exit after SIGTERM, escalates to SIGKILL only after 2 seconds, waits up to 5 more seconds for the exit event before allowing any D1 CLI access, and retries recursive scratch cleanup. This addresses the same lifecycle class as the Chrome-profile race: the old helper could return immediately after SIGKILL, clear its Worker reference, and let a new Wrangler D1 command contend with a still-running local Worker/SQLite writer.
+- **QA evidence / pending:** on the two runs from the preceding code/progress commits, deterministic tests, tracked-migration validation, and isolated reward-concurrency passed; the recovery step remained active unusually long. The new shutdown wait is intended to fail closed rather than continue against a live Worker. Exact-head CI for `c0ddac4` has just been triggered and is pending; no pass is claimed. Earlier browser cleanup-only failure remains documented below.
+- **Mana:** COMPLETE / MERGED on main; no Mana runtime or economy changes in this follow-up. Shield foundation remains the current feature slice; no Shield rules or prototype values changed.
+- **Battle authority / reward recovery:** no Worker production behavior changed. This follow-up only hardens the local integration harness that exercises existing lease/receipt recovery, clear-slot reservation, and exactly-once reward settlement.
+- **D1 / migration assumptions:** local tests use `wrangler d1 --local` with isolated `--persist-to` directories. No remote D1 command, migration apply, schema write, or deployment was run. The duplicate-`0007` blocker and branch-only Shield migrations `0008/0009` remain as documented below.
+- **Miles blockers / delivery boundary:** no new design decision required. Duplicate-`0007` ownership/order and the overlapping PR #122–124 reconciliation remain blockers to merging/deploying Shield. **LOCAL/STAGED:** none. **PUSHED/PR:** two test-harness shutdown fixes on PR #125; CI pending. **MERGED/LIVE:** no change.
+- **One best next task:** verify exact-head CI for `c0ddac4`; if the recovery test now completes, let the remaining Worker/D1, housing browser, build, battle browser, and Wrangler steps finish before updating the PR review status.
+
+---
+
 ## Latest run — 2026-11-03 (wait for Chromium shutdown before housing browser cleanup)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`; main remains untouched.
