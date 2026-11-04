@@ -388,6 +388,7 @@ export class AppController {
     this.setBattleActionStatus();
     this.battleActionPending = true;
     this.setAbilityButtonsDisabled(true);
+    let rejectedAuthoritativeSnapshot = false;
 
     try {
       if (this.api.enabled) {
@@ -480,22 +481,39 @@ export class AppController {
             && this.store.snapshot.id === playerId;
           const currentEngine = this.battleEngine;
           if (samePermit && currentEngine) {
-            // Never let a stale request settle a different permit through an old
-            // engine's completion callback. Sync the currently mounted engine when
-            // the same permit has been remounted.
-            currentEngine.synchronizeAuthoritativeState(battleState);
+            // A structural API snapshot is not enough: the mounted engine must
+            // accept the same-turn audit or independently verify the next turn.
+            // An older response is harmless because the engine already has a
+            // newer accepted snapshot; a conflicting/newer rejected snapshot is not.
+            const accepted = currentEngine.synchronizeAuthoritativeState(battleState);
+            const currentSnapshot = currentEngine.snapshot;
+            if (accepted || currentSnapshot.status !== 'active'
+              || battleState.turnCount < currentSnapshot.turnCount) {
+              synchronized = true;
+            } else {
+              rejectedAuthoritativeSnapshot = true;
+            }
+          } else if (samePermit && battleState.status === 'victory') {
+            this.rememberPendingReward(permitId, playerId);
+            void this.queueRewardCompletion(permitId, playerId);
+            synchronized = true;
+          } else if (samePermit && battleState.status === 'defeat') {
+            this.battlePermit = undefined;
+            this.battlePermitOwnerId = undefined;
+            synchronized = true;
+          } else if (samePermit) {
+            rejectedAuthoritativeSnapshot = true;
           } else if (battleState.status === 'victory') {
             this.rememberPendingReward(permitId, playerId);
             void this.queueRewardCompletion(permitId, playerId);
-          } else if (this.battlePermit?.permitId === permitId
-            && this.battlePermitOwnerId === playerId
-            && battleState.status === 'defeat') {
-            this.battlePermit = undefined;
-            this.battlePermitOwnerId = undefined;
+            synchronized = true;
+          } else {
+            // A delayed response for a permit that is no longer mounted cannot
+            // mutate the player's newer encounter.
+            synchronized = true;
           }
-          synchronized = true;
 
-          if (samePermit && this.route === 'battle' && this.battlePermit?.permitId === permitId) {
+          if (synchronized && samePermit && this.route === 'battle' && this.battlePermit?.permitId === permitId) {
             if (battleState.status === 'active') {
               const serverMessage = typeof payload.error === 'string' ? payload.error : '';
               this.setBattleActionStatus(serverMessage && serverMessage !== 'Stale battle turn.'
@@ -508,7 +526,9 @@ export class AppController {
         }
       }
       if (!synchronized) {
-        if (error instanceof GameApiProtocolError) {
+        if (rejectedAuthoritativeSnapshot) {
+          this.setBattleActionStatus('The server battle snapshot conflicts with the last accepted turn. Reopen the encounter to safely resync before acting.');
+        } else if (error instanceof GameApiProtocolError) {
           this.setBattleActionStatus('The server returned an unreadable battle response. Your move may have reached the server. Tap the same move again to safely resync; the server prevents duplicate turns.');
         } else if (error instanceof GameApiError && error.status < 500) {
           const payload = error.payload && typeof error.payload === 'object'
@@ -525,7 +545,11 @@ export class AppController {
     } finally {
       if (this.battleEngine === engine) {
         this.battleActionPending = false;
-        if (engine.snapshot.status === 'active') this.setAbilityButtonsDisabled(this.store.snapshot.id !== playerId);
+        if (engine.snapshot.status === 'active') {
+          this.setAbilityButtonsDisabled(this.store.snapshot.id !== playerId || rejectedAuthoritativeSnapshot);
+        }
+      } else if (rejectedAuthoritativeSnapshot && this.route === 'battle') {
+        this.setAbilityButtonsDisabled(true);
       }
     }
   }

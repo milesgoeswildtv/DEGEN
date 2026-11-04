@@ -74,11 +74,12 @@ const isAuthoritativeBattleActionState = (value: unknown, permitId: string): val
 
 const timers: Array<{ callback: () => void; delay: number }> = [];
 const storage = new Map<string, string>();
+const abilityButtons: Array<{ dataset: Record<string, string>; disabled: boolean }> = [];
 const actionStatus = { textContent: '', hidden: true };
 const root = {
   innerHTML: '',
   querySelector: (selector: string) => selector === '#battle-action-status' ? actionStatus : null,
-  querySelectorAll: (_selector: string) => [] as Array<{ dataset: Record<string, string>; disabled: boolean }>,
+  querySelectorAll: (_selector: string) => abilityButtons,
 };
 const scope = {
   TEST_DEGEN,
@@ -421,6 +422,100 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
   assert.equal(store.localRewards, 0);
 });
 
+
+
+test('a structurally valid but mathematically conflicting snapshot keeps battle actions disabled', async () => {
+  timers.length = 0;
+  storage.clear();
+  abilityButtons.length = 0;
+  abilityButtons.push({ dataset: { manaCost: '0', shieldGain: '0' }, disabled: false });
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const initialState = {
+    permitId: 'permit-conflicting-shield-audit',
+    status: 'active' as const,
+    playerHp: 100,
+    playerMana: 8,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 5,
+    turnCount: 0,
+  };
+  const before = new BattleEngine(TEST_DEGEN, enemy, () => {
+    assert.fail('a rejected conflict snapshot cannot resolve a local turn');
+  }, initialState).snapshot;
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initialState.playerHp,
+    playerMana: initialState.playerMana,
+    playerShield: initialState.playerShield,
+    enemyHp: initialState.enemyHp,
+    enemyShield: initialState.enemyShield,
+    ability,
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  assert.equal(turn.enemyShieldAbsorbed, 5);
+  const conflictingSnapshot = {
+    permitId: initialState.permitId,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    enemyShield: turn.enemyShield,
+    enemyShieldAbsorbed: 4,
+    turnCount: 1,
+  };
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, {
+        error: 'Stale battle turn.',
+        battleState: conflictingSnapshot,
+      }, 'DEGEN API 409');
+    },
+    async completeUnderpass() {
+      assert.fail('a rejected snapshot cannot authorize reward completion');
+    },
+  };
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => {
+    assert.fail('the conflicting snapshot must not mutate combat');
+  }, initialState);
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: initialState.permitId };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('slash');
+
+  assert.deepEqual(engine.snapshot, before, 'the last accepted combat state must remain unchanged');
+  assert.equal(engine.snapshot.turnCount, 0);
+  assert.equal(engine.snapshot.playerMana, 8);
+  assert.equal(engine.snapshot.enemyHp, enemy.maxHp);
+  assert.equal(actionStatus.hidden, false);
+  assert.match(actionStatus.textContent, /conflicts with the last accepted turn/i);
+  assert.equal(abilityButtons[0]?.disabled, true,
+    'an unreconciled newer server snapshot must not re-enable stale ability buttons');
+  assert.equal(store.localRewards, 0);
+  abilityButtons.length = 0;
+});
 
 
 test('a confirmed victory still settles if the player abandons before the action response arrives', async () => {

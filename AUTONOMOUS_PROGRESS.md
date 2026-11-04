@@ -1,3 +1,21 @@
+## Latest follow-up — 2026-11-04 (fail closed when a conflict snapshot fails combat math)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
+- **Current branch / PR:** `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), base main; parent code/test head `6607e664b373c8e805bb43277f91a8124bf9c261`. OPEN / DRAFT / UNMERGED.
+- **Task / files changed:** `src/app/AppController.ts`, `tests/client-battle-conflict-recovery.test.ts`, and this progress record.
+- **Evidence-backed defect:** the 409 recovery path structurally validated a Worker snapshot, called `synchronizeAuthoritativeState`, ignored its acceptance result, and marked the conflict synchronized. If the client rejected a newer one-turn snapshot because its HP/Mana/Shield/damage math or Shield audit disagreed, `finally` still re-enabled ability buttons against the stale local turn.
+- **Fix:** the controller now distinguishes accepted snapshots, harmless older snapshots, already-terminal local engines, and rejected newer/conflicting snapshots. A rejected snapshot leaves controls disabled and tells the player to reopen the encounter for safe recovery; it never applies client combat or reward state.
+- **Regression coverage:** the client conflict-recovery test injects a structurally valid one-turn result with an impossible enemy Shield absorption delta and verifies the engine remains unchanged, rewards are not requested, the conflict is explained, and ability buttons stay disabled.
+- **QA:** exact-head run [41894319433](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41894319433) had passed migration preflight and all deterministic tests; isolated Worker/D1 reward concurrency was still running at the last check. This new code/test head requires exact-head CI. No local shell test/build/Wrangler run is claimed.
+- **Mana:** COMPLETE / MERGED on main. All earlier Degen-only Mana authority, zero-cost-at-zero, rejection atomicity, UI affordability, client/Worker math, migration and no-reversion requirements remain satisfied.
+- **Battle authority / reward idempotency:** Worker/D1 remains sole owner of permits, combat outcomes, terminal history, rewards, progression and inventory. The client only renders accepted Worker snapshots and cannot grant rewards.
+- **D1 / migrations:** main's Mana migrations remain applied/tracked as previously verified; branch Shield migrations `0008`/`0009` remain unmerged/unapplied. Duplicate `0007` sequencing remains guarded and unresolved; no remote D1 write was made.
+- **Miles blockers:** migration ownership/order across #114/#126/#122–124 remains unresolved; no design canon was invented.
+- **Delivery:** scoped commit to the existing PR branch only. No merge, production migration, Worker deploy, or physical-device proof is claimed.
+- **One best next task:** exact-head CI for this fail-closed conflict recovery, then review the full Shield branch's local Worker/D1 and mobile-browser QA before changing its draft status.
+
+---
+
 ## Latest follow-up — 2026-11-04 (same-turn enemy Shield audit replay is immutable)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
