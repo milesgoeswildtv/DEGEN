@@ -286,7 +286,7 @@ export class BattleEngine {
       || (result.enemyShield ?? this.enemy.startingShield ?? 0) !== this.enemyShield
       || (result.enemyShieldAbsorbed ?? 0) !== this.enemyShieldAbsorbed
       || result.status !== this.status
-    )) return;
+    )) return false;
 
     // When exactly one turn is missing, the current snapshot is sufficient to
     // verify the competing tab's result against any bespoke Degen ability. For
