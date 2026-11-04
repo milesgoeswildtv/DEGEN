@@ -64,8 +64,9 @@ const body = async <T>(request: Request): Promise<T> => {
   return value as T;
 };
 
-const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === 'string' && value.trim().length > 0;
+// Route identifiers are opaque, but surrounding whitespace is never canonical.
+const isCanonicalIdentifier = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.trim() === value;
 
 const iso = (value = Date.now()): string => new Date(value).toISOString();
 const randomInt = (min: number, max: number): number => {
@@ -292,7 +293,7 @@ async function worldSnapshot(db: D1Database, playerId: string, cycle?: CycleRow)
 
 async function handleBootstrap(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; displayName?: string; platform?: string; platformUserId?: string }>(request);
-  if (!isNonEmptyString(input.playerId)) return fail(request, env, 'playerId is required');
+  if (!isCanonicalIdentifier(input.playerId)) return fail(request, env, 'playerId is required');
   if (input.displayName !== undefined && typeof input.displayName !== 'string') {
     return fail(request, env, 'displayName must be a string.');
   }
@@ -303,7 +304,7 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
     return fail(request, env, 'platformUserId must be a string.');
   }
   if (input.platformUserId !== undefined
-    && (!isNonEmptyString(input.platformUserId)
+    && (!isCanonicalIdentifier(input.platformUserId)
       || input.platformUserId !== input.platformUserId.trim())) {
     return fail(request, env, 'platformUserId must be a non-empty canonical string.');
   }
@@ -324,7 +325,7 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     playerId?: string;
     housing?: { inventory?: string[]; placements?: Array<{ instanceId: string; furnitureId: string; x: number; y: number; rotation?: number }> };
   }>(request);
-  if (!input || !isNonEmptyString(input.playerId)
+  if (!input || !isCanonicalIdentifier(input.playerId)
     || !input.housing || typeof input.housing !== 'object') {
     return fail(request, env, 'playerId and housing are required');
   }
@@ -388,8 +389,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   const input = await body<{
     playerId?: string; eventKey?: string; cycleId?: string; encounterKey?: string; requestId?: string;
   }>(request);
-  if (!isNonEmptyString(input.playerId) || input.eventKey !== 'underpass'
-    || !isNonEmptyString(input.cycleId) || input.encounterKey !== TUNNEL_MAW.id) {
+  if (!isCanonicalIdentifier(input.playerId) || input.eventKey !== 'underpass'
+    || !isCanonicalIdentifier(input.cycleId) || input.encounterKey !== TUNNEL_MAW.id) {
     return fail(request, env, 'Invalid battle start request');
   }
   if (input.requestId !== undefined
@@ -566,8 +567,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 
 async function handleBattleAction(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount: number }>(request);
-  if (!isNonEmptyString(input.playerId) || !isNonEmptyString(input.permitId)
-    || !isNonEmptyString(input.abilityId)) {
+  if (!isCanonicalIdentifier(input.playerId) || !isCanonicalIdentifier(input.permitId)
+    || !isCanonicalIdentifier(input.abilityId)) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
   }
   // This is a compare-and-swap precondition only; combat state remains Worker-owned.
@@ -905,7 +906,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
 
 async function handleCompleteBattle(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; permitId?: string }>(request);
-  if (!isNonEmptyString(input.playerId) || !isNonEmptyString(input.permitId)) {
+  if (!isCanonicalIdentifier(input.playerId) || !isCanonicalIdentifier(input.permitId)) {
     return fail(request, env, 'playerId and permitId are required');
   }
 
@@ -1414,12 +1415,12 @@ export default {
       if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(request, env);
       if (request.method === 'GET' && url.pathname === '/api/battle/pending-rewards') {
         const playerId = url.searchParams.get('playerId');
-        if (!isNonEmptyString(playerId)) return fail(request, env, 'playerId is required');
+        if (!isCanonicalIdentifier(playerId)) return fail(request, env, 'playerId is required');
         return await handlePendingBattleRewards(request, env, playerId);
       }
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
         const playerId = url.searchParams.get('playerId');
-        if (!isNonEmptyString(playerId)) return fail(request, env, 'playerId is required');
+        if (!isCanonicalIdentifier(playerId)) return fail(request, env, 'playerId is required');
         const snapshot = await worldSnapshot(env.DB, playerId);
         return json(request, env, snapshot);
       }
