@@ -13,20 +13,6 @@
 
 ---
 
-## Latest run — 2026-11-03 (canonical Discord and Telegram identity input guards)
-
-- **Authoritative main SHA:** `860d0fded984c2cfa8098142129c8e8b051abbbd`; PR #116 was normally squash-merged after exact-head CI [41771593909](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41771593909) passed every stage. This was a client startup/performance merge, not a Worker deployment. Latest verified production Worker remains `40959555285` on `4cc3bcb`.
-- **PUSHED / PR #124 OPEN, unmerged:** `automation/degen/worker-identity-input-validation-v01`; current branch head `8868934829b6f0957c398975a243f44443e31cdd`. Worker route validation was added in `1a69af18965db7728027e9a969dab0cb84c66a79`; this run extends the regression to both supported platform identity namespaces. Exact-head CI for the current branch head is pending.
-- **Task / files changed:** `worker/index.ts` rejects malformed/empty route identifiers and non-canonical supplied Discord/Telegram IDs before D1 access, while validating optional display/platform fields as strings. `tests/worker-request-body.test.ts` now covers empty, whitespace-only, leading/trailing-space, and tab-padded IDs for both Discord and Telegram, with a D1 stub that throws if touched. `tests/housingQuantityGuard.test.ts` verifies the Worker uses the shared non-empty player-ID guard before housing writes. No authentication, account-link policy, combat, rewards, schema, migration, or deployment behavior is invented.
-- **QA:** prior exact-head CI [41408488803](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41408488803) passed on the pre-reconciliation code head. The reconciled branch and expanded two-platform regression require fresh exact-head CI; no new pass is claimed. No production D1 operation or Worker deployment.
-- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana / bespoke manaCost, persisted player_mana, Worker-owned initialization/action CAS, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain unchanged.
-- **Battle authority / reward idempotency:** Worker/D1 owns permits, player HP/Mana, enemy HP/turn CAS, terminal outcomes/history, audited receipts, XP/currency/inventory, and recoverable exactly-once settlement. This PR only rejects malformed request data before D1.
-- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes colliding `0007_player_sessions.sql`; PR #114 guards duplicate versions but does not choose numbering. No migration was renumbered or applied.
-- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, approved legacy identity-collision policy, and duplicate-`0007` sequencing remain unresolved. These input guards do not authenticate platform identities.
-- **One best next task:** obtain exact-head CI for this branch, then reconcile its one-commit main lag and integrate the Worker request validation without changing auth trust policy.
-
----
-
 ## Latest run — 2026-11-03 (Underpass refresh ordering + browser fixture diagnosis)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
