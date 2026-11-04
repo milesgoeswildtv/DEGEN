@@ -223,6 +223,43 @@ test('entering Underpass refreshes authoritative availability on arrival', async
     'the Underpass controls should rerender from the fresh authoritative event state');
 });
 
+test('older Underpass refresh cannot overwrite a newer authoritative snapshot', async () => {
+  const root = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null };
+  const pending: Array<(snapshot: { phase: 'open' | 'sealed'; cycleId: string; source: 'server' }) => void> = [];
+  const Controller = runInNewContext(
+    compile('../src/app/AppController.ts') + '\\nAppController;',
+    {
+      WORLD_LOCATIONS,
+      bindCityViewport: () => {},
+      mapView: () => 'map', districtView: () => 'district', locationView: () => 'location',
+      homeView: () => 'home',
+      underpassView: (_player: unknown, event?: { phase?: string }) => `underpass:${event?.phase ?? 'syncing'}`,
+      battleView: () => 'battle',
+    },
+  ) as new (root: unknown, store: unknown, api: unknown) => {
+    route: string;
+    refreshWorld(rerender?: boolean): Promise<void>;
+  };
+  const controller = new Controller(root, { snapshot: player }, {
+    enabled: true,
+    getUnderpass: () => new Promise((resolve) => pending.push(resolve)),
+  });
+  controller.route = 'underpass';
+
+  const olderRefresh = controller.refreshWorld(true);
+  const newerRefresh = controller.refreshWorld(true);
+  assert.equal(pending.length, 2);
+
+  pending[1]({ phase: 'open', cycleId: 'new-cycle', source: 'server' });
+  await newerRefresh;
+  assert.equal(root.innerHTML, 'underpass:open');
+
+  pending[0]({ phase: 'sealed', cycleId: 'old-cycle', source: 'server' });
+  await olderRefresh;
+  assert.equal(root.innerHTML, 'underpass:open',
+    'a slower earlier Worker response must not replace the latest world snapshot');
+});
+
 test('controller moves focus to main content after navigation but not ordinary rerenders', () => {
   const focused: unknown[] = [];
   const main = { focus: (options?: unknown) => focused.push(options) };
