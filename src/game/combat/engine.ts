@@ -117,7 +117,10 @@ export class BattleEngine {
               && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
         return result.playerHp > 0 && result.enemyHp > 0
           && result.turnCount < Number.MAX_SAFE_INTEGER
-          && (result.turnCount !== 0 || enemyShield === (this.enemy.startingShield ?? 0))
+          && (result.turnCount !== 0 || (
+            enemyShield === (this.enemy.startingShield ?? 0)
+            && (result.enemyShieldAbsorbed ?? 0) === 0
+          ))
           && hasConsistentAudit;
       }
       case 'victory':
