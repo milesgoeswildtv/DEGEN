@@ -161,6 +161,16 @@ try {
     await sleep(80);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
+  // Startup holds intentionally exercise only the first document. Later reloads
+  // must release any newly installed holds so the real bootstrap/world refresh
+  // can complete before the test mutates D1 and navigates into the Underpass.
+  const releaseRepeatedStartupHolds = async () => cdp.evaluate(`() => {
+    window.__degenHoldBootstrapResponse = false;
+    window.__degenHoldWorldSnapshot = false;
+    window.__degenReleaseBootstrap?.();
+    window.__degenReleaseWorldSnapshot?.();
+    return true;
+  }`);
   const assertFitsMobile = async route => {
     assert.equal(await cdp.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
       true, route + ' must not overflow horizontally');
@@ -431,6 +441,7 @@ try {
   // allowing a fresh GameApi instance to recover the already-issued permit.
   await cdp.send('Page.reload');
   await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await releaseRepeatedStartupHolds();
   assert.equal(await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''"), playerId,
     'the same test player must survive the reload');
   await assertFitsMobile('Map after reload');
@@ -651,6 +662,7 @@ try {
   // installs fresh browser instrumentation. The persisted trophy must still render.
   await cdp.send('Page.reload');
   await until('Map after trophy placement reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await releaseRepeatedStartupHolds();
   await tap('[data-route=home]');
   await until('persisted trophy displayed after reload', () => cdp.evaluate(
     'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
@@ -680,9 +692,10 @@ try {
   await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   await tap("[data-district=Central]");
   await until('Central district for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  const snapshotsBeforeUnderpassNavigation = await cdp.evaluate('window.__degenWorldSnapshots.length');
   await tap("[data-location=underpass]");
   await until('Underpass location view for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'));
-  await until('browser receives the refreshed OPEN Worker snapshot', () => cdp.evaluate('window.__degenWorldSnapshots.at(-1)?.phase === "open"'));
+  await until('browser receives the refreshed OPEN Worker snapshot after Underpass entry', () => cdp.evaluate(`window.__degenWorldSnapshots.length > ${snapshotsBeforeUnderpassNavigation} && window.__degenWorldSnapshots.at(-1)?.phase === "open"`));
   try {
     await until('Open Underpass status for Mana affordability check', () =>
       cdp.evaluate('document.querySelector(".event-status")?.textContent === "OPEN"'));
@@ -692,6 +705,10 @@ try {
       status: document.querySelector(".event-status")?.textContent ?? null,
       button: document.querySelector("[data-start-battle]")?.outerHTML ?? null,
       worldSnapshots: window.__degenWorldSnapshots,
+      bootstrapHold: window.__degenHoldBootstrapResponse,
+      bootstrapResponseHeld: window.__degenBootstrapResponseHeld,
+      worldSnapshotHold: window.__degenHoldWorldSnapshot,
+      worldSnapshotResponseHeld: window.__degenWorldSnapshotResponseHeld,
       body: document.body.innerText.slice(0, 1200)
     }))()`);
     throw new Error(`${error instanceof Error ? error.message : String(error)}; browser state: ${JSON.stringify(state)}`);
