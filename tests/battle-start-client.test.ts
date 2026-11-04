@@ -54,7 +54,7 @@ const enterUnderpass = runInNewContext(
   { console: { warn() {} }, Error },
 ) as (this: any) => Promise<void>;
 
-const mountBattleMethod = controllerSource.match(/private mountBattle\(\): void \{([\s\S]*?)\n  \}\n\n  private async useBattleAbility/);
+const mountBattleMethod = controllerSource.match(/private async mountBattle\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private async useBattleAbility/);
 assert.ok(mountBattleMethod, 'AppController battle mount must remain available for the server-authority regression');
 const battleEngineCreations: unknown[][] = [];
 let rejectBattleEngineState = false;
@@ -64,9 +64,10 @@ const TestBattleEngine = function (...args: unknown[]) {
   return { subscribe() {} };
 };
 const mountBattle = runInNewContext(
-  stripTypeScriptTypes(`function mountBattle(): void {${mountBattleMethod[1]}\n}\nmountBattle;`, { mode: 'transform' }),
-  { TEST_DEGEN, TUNNEL_MAW, BattleEngine: TestBattleEngine, updateBattleDom() {}, createBattleGame() { return {}; } },
-) as (this: any) => void;
+  stripTypeScriptTypes(`async function mountBattle(): Promise<void> {${mountBattleMethod[1]}\n}\nmountBattle;`, { mode: 'transform' }),
+  { TEST_DEGEN, TUNNEL_MAW, BattleEngine: TestBattleEngine, updateBattleDom() {} },
+  { importModuleDynamically: async () => ({ createBattleGame() { return {}; } }) },
+) as (this: any) => Promise<void>;
 
 const validPermit = (permitId = 'permit-1') => {
   return {
@@ -956,7 +957,7 @@ test('discarding an unrecoverable resume clears only the matching saved permit k
 });
 
 
-test('server-backed battle route without an attached permit returns to Underpass instead of showing an empty fight', () => {
+test('server-backed battle route without an attached permit returns to Underpass instead of showing an empty fight', async () => {
   battleEngineCreations.length = 0;
   const controller = {
     root: { querySelector: () => ({}), querySelectorAll: () => [] },
@@ -968,14 +969,14 @@ test('server-backed battle route without an attached permit returns to Underpass
     setUnderpassActionStatus(message: string) { this.statusMessage = message; },
   };
 
-  mountBattle.call(controller);
+  await mountBattle.call(controller);
 
   assert.equal(controller.route, 'underpass');
   assert.match(controller.statusMessage, /no active server-issued battle permit/i);
   assert.equal(battleEngineCreations.length, 0, 'a missing server permit must never mount local combat simulation');
 });
 
-test('server-backed battle without an authoritative start snapshot returns to Underpass without local simulation', () => {
+test('server-backed battle without an authoritative start snapshot returns to Underpass without local simulation', async () => {
   battleEngineCreations.length = 0;
   const controller = {
     root: { querySelector: () => ({}), querySelectorAll: () => [] },
@@ -987,7 +988,7 @@ test('server-backed battle without an authoritative start snapshot returns to Un
     setUnderpassActionStatus(message: string) { this.statusMessage = message; },
   };
 
-  mountBattle.call(controller);
+  await mountBattle.call(controller);
 
   assert.equal(controller.route, 'underpass');
   assert.match(controller.statusMessage, /authoritative battle snapshot/i);
@@ -995,7 +996,7 @@ test('server-backed battle without an authoritative start snapshot returns to Un
   assert.equal(battleEngineCreations.length, 0, 'a server-backed battle must not mount the offline preview engine');
 });
 
-test('server-backed battle rejects an initial snapshot bound to a different permit', () => {
+test('server-backed battle rejects an initial snapshot bound to a different permit', async () => {
   battleEngineCreations.length = 0;
   const controller = {
     root: { querySelector: () => ({}), querySelectorAll: () => [] },
@@ -1010,7 +1011,7 @@ test('server-backed battle rejects an initial snapshot bound to a different perm
     setUnderpassActionStatus(message: string) { this.statusMessage = message; },
   };
 
-  mountBattle.call(controller);
+  await mountBattle.call(controller);
 
   assert.equal(controller.route, 'underpass');
   assert.match(controller.statusMessage, /matching authoritative battle snapshot/i);
@@ -1018,7 +1019,7 @@ test('server-backed battle rejects an initial snapshot bound to a different perm
   assert.equal(battleEngineCreations.length, 0, 'mismatched permit state cannot create a client battle');
 });
 
-test('server-backed battle with a rejected snapshot returns to Underpass and preserves the permit', () => {
+test('server-backed battle with a rejected snapshot returns to Underpass and preserves the permit', async () => {
   battleEngineCreations.length = 0;
   rejectBattleEngineState = true;
   const controller = {
@@ -1035,7 +1036,7 @@ test('server-backed battle with a rejected snapshot returns to Underpass and pre
   };
 
   try {
-    mountBattle.call(controller);
+    await mountBattle.call(controller);
   } finally {
     rejectBattleEngineState = false;
   }
@@ -1046,7 +1047,7 @@ test('server-backed battle with a rejected snapshot returns to Underpass and pre
   assert.equal(battleEngineCreations.length, 0);
 });
 
-test('offline preview still mounts without a server-owned initial snapshot', () => {
+test('offline preview still mounts without a server-owned initial snapshot', async () => {
   battleEngineCreations.length = 0;
   const controller = {
     root: { querySelector: () => ({}), querySelectorAll: () => [] },
@@ -1058,7 +1059,7 @@ test('offline preview still mounts without a server-owned initial snapshot', () 
     setUnderpassActionStatus(message: string) { this.statusMessage = message; },
   };
 
-  mountBattle.call(controller);
+  await mountBattle.call(controller);
 
   assert.equal(controller.route, 'battle');
   assert.equal(battleEngineCreations.length, 1);
