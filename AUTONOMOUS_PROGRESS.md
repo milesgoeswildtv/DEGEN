@@ -1,3 +1,14 @@
+## Latest follow-up — 2026-11-03 (keep offline preview independent of Worker refresh)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #116 OPEN, unmerged:** branch `automation/degen/lazy-load-phaser-battle-v01`; code head before this progress update: `b7975e913f6de9ccfb7a37943a8096232fed8bce`, 0 commits behind main.
+- **QA-driven refinement:** the first deterministic run after adding Underpass-entry refresh (`41762227260`) caught an unhandled test-harness path: the existing offline-preview navigation test entered Underpass without injecting its preview-cycle provider. The new route refresh is only needed for server-backed authoritative state, so `src/app/AppController.ts` now triggers it only when `this.api.enabled` is true. Offline preview keeps its existing locally initialized/timer-refreshed cycle and does not issue a Worker request.
+- **Current code/test commits:** `8b6201234fa7378de6a42d0d4f9042361ea7e9ae` (initial server-backed refresh), `266458b47221348f07175b81aa9a4c051f156951` (controller regression), and `b7975e913f6de9ccfb7a37943a8096232fed8bce` (server-backed-only guard). Exact-head CI for the latest code is pending; no green claim.
+- **Mana / authority:** Mana remains COMPLETE / MERGED on main. No Mana, combat, Worker battle-action, reward, D1 schema/migration, or economy behavior changed. Worker/D1 continues to own server-backed event snapshots, permits, action state, terminal outcomes, and exactly-once rewards.
+- **One best next task:** verify exact-head CI after the server-backed-only guard; inspect any remaining failing job before changing the PR description or declaring readiness.
+
+---
+
 ## Latest run — 2026-11-03 (refresh Underpass availability on location entry)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
