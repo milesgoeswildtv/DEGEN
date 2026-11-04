@@ -315,36 +315,36 @@ test('embedded control characters in route identifiers are rejected before D1 ac
   const cases = [
     {
       path: '/api/player/bootstrap', method: 'POST',
-      body: { playerId: 'player-\\u0000id' }, error: 'playerId is required',
+      body: { playerId: 'player-\u0000id' }, error: 'playerId is required',
     },
     {
       path: '/api/player/bootstrap', method: 'POST',
-      body: { playerId: 'player-1', platform: 'discord', platformUserId: 'discord-\\u0000id' },
+      body: { playerId: 'player-1', platform: 'discord', platformUserId: 'discord-\u0000id' },
       error: 'platformUserId must be a non-empty canonical string.',
     },
     {
       path: '/api/battle/start', method: 'POST',
-      body: { playerId: 'player-1', eventKey: 'underpass', cycleId: 'cycle-\\u001fid', encounterKey: TUNNEL_MAW.id },
+      body: { playerId: 'player-1', eventKey: 'underpass', cycleId: 'cycle-\u001fid', encounterKey: TUNNEL_MAW.id },
       error: 'Invalid battle start request',
     },
     {
       path: '/api/battle/action', method: 'POST',
-      body: { playerId: 'player-1', permitId: 'permit-\\u007fid', abilityId: 'slash', expectedTurnCount: 0 },
+      body: { playerId: 'player-1', permitId: 'permit-\u007fid', abilityId: 'slash', expectedTurnCount: 0 },
       error: 'playerId, permitId, and abilityId are required',
     },
     {
       path: '/api/battle/action', method: 'POST',
-      body: { playerId: 'player-1', permitId: 'permit-1', abilityId: 'slash-\\u0085id', expectedTurnCount: 0 },
+      body: { playerId: 'player-1', permitId: 'permit-1', abilityId: 'slash-\u0085id', expectedTurnCount: 0 },
       error: 'playerId, permitId, and abilityId are required',
     },
     {
       path: '/api/battle/complete', method: 'POST',
-      body: { playerId: 'player-1', permitId: 'permit-\\u009fid' },
+      body: { playerId: 'player-1', permitId: 'permit-\u009fid' },
       error: 'playerId and permitId are required',
     },
     {
       path: '/api/player/housing', method: 'PUT',
-      body: { playerId: 'player-\\u001fid', housing: { placements: [] } },
+      body: { playerId: 'player-\u001fid', housing: { placements: [] } },
       error: 'playerId and housing are required',
     },
   ];
