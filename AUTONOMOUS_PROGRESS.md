@@ -1,17 +1,3 @@
-## Latest run — 2026-11-03 (reconcile Worker input validation after Map startup merge)
-
-- **Authoritative main SHA:** `860d0fded984c2cfa8098142129c8e8b051abbbd`, normal squash merge of PR #116. PR #116 exact-head CI [41771593909](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41771593909) passed all stages: 264 deterministic tests, isolated Worker/D1 reward concurrency and recovery, Underpass cycle/rollover races, atomic defeat history, housing persistence, production build, Chromium mobile Worker/D1 battle vertical slice, and Wrangler validation. The merge is not a Worker deployment; latest verified production Worker remains `40959555285` on `4cc3bcb`.
-- **PUSHED / PR #124 OPEN, unmerged:** continuing `automation/degen/worker-identity-input-validation-v01`. Prior code/test head `1a69af18965db7728027e9a969dab0cb84c66a79` passed exact-head CI [41408488803](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41408488803). This reconciliation commit updates the PR progress record to include the new main history; fresh exact-head CI is required.
-- **Task / files in PR #124:** `worker/index.ts` rejects malformed/empty/padded route identifiers and non-canonical supplied Discord/Telegram platform IDs before D1 access. `tests/worker-request-body.test.ts` proves malformed JSON, non-object bodies, non-JSON content types, invalid route identifiers, and non-canonical platform IDs fail before D1. `tests/housingQuantityGuard.test.ts` asserts the Worker uses the shared non-empty identifier guard before housing writes. No authentication, account-link policy, combat, reward, schema, migration, or deployment behavior is invented.
-- **QA boundary:** prior exact-head CI [41408488803](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41408488803) is PASS on the pre-reconciliation head only. New merge-base CI is pending; no post-merge CI, Worker deploy, production D1 operation, or physical-device QA is claimed.
-- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana / bespoke manaCost, persisted player_mana, Worker-owned initialization and action CAS, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain unchanged.
-- **Battle authority / reward idempotency:** Worker/D1 owns permits, HP/Mana/enemy HP/turn CAS, terminal outcomes/history, receipts, XP/currency/inventory, and recoverable exactly-once settlement. This PR validates malformed request data before D1 access and does not move trust to the client.
-- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main tracks `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes the conflicting `0007_player_sessions.sql`; PR #114 guards duplicate versions but does not choose numbering. No migration was renumbered or applied.
-- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, approved legacy identity-collision policy, and duplicate-`0007` sequencing remain unresolved. This request guard does not claim to authenticate platform identities.
-- **One best next task:** run exact-head CI on the reconciled PR #124 branch, then integrate its Worker validation without changing platform identity trust policy.
-
----
-
 ## Latest follow-up — 2026-11-03 (trace the browser's Underpass snapshot consumption)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
@@ -24,6 +10,20 @@
 - **Battle authority / reward idempotency:** Worker/D1 still owns permits, player HP/Mana, enemy HP, turn count, terminal outcomes/history, receipts, progression, currency, inventory, and recoverable exactly-once settlement. The CI stages covering reward recovery and concurrency passed on this head.
 - **D1 assumptions / blockers:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. The main `0007_player_inventory_quantity_guards.sql` vs draft auth PR #14 `0007_player_sessions.sql` version collision remains unresolved and guarded by PR #114. No migration was renumbered/applied. PR #118 still overlaps `AppController.ts`; preserve its account-isolation work when reconciling, but do not merge without exact-head CI.
 - **One best next task:** run exact-head CI for the browser-response trace; inspect the recorded browser snapshot/route state, then fix only the proven client refresh/render defect.
+
+---
+
+## Latest run — 2026-11-03 (Worker input validation branch reconciled to current main)
+
+- **Authoritative main SHA:** `860d0fded984c2cfa8098142129c8e8b051abbbd` (PR #116 merged normally after exact-head CI [41771593909](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41771593909) passed all 16 stages). This was a client startup/performance merge; it did not deploy Worker code. Latest verified production Worker remains `40959555285` on `4cc3bcb`.
+- **PUSHED / PR #124 OPEN, unmerged:** `automation/degen/worker-identity-input-validation-v01`; pre-reconciliation code/test head `1a69af18965db7728027e9a969dab0cb84c66a79` passed CI [41408488803](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41408488803). This progress-only reconciliation commit preserves the main history and must be followed by exact-head CI.
+- **Task / files in PR #124:** `worker/index.ts` validates non-empty canonical player, cycle, permit, and ability IDs; validates optional display/platform fields as strings; and rejects empty, whitespace-only, or padded supplied platform identity IDs before D1. `tests/worker-request-body.test.ts` proves malformed bodies/identifiers fail before D1. `tests/housingQuantityGuard.test.ts` confirms housing uses the shared non-empty identifier guard before writes. This does not authenticate platform identities or change account-link policy.
+- **QA:** prior exact-head CI [41408488803](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41408488803) passed on the pre-reconciliation head only. New branch head needs exact-head CI; no post-merge main CI, Worker deployment, production D1 operation, or physical-device QA is claimed.
+- **Mana:** COMPLETE / MERGED on main; authoritative Degen-only Mana, affordability, exact deduction, zero-cost-at-zero, terminal handling, shared client/Worker math, no monster Mana, and no Mana reversion remain unchanged.
+- **Battle authority / reward idempotency:** Worker/D1 owns permits, HP/Mana/enemy HP/turn CAS, terminal outcomes/history, receipts, progression, currency, inventory, and recoverable exactly-once settlement. This PR adds only request validation.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. Main migrations include `0003_degen_mana.sql`, `0006_backfill_active_battle_mana.sql`, and `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes conflicting `0007_player_sessions.sql`; PR #114 blocks duplicate versions but does not choose numbering. No migration was renumbered or applied.
+- **Miles blockers:** production Discord/Telegram credentials, controlled identity/session verification, approved legacy identity-collision policy, and duplicate-`0007` sequencing remain unresolved.
+- **One best next task:** run exact-head CI on this reconciled PR #124 head; then review the distinct battle snapshot guard without weakening client/Worker authority.
 
 ---
 
