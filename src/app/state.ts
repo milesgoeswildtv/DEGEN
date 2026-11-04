@@ -52,19 +52,22 @@ export class PlayerStore {
     return this.api.enabled;
   }
 
-  async initialize(identity: PlatformIdentity): Promise<void> {
+  async initialize(identity: PlatformIdentity): Promise<boolean> {
     if (this.state.displayName === 'Player' && identity.displayName !== 'Player') {
       this.state.displayName = identity.displayName.slice(0, 32);
       this.commitLocal();
     }
 
-    if (!this.api.enabled) return;
+    if (!this.api.enabled) return true;
 
     try {
       const remote = await this.api.bootstrap(this.state.id, identity);
-      if (remote) this.replaceFromServer(remote);
+      if (!remote) return false;
+      this.replaceFromServer(remote);
+      return true;
     } catch (error) {
       console.warn('DEGEN backend unavailable; retaining local preview state.', error);
+      return false;
     }
   }
 
