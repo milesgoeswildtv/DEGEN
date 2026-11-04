@@ -161,6 +161,49 @@ test('authoritative actions reject impossible enemy Shield absorption and gains'
   assert.ok(engine.snapshot.log.some((line) => line.includes('Shield absorbs 5')));
 });
 
+test('server-backed results require the positive enemy Shield absorption audit', () => {
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const permitId = 'enemy-shield-audit-required';
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => undefined, {
+    permitId,
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 5,
+    turnCount: 0,
+  });
+  const before = engine.snapshot;
+  const turn = resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 5,
+    ability: ability('slash'),
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  assert.equal(turn.enemyShieldAbsorbed, 5);
+
+  const valid = { ...turn, permitId, turnCount: 1 } as const;
+  const { enemyShieldAbsorbed: _missingAudit, ...missingAudit } = valid;
+
+  engine.applyAuthoritativeAction('slash', missingAudit);
+  assert.deepEqual(engine.snapshot, before,
+    'a result that omits positive enemy Shield absorption must not be presented');
+  engine.synchronizeAuthoritativeState(missingAudit);
+  assert.deepEqual(engine.snapshot, before,
+    'one-turn conflict recovery must enforce the same audit requirement');
+
+  engine.applyAuthoritativeAction('slash', valid);
+  assert.equal(engine.snapshot.enemyShield, undefined);
+  assert.ok(engine.snapshot.log.some((line) => line.includes('Shield absorbs 5')));
+});
+
 test('server-backed engine rejects player Shield absorption and carry-forward that disagree with shared turn math', () => {
   const permitId = 'player-shield-audit';
   const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, {
