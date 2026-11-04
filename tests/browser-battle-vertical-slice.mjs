@@ -1,13 +1,24 @@
 // Isolated Chromium + Vite + local Wrangler/D1 vertical slice. NEVER use --remote.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+// This browser suite runs after the production build. Keep the initial Map entry
+// small enough that Phaser cannot silently creep back into the first download.
+const builtHtml = readFileSync(resolve(root, 'dist/index.html'), 'utf8');
+const initialScript = builtHtml.match(/<script\b[^>]*\bsrc=["']([^"']+\.js)["'][^>]*>/i)?.[1];
+assert.ok(initialScript, 'production build must expose its initial JavaScript entry');
+const initialScriptFile = resolve(root, 'dist', initialScript.replace(/^\/+/, ''));
+const initialScriptBytes = statSync(initialScriptFile).size;
+assert.ok(initialScriptBytes <= 100_000,
+  `initial Map JavaScript must stay at or below 100000 bytes; got ${initialScriptBytes}`);
+console.log(`PASS initial Map JavaScript budget: ${initialScriptBytes} bytes (<=100000)`);
 const scratch = mkdtempSync(join(tmpdir(), 'degen-browser-'));
 const persist = join(scratch, 'd1');
 const wrangler = resolve(root, 'node_modules/.bin/wrangler');
@@ -51,6 +62,8 @@ function chromeBinary() {
 function cdpClient(url) {
   const ws = new WebSocket(url);
   const pending = new Map();
+  const listeners = new Map();
+  const eventErrors = [];
   let id = 0;
   const opened = new Promise((ok, bad) => {
     ws.addEventListener('open', ok, { once: true });
@@ -58,6 +71,16 @@ function cdpClient(url) {
   });
   ws.addEventListener('message', event => {
     const msg = JSON.parse(String(event.data));
+    if (msg.method) {
+      for (const listener of listeners.get(msg.method) ?? []) {
+        try {
+          Promise.resolve(listener(msg.params)).catch(error => eventErrors.push(String(error)));
+        } catch (error) {
+          eventErrors.push(String(error));
+        }
+      }
+      return;
+    }
     if (!pending.has(msg.id)) return;
     const [ok, bad] = pending.get(msg.id);
     pending.delete(msg.id);
@@ -72,6 +95,11 @@ function cdpClient(url) {
       ws.send(JSON.stringify({ id: requestId, method, params }));
     });
   };
+  const on = (method, listener) => {
+    const group = listeners.get(method) ?? new Set();
+    group.add(listener);
+    listeners.set(method, group);
+  };
   const evaluate = async expression => {
     const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) {
@@ -81,7 +109,7 @@ function cdpClient(url) {
     }
     return result.result.value;
   };
-  return { ws, send, evaluate };
+  return { ws, send, on, evaluate, eventErrors };
 }
 try {
   command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
@@ -133,6 +161,16 @@ try {
     await sleep(80);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
+  // Startup holds intentionally exercise only the first document. Later reloads
+  // must release any newly installed holds so the real bootstrap/world refresh
+  // can complete before the test mutates D1 and navigates into the Underpass.
+  const releaseRepeatedStartupHolds = async () => cdp.evaluate(`(() => {
+    window.__degenHoldBootstrapResponse = false;
+    window.__degenHoldWorldSnapshot = false;
+    window.__degenReleaseBootstrap?.();
+    window.__degenReleaseWorldSnapshot?.();
+    return true;
+  })()`);
   const assertFitsMobile = async route => {
     assert.equal(await cdp.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
       true, route + ' must not overflow horizontally');
@@ -145,6 +183,10 @@ try {
     assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true });
   };
+  const loadedPhaserResources = () => cdp.evaluate(`performance.getEntriesByType('resource').filter(entry => {
+    try { return new URL(entry.name).pathname.toLowerCase().includes('phaser'); }
+    catch { return false; }
+  }).map(entry => new URL(entry.name).pathname)`);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   // Observe the actual Phaser text canvas so the browser test proves the HUD follows
@@ -166,6 +208,13 @@ try {
       window.__degenLostStartResponsesRemaining = 0;
       window.__degenLostStartResponses = 0;
       window.__degenStartRequestIds = [];
+      window.__degenHoldBootstrapResponse = true;
+      window.__degenBootstrapResponseHeld = false;
+      window.__degenReleaseBootstrap = null;
+      window.__degenHoldWorldSnapshot = true;
+      window.__degenWorldSnapshotResponseHeld = false;
+      window.__degenWorldSnapshots = [];
+      window.__degenReleaseWorldSnapshot = null;
       window.__degenSimulateLostActionResponse = false;
       window.__degenLostActionResponses = 0;
       window.__degenSimulateMalformedActionResponse = false;
@@ -178,6 +227,20 @@ try {
         const response = await originalFetch(input, init);
         const requestUrl = input instanceof Request ? input.url : String(input);
         const requestPath = new URL(requestUrl, window.location.href).pathname;
+        if (requestPath === '/api/world/underpass') {
+          try { window.__degenWorldSnapshots.push(await response.clone().json()); }
+          catch { window.__degenWorldSnapshots.push({ malformed: true }); }
+        }
+        if (window.__degenHoldBootstrapResponse && requestPath === '/api/player/bootstrap') {
+          window.__degenHoldBootstrapResponse = false;
+          window.__degenBootstrapResponseHeld = true;
+          await new Promise(resolve => { window.__degenReleaseBootstrap = resolve; });
+        }
+        if (window.__degenHoldWorldSnapshot && requestPath === '/api/world/underpass') {
+          window.__degenHoldWorldSnapshot = false;
+          window.__degenWorldSnapshotResponseHeld = true;
+          await new Promise(resolve => { window.__degenReleaseWorldSnapshot = resolve; });
+        }
         if (requestPath === '/api/battle/start') {
           try { window.__degenStartRequestIds.push(JSON.parse(String(init?.body ?? '{}')).requestId); }
           catch { window.__degenStartRequestIds.push(undefined); }
@@ -257,7 +320,22 @@ try {
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
-  await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await until('player bootstrap response held', () => cdp.evaluate('window.__degenBootstrapResponseHeld === true'));
+  await until('Map renders while player bootstrap is pending', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  assert.ok(await cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // SYNCING") === true'),
+    'the first Map render must show a safe syncing state while player identity/bootstrap is pending');
+  assert.ok(await cdp.evaluate('document.querySelector("[role=status][aria-live=polite]")?.textContent.includes("UNDERPASS STATUS: SYNCING") === true'),
+    'the initial syncing state must be announced to assistive technology');
+  assert.deepEqual(await loadedPhaserResources(), [],
+    'neither Phaser nor the live world request should block the first Map render');
+  await cdp.evaluate('window.__degenReleaseBootstrap?.()');
+  await until('initial world snapshot response held after player bootstrap', () => cdp.evaluate('window.__degenWorldSnapshotResponseHeld === true'));
+  await cdp.evaluate('window.__degenReleaseWorldSnapshot?.()');
+  await until('Map reflects authoritative world snapshot', () => cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // OPEN") === true'));
+  assert.ok(await cdp.evaluate('document.querySelector("[role=status][aria-live=polite]")?.textContent.includes("UNDERPASS STATUS: OPEN") === true'),
+    'the authoritative world state must replace the syncing announcement');
+  assert.deepEqual(await loadedPhaserResources(), [],
+    'the initial Map route must not download Phaser before a battle is entered');
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
   assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
@@ -316,10 +394,14 @@ try {
   await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   await tap("[data-district=Central]");
   await until('Central district destinations', () => cdp.evaluate('!!document.querySelector("[data-location=downtown]") && !!document.querySelector("[data-location=underpass]")'));
+  assert.equal(await cdp.evaluate('document.activeElement?.matches("main.screen") === true'), true,
+    'Map → District navigation must move focus to the new main content landmark');
   await assertFitsMobile('Central district');
   await assertFitsCompact('Central district');
   await tap("[data-location=downtown]");
   await until('Downtown location scene', () => cdp.evaluate('!!document.querySelector(".location-scene") && document.querySelector(".location-scene")?.textContent.includes("Downtown")'));
+  assert.equal(await cdp.evaluate('document.activeElement?.matches("main.screen") === true'), true,
+    'District → Location navigation must move focus to the new main content landmark');
   await assertFitsMobile('Downtown location');
   await assertFitsCompact('Downtown location');
   assert.equal(await cdp.evaluate('document.querySelector(".location-scene-status")?.textContent'), 'ACCESSIBLE // ACTIVITIES IN DEVELOPMENT');
@@ -359,6 +441,7 @@ try {
   // allowing a fresh GameApi instance to recover the already-issued permit.
   await cdp.send('Page.reload');
   await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await releaseRepeatedStartupHolds();
   assert.equal(await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''"), playerId,
     'the same test player must survive the reload');
   await assertFitsMobile('Map after reload');
@@ -368,8 +451,48 @@ try {
   await until('Recoverable Underpass encounter after reload', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-start-battle]")'), false,
     'a persisted uncertain start must offer resume, not mint a second permit');
+  // Hold the lazy renderer's first module request while the player abandons and
+  // resumes the same Worker permit. The old mount must not attach to the new view.
+  let pausedBattleModuleRequest;
+  let releasePausedBattleModule;
+  let holdNextBattleModule = true;
+  cdp.on('Fetch.requestPaused', async params => {
+    try {
+      if (holdNextBattleModule && params.resourceType === 'Script') {
+        holdNextBattleModule = false;
+        pausedBattleModuleRequest = params.requestId;
+        await new Promise(resolve => { releasePausedBattleModule = resolve; });
+      }
+      await cdp.send('Fetch.continueRequest', { requestId: params.requestId });
+    } catch (error) {
+      cdp.eventErrors.push(String(error));
+    }
+  });
+  await cdp.send('Fetch.enable', {
+    patterns: [{ urlPattern: '*createBattleGame*', requestStage: 'Request' }],
+  });
   await tap("[data-resume-battle]");
-  await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
+  await until('Manifested Degen controls while the renderer request is held', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
+  await until('lazy Phaser module request is intercepted', () => pausedBattleModuleRequest !== undefined);
+  const firstReloadStartRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
+  assert.equal(firstReloadStartRequestIds.length, 1,
+    'the first resume after reload should issue one request to recover the permit');
+  assert.equal(firstReloadStartRequestIds[0], firstStartRequestIds[0],
+    'the first reload resume must reuse the persisted request ID');
+  assert.ok(pausedBattleModuleRequest, 'the battle renderer module request must be held before it can mount');
+  await tap('[data-route=underpass]');
+  await until('Underpass after abandoning before renderer load', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
+  assert.equal(await cdp.evaluate('!!document.querySelector("#phaser-battle canvas")'), false,
+    'abandoning during the lazy import must not mount a renderer into the departed battle view');
+  await tap('[data-resume-battle]');
+  await until('Manifested Degen controls after resuming the same permit', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
+  assert.equal(typeof releasePausedBattleModule, 'function', 'the intercepted module request must remain releasable');
+  releasePausedBattleModule();
+  await until('current battle view mounts exactly one Phaser canvas after resume', () =>
+    cdp.evaluate('document.querySelectorAll("#phaser-battle canvas").length === 1'));
+  await cdp.send('Fetch.disable');
+  assert.deepEqual(cdp.eventErrors, [], 'the intercepted module request must continue without CDP errors');
+  await until('Phaser runtime loads only after entering battle', async () => (await loadedPhaserResources()).length > 0);
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
   assert.equal(initialAccessibleHud,
@@ -383,9 +506,10 @@ try {
   assert.equal(await cdp.evaluate('window.__degenLostStartResponses'), 0,
     'the successful post-reload recovery should not lose another response');
   const startRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
-  assert.equal(startRequestIds.length, 1, 'the reloaded page should issue one request to recover the permit');
-  assert.equal(startRequestIds[0], firstStartRequestIds[0],
-    'the reloaded page must reuse the persisted request ID from both failed attempts');
+  assert.equal(startRequestIds.length, 2,
+    'the reloaded page should issue one request for each of its two explicit resumes');
+  assert.deepEqual(startRequestIds, [firstStartRequestIds[0], firstStartRequestIds[0]],
+    'both resumes must reuse the same persisted request ID rather than minting a second permit');
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
     'recovery after reload must not create a duplicate permit');
   const startStorageKey = 'degen:battle-start:' + encodeURIComponent(playerId);
@@ -538,6 +662,7 @@ try {
   // installs fresh browser instrumentation. The persisted trophy must still render.
   await cdp.send('Page.reload');
   await until('Map after trophy placement reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await releaseRepeatedStartupHolds();
   await tap('[data-route=home]');
   await until('persisted trophy displayed after reload', () => cdp.evaluate(
     'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
@@ -548,12 +673,46 @@ try {
   // Exercise the actual running UI with an authoritative active snapshot at zero
   // Mana. The local D1 fixture models a valid Worker-owned zero-Mana snapshot
   // for UI QA; it does not add or name a Mana-drain mechanic or monster resource.
-  sql("UPDATE world_event_cycles SET opens_at = datetime('now','-10 minutes'), closes_at = datetime('now','+90 minutes') WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)");
+  const underpassOpensAt = new Date(Date.now() - 10 * 60_000).toISOString();
+  const underpassClosesAt = new Date(Date.now() + 90 * 60_000).toISOString();
+  sql(`UPDATE world_event_cycles SET opens_at = '${underpassOpensAt}', closes_at = '${underpassClosesAt}' WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)`);
+  const openedCycle = sql("SELECT opens_at, closes_at FROM world_event_cycles WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)")[0];
+  assert.equal(Date.parse(openedCycle?.opens_at ?? ''), Date.parse(underpassOpensAt),
+    'the local D1 fixture must persist the intended open timestamp');
+  assert.equal(Date.parse(openedCycle?.closes_at ?? ''), Date.parse(underpassClosesAt),
+    'the local D1 fixture must persist the intended close timestamp');
+  const workerWorldResponse = await fetch(`http://127.0.0.1:8789/api/world/underpass?playerId=${encodeURIComponent(playerId)}`, {
+    cache: 'no-store',
+  });
+  assert.equal(workerWorldResponse.status, 200, 'the local Worker should return the updated Underpass snapshot');
+  const workerWorldSnapshot = await workerWorldResponse.json();
+  assert.equal(workerWorldSnapshot.phase, 'open',
+    `the Worker must classify the updated D1 cycle as open: ${JSON.stringify(workerWorldSnapshot)}`);
   await tap("[data-route=map]");
   await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   await tap("[data-district=Central]");
   await until('Central district for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  const snapshotsBeforeUnderpassNavigation = await cdp.evaluate('window.__degenWorldSnapshots.length');
   await tap("[data-location=underpass]");
+  await until('Underpass location view for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'));
+  await until('browser receives the refreshed OPEN Worker snapshot after Underpass entry', () => cdp.evaluate(`window.__degenWorldSnapshots.length > ${snapshotsBeforeUnderpassNavigation} && window.__degenWorldSnapshots.at(-1)?.phase === "open"`));
+  try {
+    await until('Open Underpass status for Mana affordability check', () =>
+      cdp.evaluate('document.querySelector(".event-status")?.textContent === "OPEN"'));
+  } catch (error) {
+    const state = await cdp.evaluate(`(() => ({
+      underpassView: !!document.querySelector("[data-start-battle]"),
+      status: document.querySelector(".event-status")?.textContent ?? null,
+      button: document.querySelector("[data-start-battle]")?.outerHTML ?? null,
+      worldSnapshots: window.__degenWorldSnapshots,
+      bootstrapHold: window.__degenHoldBootstrapResponse,
+      bootstrapResponseHeld: window.__degenBootstrapResponseHeld,
+      worldSnapshotHold: window.__degenHoldWorldSnapshot,
+      worldSnapshotResponseHeld: window.__degenWorldSnapshotResponseHeld,
+      body: document.body.innerText.slice(0, 1200)
+    }))()`);
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; browser state: ${JSON.stringify(state)}`);
+  }
   await until('Open Underpass for Mana affordability check', () => cdp.evaluate('(() => { const button = document.querySelector("[data-start-battle]"); return !!button && !button.disabled; })()'));
   await tap("[data-start-battle]");
   await until('second manifested battle for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]") && document.querySelector("#battle-accessible-hud")?.textContent.includes("Mana 12 of 12")'));
