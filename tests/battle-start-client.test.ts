@@ -1057,6 +1057,7 @@ test('offline preview still mounts without a server-owned initial snapshot', asy
     statusMessage: '',
     navigate(route: string) { this.route = route; },
     setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+    setBattleActionStatus() {},
   };
 
   await mountBattle.call(controller);
