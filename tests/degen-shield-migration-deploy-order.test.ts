@@ -28,6 +28,8 @@ test('Shield migration follows the current tracked inventory guard with unique v
 test('enemy Shield migration is tracked before Worker deployment', () => {
   assert.match(enemyShieldMigration, /ADD COLUMN enemy_shield INTEGER NOT NULL DEFAULT 0/);
   assert.match(enemyShieldMigration, /typeof\(enemy_shield\) = 'integer'/);
+  assert.match(enemyShieldMigration, /ADD COLUMN last_enemy_shield_absorbed INTEGER NOT NULL DEFAULT 0/);
+  assert.match(enemyShieldMigration, /typeof\(last_enemy_shield_absorbed\) = 'integer'/);
   assert.match(deployWorkflow, /npm run db:migrate[\s\S]*npm run deploy:worker/);
 });
 

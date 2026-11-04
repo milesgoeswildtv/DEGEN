@@ -21,10 +21,10 @@ test('enemy Shield migration defaults existing permits to zero without changing 
       INSERT INTO battle_permits VALUES ('legacy', 73, 4, 2, 41, 'active', 3);
     `);
     db.exec(migration);
-    const row = db.prepare('SELECT player_hp,player_mana,player_shield,enemy_hp,enemy_shield,battle_status,turn_count FROM battle_permits WHERE id=?').get('legacy') as Record<string, unknown>;
+    const row = db.prepare('SELECT player_hp,player_mana,player_shield,enemy_hp,enemy_shield,last_enemy_shield_absorbed,battle_status,turn_count FROM battle_permits WHERE id=?').get('legacy') as Record<string, unknown>;
     assert.deepEqual({ ...row }, {
       player_hp: 73, player_mana: 4, player_shield: 2, enemy_hp: 41,
-      enemy_shield: 0, battle_status: 'active', turn_count: 3,
+      enemy_shield: 0, last_enemy_shield_absorbed: 0, battle_status: 'active', turn_count: 3,
     });
     for (const invalid of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
       assert.throws(
@@ -32,9 +32,17 @@ test('enemy Shield migration defaults existing permits to zero without changing 
         /CHECK constraint failed/,
       );
     }
+    for (const invalid of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(
+        () => db.prepare('UPDATE battle_permits SET last_enemy_shield_absorbed=? WHERE id=?').run(invalid, 'legacy'),
+        /CHECK constraint failed/,
+      );
+    }
     db.prepare('UPDATE battle_permits SET enemy_shield=? WHERE id=?').run(Number.MAX_SAFE_INTEGER, 'legacy');
-    const accepted = db.prepare('SELECT enemy_shield FROM battle_permits WHERE id=?').get('legacy') as { enemy_shield: number };
+    db.prepare('UPDATE battle_permits SET last_enemy_shield_absorbed=? WHERE id=?').run(Number.MAX_SAFE_INTEGER, 'legacy');
+    const accepted = db.prepare('SELECT enemy_shield,last_enemy_shield_absorbed FROM battle_permits WHERE id=?').get('legacy') as { enemy_shield: number; last_enemy_shield_absorbed: number };
     assert.equal(accepted.enemy_shield, Number.MAX_SAFE_INTEGER);
+    assert.equal(accepted.last_enemy_shield_absorbed, Number.MAX_SAFE_INTEGER);
   } finally {
     db.close();
   }

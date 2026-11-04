@@ -34,7 +34,7 @@ const actionRequest = (permitId: string, expectedTurnCount = 0): Request => new 
 
 const battleState = (row: {
   permitId: string; battle_status: string; player_hp: number; player_mana: number;
-  player_shield: number; last_shield_absorbed: number; last_retaliation_damage: number; enemy_hp: number; turn_count: number;
+  player_shield: number; last_shield_absorbed: number; last_retaliation_damage: number; last_enemy_shield_absorbed: number; enemy_hp: number; turn_count: number;
 }) => ({
   permitId: row.permitId,
   status: row.battle_status,
@@ -43,6 +43,7 @@ const battleState = (row: {
   playerShield: row.player_shield,
   shieldAbsorbed: row.last_shield_absorbed,
   retaliationDamage: row.last_retaliation_damage,
+  ...(row.last_enemy_shield_absorbed > 0 ? { enemyShieldAbsorbed: row.last_enemy_shield_absorbed } : {}),
   enemyHp: row.enemy_hp,
   turnCount: row.turn_count,
 });
@@ -57,7 +58,7 @@ test('replayed action after reward settlement returns the persisted Shield victo
     player_mana: 8,
     player_shield: 5,
     last_shield_absorbed: 0,
-    last_retaliation_damage: 0,
+    last_retaliation_damage: 0, last_enemy_shield_absorbed: 5,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
@@ -100,7 +101,7 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
       row: {
         cycle_id: 'cycle-1', event_key: 'underpass', cycle_event_key: 'underpass', encounter_key: TUNNEL_MAW.id,
         player_hp: 120, player_mana: 8, player_shield: 5,
-        last_shield_absorbed: 0, last_retaliation_damage: 0,
+        last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 5,
         enemy_hp: 0, battle_status: 'victory', turn_count: 1,
         completed_at: null, reward_state: 'pending',
         victory_history_marker_count: 0, defeat_history_marker_count: 0,
@@ -112,7 +113,7 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
       row: {
         cycle_id: 'cycle-1', event_key: 'underpass', cycle_event_key: 'underpass', encounter_key: TUNNEL_MAW.id,
         player_hp: 0, player_mana: 0, player_shield: 0,
-        last_shield_absorbed: 2, last_retaliation_damage: 10,
+        last_shield_absorbed: 2, last_retaliation_damage: 10, last_enemy_shield_absorbed: 0,
         enemy_hp: TUNNEL_MAW.maxHp - 29, battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
         victory_history_marker_count: 0, defeat_history_marker_count: 0,
@@ -162,7 +163,7 @@ test('expired terminal recovery rejects corrupt persisted Shield instead of echo
     player_mana: 8,
     player_shield: 1.5,
     last_shield_absorbed: 0,
-    last_retaliation_damage: 0,
+    last_retaliation_damage: 0, last_enemy_shield_absorbed: 0,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 1,
@@ -205,7 +206,7 @@ test('completed permits for unsupported encounters are not returned as this batt
     player_mana: 8,
     player_shield: 5,
     last_shield_absorbed: 0,
-    last_retaliation_damage: 0,
+    last_retaliation_damage: 0, last_enemy_shield_absorbed: 0,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
@@ -249,7 +250,7 @@ test('expired terminal recovery rejects inconsistent persisted Shield event audi
     player_mana: 0,
     player_shield: 0,
     last_shield_absorbed: 11,
-    last_retaliation_damage: 10,
+    last_retaliation_damage: 10, last_enemy_shield_absorbed: 0,
     enemy_hp: TUNNEL_MAW.maxHp - 29,
     battle_status: 'defeat',
     turn_count: 1,
@@ -292,7 +293,7 @@ test('expired terminal recovery rejects retaliation audit above the supported mo
     player_mana: 0,
     player_shield: 0,
     last_shield_absorbed: 0,
-    last_retaliation_damage: TUNNEL_MAW.damage + 1,
+    last_retaliation_damage: TUNNEL_MAW.damage + 1, last_enemy_shield_absorbed: 0,
     enemy_hp: TUNNEL_MAW.maxHp - 29,
     battle_status: 'defeat',
     turn_count: 1,
@@ -344,7 +345,7 @@ test('legacy terminal permits with NULL Mana and pre-Shield audit remain recover
         player_mana: null,
         player_shield: 0,
         last_shield_absorbed: null,
-        last_retaliation_damage: null,
+        last_retaliation_damage: null, last_enemy_shield_absorbed: 0,
         enemy_hp: 0,
         enemy_shield: 0,
         battle_status: 'victory',
@@ -370,7 +371,7 @@ test('legacy terminal permits with NULL Mana and pre-Shield audit remain recover
         player_mana: null,
         player_shield: 0,
         last_shield_absorbed: null,
-        last_retaliation_damage: null,
+        last_retaliation_damage: null, last_enemy_shield_absorbed: 0,
         enemy_hp: TUNNEL_MAW.maxHp,
         enemy_shield: 0,
         battle_status: 'defeat',
