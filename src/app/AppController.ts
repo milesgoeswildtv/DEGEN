@@ -99,7 +99,7 @@ export class AppController {
     this.focusRouteContent();
     // Underpass availability is time-sensitive. Refresh when the player enters
     // the location instead of relying only on the background 30-second poll.
-    if (route === 'underpass') void this.refreshWorld(true);
+    if (route === 'underpass' && this.api.enabled) void this.refreshWorld(true);
   }
 
   private focusRouteContent(): void {
