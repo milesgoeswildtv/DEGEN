@@ -3,7 +3,6 @@ import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
 import { WORLD_LOCATIONS } from '../data/world';
 import { bindCityViewport, type CityCamera } from '../ui/cityViewport';
 import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
-import { createBattleGame } from '../game/createBattleGame';
 import { BattleEngine } from '../game/combat/engine';
 import { isValidManaCost, isValidManaState, isValidShieldGain } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
@@ -43,6 +42,7 @@ export class AppController {
   private battleEngine?: BattleEngine;
   private battleReturnTimer?: number;
   private worldRefreshTimer?: number;
+  private worldRefreshGeneration = 0;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
   private battlePermitOwnerId?: string;
@@ -60,15 +60,33 @@ export class AppController {
   ) {}
 
   async start(): Promise<void> {
-    await this.refreshWorld();
+    // Render the Map before platform identity and Worker bootstrap can delay startup.
     this.render();
+  }
+
+  onPlayerInitialized(): void {
+    // Bootstrap may finish after the player has navigated away from the Map.
+    // Re-render the active route with the authoritative player snapshot first.
+    this.render();
+    void this.refreshWorld(true);
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
       const localPending = new Set(this.pendingRewardPermits(playerId));
       for (const permitId of localPending) void this.queueRewardCompletion(permitId, playerId);
       void this.discoverPendingBattleRewards(playerId);
     }
-    this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
+    if (this.worldRefreshTimer === undefined) {
+      this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
+    }
+  }
+
+  onPlayerInitializationFailed(): void {
+    if (!this.api.enabled) {
+      this.onPlayerInitialized();
+      return;
+    }
+    this.worldSyncFailed = true;
+    this.render();
   }
 
   private navigate(route: RouteKey): void {
@@ -79,6 +97,14 @@ export class AppController {
     if (route !== 'battle') this.destroyBattle();
     this.route = route;
     this.render();
+    this.focusRouteContent();
+    // Underpass availability is time-sensitive. Refresh when the player enters
+    // the location instead of relying only on the background 30-second poll.
+    if (route === 'underpass' && this.api.enabled) void this.refreshWorld(true);
+  }
+
+  private focusRouteContent(): void {
+    this.root.querySelector<HTMLElement>('main.screen')?.focus();
   }
 
   private render(): void {
@@ -120,7 +146,7 @@ export class AppController {
     }
     if (this.route === 'home') this.bindHousing();
     if (this.route === 'underpass') this.bindUnderpass();
-    if (this.route === 'battle') this.mountBattle();
+    if (this.route === 'battle') void this.mountBattle();
   }
 
   private bindCommonNavigation(): void {
@@ -293,7 +319,8 @@ export class AppController {
     }
   }
 
-  private mountBattle(): void {
+  private async mountBattle(): Promise<void> {
+    if (this.battleEngine) return;
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     const permit = this.battlePermit;
     if (!parent) return;
@@ -304,22 +331,16 @@ export class AppController {
         : 'No active preview encounter is attached. Start or resume a fight from Underpass.');
       return;
     }
-
-    // A server-backed permit must never fall through to the offline preview
-    // initializer. Preserve the permit and return to Underpass so the player
-    // can resume from the Worker-owned snapshot instead of simulating locally.
-    if (this.api.enabled && (
-      !permit.initialState || permit.initialState.permitId !== permit.permitId
-    )) {
+    if (this.api.enabled && (!permit.initialState || permit.initialState.permitId !== permit.permitId)) {
       this.navigate('underpass');
       this.setUnderpassActionStatus(
         'The server did not provide a matching authoritative battle snapshot. Resume this encounter to safely reconnect.',
       );
       return;
     }
-
+    let engine: BattleEngine;
     try {
-      this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+      engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
         void this.finishBattle(status);
       }, this.api.enabled ? permit.initialState : undefined);
     } catch (error) {
@@ -330,16 +351,28 @@ export class AppController {
       );
       return;
     }
-
-    this.battleEngine.subscribe(updateBattleDom);
-    this.battleGame = createBattleGame(parent, this.battleEngine);
-
+    this.battleEngine = engine;
+    engine.subscribe(updateBattleDom);
     this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
       button.addEventListener('click', () => {
         const ability = button.dataset.ability;
         if (ability) void this.useBattleAbility(ability);
       });
     });
+    this.setBattleActionStatus('Loading battle scene…');
+    try {
+      const { createBattleGame } = await import('../game/createBattleGame');
+      if (this.route !== 'battle' || this.battleEngine !== engine || !parent.isConnected) return;
+      this.battleGame = createBattleGame(parent, engine);
+      this.setBattleActionStatus();
+    } catch (error) {
+      if (this.battleEngine === engine) {
+        this.battleEngine = undefined;
+        this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => { button.disabled = true; });
+        this.setBattleActionStatus('Battle visuals could not load. Return to the Underpass and try again.');
+      }
+      console.error('Could not load the battle renderer.', error);
+    }
   }
 
   private async useBattleAbility(abilityId: string): Promise<void> {
@@ -695,9 +728,24 @@ export class AppController {
   }
 
   private async refreshWorld(rerender = false): Promise<void> {
+    const playerId = this.store.snapshot.id;
+    const generation = ++this.worldRefreshGeneration;
+    const isCurrentRequest = (): boolean =>
+      generation === this.worldRefreshGeneration && this.store.snapshot.id === playerId;
+    const refreshAfterAccountChange = async (): Promise<void> => {
+      // Ignore superseded reads for the same account. If the active identity
+      // changed without starting another refresh, immediately fetch its world.
+      if (generation !== this.worldRefreshGeneration || this.store.snapshot.id === playerId) return;
+      await this.refreshWorld(true);
+    };
+
     try {
       if (this.api.enabled) {
-        const snapshot = await this.api.getUnderpass(this.store.snapshot.id);
+        const snapshot = await this.api.getUnderpass(playerId);
+        if (!isCurrentRequest()) {
+          await refreshAfterAccountChange();
+          return;
+        }
         if (!snapshot) throw new Error('Missing authoritative world-event snapshot.');
         this.underpassEvent = snapshot;
       } else {
@@ -705,12 +753,20 @@ export class AppController {
       }
       this.worldSyncFailed = false;
     } catch (error) {
+      if (!isCurrentRequest()) {
+        await refreshAfterAccountChange();
+        return;
+      }
       console.warn('World-event sync failed; server-backed combat is unavailable.', error);
       this.worldSyncFailed = this.api.enabled;
       // Never fabricate a preview cycle for a server-backed player.
       this.underpassEvent = this.api.enabled ? undefined : getPreviewUnderpass();
     }
 
+    if (!isCurrentRequest()) {
+      await refreshAfterAccountChange();
+      return;
+    }
     if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 
