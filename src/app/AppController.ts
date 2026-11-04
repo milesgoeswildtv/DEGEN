@@ -525,27 +525,6 @@ export class AppController {
     }
   }
 
-  private async loadBattleRenderer(parent: HTMLElement, engine: BattleEngine): Promise<void> {
-    this.setBattleActionStatus('Loading battle scene…');
-    try {
-      // Phaser is only needed once a player enters a Degen encounter. Keep it out
-      // of the initial map/home route bundle for faster mobile and Activity startup.
-      const { createBattleGame } = await import('../game/createBattleGame');
-      if (this.route !== 'battle' || this.battleEngine !== engine || !parent.isConnected) return;
-      this.battleGame = createBattleGame(parent, engine);
-      this.setBattleActionStatus();
-    } catch (error) {
-      if (this.battleEngine === engine) {
-        this.battleEngine = undefined;
-        this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
-          button.disabled = true;
-        });
-        this.setBattleActionStatus('Battle visuals could not load. Return to the Underpass and try again.');
-      }
-      console.error('Could not load the battle renderer.', error);
-    }
-  }
-
   private setAbilityButtonsDisabled(disabled: boolean): void {
     const snapshot = this.battleEngine?.snapshot;
     const validManaState = snapshot
@@ -791,5 +770,26 @@ export class AppController {
     this.battleGame = undefined;
     this.battleEngine = undefined;
     this.battleActionPending = false;
+  }
+
+  private async loadBattleRenderer(parent: HTMLElement, engine: BattleEngine): Promise<void> {
+    this.setBattleActionStatus('Loading battle scene…');
+    try {
+      // Phaser is only needed once a player enters a Degen encounter. Keep it out
+      // of the initial map/home route bundle for faster mobile and Activity startup.
+      const { createBattleGame } = await import('../game/createBattleGame');
+      if (this.route !== 'battle' || this.battleEngine !== engine || !parent.isConnected) return;
+      this.battleGame = createBattleGame(parent, engine);
+      this.setBattleActionStatus();
+    } catch (error) {
+      if (this.battleEngine === engine) {
+        this.battleEngine = undefined;
+        this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
+          button.disabled = true;
+        });
+        this.setBattleActionStatus('Battle visuals could not load. Return to the Underpass and try again.');
+      }
+      console.error('Could not load the battle renderer.', error);
+    }
   }
 }
