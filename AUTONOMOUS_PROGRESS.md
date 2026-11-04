@@ -1,3 +1,12 @@
+## Latest follow-up — 2026-11-04 (repair canonical-ID regression assertion)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
+- **Current branch / PR:** `automation/degen/worker-identity-input-validation-v01`, PR #124 OPEN / UNMERGED. The updated runtime/test commits are `35310be558a49026a7468bf90103c584fc37b359`, `aca77b51aec691b8e31ac796574afa603be3d369`, and test repair `c2e8b5f04b05393c9ccab5c20d1cad0fc7cc0594`.
+- **QA finding / correction:** exact-head CI [41780206549](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41780206549) failed at `npm test` with 271/272 passing. All new padded-ID runtime cases passed. The sole failure was the existing `tests/housingQuantityGuard.test.ts` static source assertion still expecting the old helper name `isNonEmptyString` after the intentional rename to `isCanonicalIdentifier`. The assertion now checks the new helper. All downstream CI stages were skipped after this deterministic-test failure; the corrected code/test head requires a fresh exact-head run. No runtime failure was observed.
+- **One best next task:** verify exact-head CI for `c2e8b5f04b05393c9ccab5c20d1cad0fc7cc0594` and repair only any newly demonstrated failure.
+
+---
+
 ## Latest run — 2026-11-04 (canonical Worker route identifiers)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
