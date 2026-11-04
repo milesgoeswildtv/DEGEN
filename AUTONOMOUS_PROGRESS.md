@@ -1,3 +1,16 @@
+## Latest follow-up — 2026-11-04 (correct the Shield conflict fixture; exact-head failure diagnosed)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
+- **Current branch / PR:** `automation/degen/authoritative-shield-foundation-v02`, PR #125, current code/test head `3a5eb77d7f8c3e187fdef7b04fbc52d9310153e8`, OPEN / DRAFT / UNMERGED; no direct-main write.
+- **CI failure evidence:** exact-head CI [41869865782](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41869865782) on code/test head `de35fca2d3ffce367222909bf98f6aa8eb48a458` reached deterministic tests and reported **346 passed / 1 failed**. The only failure was the existing insufficient-Mana conflict-recovery fixture in `tests/client-battle-conflict-recovery.test.ts`: it modeled a Worker snapshot after positive enemy Shield absorption but omitted `enemyShieldAbsorbed`. The new fail-closed guard correctly refused to present that incomplete audit, so the test's expected Mana synchronization did not occur. The new Shield regression itself passed.
+- **Correction / files changed:** `tests/client-battle-conflict-recovery.test.ts` now includes `turn.enemyShieldAbsorbed` in that mocked Worker snapshot. This aligns the fixture with the actual Worker response contract; no production behavior was weakened. Runtime guard remains in `src/game/combat/engine.ts`, and the new direct-action/one-turn recovery regression remains in `tests/shield-foundation.test.ts`.
+- **QA boundary:** a fresh exact-head CI is required for `3a5eb77`; no pass is claimed yet. The progress-head run [41869958070](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41869958070) was started on the preceding `da0a99c` head and cannot prove the fixture correction. No local shell test/build/Wrangler run, production D1 operation, Worker deployment, or physical-device QA is claimed.
+- **Mana / authority:** Mana remains COMPLETE / MERGED on main. Worker/D1 owns combat and reward state; this fix only validates the positive enemy Shield absorption audit before client presentation. No rewards or economy moved to the client.
+- **D1 / blockers:** `0008` / `0009` Shield migrations remain branch-only/unapplied; main's `0007` inventory migration still conflicts with draft auth PR #14's `0007` sessions migration. Do not renumber or bypass. PR #125 remains draft; no migration or deployment action occurred.
+- **One best next task:** verify exact-head CI on the corrected fixture head; fix only any newly demonstrated failures, then keep the Shield PR gated on the unresolved migration/review sequence.
+
+---
+
 ## Latest run — 2026-11-04 (require positive enemy Shield absorption audit)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
