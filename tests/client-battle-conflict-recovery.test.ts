@@ -387,6 +387,7 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
     retaliationDamage: turn.retaliationDamage,
     enemyHp: turn.enemyHp,
     enemyShield: turn.enemyShield,
+    enemyShieldAbsorbed: turn.enemyShieldAbsorbed,
     turnCount: 1,
   };
   const api = {
