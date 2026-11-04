@@ -30,7 +30,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class BattleEngine\b/g, 'class BattleEngine');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, resolveCombatTurn },
+  { canUseAbility, isValidManaState, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,

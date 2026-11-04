@@ -183,11 +183,9 @@ test('turn resolution rejects Mana above the Degen maximum', () => {
   }), /Invalid player Mana/);
 });
 
-test('BattleEngine fails closed on an over-cap authoritative Mana snapshot', () => {
-  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
-  assert.ok(free);
+test('BattleEngine rejects an over-cap authoritative Mana start snapshot', () => {
   let completionCalls = 0;
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+  assert.throws(() => new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
     completionCalls += 1;
   }, {
     permitId: 'permit-invalid-mana',
@@ -196,19 +194,8 @@ test('BattleEngine fails closed on an over-cap authoritative Mana snapshot', () 
     playerMana: TEST_DEGEN.maxMana + 1,
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
-  });
-  const before = engine.snapshot;
-
-  engine.useAbility(free.id);
-
-  const after = engine.snapshot;
-  assert.equal(after.playerHp, before.playerHp);
-  assert.equal(after.playerMana, before.playerMana);
-  assert.equal(after.enemyHp, before.enemyHp);
-  assert.equal(after.turnCount, before.turnCount);
-  assert.equal(after.status, 'active');
-  assert.match(after.log.at(-1) ?? '', /Mana state is invalid/);
-  assert.equal(completionCalls, 0);
+  }), /Invalid authoritative battle start state/);
+  assert.equal(completionCalls, 0, 'invalid start snapshots never expose a battle or emit completion');
 });
 
 test('BattleEngine deducts paid Mana once and an unaffordable retry changes no combat state', () => {
