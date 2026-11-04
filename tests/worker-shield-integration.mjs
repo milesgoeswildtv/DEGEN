@@ -78,7 +78,7 @@ try {
       ('shield-closure-permit','shield-closure','underpass','shield-closure-cycle','tunnel-maw',datetime('now','-5 minutes'),datetime('now','+20 minutes'),'active',120,0,4,10,10,63,1);
   `);
   cli(['d1','execute','DEGEN','--local','--persist-to='+persist,'--file='+seed]);
-  sql("UPDATE battle_permits SET enemy_shield=5 WHERE id IN ('shield-enemy-permit','shield-enemy-kill-permit','shield-closure-permit','shield-race-permit')");
+  sql("UPDATE battle_permits SET enemy_shield=5 WHERE id IN ('shield-enemy-permit','shield-enemy-kill-permit','shield-kill-permit','shield-closure-permit','shield-race-permit')");
   server=spawn(wrangler,['dev','--local','--persist-to='+persist,'--ip=127.0.0.1','--port=8791'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
   for(const stream of [server.stdout,server.stderr]) stream.on('data',d=>{logs=(logs+d.toString()).slice(-10000);});
   await until(async()=>{const r=await fetch(base+'/api/health',{signal:AbortSignal.timeout(600)});return r.ok&&(await r.json()).ok;});
@@ -263,9 +263,12 @@ try {
   assert.equal(kill.data.playerShield,5);
   assert.equal(kill.data.retaliationDamage,0);
   assert.equal(kill.data.shieldAbsorbed,0);
-  assert.deepEqual(sql("SELECT last_shield_absorbed,last_retaliation_damage FROM battle_permits WHERE id='shield-kill-permit'"),[
-    {last_shield_absorbed:0,last_retaliation_damage:0},
+  assert.equal(kill.data.enemyShieldAbsorbed,5,
+    'the killing blow must preserve the final enemy Shield absorption in its action result');
+  assert.deepEqual(sql("SELECT last_shield_absorbed,last_retaliation_damage,last_enemy_shield_absorbed FROM battle_permits WHERE id='shield-kill-permit'"),[
+    {last_shield_absorbed:0,last_retaliation_damage:0,last_enemy_shield_absorbed:5},
   ]);
+
   const complete=await post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'});
   assert.equal(complete.status,200);
   const replay=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'slash',expectedTurnCount:2});
