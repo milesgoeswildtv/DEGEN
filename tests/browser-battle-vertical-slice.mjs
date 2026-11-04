@@ -203,6 +203,7 @@ try {
       window.__degenReleaseBootstrap = null;
       window.__degenHoldWorldSnapshot = true;
       window.__degenWorldSnapshotResponseHeld = false;
+      window.__degenWorldSnapshots = [];
       window.__degenReleaseWorldSnapshot = null;
       window.__degenSimulateLostActionResponse = false;
       window.__degenLostActionResponses = 0;
@@ -216,6 +217,10 @@ try {
         const response = await originalFetch(input, init);
         const requestUrl = input instanceof Request ? input.url : String(input);
         const requestPath = new URL(requestUrl, window.location.href).pathname;
+        if (requestPath === '/api/world/underpass') {
+          try { window.__degenWorldSnapshots.push(await response.clone().json()); }
+          catch { window.__degenWorldSnapshots.push({ malformed: true }); }
+        }
         if (window.__degenHoldBootstrapResponse && requestPath === '/api/player/bootstrap') {
           window.__degenHoldBootstrapResponse = false;
           window.__degenBootstrapResponseHeld = true;
@@ -676,7 +681,21 @@ try {
   await tap("[data-district=Central]");
   await until('Central district for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
   await tap("[data-location=underpass]");
-  await until('Open Underpass status for Mana affordability check', () => cdp.evaluate('document.querySelector(".event-status")?.textContent === "OPEN"'));
+  await until('Underpass location view for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'));
+  await until('browser receives the refreshed OPEN Worker snapshot', () => cdp.evaluate('window.__degenWorldSnapshots.at(-1)?.phase === "open"'));
+  try {
+    await until('Open Underpass status for Mana affordability check', () =>
+      cdp.evaluate('document.querySelector(".event-status")?.textContent === "OPEN"'));
+  } catch (error) {
+    const state = await cdp.evaluate(`(() => ({
+      underpassView: !!document.querySelector("[data-start-battle]"),
+      status: document.querySelector(".event-status")?.textContent ?? null,
+      button: document.querySelector("[data-start-battle]")?.outerHTML ?? null,
+      worldSnapshots: window.__degenWorldSnapshots,
+      body: document.body.innerText.slice(0, 1200)
+    }))()`);
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; browser state: ${JSON.stringify(state)}`);
+  }
   await until('Open Underpass for Mana affordability check', () => cdp.evaluate('(() => { const button = document.querySelector("[data-start-battle]"); return !!button && !button.disabled; })()'));
   await tap("[data-start-battle]");
   await until('second manifested battle for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]") && document.querySelector("#battle-accessible-hud")?.textContent.includes("Mana 12 of 12")'));
