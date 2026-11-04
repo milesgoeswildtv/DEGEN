@@ -51,6 +51,23 @@ test('invalid enemy starting Shield values fail closed while Shield is not a for
   assert.doesNotThrow(() => assertNoMonsterActionResource(shieldedEnemy));
 });
 
+
+test('server-backed battle start rejects enemy Shield absorption before the first turn', () => {
+  assert.throws(() => new BattleEngine(TEST_DEGEN, shieldedEnemy, () => undefined, {
+    permitId: 'enemy-shield-pre-turn-audit',
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: shieldedEnemy.maxHp,
+    enemyShield: shieldedEnemy.startingShield,
+    enemyShieldAbsorbed: 1,
+    turnCount: 0,
+  }), /Invalid authoritative battle start state/);
+});
+
 test('BattleEngine carries and displays enemy starting Shield without local reversion or reward changes', () => {
   const engine = new BattleEngine(TEST_DEGEN, shieldedEnemy, () => undefined);
   assert.equal(engine.snapshot.enemyShield, 5);
