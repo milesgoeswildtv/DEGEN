@@ -656,12 +656,27 @@ try {
   // Exercise the actual running UI with an authoritative active snapshot at zero
   // Mana. The local D1 fixture models a valid Worker-owned zero-Mana snapshot
   // for UI QA; it does not add or name a Mana-drain mechanic or monster resource.
-  sql("UPDATE world_event_cycles SET opens_at = datetime('now','-10 minutes'), closes_at = datetime('now','+90 minutes') WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)");
+  const underpassOpensAt = new Date(Date.now() - 10 * 60_000).toISOString();
+  const underpassClosesAt = new Date(Date.now() + 90 * 60_000).toISOString();
+  sql(`UPDATE world_event_cycles SET opens_at = '${underpassOpensAt}', closes_at = '${underpassClosesAt}' WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)`);
+  const openedCycle = sql("SELECT opens_at, closes_at FROM world_event_cycles WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)")[0];
+  assert.equal(Date.parse(openedCycle?.opens_at ?? ''), Date.parse(underpassOpensAt),
+    'the local D1 fixture must persist the intended open timestamp');
+  assert.equal(Date.parse(openedCycle?.closes_at ?? ''), Date.parse(underpassClosesAt),
+    'the local D1 fixture must persist the intended close timestamp');
+  const workerWorldResponse = await fetch(`http://127.0.0.1:8789/api/world/underpass?playerId=${encodeURIComponent(playerId)}`, {
+    cache: 'no-store',
+  });
+  assert.equal(workerWorldResponse.status, 200, 'the local Worker should return the updated Underpass snapshot');
+  const workerWorldSnapshot = await workerWorldResponse.json();
+  assert.equal(workerWorldSnapshot.phase, 'open',
+    `the Worker must classify the updated D1 cycle as open: ${JSON.stringify(workerWorldSnapshot)}`);
   await tap("[data-route=map]");
   await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   await tap("[data-district=Central]");
   await until('Central district for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
   await tap("[data-location=underpass]");
+  await until('Open Underpass status for Mana affordability check', () => cdp.evaluate('document.querySelector(".event-status")?.textContent === "OPEN"'));
   await until('Open Underpass for Mana affordability check', () => cdp.evaluate('(() => { const button = document.querySelector("[data-start-battle]"); return !!button && !button.disabled; })()'));
   await tap("[data-start-battle]");
   await until('second manifested battle for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]") && document.querySelector("#battle-accessible-hud")?.textContent.includes("Mana 12 of 12")'));
