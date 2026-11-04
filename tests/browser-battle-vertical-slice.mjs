@@ -1016,10 +1016,10 @@ try {
     };
   })()`);
   assert.equal(playerShieldHud.shield, 'SHIELD 5', 'Chromium must render remaining player Shield');
-  assert.match(playerShieldHud.hud, /Mana 0 of 0, Shield 5\\./,
+  assert.match(playerShieldHud.hud, /Mana 0 of 0, Shield 5\./,
     'the accessible combat HUD must expose player Shield at zero Mana');
-  assert.match(playerShieldHud.log, /Shield \\+15\\./, 'the battle log must show the granted Shield');
-  assert.match(playerShieldHud.log, /Shield absorbs 10\\./, 'the battle log must show Shield absorbing retaliation');
+  assert.match(playerShieldHud.log, /Shield \+15\./, 'the battle log must show the granted Shield');
+  assert.match(playerShieldHud.log, /Shield absorbs 10\./, 'the battle log must show Shield absorbing retaliation');
   assert.equal(playerShieldHud.cost, 'NO MANA · SHIELD +15');
   assert.equal(playerShieldHud.disabled, false, 'the zero-cost Shield action remains available at zero Mana');
   assert.equal(playerShieldHud.playerHp, 120, 'Shield absorbs retaliation before HP');
