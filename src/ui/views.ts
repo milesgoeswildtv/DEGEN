@@ -221,7 +221,7 @@ export const battleView = (player: PlayerState, degen: DegenDefinition): string 
           const manaCost = isValidManaCost(ability.manaCost) ? ability.manaCost : undefined;
           const validShieldGain = isValidShieldGain(ability.shieldGain);
           const shieldGain = ability.shieldGain === undefined ? 0 : ability.shieldGain;
-          const shieldGainAttribute = validShieldGain ? shieldGain : '';
+          const shieldGainAttribute = validShieldGain ? shieldGain : 'invalid';
           return `
           <button type="button" data-ability="${ability.id}" data-mana-cost="${manaCost ?? ''}" data-shield-gain="${shieldGainAttribute}" ${manaCost === undefined || !validShieldGain ? 'disabled' : ''}>
             <strong>${escapeHtml(ability.name)}</strong>
@@ -282,7 +282,7 @@ export const updateBattleDom = (snapshot: BattleSnapshot): void => {
     const parsedManaCost = rawManaCost?.trim() ? Number(rawManaCost) : Number.NaN;
     const validManaCost = isValidManaCost(parsedManaCost);
     const rawShieldGain = button.dataset.shieldGain;
-    const parsedShieldGain = rawShieldGain?.trim() ? Number(rawShieldGain) : Number.NaN;
+    const parsedShieldGain = rawShieldGain?.trim() ? Number(rawShieldGain) : 0;
     const validShieldGain = isValidShieldGain(parsedShieldGain);
     const unaffordable = snapshot.status === 'active'
       && (!validManaState || !validManaCost || parsedManaCost > snapshot.playerMana);
