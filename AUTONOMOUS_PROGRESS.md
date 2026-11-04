@@ -1,3 +1,18 @@
+## Latest follow-up — 2026-11-03 (trace the browser's Underpass snapshot consumption)
+
+- **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
+- **PUSHED / PR #116 OPEN, unmerged:** `automation/degen/lazy-load-phaser-battle-v01`; latest browser diagnostic commit `bb5ca47c60e2d2e07acd63eb1a4cafeba73d7287`. The controller latest-wins change is `19548810fa207671aa48ad67ada9877f63043f98`; deterministic race test is `fcf925eff2fe1691dd6c105b8231442c8a5f1844`.
+- **Exact-head CI:** [41768482225](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41768482225) passed deterministic tests, Worker/D1 reward concurrency, transient reward recovery, Underpass cycle/rollover concurrency, atomic defeat history, housing Chromium persistence, and production build. It failed in Chromium at the second Underpass entry while waiting for the visible OPEN status. The test's explicit ISO D1 timestamps and direct local Worker read both passed (`phase: open`), but the rendered browser status did not become OPEN. Wrangler validation was skipped after the browser failure.
+- **Next diagnostic change:** `tests/browser-battle-vertical-slice.mjs` now records each browser-fetched authoritative Underpass JSON response, asserts the second Underpass location view exists, waits for the browser's latest response to be OPEN, and captures the route/status/button/body/snapshot state if the view still fails to rerender. This distinguishes an absent route refresh, an invalid browser payload, and a controller render issue. Exact-head CI for this diagnostic is pending; no pass is claimed.
+- **Current implementation state:** `src/app/AppController.ts` has latest-request generation protection so an older in-flight Worker snapshot cannot overwrite a newer one; `tests/city-navigation.test.ts` proves an out-of-order SEALED response cannot replace a newer OPEN response. The browser failure shows that this guard alone has not yet closed the real UI path.
+- **No scope drift:** no combat/Mana/reward authority, Worker API, D1 schema/migration, economy, or deployment config changed. No production D1/Worker operation, physical-iPhone QA, or live-player smoke test occurred.
+- **Mana:** COMPLETE / MERGED on main; Degen-only persisted Mana, atomic affordability rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana, and no Mana-triggered reversion remain intact. The old `sidekick/degen-mana-foundation-v01` is divergent (11 ahead / 102 behind) and superseded.
+- **Battle authority / reward idempotency:** Worker/D1 still owns permits, player HP/Mana, enemy HP, turn count, terminal outcomes/history, receipts, progression, currency, inventory, and recoverable exactly-once settlement. The CI stages covering reward recovery and concurrency passed on this head.
+- **D1 assumptions / blockers:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deploy order remains schema → tracked migrations → Worker. The main `0007_player_inventory_quantity_guards.sql` vs draft auth PR #14 `0007_player_sessions.sql` version collision remains unresolved and guarded by PR #114. No migration was renumbered/applied. PR #118 still overlaps `AppController.ts`; preserve its account-isolation work when reconciling, but do not merge without exact-head CI.
+- **One best next task:** run exact-head CI for the browser-response trace; inspect the recorded browser snapshot/route state, then fix only the proven client refresh/render defect.
+
+---
+
 ## Latest run — 2026-11-03 (Underpass refresh ordering + browser fixture diagnosis)
 
 - **Authoritative main SHA:** `b7cb304565d9aa5828a4f727818b6aff1fc046e4`.
