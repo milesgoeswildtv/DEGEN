@@ -109,7 +109,8 @@ test('failed Worker completion retains the permit and persists retry across cont
 
   const restored = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   await restored.start();
-  // start() schedules recovery without awaiting it.
+  restored.onPlayerInitialized();
+  // Player initialization starts recovery without awaiting it.
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(attempts, 2);
   assert.equal(fixture.store.replaced, 1);
@@ -253,6 +254,7 @@ test('server-discovered victory recovery retries a not-yet-deployed endpoint wit
   );
   const controller = new fixture.Controller(fixture.root, fixture.store, fixture.api);
   await controller.start();
+  controller.onPlayerInitialized();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(discoveries, 1);
   const retry = fixture.timers.find((timer) => timer.delay === 15_000);

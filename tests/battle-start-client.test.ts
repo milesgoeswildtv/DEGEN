@@ -996,6 +996,7 @@ test('offline preview still mounts without a server-owned initial snapshot', () 
     statusMessage: '',
     navigate(route: string) { this.route = route; },
     setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+    loadBattleRenderer() {},
   };
 
   mountBattle.call(controller);
