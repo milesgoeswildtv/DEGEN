@@ -1,3 +1,19 @@
+## Latest follow-up — 2026-11-04 (align Worker CAS test with persisted enemy Shield audit)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) and Pages preview [41775622351](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622351) remain green on main.
+- **Current branch / PR:** `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), OPEN / DRAFT / UNMERGED. Parent head for this test correction: `8dec84e58c9b9dec4908399d91bc6ad38e02401e`.
+- **Failure evidence:** exact-head CI [41891530387](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41891530387) failed only the deterministic test `Worker accepts a free Shield-gain ability at zero Mana and persists the authoritative result` (346/347 tests passed). The Worker correctly added the new ninth CAS binding for `last_enemy_shield_absorbed = 0`; the test still sliced/asserted only the previous eight bindings and compared `battle_status` at the old index.
+- **Fix:** updated `tests/worker-shield-mana-boundary.test.ts` to assert all nine leading CAS values, including the zero enemy-absorption audit, and clarified the assertion text. No runtime or schema behavior changed in this correction.
+- **Other changes retained:** `last_enemy_shield_absorbed` remains added to branch-only migration 0009, validated and committed in the same Worker action CAS, and projected in start replay, stale-turn/CAS conflict, terminal, and completed snapshots. Worker/D1 integration now asserts positive absorption survives competing-action and completed-killing-blow recovery.
+- **QA:** the failure was isolated to that one test assertion; the other 346 deterministic tests passed. The corrected head requires a new exact-head CI; no new pass is claimed yet.
+- **Mana:** COMPLETE / MERGED on main; Degen-only `maxMana`, bespoke `manaCost`, authoritative `player_mana`, rejection atomicity, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared math, no monster Mana, and no reversion at zero remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 continues to own permit state, HP/Mana/Shield, enemy HP/Shield, turn CAS, terminal state/history, receipts, progression and inventory. No client reward/economy authority moved.
+- **D1 / blocker:** Wrangler still binds `DB` to `DEGEN` and `db/migrations`; 0009 remains branch-only/unapplied. Main's duplicate version 0007 between inventory-quantity guards and draft auth sessions remains unresolved; no renumbering or remote migration was attempted.
+- **Delivery:** test correction and this progress update are pushed only to PR #125. No merge, production D1 write, Worker deploy, or physical-device QA is claimed.
+- **One best next task:** inspect the corrected exact-head CI and fix only any remaining evidence-backed failure; keep the PR draft until migration ownership/review sequencing is resolved.
+
+---
+
 ## Latest run — 2026-11-04 (persist enemy Shield absorption for authoritative recovery)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56` (main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) and Pages preview [41775622351](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622351) passed on this exact SHA).

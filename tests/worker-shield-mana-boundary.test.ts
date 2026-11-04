@@ -220,6 +220,6 @@ test('Worker accepts a free Shield-gain ability at zero Mana and persists the au
   });
   assert.equal('reward' in result, false, 'combat actions never accept or return client reward payloads');
   assert.equal(statements.length, 2, 'the Worker reads the permit and applies one authoritative turn');
-  assert.deepEqual(statements[1]?.params.slice(0, 8), [113, 0, 0, 3, 10, 63, 0, 'active'],
-    'the D1 compare-and-swap persists exact HP, zero Mana, Shield absorption, and turn result');
+  assert.deepEqual(statements[1]?.params.slice(0, 9), [113, 0, 0, 3, 10, 63, 0, 0, 'active'],
+    'the D1 compare-and-swap persists HP, zero Mana, both Shield audit fields, and the turn result');
 });
