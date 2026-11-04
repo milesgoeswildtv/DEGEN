@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { assertNoMonsterActionResource, canUseAbility, isValidManaCost, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaCost, isValidManaState, isValidShield, isValidShieldGain, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 class TestGameApiProtocolError extends Error {
   constructor(message: string) {
@@ -89,6 +89,7 @@ const scope = {
   GameApiProtocolError: TestGameApiProtocolError,
   isValidManaCost,
   isValidManaState,
+  isValidShieldGain,
   isAuthoritativeBattleActionState,
   createBattleGame: () => ({ destroy: () => {} }),
   underpassRewardForClear: () => ({ xp: 0, currency: 0, items: [] }),
@@ -424,11 +425,12 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
 
 
 
-test('a structurally valid but mathematically conflicting snapshot keeps battle actions disabled', async () => {
+test('a structurally valid but mathematically conflicting snapshot keeps battle actions disabled', async (t) => {
   timers.length = 0;
   storage.clear();
   abilityButtons.length = 0;
   abilityButtons.push({ dataset: { manaCost: '0', shieldGain: '0' }, disabled: false });
+  t.after(() => { abilityButtons.length = 0; });
   actionStatus.textContent = '';
   actionStatus.hidden = true;
 
