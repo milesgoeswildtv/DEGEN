@@ -185,6 +185,44 @@ test('controller follows map to district to location and rejects locked navigati
   assert.equal(controller.route, 'district');
 });
 
+test('entering Underpass refreshes authoritative availability on arrival', async () => {
+  const root = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null };
+  let requests = 0;
+  const Controller = runInNewContext(
+    compile('../src/app/AppController.ts') + '\nAppController;',
+    {
+      WORLD_LOCATIONS,
+      bindCityViewport: () => {},
+      mapView: () => 'map', districtView: () => 'district', locationView: () => 'location',
+      homeView: () => 'home',
+      underpassView: (_player: unknown, event?: { phase?: string }) => `underpass:${event?.phase ?? 'syncing'}`,
+      battleView: () => 'battle',
+    },
+  ) as new (root: unknown, store: unknown, api: unknown) => {
+    route: string;
+    underpassEvent?: { phase: string; cycleId: string; source: string };
+    navigate(route: string): void;
+  };
+  const controller = new Controller(root, { snapshot: player }, {
+    enabled: true,
+    getUnderpass: async () => {
+      requests += 1;
+      return { phase: 'open', cycleId: 'fresh-cycle', source: 'server' };
+    },
+  });
+
+  controller.navigate('underpass');
+  assert.equal(root.innerHTML, 'underpass:syncing',
+    'the route may render immediately while the fresh authoritative state is loading');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(requests, 1, 'entering Underpass should request a fresh Worker snapshot');
+  assert.equal(controller.underpassEvent?.phase, 'open');
+  assert.equal(controller.underpassEvent?.cycleId, 'fresh-cycle');
+  assert.equal(root.innerHTML, 'underpass:open',
+    'the Underpass controls should rerender from the fresh authoritative event state');
+});
+
 test('controller moves focus to main content after navigation but not ordinary rerenders', () => {
   const focused: unknown[] = [];
   const main = { focus: (options?: unknown) => focused.push(options) };
