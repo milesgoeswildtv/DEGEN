@@ -42,6 +42,7 @@ export class AppController {
   private battleEngine?: BattleEngine;
   private battleReturnTimer?: number;
   private worldRefreshTimer?: number;
+  private worldRefreshGeneration = 0;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
   private battlePermitOwnerId?: string;
@@ -706,9 +707,24 @@ export class AppController {
   }
 
   private async refreshWorld(rerender = false): Promise<void> {
+    const playerId = this.store.snapshot.id;
+    const generation = ++this.worldRefreshGeneration;
+    const isCurrentRequest = (): boolean =>
+      generation === this.worldRefreshGeneration && this.store.snapshot.id === playerId;
+    const refreshAfterAccountChange = async (): Promise<void> => {
+      // Ignore superseded reads for the same account. If the active identity
+      // changed without starting another refresh, immediately fetch its world.
+      if (generation !== this.worldRefreshGeneration || this.store.snapshot.id === playerId) return;
+      await this.refreshWorld(true);
+    };
+
     try {
       if (this.api.enabled) {
-        const snapshot = await this.api.getUnderpass(this.store.snapshot.id);
+        const snapshot = await this.api.getUnderpass(playerId);
+        if (!isCurrentRequest()) {
+          await refreshAfterAccountChange();
+          return;
+        }
         if (!snapshot) throw new Error('Missing authoritative world-event snapshot.');
         this.underpassEvent = snapshot;
       } else {
@@ -716,12 +732,20 @@ export class AppController {
       }
       this.worldSyncFailed = false;
     } catch (error) {
+      if (!isCurrentRequest()) {
+        await refreshAfterAccountChange();
+        return;
+      }
       console.warn('World-event sync failed; server-backed combat is unavailable.', error);
       this.worldSyncFailed = this.api.enabled;
       // Never fabricate a preview cycle for a server-backed player.
       this.underpassEvent = this.api.enabled ? undefined : getPreviewUnderpass();
     }
 
+    if (!isCurrentRequest()) {
+      await refreshAfterAccountChange();
+      return;
+    }
     if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 
