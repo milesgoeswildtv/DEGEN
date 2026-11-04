@@ -193,3 +193,60 @@ test('whitespace-only identifiers on mutation routes return 400 before touching 
     assert.deepEqual(await response.json(), { error: scenario.error }, scenario.path);
   }
 });
+
+
+test('padded route identifiers are rejected before touching D1', async () => {
+  const cases = [
+    { path: '/api/player/bootstrap', method: 'POST', body: { playerId: ' player-1 ' }, error: 'playerId is required' },
+    {
+      path: '/api/battle/start', method: 'POST',
+      body: { playerId: 'player-1', eventKey: 'underpass', cycleId: ' cycle-1 ', encounterKey: TUNNEL_MAW.id },
+      error: 'Invalid battle start request',
+    },
+    {
+      path: '/api/battle/action', method: 'POST',
+      body: { playerId: 'player-1', permitId: ' permit-1 ', abilityId: 'slash', expectedTurnCount: 0 },
+      error: 'playerId, permitId, and abilityId are required',
+    },
+    {
+      path: '/api/battle/action', method: 'POST',
+      body: { playerId: 'player-1', permitId: 'permit-1', abilityId: ' slash ', expectedTurnCount: 0 },
+      error: 'playerId, permitId, and abilityId are required',
+    },
+    {
+      path: '/api/battle/complete', method: 'POST',
+      body: { playerId: 'player-1', permitId: ' permit-1 ' },
+      error: 'playerId and permitId are required',
+    },
+    {
+      path: '/api/player/housing', method: 'PUT',
+      body: { playerId: ' player-1 ', housing: { placements: [] } },
+      error: 'playerId and housing are required',
+    },
+  ];
+
+  for (const scenario of cases) {
+    const response = await worker.fetch(new Request(`https://degen-api.example${scenario.path}`, {
+      method: scenario.method,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(scenario.body),
+    }), {
+      DB: { prepare() { throw new Error('D1 must not be touched for padded route identifiers'); } },
+    });
+    assert.equal(response.status, 400, scenario.path);
+    assert.deepEqual(await response.json(), { error: scenario.error }, scenario.path);
+  }
+});
+
+test('padded player IDs on read routes are rejected before touching D1', async () => {
+  for (const path of [
+    '/api/world/underpass?playerId=%20player-1%20',
+    '/api/battle/pending-rewards?playerId=%20player-1%20',
+  ]) {
+    const response = await worker.fetch(new Request(`https://degen-api.example${path}`), {
+      DB: { prepare() { throw new Error('D1 must not be touched for a padded player ID'); } },
+    });
+    assert.equal(response.status, 400, path);
+    assert.deepEqual(await response.json(), { error: 'playerId is required' }, path);
+  }
+});
