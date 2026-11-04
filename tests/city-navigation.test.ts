@@ -227,7 +227,7 @@ test('older Underpass refresh cannot overwrite a newer authoritative snapshot', 
   const root = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null };
   const pending: Array<(snapshot: { phase: 'open' | 'sealed'; cycleId: string; source: 'server' }) => void> = [];
   const Controller = runInNewContext(
-    compile('../src/app/AppController.ts') + '\\nAppController;',
+    compile('../src/app/AppController.ts') + '\nAppController;',
     {
       WORLD_LOCATIONS,
       bindCityViewport: () => {},
