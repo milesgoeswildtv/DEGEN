@@ -932,7 +932,100 @@ try {
   assert.match(shieldLog, /Tunnel Maw Shield absorbs 5\./,
     'Chromium must separately render the enemy Shield absorption');
 
-  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback and free-action continuation');
+  // Verify the player's temporary Shield is visible in the real DOM/accessible HUD,
+  // including a free bespoke Shield-gain ability while Mana is already zero.
+  const playerShieldHud = await cdp.evaluate(`(async () => {
+    const [engineModule, contentModule, rulesModule, viewModule] = await Promise.all([
+      import('/src/game/combat/engine.ts'),
+      import('/src/data/combatPrototype.ts'),
+      import('/src/game/combat/rules.ts'),
+      import('/src/ui/views.ts'),
+    ]);
+    const { BattleEngine } = engineModule;
+    const { TEST_DEGEN, TUNNEL_MAW } = contentModule;
+    const { resolveCombatTurn } = rulesModule;
+    const { battleView, updateBattleDom } = viewModule;
+    const degen = {
+      ...TEST_DEGEN,
+      maxMana: 0,
+      abilities: TEST_DEGEN.abilities.map((candidate) => candidate.id === 'slash'
+        ? { ...candidate, shieldGain: 15 }
+        : candidate),
+    };
+    const player = {
+      id: 'player-shield-browser-player',
+      displayName: 'Shield Tester',
+      level: 1,
+      xp: 0,
+      currency: 0,
+      degenId: degen.id,
+      inventory: [],
+      unlockedLocations: ['home'],
+      housing: { inventory: [], placements: [] },
+      defeatedBosses: [],
+    };
+    document.body.innerHTML = battleView(player, degen);
+    const permitId = 'browser-player-shield-display';
+    const battle = new BattleEngine(degen, TUNNEL_MAW, () => undefined, {
+      permitId,
+      status: 'active',
+      playerHp: degen.maxHp,
+      playerMana: 0,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 0,
+      enemyHp: TUNNEL_MAW.maxHp,
+      enemyShield: 0,
+      enemyShieldAbsorbed: 0,
+      turnCount: 0,
+    });
+    battle.subscribe(updateBattleDom);
+    const ability = degen.abilities.find((candidate) => candidate.id === 'slash');
+    const turn = resolveCombatTurn({
+      playerHp: degen.maxHp,
+      playerMana: 0,
+      playerShield: 0,
+      enemyHp: TUNNEL_MAW.maxHp,
+      enemyShield: 0,
+      ability,
+      degen,
+      enemy: TUNNEL_MAW,
+    });
+    battle.applyAuthoritativeAction('slash', {
+      permitId,
+      status: turn.status,
+      playerHp: turn.playerHp,
+      playerMana: turn.playerMana,
+      playerShield: turn.playerShield,
+      shieldAbsorbed: turn.shieldAbsorbed,
+      retaliationDamage: turn.retaliationDamage,
+      enemyHp: turn.enemyHp,
+      enemyShield: turn.enemyShield,
+      enemyShieldAbsorbed: turn.enemyShieldAbsorbed,
+      turnCount: 1,
+    });
+    const button = document.querySelector('[data-ability="slash"]');
+    return {
+      shield: document.querySelector('#battle-shield')?.textContent ?? '',
+      hud: document.querySelector('#battle-accessible-hud')?.textContent ?? '',
+      log: document.querySelector('#battle-log')?.textContent ?? '',
+      cost: button?.querySelector('small')?.textContent ?? '',
+      disabled: button?.disabled ?? true,
+      playerHp: battle.snapshot.playerHp,
+      playerShield: battle.snapshot.playerShield,
+    };
+  })()`);
+  assert.equal(playerShieldHud.shield, 'SHIELD 5', 'Chromium must render remaining player Shield');
+  assert.match(playerShieldHud.hud, /Mana 0 of 0, Shield 5\\./,
+    'the accessible combat HUD must expose player Shield at zero Mana');
+  assert.match(playerShieldHud.log, /Shield \\+15\\./, 'the battle log must show the granted Shield');
+  assert.match(playerShieldHud.log, /Shield absorbs 10\\./, 'the battle log must show Shield absorbing retaliation');
+  assert.equal(playerShieldHud.cost, 'NO MANA · SHIELD +15');
+  assert.equal(playerShieldHud.disabled, false, 'the zero-cost Shield action remains available at zero Mana');
+  assert.equal(playerShieldHud.playerHp, 120, 'Shield absorbs retaliation before HP');
+  assert.equal(playerShieldHud.playerShield, 5, 'unused Shield carries into the next turn');
+
+  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback, player/enemy Shield DOM, and free-action continuation');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
   for (const [name, output] of logs) console.error(name + ' logs:\n' + output);
