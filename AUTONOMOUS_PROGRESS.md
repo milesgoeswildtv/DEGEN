@@ -1,3 +1,17 @@
+## Latest run — 2026-11-04 (reject unsupported platform identifiers)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; exact-main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) completed SUCCESS.
+- **Branch / PR:** continuing `automation/degen/worker-identity-input-validation-v01`, PR #124 OPEN / READY FOR REVIEW / UNMERGED. Starting head: `3a9da2c01f796a8b6b7b12b21fcbeabb5b6ba319`. This is a narrow continuation of the existing Worker request-validation slice, not a new competing branch.
+- **Task / files changed:** `worker/index.ts` now rejects a supplied platform value outside the source-of-truth `PlatformName` union (`browser`, `discord`, `telegram`) before D1; `tests/worker-request-body.test.ts` covers an unsupported platform value. This closes a silent-acceptance path where an unknown string was previously ignored rather than rejected. No platform authentication, identity-link policy, or combat/economy behavior changed.
+- **QA:** prior exact-head CI [41787726340](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41787726340) passed on `3a9da2c01f796a8b6b7b12b21fcbeabb5b6ba319`. The new implementation/test head requires its own Actions run; no pass is claimed yet. No local shell test/build/Wrangler run or production D1/Worker operation is claimed.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, persisted authoritative `player_mana`, server-owned initialization and action CAS, unaffordable rejection without turn/damage mutation, exact deduction, zero-cost-at-zero, terminal victory/defeat, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain intact. The legacy `sidekick/degen-mana-foundation-v01` remains divergent (11 ahead / 104 behind); its Mana migration blob matches main but its combat and Worker runtime files are stale. No cherry-pick or duplicate Mana branch.
+- **Battle authority / reward idempotency:** Worker/D1 owns permits, player HP/Mana, enemy HP, turn CAS, terminal outcomes/history, receipts, XP/level-up, currency, inventory, and retry recovery. No client reward/economy trust moved.
+- **D1 assumptions / blockers:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; deploy order is schema → tracked migrations → Worker. Main tracks Mana `0003`, active-permit backfill `0006`, and inventory guard `0007`. Draft auth PR #14 still proposes a conflicting `0007_player_sessions.sql`; PRs #114/#126 guard deploy writes but do not choose migration ownership/order. Shield PR #125 remains draft/non-mergeable with branch-only `0008`/`0009`; do not merge or deploy around the unresolved version gate. No production migration or Worker deployment occurred.
+- **Miles blockers:** explicit resolution of duplicate `0007` ownership/order, production Discord/Telegram signed-session credentials, and approved legacy identity-collision policy remain outstanding.
+- **One best next task:** verify this PR #124 code/test head with exact-head CI; then preserve the migration gate and reconcile Shield only after the migration sequence is explicitly resolved.
+
+---
+
 ## Latest run — 2026-11-04 (canonical route control-whitespace regression coverage)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) completed SUCCESS on that exact SHA.

@@ -91,6 +91,7 @@ test('malformed route identity fields return 400 before touching D1', async () =
     { path: '/api/player/bootstrap', body: { playerId: {} }, error: 'playerId is required' },
     { path: '/api/player/bootstrap', body: { playerId: 'player-1', displayName: {} }, error: 'displayName must be a string.' },
     { path: '/api/player/bootstrap', body: { playerId: 'player-1', platform: {}, platformUserId: 'discord-1' }, error: 'platform must be a string.' },
+    { path: '/api/player/bootstrap', body: { playerId: 'player-1', platform: 'steam', platformUserId: 'account-1' }, error: 'platform must be browser, discord, or telegram.' },
     { path: '/api/player/bootstrap', body: { playerId: 'player-1', platform: 'discord', platformUserId: {} }, error: 'platformUserId must be a string.' },
     { path: '/api/battle/start', body: { playerId: {}, eventKey: 'underpass', cycleId: 'cycle-1', encounterKey: TUNNEL_MAW.id }, error: 'Invalid battle start request' },
     { path: '/api/battle/start', body: { playerId: 'player-1', eventKey: 'underpass', cycleId: {}, encounterKey: TUNNEL_MAW.id }, error: 'Invalid battle start request' },

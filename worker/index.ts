@@ -300,6 +300,9 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
   if (input.platform !== undefined && typeof input.platform !== 'string') {
     return fail(request, env, 'platform must be a string.');
   }
+  if (input.platform !== undefined && !['browser', 'discord', 'telegram'].includes(input.platform)) {
+    return fail(request, env, 'platform must be browser, discord, or telegram.');
+  }
   if (input.platformUserId !== undefined && typeof input.platformUserId !== 'string') {
     return fail(request, env, 'platformUserId must be a string.');
   }
