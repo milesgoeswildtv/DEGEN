@@ -188,17 +188,17 @@ test('malformed Shield gain stays unavailable after the first snapshot update', 
     ],
   };
   const markup = ui.battleView({ displayName: 'Player', level: 1, currency: 0 }, malformedDegen as unknown as typeof TEST_DEGEN);
-  assert.match(markup, /data-ability="slash" data-mana-cost="0" data-shield-gain="null" disabled/);
-  assert.match(markup, /data-ability="crack" data-mana-cost="4" data-shield-gain="-1" disabled/);
-  assert.match(markup, /data-ability="string-shield" data-mana-cost="0" data-shield-gain="" disabled/,
+  assert.match(markup, /data-ability="slash" data-mana-cost="0" data-shield-gain="invalid" disabled/);
+  assert.match(markup, /data-ability="crack" data-mana-cost="4" data-shield-gain="invalid" disabled/);
+  assert.match(markup, /data-ability="string-shield" data-mana-cost="0" data-shield-gain="invalid" disabled/,
     'a numeric string must not be normalized into a valid Shield definition');
 
   const log = { innerHTML: '', append: (_node: unknown) => undefined };
   const accessibleHud = { textContent: '' };
   const buttons = [
-    buttonWithCostLabel('0', 'NO MANA', 'null'),
-    buttonWithCostLabel('4', '4 MANA', '-1'),
-    buttonWithCostLabel('0', 'NO MANA', ''),
+    buttonWithCostLabel('0', 'NO MANA', 'invalid'),
+    buttonWithCostLabel('4', '4 MANA', 'invalid'),
+    buttonWithCostLabel('0', 'NO MANA', 'invalid'),
   ];
   const fakeDocument = {
     querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
