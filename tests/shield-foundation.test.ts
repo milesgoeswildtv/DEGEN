@@ -202,6 +202,13 @@ test('server-backed results require the positive enemy Shield absorption audit',
   engine.applyAuthoritativeAction('slash', valid);
   assert.equal(engine.snapshot.enemyShield, undefined);
   assert.ok(engine.snapshot.log.some((line) => line.includes('Shield absorbs 5')));
+
+  // Same-turn snapshots are immutable across the enemy Shield absorption audit too.
+  assert.equal(engine.synchronizeAuthoritativeState(valid), true);
+  assert.equal(engine.synchronizeAuthoritativeState(missingAudit), false,
+    'a same-turn replay cannot omit an already accepted positive enemy Shield absorption');
+  assert.equal(engine.synchronizeAuthoritativeState({ ...valid, enemyShieldAbsorbed: 4 }), false,
+    'a same-turn replay cannot rewrite the accepted enemy Shield absorption amount');
 });
 
 test('server-backed engine rejects player Shield absorption and carry-forward that disagree with shared turn math', () => {

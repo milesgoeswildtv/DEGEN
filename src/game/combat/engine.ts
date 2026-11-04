@@ -30,6 +30,7 @@ export class BattleEngine {
   private readonly permitId?: string;
   private enemyHp: number;
   private enemyShield: number;
+  private enemyShieldAbsorbed: number;
   private status: BattleStatus = 'active';
   private log: string[] = [];
   private listeners = new Set<(snapshot: BattleSnapshot) => void>();
@@ -69,6 +70,7 @@ export class BattleEngine {
     this.turnCount = initialState?.turnCount ?? 0;
     this.enemyHp = initialState?.enemyHp ?? enemy.maxHp;
     this.enemyShield = initialState?.enemyShield ?? enemy.startingShield ?? 0;
+    this.enemyShieldAbsorbed = initialState?.enemyShieldAbsorbed ?? 0;
     this.status = initialState?.status ?? 'active';
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
   }
@@ -234,6 +236,7 @@ export class BattleEngine {
     this.retaliationDamage = result.retaliationDamage ?? 0;
     this.enemyHp = result.enemyHp;
     this.enemyShield = nextEnemyShield;
+    this.enemyShieldAbsorbed = enemyShieldAbsorbed;
     this.turnCount = result.turnCount;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${playerDamage} damage.`);
     if (manaSpent > 0) this.log.push(`Mana -${manaSpent}.`);
@@ -265,10 +268,10 @@ export class BattleEngine {
     this.emit();
   }
 
-  synchronizeAuthoritativeState(result: BattleActionResult): void {
-    if (this.status !== 'active' || !this.isValidAuthoritativeState(result)) return;
-    if (!this.permitId || result.permitId !== this.permitId) return;
-    if (result.turnCount < this.turnCount) return;
+  synchronizeAuthoritativeState(result: BattleActionResult): boolean {
+    if (this.status !== 'active' || !this.isValidAuthoritativeState(result)) return false;
+    if (!this.permitId || result.permitId !== this.permitId) return false;
+    if (result.turnCount < this.turnCount) return false;
 
     // A turn count identifies one immutable combat snapshot. Same-turn retries
     // are idempotent only when every authoritative field agrees; a conflicting
@@ -281,6 +284,7 @@ export class BattleEngine {
       || (result.retaliationDamage ?? 0) !== this.retaliationDamage
       || result.enemyHp !== this.enemyHp
       || (result.enemyShield ?? this.enemy.startingShield ?? 0) !== this.enemyShield
+      || (result.enemyShieldAbsorbed ?? 0) !== this.enemyShieldAbsorbed
       || result.status !== this.status
     )) return;
 
@@ -289,7 +293,7 @@ export class BattleEngine {
     // multi-turn catch-up, intermediate actions are unavailable, so Worker state
     // remains the authority after the structural snapshot checks above.
     if (result.turnCount === this.turnCount + 1
-      && !this.degen.abilities.some((ability) => this.resolveAuthoritativeTurn(result, ability))) return;
+      && !this.degen.abilities.some((ability) => this.resolveAuthoritativeTurn(result, ability))) return false;
 
     const changed = this.playerHp !== result.playerHp
       || this.playerMana !== result.playerMana
@@ -298,6 +302,7 @@ export class BattleEngine {
       || this.retaliationDamage !== (result.retaliationDamage ?? 0)
       || this.enemyHp !== result.enemyHp
       || this.enemyShield !== (result.enemyShield ?? this.enemy.startingShield ?? 0)
+      || this.enemyShieldAbsorbed !== (result.enemyShieldAbsorbed ?? 0)
       || this.turnCount !== result.turnCount
       || this.status !== result.status;
     this.playerHp = result.playerHp;
@@ -307,6 +312,7 @@ export class BattleEngine {
     this.retaliationDamage = result.retaliationDamage ?? 0;
     this.enemyHp = result.enemyHp;
     this.enemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
+    this.enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
     this.turnCount = result.turnCount;
     this.status = result.status;
     if (changed) this.log.push('Battle state synchronized with server.');
@@ -315,6 +321,7 @@ export class BattleEngine {
     this.trimLog();
     this.emit();
     if (this.status !== 'active') this.finish(this.status);
+    return true;
   }
 
   useAbility(abilityId: string): void {
@@ -357,6 +364,7 @@ export class BattleEngine {
     this.retaliationDamage = result.retaliationDamage;
     this.enemyHp = result.enemyHp;
     this.enemyShield = result.enemyShield;
+    this.enemyShieldAbsorbed = result.enemyShieldAbsorbed;
     this.turnCount += 1;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${result.playerDamage} damage.`);
 

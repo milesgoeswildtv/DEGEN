@@ -1,3 +1,21 @@
+## Latest follow-up — 2026-11-04 (same-turn enemy Shield audit replay is immutable)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
+- **Current branch / PR:** `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), base main; parent code/test head `82ca4828172585ddc8780948f632db0024a8389c`. This remains OPEN / DRAFT / UNMERGED.
+- **Task / files changed:** `src/game/combat/engine.ts`, `tests/shield-foundation.test.ts`, and this progress record.
+- **Evidence-backed defect:** same-turn authoritative replay equality compared player HP/Mana/Shield, enemy HP/Shield, turn, and status, but omitted the accepted `enemyShieldAbsorbed` audit delta. The code comment promised every authoritative field was immutable, yet a same-turn recovery payload could omit or rewrite that audit without being rejected.
+- **Fix:** retain the last accepted enemy Shield absorption inside the battle engine, include it in same-turn equality/change detection, and return an explicit accepted/rejected boolean from authoritative synchronization. Existing action presentation and Worker authority are unchanged.
+- **Regression coverage:** the Shield foundation test now proves an exact same-turn replay is accepted, while a replay omitting a previously positive absorption or changing its amount is rejected.
+- **QA:** prior exact-head run [41891898360](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41891898360) passed migration preflight, deterministic tests, and isolated Worker/D1 reward concurrency; transient reward recovery was still running at the last check. This new code/test head requires its own exact-head CI. No local shell test/build/Wrangler run is claimed.
+- **Mana:** COMPLETE / MERGED on main; Degen-only Mana authority, exact deduction, atomic insufficient-Mana rejection, zero-cost-at-zero, terminal handling, cost-aware UI, shared client/Worker math, no monster resource, and no reversion at zero remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 still owns permit HP/Mana/Shield, enemy HP/Shield, action CAS, terminal outcomes/history, audited receipts, progression, currency, inventory, and recoverable exactly-once settlement. No reward or economy trust moved to the client.
+- **D1 / migration assumptions:** Wrangler binds `DB` to `DEGEN` and `db/migrations`. Shield migrations `0008` / `0009` remain branch-only and unapplied; main's duplicate `0007` auth/inventory ownership remains unresolved and guarded. No migration was renumbered or applied remotely.
+- **Miles blockers:** duplicate-`0007` migration sequencing and review order across #114/#126/#122–124 remain unresolved. No monster/status/Degen-kit canon was invented.
+- **Delivery:** code/test/progress are prepared for the existing feature branch only. No merge, production D1 write, migration apply, Worker deploy, or physical-device QA is claimed.
+- **One best next task:** verify exact-head CI for this same-turn audit guard; then continue the existing Shield branch only for evidence-backed recovery/authority defects.
+
+---
+
 ## Latest follow-up — 2026-11-04 (align Worker CAS test with persisted enemy Shield audit)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) and Pages preview [41775622351](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622351) remain green on main.
