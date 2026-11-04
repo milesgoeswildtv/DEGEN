@@ -199,6 +199,7 @@ export class BattleEngine {
       || retaliationDamage !== expectedTurn.retaliationDamage
       || result.enemyHp !== expectedTurn.enemyHp
       || nextEnemyShield !== expectedTurn.enemyShield
+      || (expectedTurn.enemyShieldAbsorbed > 0 && enemyShieldAbsorbed === undefined)
       || (enemyShieldAbsorbed !== undefined && enemyShieldAbsorbed !== expectedTurn.enemyShieldAbsorbed)
     ) return undefined;
 
