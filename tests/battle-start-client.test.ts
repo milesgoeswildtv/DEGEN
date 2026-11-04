@@ -986,6 +986,32 @@ test('server-backed battle with a rejected snapshot returns to Underpass and pre
   assert.equal(battleEngineCreations.length, 0);
 });
 
+test('valid server-backed battle mounts only its matching Worker snapshot and loads the renderer', () => {
+  battleEngineCreations.length = 0;
+  const permit = validPermit('permit-server');
+  const parent = {};
+  const rendererLoads: unknown[][] = [];
+  const controller = {
+    root: { querySelector: () => parent, querySelectorAll: () => [] },
+    battlePermit: permit,
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+    loadBattleRenderer(...args: unknown[]) { rendererLoads.push(args); },
+  };
+
+  mountBattle.call(controller);
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(battleEngineCreations.length, 1);
+  assert.equal(battleEngineCreations[0]?.[3], permit.initialState,
+    'the Worker-issued start snapshot is passed unchanged to BattleEngine');
+  assert.equal(rendererLoads.length, 1, 'a validated server-backed encounter still loads Phaser');
+  assert.equal(rendererLoads[0]?.[0], parent);
+});
+
 test('offline preview still mounts without a server-owned initial snapshot', () => {
   battleEngineCreations.length = 0;
   const controller = {
