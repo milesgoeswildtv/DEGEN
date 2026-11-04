@@ -164,13 +164,13 @@ try {
   // Startup holds intentionally exercise only the first document. Later reloads
   // must release any newly installed holds so the real bootstrap/world refresh
   // can complete before the test mutates D1 and navigates into the Underpass.
-  const releaseRepeatedStartupHolds = async () => cdp.evaluate(`() => {
+  const releaseRepeatedStartupHolds = async () => cdp.evaluate(`(() => {
     window.__degenHoldBootstrapResponse = false;
     window.__degenHoldWorldSnapshot = false;
     window.__degenReleaseBootstrap?.();
     window.__degenReleaseWorldSnapshot?.();
     return true;
-  }`);
+  })()`);
   const assertFitsMobile = async route => {
     assert.equal(await cdp.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
       true, route + ' must not overflow horizontally');
