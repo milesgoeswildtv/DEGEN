@@ -64,11 +64,13 @@ const body = async <T>(request: Request): Promise<T> => {
   return value as T;
 };
 
-// Opaque IDs must not contain edge whitespace, C0/C1 controls, or invisible Unicode format controls.
+// Opaque IDs must stay small and canonical before they reach D1.
+const MAX_ROUTE_IDENTIFIER_LENGTH = 128;
 const ROUTE_IDENTIFIER_NONCANONICAL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]|\p{Cf}/u;
 const isCanonicalIdentifier = (value: unknown): value is string =>
   typeof value === 'string'
   && value.length > 0
+  && value.length <= MAX_ROUTE_IDENTIFIER_LENGTH
   && value.trim() === value
   && !ROUTE_IDENTIFIER_NONCANONICAL_CHARACTERS.test(value);
 
