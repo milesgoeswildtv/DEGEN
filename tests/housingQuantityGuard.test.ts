@@ -67,10 +67,10 @@ test('placement instance IDs are bounded and canonical', () => {
     'i'.repeat(257),
     ' leading',
     'trailing ',
-    'line\\nbreak',
-    'control\\u0000id',
-    'format\\u200Bid',
-    'bidi\\u202Eid',
+    'line\nbreak',
+    'control\u0000id',
+    'format\u200Bid',
+    'bidi\u202Eid',
   ];
   for (const id of invalidIds) {
     assert.throws(() => validateHousingPlacements(owned, [bed(id, 1)]), /Invalid housing placement/);
