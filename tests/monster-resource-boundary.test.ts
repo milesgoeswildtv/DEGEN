@@ -178,6 +178,8 @@ test('monster mechanic namespaces reject GLITCHRAT-owned LEAK across composite f
   const forbiddenCases = [
     { path: 'status', enemy: { ...TUNNEL_MAW, status: 'LEAK' } },
     { path: 'signature.name', enemy: { ...TUNNEL_MAW, signature: { name: 'LEAK' } } },
+    { path: 'signature.effects.LEAK', enemy: { ...TUNNEL_MAW, signature: { effects: { LEAK: { duration: 2 } } } } },
+    { path: 'loadout.0.statuses.leak', enemy: { ...TUNNEL_MAW, loadout: [{ statuses: { leak: { duration: 2 } } }] } },
     { path: 'loadout.0.appliedEffect', enemy: { ...TUNNEL_MAW, loadout: [{ appliedEffect: 'leak' }] } },
     { path: 'appliedStatus', enemy: { ...TUNNEL_MAW, appliedStatus: 'LEAK' } },
     { path: 'appliedStatuses.0', enemy: { ...TUNNEL_MAW, appliedStatuses: ['LEAK'] } },
@@ -225,6 +227,7 @@ test('LEAK in monster flavor text and move-description arrays remains descriptiv
   const prose = {
     ...TUNNEL_MAW,
     description: 'A cracked service pipe leaks water into the tunnel.',
+    metadata: { LEAK: 'A descriptive key about water leaking from a pipe.' },
     abilities: [{ description: ['LEAK is only a word in this move description.'] }],
   } as typeof TUNNEL_MAW;
   assert.doesNotThrow(() => assertNoMonsterActionResource(prose));
