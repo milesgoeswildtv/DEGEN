@@ -156,3 +156,11 @@ test('production Worker deployments serialize D1 migrations and never cancel an 
     'production D1 migrations and Worker deployments must share one non-cancelling concurrency lane',
   );
 });
+
+test('production Worker deploys run only from main, including manual dispatches', () => {
+  assert.match(
+    deployWorkflow,
+    /^jobs:\n  deploy:\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}$/m,
+    'workflow_dispatch from a feature branch must never apply production D1 migrations or deploy Worker code',
+  );
+});
