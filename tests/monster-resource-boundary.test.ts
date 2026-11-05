@@ -252,3 +252,25 @@ test('LEAK keys inside descriptive metadata nested under monster mechanics remai
     enemyHp: TUNNEL_MAW.maxHp, ability: freeAbility, degen: TEST_DEGEN, enemy: prose,
   }));
 });
+
+test('descriptive metadata remains subject to the monster resource boundary', () => {
+  const forbiddenCases = [
+    {
+      path: 'signature.metadata.manaCost',
+      enemy: { ...TUNNEL_MAW, signature: { metadata: { manaCost: 1 } } },
+    },
+    {
+      path: 'abilities.0.description.resourcePool',
+      enemy: { ...TUNNEL_MAW, abilities: [{ description: { resourcePool: 1 } }] },
+    },
+  ] as const;
+
+  for (const { path, enemy } of forbiddenCases) {
+    assert.throws(
+      () => assertNoMonsterActionResource(enemy as typeof TUNNEL_MAW),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('universal action resource (' + path + ')'),
+      'descriptive text may mention LEAK but cannot smuggle a monster action-resource field',
+    );
+  }
+});
