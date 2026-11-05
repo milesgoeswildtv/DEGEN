@@ -149,6 +149,20 @@ try {
     {player_hp:120,player_mana:12,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:92,enemy_shield:1,turn_count:0,battle_status:'active'},
   ]);
 
+  // A fresh permit cannot claim prior enemy Shield absorption even when its current
+  // Shield still equals the server-owned starting value.
+  sql("UPDATE battle_permits SET enemy_shield=0,last_enemy_shield_absorbed=1 WHERE id='shield-impossible-enemy-permit'");
+  const impossibleEnemyAudit=await post('/api/battle/action',{
+    playerId:'shield-impossible-enemy',permitId:'shield-impossible-enemy-permit',
+    abilityId:'slash',expectedTurnCount:0,
+  });
+  assert.equal(impossibleEnemyAudit.status,409);
+  assert.equal(impossibleEnemyAudit.data.error,'Battle state is invalid.');
+  assert.equal('battleState' in impossibleEnemyAudit.data,false);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-impossible-enemy-permit'"),[
+    {player_hp:120,player_mana:12,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:92,enemy_shield:0,last_enemy_shield_absorbed:1,turn_count:0,battle_status:'active'},
+  ],'the rejected corrupt audit must not advance or rewrite the permit');
+
   const partialActive=await post('/api/battle/action',{playerId:'shield-partial-active',permitId:'shield-partial-active-permit',abilityId:'slash',expectedTurnCount:1});
   assert.equal(partialActive.status,409);
   assert.equal(partialActive.data.error,'Battle state is invalid.');
