@@ -89,7 +89,7 @@ const DEGEN_MECHANIC_DIRECT_NAME_FIELDS = new Set([
 
 const DEGEN_MECHANIC_NESTED_NAME_FIELDS = new Set([
   'id', 'key', 'name', 'type', 'value',
-  'effect', 'appliedeffect', 'status', 'statusname',
+  'effect', 'appliedeffect', 'status', 'statusname', 'appliedstatus', 'appliedstatuses',
   'effectname', 'signature', 'signaturename',
   'degeneffect', 'degenstatus', 'mechanic', 'mechanicname',
 ]);
