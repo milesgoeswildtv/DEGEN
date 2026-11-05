@@ -109,6 +109,76 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
   assert.match(accessibleHud.textContent, /Mana 4 of 12/);
 });
 
+test('zero-Mana Shield abilities keep their gain visible and only free actions enabled', () => {
+  const shieldDegen = {
+    ...TEST_DEGEN,
+    maxMana: 0,
+    abilities: [
+      { ...TEST_DEGEN.abilities[0]!, shieldGain: 5 },
+      { ...TEST_DEGEN.abilities[1]!, shieldGain: 3 },
+    ],
+  };
+  const markup = ui.battleView(
+    { displayName: 'Player', level: 1, currency: 0 },
+    shieldDegen as typeof TEST_DEGEN,
+  );
+  assert.match(markup, /data-ability="slash" data-mana-cost="0" data-shield-gain="5"/);
+  assert.match(markup, /NO MANA · SHIELD \+5/);
+  assert.match(markup, /data-ability="crack" data-mana-cost="4" data-shield-gain="3"/);
+  assert.match(markup, /4 MANA · SHIELD \+3/);
+
+  const log = { innerHTML: '', append: (_node: unknown) => undefined };
+  const accessibleHud = { textContent: '' };
+  const buttons = [
+    buttonWithCostLabel('0', 'NO MANA', '5'),
+    buttonWithCostLabel('4', '4 MANA', '3'),
+  ];
+  const fakeDocument = {
+    querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
+    querySelectorAll: (_selector: string) => buttons,
+  };
+  const boundUi = runInNewContext(
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ updateBattleDom });',
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
+  ) as {
+    updateBattleDom: (snapshot: {
+      status: 'active' | 'victory' | 'defeat';
+      playerName: string;
+      playerHp: number;
+      playerMaxHp: number;
+      playerMana: number;
+      playerMaxMana: number;
+      playerShield: number;
+      enemyName: string;
+      enemyHp: number;
+      enemyMaxHp: number;
+      turnCount: number;
+      log: string[];
+    }) => void;
+  };
+
+  boundUi.updateBattleDom({
+    status: 'active',
+    playerName: 'TEST_DEGEN',
+    playerHp: 80,
+    playerMaxHp: 120,
+    playerMana: 0,
+    playerMaxMana: 0,
+    playerShield: 0,
+    enemyName: 'Tunnel Maw',
+    enemyHp: 50,
+    enemyMaxHp: 92,
+    turnCount: 0,
+    log: [],
+  });
+
+  assert.equal(buttons[0]?.disabled, false, 'zero-cost Shield ability remains usable at zero Mana');
+  assert.equal(buttons[0]?.costLabel.textContent, 'NO MANA · SHIELD +5');
+  assert.equal(buttons[1]?.disabled, true, 'paid Shield ability remains unavailable at zero Mana');
+  assert.equal(buttons[1]?.costLabel.textContent, 'NEED 4 MANA · SHIELD +3');
+  assert.match(accessibleHud.textContent, /Mana 0 of 0, Shield 0/);
+});
+
 test('battle terminal outcomes announce defeat/victory and disable every ability', () => {
   const appended: Array<{ className: string; textContent: string }> = [];
   const log = {
