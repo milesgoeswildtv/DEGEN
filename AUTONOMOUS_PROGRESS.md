@@ -1,3 +1,19 @@
+## Latest run — 2026-11-05 (bounded streaming JSON request bodies)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`. The latest main commit remains the Map-first startup/progress sync; no newer main commit was observed.
+- **Current branch / PR:** continuing `automation/degen/worker-identity-input-validation-v01`, PR [#124](https://github.com/milesgoeswildtv/DEGEN/pull/124), OPEN / READY FOR REVIEW / UNMERGED. Pre-change branch head: `b45cd2e9f29b47b3891132b9e48fec596a29caf6`, 41 commits ahead / 0 behind main.
+- **Task / files changed:** `worker/index.ts` now caps every JSON API request at 64 KiB, rejects oversized declared Content-Length before reading, and independently counts streamed bytes so missing/false length headers cannot bypass the bound. Oversize responses are 413; existing content-type, JSON-shape, and canonical-ID validation remain intact. `tests/worker-request-body.test.ts` adds exact-64-KiB acceptance, 64-KiB+1 rejection before D1, and chunked/no-Content-Length overflow coverage. No combat, reward, identity-linking, housing-layout, schema, migration, or deploy configuration behavior changed.
+- **Prior exact-head QA:** code/test head `66429d1040318254fa2335983a97051d0a71be10` passed CI [42084588619](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42084588619); the previous continuity head `b45cd2e9f29b47b3891132b9e48fec596a29caf6` passed [42084873929](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42084873929). This new body-limit change has not yet run CI; do not claim its tests/build/Worker/browser QA green until a new exact-head run completes.
+- **Local QA boundary:** this runtime cannot resolve GitHub for a local clone, so no local `npm test`, `npm run build`, or `npm run check:worker` is claimed. GitHub Actions remains the executable validation path.
+- **Mana:** COMPLETE / MERGED on main. The old `sidekick/degen-mana-foundation-v01` remains 11 ahead / 104 behind and diverged; its implementation is superseded. Main tracks `0003_degen_mana.sql` and `0006_backfill_active_battle_mana.sql`; no Mana work was duplicated.
+- **Battle authority / rewards:** Worker/D1 continues to own permit HP/Mana/enemy HP/turn CAS, terminal outcomes, receipt-backed exactly-once rewards, XP/level-up, currency, inventory, and recovery. This request-size guard does not change battle or economic authority.
+- **D1 / deployment assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; main currently ends at `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still has a conflicting `0007_player_sessions.sql`; preserve the guarded #114 → #126 → #125 sequence and do not renumber/apply/deploy around the collision without Miles' explicit decision. No production D1 write, migration apply, Worker deployment, or merge.
+- **Miles blockers:** explicit ownership/order for migration version 0007; production Discord/Telegram signed-session credentials and approved legacy identity-collision policy; approved Monster Log v0.11 and unresolved universal status rules remain content/auth gates.
+- **Delivery:** this change will be pushed only to PR #124's existing feature branch. Main remains unchanged.
+- **One best next task:** verify exact-head CI for this bounded-body change, then continue only a demonstrated non-blocked reliability gap while preserving the explicit migration gate.
+
+---
+
 ## Latest run — 2026-11-05 (bounded Worker and housing identifiers)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`. Recent main history is unchanged. The deployed Worker base remains `4cc3bcbced85c46674067f43825223b959269a66`; comparison to main shows no `worker/`, `db/`, or Wrangler changes after that deployment.
