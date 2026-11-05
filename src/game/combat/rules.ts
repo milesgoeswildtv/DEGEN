@@ -174,6 +174,22 @@ export const isValidShield = (value: unknown): value is number =>
   isValidNonNegativeSafeInteger(value);
 export const isValidShieldGain = (value: unknown): value is number | undefined =>
   value === undefined || isValidShield(value);
+
+// Upper bound for one accepted enemy-Shield absorption audit. Derive it from
+// the Degen's actual bespoke abilities so multi-turn recovery cannot accept an
+// impossible audit delta that the one-turn resolver would reject.
+export const maxAbilityDamage = (degen: DegenDefinition): number | undefined => {
+  if (!isValidNonNegativeSafeInteger(degen.power) || !Array.isArray(degen.abilities)) return undefined;
+  const powerBonus = Math.floor(degen.power * 0.5);
+  let maximum = 0;
+  for (const ability of degen.abilities) {
+    if (!isValidNonNegativeSafeInteger(ability.damage)) return undefined;
+    const damage = ability.damage + powerBonus;
+    if (!Number.isSafeInteger(damage)) return undefined;
+    maximum = Math.max(maximum, damage);
+  }
+  return maximum;
+};
 export const canUseAbility = (playerMana: number, ability: AbilityDefinition): boolean =>
   isValidManaCost(playerMana) && isValidManaCost(ability.manaCost) && playerMana >= ability.manaCost;
 
