@@ -12,14 +12,23 @@ import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } fr
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
-const handleBattleAction = runInNewContext(
+const createBattleActionHandler = (degen: typeof TEST_DEGEN) => runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
-    TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
+    TEST_DEGEN: degen, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
     UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
     crypto: webcrypto, Request, Response, URL, console, Uint32Array,
   },
 ) as (request: Request, env: { DB: unknown }) => Promise<Response>;
+
+const handleBattleAction = createBattleActionHandler(TEST_DEGEN);
+const shieldGainDegen = {
+  ...TEST_DEGEN,
+  abilities: TEST_DEGEN.abilities.map((ability) => ability.id === 'slash'
+    ? { ...ability, shieldGain: 4 }
+    : ability),
+};
+const handleBattleActionWithShieldGain = createBattleActionHandler(shieldGainDegen);
 
 const actionRequest = (permitId: string, expectedTurnCount = 0): Request => new Request(
   'https://degen-api.example/api/battle/action',
@@ -423,4 +432,72 @@ test('legacy terminal permits with NULL Mana and pre-Shield audit remain recover
     }, 'legacy terminal state is projected safely without inventing prior Mana or Shield activity');
     assert.equal(reads.length, 3, 'legacy terminal recovery only reads persisted state and never applies an action');
   }
+});
+
+test('Worker persists successful Degen Shield gain and retaliation absorption in one authoritative action', async () => {
+  const permit = {
+    event_key: 'underpass',
+    cycle_event_key: 'underpass',
+    cycle_id: 'cycle-1',
+    encounter_key: TUNNEL_MAW.id,
+    player_hp: TEST_DEGEN.maxHp,
+    player_mana: TEST_DEGEN.maxMana,
+    player_shield: 0,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
+    enemy_hp: TUNNEL_MAW.maxHp,
+    enemy_shield: 0,
+    last_enemy_shield_absorbed: 0,
+    battle_status: 'active',
+    turn_count: 0,
+  };
+  const updates: Array<{ sql: string; params: unknown[] }> = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...params: unknown[]) {
+          return {
+            first: async () => {
+              if (sql.includes('UPDATE battle_permits')) {
+                updates.push({ sql, params });
+                return { turn_count: 1 };
+              }
+              if (sql.includes('FROM battle_permits AS permit') && sql.includes('completed_at IS NULL')) {
+                return permit;
+              }
+              throw new Error('Unexpected query in Worker Shield-gain test: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+  const request = new Request('https://degen-api.example/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'shield-player',
+      permitId: 'shield-gain-permit',
+      abilityId: 'slash',
+      expectedTurnCount: 0,
+    }),
+  });
+
+  const response = await handleBattleActionWithShieldGain(request, { DB: db });
+  const result = await response.json() as {
+    playerHp: number; playerMana: number; playerShield: number;
+    shieldAbsorbed: number; retaliationDamage: number;
+    enemyHp: number; turnCount: number; status: string;
+  };
+
+  assert.equal(response.status, 200);
+  assert.deepEqual([
+    result.playerHp, result.playerMana, result.playerShield,
+    result.shieldAbsorbed, result.retaliationDamage,
+    result.enemyHp, result.turnCount, result.status,
+  ], [114, 12, 0, 4, 10, 63, 1, 'active']);
+  assert.equal(updates.length, 1, 'one accepted Worker action performs one permit update');
+  assert.deepEqual(updates[0]?.params.slice(0, 9), [
+    114, 12, 0, 4, 10, 63, 0, 0, 'active',
+  ], 'the same compare-and-swap persists Shield gain, absorption, HP, and enemy damage together');
 });
