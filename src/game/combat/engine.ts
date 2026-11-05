@@ -1,5 +1,5 @@
 import type { BattleActionResult, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
-import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from './rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, maxAbilityDamage, resolveCombatTurn } from './rules.ts';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
 
@@ -89,8 +89,11 @@ export class BattleEngine {
       || result.enemyHp < 0 || result.enemyHp > this.enemy.maxHp) return false;
     const enemyShield = result.enemyShield === undefined ? (this.enemy.startingShield ?? 0) : result.enemyShield;
     if ((this.enemy.startingShield ?? 0) > 0 && result.enemyShield === undefined) return false;
+    const maxEnemyShieldAbsorbed = maxAbilityDamage(this.degen);
     if (!isValidShield(enemyShield)
-      || (result.enemyShieldAbsorbed !== undefined && !isValidShield(result.enemyShieldAbsorbed))) return false;
+      || maxEnemyShieldAbsorbed === undefined
+      || (result.enemyShieldAbsorbed !== undefined
+        && (!isValidShield(result.enemyShieldAbsorbed) || result.enemyShieldAbsorbed > maxEnemyShieldAbsorbed))) return false;
 
     const shieldFields = [result.playerShield, result.shieldAbsorbed, result.retaliationDamage];
     const hasLegacyShieldState = shieldFields.every((field) => field === undefined);
