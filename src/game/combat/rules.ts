@@ -94,6 +94,10 @@ const DEGEN_MECHANIC_NESTED_NAME_FIELDS = new Set([
   'degeneffect', 'degenstatus', 'mechanic', 'mechanicname',
 ]);
 
+const DEGEN_DESCRIPTIVE_FIELDS = new Set([
+  'metadata', 'description', 'descriptions', 'lore', 'notes', 'flavor', 'flavour', 'text',
+]);
+
 const findForbiddenDegenOwnedEffect = (
   value: unknown,
   path: string,
@@ -113,6 +117,9 @@ const findForbiddenDegenOwnedEffect = (
   for (const [field, nestedValue] of Object.entries(value)) {
     const fieldPath = path ? path + '.' + field : field;
     const normalizedField = normalizeMonsterActionResourceField(field);
+    // Descriptive subtrees remain prose even when nested under a move/signature.
+    // The independent resource guard still rejects Mana/resource fields there.
+    if (DEGEN_DESCRIPTIVE_FIELDS.has(normalizedField)) continue;
     const directMechanicName = DEGEN_MECHANIC_DIRECT_NAME_FIELDS.has(normalizedField);
     const mechanicContext = insideMechanic
       || DEGEN_MECHANIC_COLLECTION_FIELDS.has(normalizedField)
