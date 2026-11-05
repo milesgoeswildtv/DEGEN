@@ -24,6 +24,7 @@ concurrency:
 # Updating this workflow retriggers deployment after Cloudflare credential changes.
 jobs:
   deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
     environment: production
     runs-on: ubuntu-latest
     steps:
