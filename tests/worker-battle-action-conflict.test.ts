@@ -20,7 +20,7 @@ const handleBattleAction = runInNewContext(
   {
     TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
     UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
-    crypto: webcrypto, Request, Response, URL, console, Uint32Array,
+    crypto: webcrypto, Request, Response, URL, console, Uint32Array, TextDecoder,
   },
 ) as (request: Request, env: { DB: unknown }) => Promise<Response>;
 
