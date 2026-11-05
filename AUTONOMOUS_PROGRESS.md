@@ -1,3 +1,18 @@
+## Latest run — 2026-11-05 (isolated UI test harness correction)
+
+- **Authoritative main:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) SUCCESS.
+- **Current branch / PR:** `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), OPEN / DRAFT / UNMERGED. Prior focused test commit `8504b85f2439ae49d27e4a245ac3b56d5971617b`; this follow-up corrects its VM source separator before CI is relied upon.
+- **Files:** `tests/battle-mana-cost-ui.test.ts` now passes an actual newline between the extracted TypeScript module and the returned `updateBattleDom` expression in the isolated VM harness. The new test still checks free Shield gain at 0/0 Mana, paid Shield action disabled, and visible Shield/Mana labels. No runtime or balance changes.
+- **Tests:** not run locally. The prior exact-head CI [41973762515](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41973762515) was green on the earlier 353-test head `161515ee`; it does not cover the new test. Await a fresh exact-head CI on this correction before claiming the new regression passes.
+- **Mana:** COMPLETE / MERGED on main; all required Degen-only authority, UI, math, and no-reversion invariants remain covered.
+- **Battle/rewards:** Worker/D1 remains authoritative for permits, combat state, terminal markers, receipt-backed idempotent XP/currency/inventory; no client economy trust change.
+- **D1:** main `0007_player_inventory_quantity_guards.sql`; Shield `0008`/`0009` remain branch-only. Duplicate auth `0007_player_sessions.sql` still requires Miles' ownership/order decision. No D1 write, migration apply, or deploy.
+- **Content:** Design Bible v0.12 is available and locks GLITCHRAT's stackable 2-turn LEAK, but leaves exact move costs/damage and two moves' stack scope unresolved. Monster Log v0.11 remains unavailable in Library search; v0.9 was not substituted.
+- **Delivery:** PUSHED/PR: focused regression and continuity update are on PR #125 only; no main mutation.
+- **Next:** run and inspect exact-head CI, then keep Shield draft pending the `0007` decision and #114 → #126 sequence.
+
+---
+
 ## Latest run — 2026-11-05 (zero-Mana Shield-control regression + source authority check)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; exact main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) completed SUCCESS. Latest verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`; no later Worker/D1 runtime change is claimed on main.

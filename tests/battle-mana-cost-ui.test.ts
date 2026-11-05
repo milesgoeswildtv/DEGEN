@@ -138,7 +138,7 @@ test('zero-Mana Shield abilities keep their gain visible and only free actions e
     querySelectorAll: (_selector: string) => buttons,
   };
   const boundUi = runInNewContext(
-    stripTypeScriptTypes(source, { mode: 'transform' }) + '\\n({ updateBattleDom });',
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
     { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
   ) as {
     updateBattleDom: (snapshot: {
