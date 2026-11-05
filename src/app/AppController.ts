@@ -727,9 +727,9 @@ export class AppController {
         this.battlePermit = undefined;
         this.battlePermitOwnerId = undefined;
         this.navigate('map');
-      } else if (accountChanged && this.route === 'home') {
-        // Home is player-owned state too: replace the prior account's room
-        // immediately rather than waiting for another navigation.
+      } else if (accountChanged && (this.route === 'home' || this.route === 'location')) {
+        // Home and location views depend on player-owned furniture and unlocks.
+        // Replace the prior account's view immediately rather than waiting for navigation.
         this.render();
       } else if (accountChanged && hadPreviousWorldState
         && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) {

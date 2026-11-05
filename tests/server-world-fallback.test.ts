@@ -583,3 +583,33 @@ test('account switch refreshes Home immediately with the new player room', async
   ], 'the previous account room must be replaced as soon as the new account is detected');
   assert.equal(state.underpassEvent?.cycleId, 'player-2-cycle');
 });
+
+test('account switch refreshes the current location with the new player unlock state', async () => {
+  const loaded = loadController(previewEvent);
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => ({
+      ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server',
+    }),
+  });
+  const state = controller as unknown as {
+    route: string;
+    selectedLocationId: string;
+    render: () => void;
+    refreshWorld: () => Promise<void>;
+  };
+
+  await state.refreshWorld();
+  state.route = 'location';
+  state.selectedLocationId = 'downtown';
+  const rendered: Array<{ route: string; playerId: string }> = [];
+  state.render = () => rendered.push({ route: state.route, playerId: store.snapshot.id });
+
+  store.snapshot.id = 'player-2';
+  await state.refreshWorld();
+
+  assert.deepEqual(rendered, [
+    { route: 'location', playerId: 'player-2' },
+  ], 'a player-owned location view must be rebuilt from the active account snapshot');
+});
