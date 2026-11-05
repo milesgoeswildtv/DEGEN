@@ -164,12 +164,14 @@ export const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
   }
 };
 
-export const isValidManaCost = (value: unknown): value is number =>
+const isValidNonNegativeSafeInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+export const isValidManaCost = (value: unknown): value is number =>
+  isValidNonNegativeSafeInteger(value);
 export const isValidManaState = (currentMana: unknown, maxMana: unknown): currentMana is number =>
   isValidManaCost(currentMana) && isValidManaCost(maxMana) && currentMana <= maxMana;
 export const isValidShield = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  isValidNonNegativeSafeInteger(value);
 export const isValidShieldGain = (value: unknown): value is number | undefined =>
   value === undefined || isValidShield(value);
 export const canUseAbility = (playerMana: number, ability: AbilityDefinition): boolean =>
@@ -185,6 +187,20 @@ export const resolveCombatTurn = (input: CombatTurnInput): CombatTurnResult => {
   if (!isValidShield(enemyShield)) throw new RangeError('Invalid enemy Shield');
   if (!isValidManaCost(ability.manaCost)) throw new RangeError(`Invalid Mana cost for ${ability.name}`);
   if (!isValidManaState(playerMana, degen.maxMana)) throw new RangeError('Invalid player Mana');
+  if (!isValidNonNegativeSafeInteger(degen.maxHp) || degen.maxHp === 0
+    || !isValidNonNegativeSafeInteger(playerHp) || playerHp === 0 || playerHp > degen.maxHp) {
+    throw new RangeError('Invalid player HP');
+  }
+  if (!isValidNonNegativeSafeInteger(enemy.maxHp) || enemy.maxHp === 0
+    || !isValidNonNegativeSafeInteger(enemyHp) || enemyHp === 0 || enemyHp > enemy.maxHp) {
+    throw new RangeError('Invalid enemy HP');
+  }
+  if (!isValidNonNegativeSafeInteger(ability.damage)
+    || !isValidNonNegativeSafeInteger(degen.power)
+    || !isValidNonNegativeSafeInteger(degen.guard)
+    || !isValidNonNegativeSafeInteger(enemy.damage)) {
+    throw new RangeError('Invalid combat definition');
+  }
   if (!isValidShield(playerShield)) throw new RangeError('Invalid player Shield');
   if (!isValidShieldGain(ability.shieldGain)) throw new RangeError(`Invalid Shield gain for ${ability.name}`);
   if (!canUseAbility(playerMana, ability)) throw new RangeError(`Insufficient Mana for ${ability.name}`);
@@ -193,6 +209,7 @@ export const resolveCombatTurn = (input: CombatTurnInput): CombatTurnResult => {
   const shieldBeforeRetaliation = playerShield + (ability.shieldGain ?? 0);
   if (!Number.isSafeInteger(shieldBeforeRetaliation)) throw new RangeError('Player Shield must remain a non-negative safe integer.');
   const playerDamage = ability.damage + Math.floor(degen.power * 0.5);
+  if (!isValidNonNegativeSafeInteger(playerDamage)) throw new RangeError('Player damage must remain a non-negative safe integer.');
   const enemyShieldAbsorbed = Math.min(enemyShield, playerDamage);
   const nextEnemyShield = enemyShield - enemyShieldAbsorbed;
   const nextEnemyHp = Math.max(0, enemyHp - (playerDamage - enemyShieldAbsorbed));
@@ -203,6 +220,7 @@ export const resolveCombatTurn = (input: CombatTurnInput): CombatTurnResult => {
   };
 
   const retaliationDamage = Math.max(1, enemy.damage - Math.floor(degen.guard * 0.45));
+  if (!isValidNonNegativeSafeInteger(retaliationDamage)) throw new RangeError('Retaliation damage must remain a non-negative safe integer.');
   const shieldAbsorbed = Math.min(shieldBeforeRetaliation, retaliationDamage);
   const nextPlayerShield = shieldBeforeRetaliation - shieldAbsorbed;
   const nextPlayerHp = Math.max(0, playerHp - (retaliationDamage - shieldAbsorbed));
