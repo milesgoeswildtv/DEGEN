@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test, { beforeEach } from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
+import { maxAbilityDamage } from '../src/game/combat/rules.ts';
 
 const startRequestStorage = new Map<string, string>();
 const testLocalStorage = {
@@ -21,7 +22,7 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
   .replace(/\bexport class /g, 'class ')
   .replace(/\bexport const /g, 'const ');
 const { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState });', {
-  __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW,
+  __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW, maxAbilityDamage,
   fetch: (...args: any[]) => globalThis.fetch(...args), Response, URL, AbortController, setTimeout, clearTimeout,
   crypto: globalThis.crypto, localStorage: testLocalStorage, Date, Number, JSON, Error, encodeURIComponent, console,
 }) as {
