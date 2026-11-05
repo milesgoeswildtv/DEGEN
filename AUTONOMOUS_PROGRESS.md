@@ -1,3 +1,18 @@
+## Latest follow-up — 2026-11-05 (restrict manual production deploys to main)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main exact-head CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) passed on this SHA.
+- **Current branch / PR #126:** `automation/degen/worker-shared-runtime-deploy-triggers-v01`, OPEN / READY FOR REVIEW / UNMERGED, stacked on PR #114 at `e98add3acd4192762fa559fd64a7fd6e0bb2ab3e`. Latest code/test head: `0c7146b46fb7909bf81c26f33165ebef2edfeace`; GitHub reports mergeable=true. No main write, merge, force-push, or history rewrite.
+- **Additional production safety finding:** `workflow_dispatch` could previously run the production deploy job from a selected feature branch. The deploy job now has an explicit `github.ref == 'refs/heads/main'` condition, so manual dispatch from a feature ref skips every remote D1/Worker write. The existing production concurrency group (`degen-worker-production`, `cancel-in-progress: false`) also serializes all accepted production runs.
+- **Files changed:** `.github/workflows/deploy-worker.yml` and `tests/worker-deploy-trigger.test.ts`; this progress entry records the change. Regression tests require the main-only job guard, the non-cancelling concurrency group, the full CI command sequence before remote writes, and the schema → migrations → Worker tail. No runtime/combat/economy/D1 schema or migration file changed.
+- **QA:** previous code/test head `c54c51d277690b114e5ee94d3c25e84028b4e579` has CI [42021178421](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42021178421) in progress; at last check migration preflight and deterministic tests passed, and isolated Worker/D1 reward concurrency was still running. The latest head `0c7146b46fb7909bf81c26f33165ebef2edfeace` has no associated run visible yet, so exact-head CI remains pending. The read-only local clone could not resolve `github.com`; no local `npm test`, `npm run build`, or `npm run check:worker` result is claimed.
+- **Mana:** COMPLETE / MERGED on main; all Degen-only Mana authority, persisted `player_mana`, affordability/CAS, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared math, monster-resource exclusion, and no-reversion guarantees remain intact. The old Mana branch is divergent and superseded.
+- **Battle authority / reward idempotency:** unchanged. Worker/D1 remains authoritative for permits, combat state, terminal history, audited receipts, progression, currency, inventory, and retry recovery; the existing local D1 CI suites cover transient recovery, duplicate completion/replay, action/completion races, full/reduced clears, and level-up math.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` and `db/migrations`; accepted production order remains schema → tracked migrations → Worker, now serialized and main-only. The `0007` auth collision remains guarded but unresolved; Shield `0008` / `0009` remain branch-only. No production D1 operation or Worker deployment occurred.
+- **Miles blockers:** explicit `0007` sequencing and production Discord/Telegram session credentials / legacy identity-collision policy remain unresolved. No design canon was invented.
+- **One best next task:** complete exact-head CI for #126, then reconcile the Shield branch's additional Worker/D1 integration test into both CI and deploy preflight after #114 review; keep the `0007` sequence blocked until approved.
+
+---
+
 ## Latest run — 2026-11-05 (serialize production Worker deployments)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main exact-head CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) passed on this SHA.
