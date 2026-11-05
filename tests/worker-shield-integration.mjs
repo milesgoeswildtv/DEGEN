@@ -24,8 +24,20 @@ function sql(query) {
   return Array.isArray(raw) ? raw[0]?.results : raw?.results ?? raw?.result?.[0]?.results;
 }
 async function post(path, payload) {
-  const response = await fetch(base + path, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload) });
-  return { status:response.status, data:await response.json() };
+  try {
+    const response = await fetch(base + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    });
+    return { status: response.status, data: await response.json() };
+  } catch (error) {
+    throw new Error(
+      `POST ${path} failed or timed out: ${error instanceof Error ? error.message : String(error)}` +
+      `\\nCaptured Worker logs:\\n${logs}`,
+    );
+  }
 }
 async function until(check) {
   for (let i=0;i<80;i++) {
