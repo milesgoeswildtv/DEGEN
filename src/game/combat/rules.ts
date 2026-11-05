@@ -122,15 +122,17 @@ const findForbiddenDegenOwnedEffect = (
   for (const [field, nestedValue] of Object.entries(value)) {
     const fieldPath = path ? path + '.' + field : field;
     const normalizedField = normalizeMonsterActionResourceField(field);
-    const mechanicContext = insideMechanic || DEGEN_MECHANIC_COLLECTION_FIELDS.has(normalizedField);
+    const directMechanicName = DEGEN_MECHANIC_DIRECT_NAME_FIELDS.has(normalizedField);
+    const mechanicContext = insideMechanic
+      || DEGEN_MECHANIC_COLLECTION_FIELDS.has(normalizedField)
+      || directMechanicName;
     // Some canonical content formats represent effects/statuses as object keys
     // rather than string values (for example signature.effects.LEAK: {...}).
     // Treat those keys as mechanic names only inside a mechanic namespace; prose
     // metadata with a coincidental LEAK key remains descriptive.
-    if (insideMechanic && field.normalize('NFKC').trim().toUpperCase() === 'LEAK') {
+    if (mechanicContext && field.normalize('NFKC').trim().toUpperCase() === 'LEAK') {
       return fieldPath;
     }
-    const directMechanicName = DEGEN_MECHANIC_DIRECT_NAME_FIELDS.has(normalizedField);
     const nestedMechanicName = mechanicContext && DEGEN_MECHANIC_NESTED_NAME_FIELDS.has(normalizedField);
     const mechanicCollection = DEGEN_MECHANIC_COLLECTION_FIELDS.has(normalizedField);
 
