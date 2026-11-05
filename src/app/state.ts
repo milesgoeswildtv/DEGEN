@@ -62,19 +62,21 @@ export class PlayerStore {
 
     if (!this.api.enabled) return true;
 
+    const playerId = this.state.id;
+    const snapshotGeneration = this.playerSnapshotGeneration;
+    const isCurrentSnapshot = () => this.state.id === playerId
+      && this.playerSnapshotGeneration === snapshotGeneration;
+
     try {
-      const playerId = this.state.id;
-      const snapshotGeneration = this.playerSnapshotGeneration;
       const remote = await this.api.bootstrap(playerId, identity);
+      // Ignore late success, empty, or failed responses after a newer server
+      // snapshot has arrived. The generation also protects an A → B → A switch.
+      if (!isCurrentSnapshot()) return true;
       if (!remote) return false;
-      // Ignore a late bootstrap after another authoritative snapshot has arrived.
-      // The generation also protects an A → B → A account switch.
-      if (this.state.id !== playerId || this.playerSnapshotGeneration !== snapshotGeneration) {
-        return true;
-      }
       this.replaceFromServer(remote);
       return true;
     } catch (error) {
+      if (!isCurrentSnapshot()) return true;
       console.warn('DEGEN backend unavailable; retaining local preview state.', error);
       return false;
     }

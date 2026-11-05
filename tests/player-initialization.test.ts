@@ -72,6 +72,46 @@ test('late bootstrap cannot replace a newer active account snapshot', async () =
   );
 });
 
+test('late bootstrap rejection does not fail a newer active account', async () => {
+  storage.clear();
+  let rejectBootstrap!: (error: Error) => void;
+  const store = new PlayerStore({
+    enabled: true,
+    bootstrap() {
+      return new Promise((_, reject) => { rejectBootstrap = reject; });
+    },
+  });
+  const pendingInitialization = store.initialize(identity);
+  store.replaceFromServer(playerSnapshot('second-account', 7, 70));
+  rejectBootstrap(new Error('old account request failed'));
+
+  assert.equal(await pendingInitialization, true, 'a stale failure must not mark the current account unavailable');
+  assert.deepEqual(
+    [store.snapshot.id, store.snapshot.level, store.snapshot.currency],
+    ['second-account', 7, 70],
+  );
+});
+
+test('late empty bootstrap response does not fail a newer active account', async () => {
+  storage.clear();
+  let resolveBootstrap!: (player: any | undefined) => void;
+  const store = new PlayerStore({
+    enabled: true,
+    bootstrap() {
+      return new Promise((resolve) => { resolveBootstrap = resolve; });
+    },
+  });
+  const pendingInitialization = store.initialize(identity);
+  store.replaceFromServer(playerSnapshot('second-account', 6, 60));
+  resolveBootstrap(undefined);
+
+  assert.equal(await pendingInitialization, true, 'a stale empty response must not mark the current account unavailable');
+  assert.deepEqual(
+    [store.snapshot.id, store.snapshot.level, store.snapshot.currency],
+    ['second-account', 6, 60],
+  );
+});
+
 test('late bootstrap cannot overwrite the latest snapshot after an A-to-B-to-A account switch', async () => {
   storage.clear();
   let resolveBootstrap!: (player: any) => void;
