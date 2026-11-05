@@ -149,10 +149,11 @@ test('Worker deployment completes the full local QA gate before any remote D1 wr
   );
 });
 
+
 test('main production deploy jobs serialize migrations without letting feature dispatches occupy the lane', () => {
   assert.match(
     deployWorkflow,
-    /^jobs:\n  deploy:\n    if: \\$\\{\\{ github\\.ref == 'refs\\/heads\\/main' \\}\\}\\n    # Only eligible production deploys enter this non-cancelling migration\\/deploy lane\\.\n    concurrency:\n      group: degen-worker-production\n      cancel-in-progress: false$/m,
+    /^jobs:\n  deploy:\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}\n    # Only eligible production deploys enter this non-cancelling migration\/deploy lane\.\n    concurrency:\n      group: degen-worker-production\n      cancel-in-progress: false$/m,
     'only main deploy jobs may enter the shared non-cancelling production lane',
   );
   assert.doesNotMatch(deployWorkflow, /^concurrency:/m,
@@ -162,7 +163,7 @@ test('main production deploy jobs serialize migrations without letting feature d
 test('production Worker deploys run only from main, including manual dispatches', () => {
   assert.match(
     deployWorkflow,
-    /^jobs:\n  deploy:\n    if: \\$\\{\\{ github\\.ref == 'refs\\/heads\\/main' \\}\\}$/m,
+    /^jobs:\n  deploy:\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}$/m,
     'workflow_dispatch from a feature branch must never apply production D1 migrations or deploy Worker code',
   );
 });
