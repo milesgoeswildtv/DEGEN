@@ -487,3 +487,29 @@ test('overlong opaque identifiers are rejected before D1 access', async () => {
     assert.deepEqual(await response.json(), { error: 'playerId is required' }, path);
   }
 });
+
+
+test('128-code-unit opaque identifiers pass validation before D1 access', async () => {
+  let d1Touched = false;
+  const response = await worker.fetch(new Request('https://degen-api.example/api/battle/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'p'.repeat(128),
+      eventKey: 'underpass',
+      cycleId: 'c'.repeat(128),
+      encounterKey: TUNNEL_MAW.id,
+    }),
+  }), {
+    DB: {
+      prepare() {
+        d1Touched = true;
+        throw new Error('Stop after proving canonical 128-code-unit IDs pass validation.');
+      },
+    },
+  });
+
+  assert.equal(d1Touched, true);
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { error: 'Internal server error' });
+});
