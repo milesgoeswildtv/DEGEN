@@ -103,7 +103,7 @@ test('a world refresh from a previous player cannot overwrite the active player 
   assert.deepEqual(requests, ['player-1', 'player-2']);
   assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
   assert.equal(controller.worldSyncFailed, false);
-  assert.equal(renderCount, 1, 'the replacement account refresh must rerender even when the original refresh was non-rendering');
+  assert.equal(renderCount, 2, 'the old account view clears immediately and the active account snapshot renders after refresh');
 });
 
 test('a stale previous-player world failure cannot mark the active player offline', async () => {
@@ -142,21 +142,22 @@ test('a stale previous-player world failure cannot mark the active player offlin
 test('a stale previous-player response awaits a fail-closed refresh for the active player', async () => {
   const loaded = loadController(previewEvent);
   const requests: string[] = [];
-  const previousEvent: EventSnapshot = {
-    ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
-  };
+  let rejectPrevious!: (error: Error) => void;
   const store = { snapshot: { id: 'player-1' } };
   const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
-    getUnderpass: async (playerId: string) => {
+    getUnderpass: (playerId: string) => {
       requests.push(playerId);
-      if (playerId === 'player-1') return previousEvent;
-      throw new Error('active player session unavailable');
+      if (playerId === 'player-1') {
+        return new Promise<EventSnapshot>((_resolve, reject) => { rejectPrevious = reject; });
+      }
+      return Promise.reject(new Error('active player session unavailable'));
     },
   });
 
   const previousRefresh = controller.refreshWorld();
   store.snapshot.id = 'player-2';
+  rejectPrevious(new Error('stale player session expired'));
   await previousRefresh;
 
   assert.deepEqual(requests, ['player-1', 'player-2']);
@@ -373,8 +374,8 @@ test('rapid account switches cannot let an intermediate player response overwrit
   await newestRefresh;
   assert.equal(controller.underpassEvent?.cycleId, 'player-3-cycle');
   assert.equal(controller.worldSyncFailed, false);
-  assert.equal(renderCount, 2,
-    'the previous account is cleared once and the newest account renders after its response');
+  assert.equal(renderCount, 3,
+    'each account change clears the prior view immediately and the newest account renders after its response');
 });
 
 test('an A-to-B-to-A account switch cannot let the first A response overwrite the latest A snapshot', async () => {
@@ -439,7 +440,7 @@ test('an A-to-B-to-A account switch cannot let the first A response overwrite th
     'an older response from the same account ID must not win after an A-to-B-to-A switch');
   assert.equal(controller.underpassEvent?.fullRewardClears, 2);
   assert.equal(controller.worldSyncFailed, false);
-  assert.equal(renderCount, 2, 'the cleared account state and latest A snapshot are each rendered once');
+  assert.equal(renderCount, 3, 'both account changes clear immediately and the latest A snapshot renders after its response');
   assert.equal(loaded.previewCalls(), 0);
 });
 
