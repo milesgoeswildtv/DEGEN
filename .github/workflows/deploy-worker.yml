@@ -20,6 +20,11 @@ on:
 # Updating this workflow retriggers deployment after Cloudflare credential changes.
 jobs:
   deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    # Only eligible production deploys enter this non-cancelling migration/deploy lane.
+    concurrency:
+      group: degen-worker-production
+      cancel-in-progress: false
     environment: production
     runs-on: ubuntu-latest
     steps:
