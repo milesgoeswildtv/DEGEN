@@ -1,3 +1,17 @@
+## Latest run — 2026-11-05 (monster LEAK namespace map-key guard)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
+- **Current branch / PR:** `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), OPEN / DRAFT / UNMERGED. New code commit `9281f1b7f241d5093be682d5047715c13d5f48d5`; regression commit `07b993b22932ff29dc6a35e2884a50deb6f68deb`. No direct-main write, merge, force-push, or history rewrite.
+- **Task / files changed:** `src/game/combat/rules.ts` now rejects GLITCHRAT-owned `LEAK` when a monster mechanic namespace represents an effect/status as an object key (for example `signature.effects.LEAK` or `loadout[0].statuses.leak`). The guard is context-scoped: an unrelated descriptive metadata key named `LEAK` remains allowed. `tests/monster-resource-boundary.test.ts` adds both forbidden-map and descriptive-metadata regressions. No monster content or status mechanics were invented.
+- **Tests / QA:** not run locally in this environment. The new exact-head CI is required before this fix is considered green; the previous Shield exact-head CI [42013390716](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42013390716) passed 354/354 tests and all Worker/D1, Shield, Chromium mobile vertical-slice, build, and Wrangler stages on the prior head `87a32c93`, not these new commits.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted player Mana, battle-start initialization, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal victory/defeat, fail-closed cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no reversion at zero remain intact. `sidekick/degen-mana-foundation-v01` remains 11 ahead / 104 behind and divergent; inspected and superseded.
+- **Battle authority / rewards:** Worker/D1 remains authoritative for permit state, HP/Mana/Shield, enemy HP/Shield, turn CAS, terminal outcome/history, audited receipts, and recoverable exactly-once XP/currency/inventory settlement. Client-submitted outcomes/rewards remain ignored.
+- **D1 / deployment assumptions:** main `wrangler.toml` binds `DB` to `DEGEN` with `db/migrations`; main ends at migration `0007_player_inventory_quantity_guards.sql`. Shield migrations `0008` / `0009` remain branch-only and unapplied. Duplicate `0007` ownership with draft auth PR #14 remains a Miles decision; preserve #114 → #126 → #125 and do not renumber or deploy around it.
+- **Miles blockers:** migration `0007` ownership/order; production Discord/Telegram signed-session credentials and legacy identity-collision policy; canonical Monster Log v0.11 and unresolved universal status timing/stacking/cleanse rules.
+- **One best next task:** obtain exact-head CI for this LEAK map-key regression, then reconcile the Shield branch forward with the approved review sequence without adding status or monster content.
+
+---
+
 ## Latest run — 2026-11-05 (isolated UI test harness correction)
 
 - **Authoritative main:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) SUCCESS.
