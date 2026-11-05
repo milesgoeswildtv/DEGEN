@@ -661,7 +661,7 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: undefined }, 'permit-1'), false,
     'partially omitted Shield state is malformed rather than a legacy snapshot');
 
-  const shieldSnapshot = { ...active, playerShield: 3, shieldAbsorbed: 5, retaliationDamage: 10 };
+  const shieldSnapshot = { ...active, playerShield: 3, shieldAbsorbed: 10, retaliationDamage: 10 };
   assert.equal(isAuthoritativeBattleActionState(shieldSnapshot, 'permit-1'), true);
   assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, playerShield: null }, 'permit-1'), false,
     'an explicit null Shield is not a legacy omitted field');
