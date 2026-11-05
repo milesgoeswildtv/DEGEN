@@ -1,3 +1,17 @@
+## Latest run — 2026-11-05 (monster LEAK namespace map-key guard)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
+- **Current branch / PR:** `automation/degen/monster-resource-boundary-v01`, PR [#122](https://github.com/milesgoeswildtv/DEGEN/pull/122), OPEN / UNMERGED. New code commit `254da09fa0f3ae479b37d8f7ced33e3afddf6056`; regression commit `101ccd18e557e6188ba586c3cf532e0cb83c24b6`. No direct-main write, merge, force-push, or history rewrite.
+- **Task / files changed:** `src/game/combat/rules.ts` now rejects GLITCHRAT-owned `LEAK` when monster mechanics encode an effect/status as an object key (such as `signature.effects.LEAK` or `loadout[0].statuses.leak`). Detection is limited to mechanic namespaces; descriptive metadata with a `LEAK` key remains allowed. `tests/combat-progression.test.ts` adds forbidden-map and descriptive-metadata regression cases. No monster names, signatures, statuses, or move content were invented.
+- **Tests / QA:** not run locally here. The previous exact-head CI [42006126137](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42006126137) passed the earlier head `087b4a05`; this new head requires its own CI before it is green.
+- **Mana:** COMPLETE / MERGED on main. Degen-only Mana, authoritative permit persistence and action CAS, unaffordable rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no reversion at zero remain intact. The old `sidekick/degen-mana-foundation-v01` was inspected and is 11 ahead / 104 behind, divergent and superseded.
+- **Battle authority / rewards:** Worker/D1 remains authoritative for permits, HP/Mana/enemy HP/turn count, terminal outcomes/history, receipts, progression, currency, and inventory. This namespace guard changes no rewards or economic trust.
+- **D1 / deployment assumptions:** main `wrangler.toml` binds `DB` to `DEGEN` with `db/migrations`. Main ends at `0007_player_inventory_quantity_guards.sql`; duplicate `0007` ownership with draft auth PR #14 remains a Miles decision. Keep the #114 → #126 → #122 review/deploy dependency; do not renumber, apply, or deploy around the conflict.
+- **Miles blockers:** duplicate migration `0007` ownership/order; production Discord/Telegram signed-session credentials and identity-collision policy; canonical Monster Log v0.11 and unresolved universal status rules.
+- **One best next task:** verify exact-head CI for the map-key regression, then continue forward-only reconciliation with the Shield PR after #114/#126 sequencing is approved.
+
+---
+
 ## Latest run — 2026-11-05 (close appliedStatus LEAK namespace gap)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
