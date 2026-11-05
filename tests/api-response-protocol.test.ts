@@ -4,6 +4,9 @@ import test from 'node:test';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 
+import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
+import { maxAbilityDamage } from '../src/game/combat/rules.ts';
+
 // Run the real API module through Node's TypeScript transform, injecting only
 // its two shared prototype definitions and platform globals.
 const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8')
@@ -12,8 +15,9 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
   .replace(/^const API_BASE = .*;\n/m, "const API_BASE = '';\n");
 const compiled = stripTypeScriptTypes(source, { mode: 'transform' });
 const apiModule = runInNewContext(compiled + '\n({ GameApi, GameApiProtocolError });', {
-  TEST_DEGEN: { maxHp: 120, maxMana: 12 },
-  TUNNEL_MAW: { maxHp: 92 },
+  TEST_DEGEN,
+  TUNNEL_MAW,
+  maxAbilityDamage,
   AbortController,
   Response,
   URL,
