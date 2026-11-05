@@ -82,7 +82,7 @@ test('a world refresh from a previous player cannot overwrite the active player 
     ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
   };
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: (playerId: string) => {
       requests.push(playerId);
@@ -114,7 +114,7 @@ test('a stale previous-player world failure cannot mark the active player offlin
     ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
   };
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: (playerId: string) => {
       requests.push(playerId);
@@ -146,7 +146,7 @@ test('a stale previous-player response awaits a fail-closed refresh for the acti
     ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
   };
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: async (playerId: string) => {
       requests.push(playerId);
@@ -181,7 +181,7 @@ test('an older player refresh cannot overwrite or restart while the active playe
     ...previewEvent, cycleId: 'player-2-current-cycle', fullRewardClears: 1, source: 'server',
   };
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: (playerId: string) => {
       requests.push(playerId);
@@ -244,7 +244,7 @@ test('an account switch renders fail-closed state after the new player refresh f
     ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
   };
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: async (playerId: string) => {
       if (playerId === 'player-1') return previousEvent;
@@ -332,7 +332,7 @@ test('rapid account switches cannot let an intermediate player response overwrit
     ...previewEvent, cycleId: 'player-3-cycle', source: 'server',
   };
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: (playerId: string) => {
       requests.push(playerId);
@@ -396,7 +396,7 @@ test('an A-to-B-to-A account switch cannot let the first A response overwrite th
     ...previewEvent, cycleId: 'player-1-latest-cycle', fullRewardClears: 2, source: 'server',
   };
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: (playerId: string) => {
       requests.push(playerId);
@@ -448,7 +448,7 @@ test('switching accounts during battle closes the old account view but preserves
   const requests: string[] = [];
   const discarded: string[] = [];
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: async (playerId: string) => {
       requests.push(playerId);
@@ -513,7 +513,7 @@ test('switching accounts during battle closes the old account view but preserves
 test('account refresh preserves a battle already owned by the newly active player', async () => {
   const loaded = loadController(previewEvent);
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: async (playerId: string) => ({
       ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server',
@@ -555,7 +555,7 @@ test('account refresh preserves a battle already owned by the newly active playe
 test('account switch refreshes Home immediately with the new player room', async () => {
   const loaded = loadController(previewEvent);
   const store = { snapshot: { id: 'player-1' } };
-  const controller = new loaded.AppController({}, store, {
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
     enabled: true,
     getUnderpass: async (playerId: string) => ({
       ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server',
