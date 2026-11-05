@@ -128,6 +128,26 @@ test('JSON request bodies accept the exact 64 KiB boundary and reject larger bod
   assert.equal(oversizedBodyReachedD1, false);
   assert.equal(oversizedResponse.status, 413);
   assert.deepEqual(await oversizedResponse.json(), { error: 'Request body exceeds the 64 KiB limit.' });
+
+  let declaredOversizeReachedD1 = false;
+  const declaredOversizeResponse = await worker.fetch(new Request('https://degen-api.example/api/player/bootstrap', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'content-length': String(MAX_REQUEST_BODY_BYTES + 1),
+    },
+    body: JSON.stringify({ playerId: 'p' }),
+  }), {
+    DB: {
+      prepare() {
+        declaredOversizeReachedD1 = true;
+        throw new Error('An oversized declared body must be rejected before reading or D1 access.');
+      },
+    },
+  });
+  assert.equal(declaredOversizeReachedD1, false);
+  assert.equal(declaredOversizeResponse.status, 413);
+  assert.deepEqual(await declaredOversizeResponse.json(), { error: 'Request body exceeds the 64 KiB limit.' });
 });
 
 test('chunked JSON bodies are bounded while streaming without Content-Length', async () => {
