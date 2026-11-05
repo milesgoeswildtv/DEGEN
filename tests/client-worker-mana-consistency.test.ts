@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, maxAbilityDamage, resolveCombatTurn } from '../src/game/combat/rules.ts';
 const apiSource = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8');
 const validatorStart = apiSource.indexOf('const isAuthoritativeBattleStartState =');
 const validatorEnd = apiSource.indexOf('\nconst isRecord', validatorStart);
@@ -22,7 +22,7 @@ const createBattleValidators = (enemy: typeof TUNNEL_MAW): BattleValidators => r
     ${validatorSource}
     ({ isAuthoritativeBattleStartState, isAuthoritativeBattleActionState });
   `, { mode: 'transform' }),
-  { TEST_DEGEN, TUNNEL_MAW: enemy },
+  { TEST_DEGEN, TUNNEL_MAW: enemy, maxAbilityDamage },
 ) as BattleValidators;
 const { isAuthoritativeBattleActionState } = createBattleValidators(TUNNEL_MAW);
 
@@ -33,7 +33,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class /g, 'class ');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, maxAbilityDamage, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,
@@ -674,4 +674,46 @@ test('shielded-enemy start and recovery snapshots require the explicit current e
     [0, shieldedEnemy.maxHp, 5],
     'a recovery snapshot without current enemy Shield must not advance or restore the starting Shield',
   );
+});
+
+test('client rejects enemy Shield absorption above one Degen hit on multi-turn recovery', () => {
+  const shieldedEnemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const validators = createBattleValidators(shieldedEnemy);
+  const permitId = 'permit-enemy-shield-absorption-bound';
+  const maximumAbsorption = maxAbilityDamage(TEST_DEGEN);
+  assert.notEqual(maximumAbsorption, undefined);
+
+  const impossibleRecovery = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp - 20,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 10,
+    enemyHp: shieldedEnemy.maxHp - 24,
+    enemyShield: 0,
+    enemyShieldAbsorbed: maximumAbsorption! + 1,
+    turnCount: 2,
+  };
+  assert.equal(validators.isAuthoritativeBattleActionState(impossibleRecovery, permitId), false,
+    'the API boundary must reject an absorption delta larger than any one defined Degen hit');
+
+  const initial = {
+    permitId,
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: shieldedEnemy.maxHp,
+    enemyShield: 5,
+    turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, shieldedEnemy, () => undefined, initial);
+  const before = engine.snapshot;
+  assert.equal(engine.synchronizeAuthoritativeState(impossibleRecovery as never), false,
+    'the engine boundary must reject the same impossible multi-turn recovery');
+  assert.deepEqual(engine.snapshot, before, 'invalid audit data must not change the displayed battle');
 });
