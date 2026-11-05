@@ -62,7 +62,7 @@ const body = async <T>(request: Request): Promise<T> => {
   // reading so chunked or dishonest requests cannot bypass the memory limit.
   const contentLength = request.headers.get('content-length');
   if (contentLength !== null) {
-    if (!/^\\d+$/.test(contentLength)) {
+    if (!/^\d+$/.test(contentLength)) {
       throw new RequestBodyError('Content-Length must be a non-negative integer.');
     }
     const declaredLength = Number(contentLength);
