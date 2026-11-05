@@ -16,7 +16,7 @@ const handlerSource = stripTypeScriptTypes(source, { mode: 'transform' }) + '\nh
 const handleStartBattle = runInNewContext(handlerSource, {
   TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
   UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
-  crypto: globalThis.crypto, Request, Response, URL, console, Uint32Array,
+  crypto: globalThis.crypto, Request, Response, URL, console, Uint32Array, TextDecoder,
 }) as (request: Request, env: { DB: unknown }) => Promise<Response>;
 
 function makeEnv(
