@@ -654,7 +654,7 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
     playerShield: 0, shieldAbsorbed: 2, retaliationDamage: 10,
   };
   assert.equal(isAuthoritativeBattleActionState(shieldDefeat, 'permit-1'), true);
-  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 5 }, 'permit-1'), false,
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 10 }, 'permit-1'), false,
     'a defeat cannot claim that Shield absorbed all retaliation while player HP reached zero');
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 0, retaliationDamage: 0 }, 'permit-1'), true,
     'legacy Worker rows without Shield audit columns use the zero/zero compatibility sentinel');
