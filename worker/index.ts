@@ -12,6 +12,10 @@ interface Env {
 
 const STARTER_FURNITURE = ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'];
 const STARTER_LOCATIONS = ['home', 'downtown', 'underpass'];
+const MAX_PLAYER_ABILITY_DAMAGE = Math.max(
+  0,
+  ...TEST_DEGEN.abilities.map((ability) => ability.damage + Math.floor(TEST_DEGEN.power * 0.5)),
+);
 
 const corsHeaders = (request: Request, env: Env): HeadersInit => {
   const origin = request.headers.get('origin') ?? '';
@@ -182,7 +186,7 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
     || (!hasLegacyShieldAudit && !hasValidShieldAudit)
     || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isSafeIntegerBetween(enemyShield, 0, Number.MAX_SAFE_INTEGER)
-    || !isSafeIntegerBetween(lastEnemyShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+    || !isSafeIntegerBetween(lastEnemyShieldAbsorbed, 0, MAX_PLAYER_ABILITY_DAMAGE)
     || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   switch (state.battle_status) {

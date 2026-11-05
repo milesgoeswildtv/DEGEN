@@ -210,6 +210,19 @@ try {
   ]);
   assert.equal('reward' in enemyShieldAction.data,false,'client reward fields remain ignored');
 
+  // A persisted last-action Shield audit cannot exceed any currently defined Degen action.
+  // Corrupt D1 state must fail closed instead of being overwritten by another accepted turn.
+  sql("UPDATE battle_permits SET last_enemy_shield_absorbed=9007199254740991 WHERE id='shield-enemy-permit'");
+  const impossibleEnemyAbsorption=await post('/api/battle/action',{
+    playerId:'shield-enemy',permitId:'shield-enemy-permit',abilityId:'slash',expectedTurnCount:2,
+  });
+  assert.equal(impossibleEnemyAbsorption.status,409);
+  assert.equal(impossibleEnemyAbsorption.data.error,'Battle state is invalid.');
+  assert.equal('battleState' in impossibleEnemyAbsorption.data,false);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-enemy-permit'"),[
+    {player_hp:100,player_mana:12,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:10,enemy_hp:68,enemy_shield:0,last_enemy_shield_absorbed:9007199254740991,turn_count:2,battle_status:'active'},
+  ]);
+
   // A paid killing blow must consume the remaining enemy Shield, skip retaliation,
   // persist the terminal state, and settle its reward receipt exactly once.
   const enemyShieldKill=await post('/api/battle/action',{
