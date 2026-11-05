@@ -178,7 +178,8 @@ test('monster mechanic namespaces reject GLITCHRAT-owned LEAK across composite f
   const forbiddenCases = [
     { path: 'status', enemy: { ...TUNNEL_MAW, status: 'LEAK' } },
     { path: 'signature.name', enemy: { ...TUNNEL_MAW, signature: { name: 'LEAK' } } },
-    { path: 'signature.effects.LEAK', enemy: { ...TUNNEL_MAW, signature: { effects: { LEAK: { enabled: true } } } } },
+    { path: 'signature.effects.LEAK', enemy: { ...TUNNEL_MAW, signature: { effects: { LEAK: { enabled: true } } } },
+    { path: 'statusName.LEAK', enemy: { ...TUNNEL_MAW, statusName: { LEAK: { enabled: true } } } },
     { path: 'loadout.0.statuses.leak', enemy: { ...TUNNEL_MAW, loadout: [{ statuses: { leak: { enabled: true } } }] } },
     { path: 'loadout.0.appliedEffect', enemy: { ...TUNNEL_MAW, loadout: [{ appliedEffect: 'leak' }] } },
     { path: 'appliedStatus', enemy: { ...TUNNEL_MAW, appliedStatus: 'LEAK' } },
