@@ -197,8 +197,11 @@ try {
   await until('city map and permanent Home navigation', async () =>
     await cityMapReady() ? true : null);
 
-  const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
-  assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
+  const playerId = await until('browser bootstrap identity', async () => {
+    const id = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
+    return /^browser-[0-9a-f-]+$/i.test(id) ? id : null;
+  });
+  assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'successful Worker bootstrap should persist the stable browser test identity');
   await click('[data-route="home"]');
   await until('home and starter furniture', async () => {
     const text = await cdp.evaluate("document.querySelector('#app')?.innerText || ''");
