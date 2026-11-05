@@ -10,6 +10,43 @@ const ability = (id: string, shieldGain?: number) => {
   return { ...found, ...(shieldGain === undefined ? {} : { shieldGain }) };
 };
 
+test('shared combat math rejects invalid HP and unsafe damage inputs before resolving a turn', () => {
+  const base = {
+    playerHp: 50,
+    playerMana: 0,
+    playerShield: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: ability('slash'),
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  };
+  const invalidInputs: Array<{
+    overrides: Partial<typeof base>;
+    message: RegExp;
+  }> = [
+    { overrides: { playerHp: 0 }, message: /Invalid player HP/ },
+    { overrides: { playerHp: TEST_DEGEN.maxHp + 1 }, message: /Invalid player HP/ },
+    { overrides: { playerHp: Number.MAX_SAFE_INTEGER + 1 }, message: /Invalid player HP/ },
+    { overrides: { enemyHp: 0 }, message: /Invalid enemy HP/ },
+    { overrides: { enemyHp: TUNNEL_MAW.maxHp + 1 }, message: /Invalid enemy HP/ },
+    { overrides: { ability: { ...ability('slash'), damage: -1 } }, message: /Invalid combat definition/ },
+    { overrides: { degen: { ...TEST_DEGEN, power: -1 } }, message: /Invalid combat definition/ },
+    { overrides: { degen: { ...TEST_DEGEN, guard: -1 } }, message: /Invalid combat definition/ },
+    { overrides: { enemy: { ...TUNNEL_MAW, damage: -1 } }, message: /Invalid combat definition/ },
+    {
+      overrides: {
+        ability: { ...ability('slash'), damage: Number.MAX_SAFE_INTEGER },
+        degen: { ...TEST_DEGEN, power: Number.MAX_SAFE_INTEGER },
+      },
+      message: /Player damage must remain a non-negative safe integer/,
+    },
+  ];
+
+  for (const { overrides, message } of invalidInputs) {
+    assert.throws(() => resolveCombatTurn({ ...base, ...overrides }), message);
+  }
+});
+
 test('Degen Shield absorbs retaliation before HP and consumes only the absorbed amount', () => {
   const result = resolveCombatTurn({
     playerHp: 50, playerMana: 0, playerShield: 4, enemyHp: TUNNEL_MAW.maxHp,
