@@ -651,7 +651,7 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
 
   const shieldDefeat = {
     ...active, status: 'defeat', playerHp: 0, turnCount: 1,
-    playerShield: 0, shieldAbsorbed: 2, retaliationDamage: 5,
+    playerShield: 0, shieldAbsorbed: 2, retaliationDamage: 10,
   };
   assert.equal(isAuthoritativeBattleActionState(shieldDefeat, 'permit-1'), true);
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 5 }, 'permit-1'), false,
@@ -661,7 +661,7 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
   assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: undefined }, 'permit-1'), false,
     'partially omitted Shield state is malformed rather than a legacy snapshot');
 
-  const shieldSnapshot = { ...active, playerShield: 3, shieldAbsorbed: 5, retaliationDamage: 5 };
+  const shieldSnapshot = { ...active, playerShield: 3, shieldAbsorbed: 5, retaliationDamage: 10 };
   assert.equal(isAuthoritativeBattleActionState(shieldSnapshot, 'permit-1'), true);
   assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, playerShield: null }, 'permit-1'), false,
     'an explicit null Shield is not a legacy omitted field');
@@ -672,7 +672,7 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
 
   const enemyShieldSnapshot = {
     ...active, playerHp: 70, playerMana: 0, enemyHp: 20, turnCount: 1,
-    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 5, enemyShield: 5,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyShield: 5,
   };
   assert.equal(isAuthoritativeBattleActionState(enemyShieldSnapshot, 'permit-1'), true);
   for (const enemyShield of [-1, 0.5, null, Number.MAX_SAFE_INTEGER + 1]) {
