@@ -75,14 +75,14 @@ const findForbiddenMonsterActionResource = (
 const DEGEN_MECHANIC_COLLECTION_FIELDS = new Set([
   'ability', 'abilities', 'move', 'moves', 'loadout',
   'signature', 'signatures', 'signatureeffect', 'signatureeffects', 'effect', 'effects',
-  'status', 'statuses', 'statuseffect', 'statuseffects', 'degenstatus', 'degenstatuses',
+  'status', 'statuses', 'statuseffect', 'statuseffects', 'appliedstatus', 'appliedstatuses', 'degenstatus', 'degenstatuses',
   'degeneffect', 'degeneffects', 'abilityeffect', 'abilityeffects', 'moveeffect', 'moveeffects',
   'appliedeffect', 'appliedeffects',
   'mechanic', 'mechanics', 'degenmechanic', 'degenmechanics',
 ]);
 
 const DEGEN_MECHANIC_DIRECT_NAME_FIELDS = new Set([
-  'effect', 'appliedeffect', 'status', 'statusname',
+  'effect', 'appliedeffect', 'status', 'statusname', 'appliedstatus', 'appliedstatuses',
   'effectname', 'signature', 'signaturename',
   'degeneffect', 'degenstatus', 'mechanic', 'mechanicname',
 ]);
