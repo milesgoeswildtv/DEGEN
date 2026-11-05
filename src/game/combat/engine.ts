@@ -101,6 +101,8 @@ export class BattleEngine {
     const playerShield = result.playerShield === undefined ? 0 : result.playerShield;
     const shieldAbsorbed = result.shieldAbsorbed === undefined ? 0 : result.shieldAbsorbed;
     const retaliationDamage = result.retaliationDamage === undefined ? 0 : result.retaliationDamage;
+    // Multi-turn recovery has no prior action to replay, so its persisted retaliation audit must match shared combat math.
+    const expectedRetaliationDamage = Math.max(1, this.enemy.damage - Math.floor(this.degen.guard * 0.45));
     if (!isValidShield(playerShield)
       || !isValidShield(shieldAbsorbed)
       || !isValidShield(retaliationDamage)
@@ -116,7 +118,7 @@ export class BattleEngine {
           || hasLegacyAuditSentinel
           || (result.turnCount === 0
             ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
-            : retaliationDamage > 0
+            : retaliationDamage === expectedRetaliationDamage
               && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
         return result.playerHp > 0 && result.enemyHp > 0
           && result.turnCount < Number.MAX_SAFE_INTEGER
@@ -135,7 +137,7 @@ export class BattleEngine {
           || (shieldAbsorbed === 0 && retaliationDamage === 0);
         return result.turnCount > 0 && result.playerHp === 0 && result.enemyHp > 0
           && playerShield === 0
-          && (legacyTerminalAudit || shieldAbsorbed < retaliationDamage);
+          && (legacyTerminalAudit || (retaliationDamage === expectedRetaliationDamage && shieldAbsorbed < retaliationDamage));
       }
       default:
         return false;

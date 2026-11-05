@@ -45,6 +45,7 @@ try {
       ('shield-carry','Shield Carry'),('shield-kill','Shield Kill'),('shield-defeat','Shield Defeat'),('shield-race','Shield Race'),
       ('shield-legacy','Shield Legacy'),('shield-corrupt-legacy','Shield Corrupt Legacy'),
       ('shield-impossible-active','Shield Impossible Active'),('shield-partial-active','Shield Partial Active'),
+      ('shield-wrong-retaliation','Shield Wrong Retaliation'),
       ('shield-impossible-enemy','Shield Impossible Enemy'),
       ('shield-closure','Shield Closure');
     INSERT INTO characters(player_id,level,xp,currency,degen_key) VALUES
@@ -53,6 +54,7 @@ try {
       ('shield-defeat',1,0,0,'test-degen'),('shield-race',1,0,0,'test-degen'),
       ('shield-legacy',1,0,0,'test-degen'),('shield-corrupt-legacy',1,0,0,'test-degen'),
       ('shield-impossible-active',1,0,0,'test-degen'),('shield-partial-active',1,0,0,'test-degen'),
+      ('shield-wrong-retaliation',1,0,0,'test-degen'),
       ('shield-impossible-enemy',1,0,0,'test-degen'),
       ('shield-closure',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
@@ -75,6 +77,7 @@ try {
       ('shield-impossible-active-permit','shield-impossible-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,0,0,0,63,1),
       ('shield-impossible-enemy-permit','shield-impossible-enemy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,12,0,0,0,92,0),
       ('shield-partial-active-permit','shield-partial-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,5,0,10,63,1),
+      ('shield-wrong-retaliation-permit','shield-wrong-retaliation','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,0,0,9,63,1),
       ('shield-closure-permit','shield-closure','underpass','shield-closure-cycle','tunnel-maw',datetime('now','-5 minutes'),datetime('now','+20 minutes'),'active',120,0,4,10,10,63,1);
   `);
   cli(['d1','execute','DEGEN','--local','--persist-to='+persist,'--file='+seed]);
@@ -170,6 +173,16 @@ try {
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-partial-active-permit'"),[
     {player_hp:110,player_mana:0,player_shield:5,last_shield_absorbed:0,last_retaliation_damage:10,enemy_hp:63,turn_count:1,battle_status:'active'},
   ]);
+
+  const wrongRetaliation = await post('/api/battle/action', {
+    playerId:'shield-wrong-retaliation',permitId:'shield-wrong-retaliation-permit',abilityId:'slash',expectedTurnCount:1,
+  });
+  assert.equal(wrongRetaliation.status,409);
+  assert.equal(wrongRetaliation.data.error,'Battle state is invalid.');
+  assert.equal('battleState' in wrongRetaliation.data,false);
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-wrong-retaliation-permit'"),[
+    {player_hp:110,player_mana:0,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:9,enemy_hp:63,turn_count:1,battle_status:'active'},
+  ],'an impossible but in-range retaliation audit must not authorize another action');
 
   // Every combat, outcome, and reward field supplied by the browser is hostile.
   // The Worker must derive all of them from the persisted permit and selected ability.

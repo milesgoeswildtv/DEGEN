@@ -458,3 +458,28 @@ test('Shield gain cannot bypass Mana costs and free Shield actions keep the Dege
   assert.ok(freeResult.log.some((line) => line.includes('Shield +3.')));
   assert.ok(freeResult.log.some((line) => line.includes('Shield absorbs 3.')));
 });
+
+
+test('multi-turn recovery rejects a non-deterministic retaliation audit but accepts the exact shared value', () => {
+  const permitId = 'retaliation-audit-recovery';
+  const initial = {
+    permitId,
+    status: 'active' as const,
+    playerHp: 110,
+    playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 10,
+    enemyHp: 63,
+    turnCount: 1,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initial);
+  const before = engine.snapshot;
+  const later = { ...initial, playerHp: 90, enemyHp: 34, turnCount: 3 };
+
+  assert.equal(engine.synchronizeAuthoritativeState({ ...later, retaliationDamage: 9 }), false);
+  assert.deepEqual(engine.snapshot, before, 'invalid multi-turn recovery must not replace the last accepted state');
+  assert.equal(engine.synchronizeAuthoritativeState(later), true);
+  assert.equal(engine.snapshot.turnCount, 3);
+  assert.equal(engine.snapshot.playerHp, 90);
+});

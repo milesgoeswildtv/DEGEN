@@ -163,9 +163,16 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
   const hasLegacyShieldAudit = lastShieldAbsorbed === null
     && lastRetaliationDamage === null
     && playerShield === 0;
-  const hasValidShieldAudit = isSafeIntegerBetween(lastShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
-    && isSafeIntegerBetween(lastRetaliationDamage, 0, TUNNEL_MAW.damage)
-    && lastShieldAbsorbed <= lastRetaliationDamage;
+  const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
+  const hasValidShieldAudit = hasLegacyShieldAudit
+    || (isSafeIntegerBetween(lastShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+      && isSafeIntegerBetween(lastRetaliationDamage, 0, TUNNEL_MAW.damage)
+      && lastShieldAbsorbed <= lastRetaliationDamage
+      && (state.battle_status === 'victory'
+        ? lastShieldAbsorbed === 0 && lastRetaliationDamage === 0
+        : state.turn_count === 0
+          ? lastShieldAbsorbed === 0 && lastRetaliationDamage === 0
+          : lastRetaliationDamage === expectedRetaliationDamage));
   const enemyHp = state.enemy_hp;
   const enemyShield = state.enemy_shield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemy_shield;
   const lastEnemyShieldAbsorbed = state.last_enemy_shield_absorbed;

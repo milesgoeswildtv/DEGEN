@@ -18,6 +18,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const enemyShield = state.enemyShield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemyShield;
   const requiresExplicitEnemyShield = (TUNNEL_MAW.startingShield ?? 0) > 0;
   const turnCount = state.turnCount;
+  const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
   const maxPlayerAbilityDamage = maxAbilityDamage(TEST_DEGEN);
   // A shielded enemy's current Shield is authoritative state, not a value the client may reinitialize.
   if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
@@ -30,7 +31,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     || hasLegacyShieldAuditSentinel
     || (turnCount === 0
       ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
-      : isBoundedSafeInteger(retaliationDamage, 1, TUNNEL_MAW.damage)
+      : retaliationDamage === expectedRetaliationDamage
         && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
   return state.permitId === permitId
     && state.status === 'active'
@@ -73,6 +74,7 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   // Missing current Shield must fail closed; falling back to the starting value can resurrect it on recovery.
   if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
   const turnCount = state.turnCount;
+  const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
   const maxPlayerAbilityDamage = maxAbilityDamage(TEST_DEGEN);
   if (state.permitId !== permitId
     || (state.status !== 'active' && state.status !== 'victory' && state.status !== 'defeat')
@@ -97,7 +99,7 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
       || hasLegacyShieldAuditSentinel
       || (turnCount === 0
         ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
-        : retaliationDamage > 0
+        : retaliationDamage === expectedRetaliationDamage
           && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
     return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
       && hasConsistentActiveShieldAudit
@@ -110,7 +112,8 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   // New-format defeat snapshots carry persisted deltas and must show residual damage.
   const recoveredTerminalSnapshot = shieldAbsorbed === 0 && retaliationDamage === 0;
   return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0
-    && (hasLegacyShieldState || recoveredTerminalSnapshot || shieldAbsorbed < retaliationDamage);
+    && (hasLegacyShieldState || recoveredTerminalSnapshot
+      || (retaliationDamage === expectedRetaliationDamage && shieldAbsorbed < retaliationDamage));
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

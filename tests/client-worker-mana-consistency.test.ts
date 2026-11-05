@@ -717,3 +717,29 @@ test('client rejects enemy Shield absorption above one Degen hit on multi-turn r
     'the engine boundary must reject the same impossible multi-turn recovery');
   assert.deepEqual(engine.snapshot, before, 'invalid audit data must not change the displayed battle');
 });
+
+
+test('API battle validators reject non-deterministic retaliation audits outside legacy snapshots', () => {
+  const permitId = 'retaliation-audit-api';
+  const validators = createBattleValidators(TUNNEL_MAW);
+  const active = {
+    permitId,
+    status: 'active' as const,
+    playerHp: 110,
+    playerMana: 0,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 10,
+    enemyHp: 63,
+    turnCount: 1,
+  };
+
+  assert.equal(isAuthoritativeBattleActionState(active, permitId), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...active, retaliationDamage: 9 }, permitId), false);
+  assert.equal(validators.isAuthoritativeBattleStartState(active, permitId), true);
+  assert.equal(validators.isAuthoritativeBattleStartState({ ...active, retaliationDamage: 9 }, permitId), false);
+
+  const defeat = { ...active, status: 'defeat' as const, playerHp: 0, shieldAbsorbed: 2, turnCount: 2 };
+  assert.equal(isAuthoritativeBattleActionState(defeat, permitId), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...defeat, retaliationDamage: 9 }, permitId), false);
+});
