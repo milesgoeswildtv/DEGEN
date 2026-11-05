@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
+import { maxAbilityDamage } from '../src/game/combat/rules.ts';
 import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import type { BattleActionResult } from '../src/domain/types.ts';
 
@@ -15,7 +16,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace('export class BattleEngine', 'class BattleEngine');
 const BattleEngine = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\nBattleEngine;',
-  { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, maxAbilityDamage, resolveCombatTurn },
 ) as new (
   degen: typeof TEST_DEGEN,
   enemy: typeof TUNNEL_MAW,
