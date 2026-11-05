@@ -3,7 +3,7 @@
 export interface OwnedFurnitureRow { item_key: string; quantity: number }
 
 const MAX_HOUSING_PLACEMENT_INSTANCE_ID_LENGTH = 256;
-const NONCANONICAL_HOUSING_ID_CHARACTERS = /[\\u0000-\\u001F\\u007F-\\u009F]|\\p{Cf}/u;
+const NONCANONICAL_HOUSING_ID_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]|\p{Cf}/u;
 
 // Placement IDs are persisted as global D1 keys. 256 code units leaves room
 // for a maximum-length player ID plus the server-seeded starter-bed suffix.
