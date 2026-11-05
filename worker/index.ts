@@ -64,13 +64,13 @@ const body = async <T>(request: Request): Promise<T> => {
   return value as T;
 };
 
-// Route identifiers are opaque, but edge whitespace and control characters are never canonical.
-const ROUTE_IDENTIFIER_CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/;
+// Opaque IDs must not contain edge whitespace, C0/C1 controls, or invisible Unicode format controls.
+const ROUTE_IDENTIFIER_NONCANONICAL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]|\p{Cf}/u;
 const isCanonicalIdentifier = (value: unknown): value is string =>
   typeof value === 'string'
   && value.length > 0
   && value.trim() === value
-  && !ROUTE_IDENTIFIER_CONTROL_CHARACTERS.test(value);
+  && !ROUTE_IDENTIFIER_NONCANONICAL_CHARACTERS.test(value);
 
 const iso = (value = Date.now()): string => new Date(value).toISOString();
 const randomInt = (min: number, max: number): number => {

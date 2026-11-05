@@ -1,3 +1,18 @@
+## Latest run — 2026-11-05 (reject invisible Unicode format controls in Worker route IDs)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
+- **Current branch / PR:** continuing `automation/degen/worker-identity-input-validation-v01`, PR [#124](https://github.com/milesgoeswildtv/DEGEN/pull/124), OPEN / UNMERGED. The existing Worker identifier-validation slice is extended in place; no competing branch or direct-main write.
+- **Task / files changed:** `worker/index.ts` now rejects Unicode format-control characters (`Cf`, including zero-width and bidirectional formatting controls) in opaque route identifiers, in addition to edge whitespace and C0/C1 controls. `tests/worker-request-body.test.ts` covers player, Discord identity, cycle, permit, ability, and read-route IDs, with D1 stubs proving rejection happens before database access.
+- **QA:** this code/test update requires fresh exact-head CI. The preceding PR #124 head `fcf6dd00c016faf6b66bb98ca648a572a71e0d86` passed CI [41898647928](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41898647928); that result is not evidence for the new head. No local shell test/build/Wrangler run is available in this connector-only environment.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, Worker-owned initialization and action CAS, unaffordable rejection without HP/enemy/turn mutation, exact deduction, zero-cost-at-zero, victory/defeat, cost-aware controls, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain covered. Prototype values remain scaffolding, not final balance.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, player HP/Mana, enemy HP, turn CAS, terminal outcomes/history, audited receipts, XP/level-up, currency, inventory, and recoverable exactly-once settlement. This identifier-only change does not alter combat or reward logic.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` with `db/migrations`; deployment order remains schema → tracked migrations → Worker. Main migrations remain through `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes the conflicting `0007_player_sessions.sql`; PRs #114/#126 guard unsafe deployment but do not decide ownership/order. No schema or migration changed and no production D1 operation or Worker deployment occurred.
+- **Miles blockers:** duplicate-`0007` ownership/order, production Discord/Telegram signed-session credentials, and approved legacy identity-collision policy remain unresolved.
+- **Delivery state:** implementation/test/progress changes are being committed only to the existing feature branch and delivered through PR #124; MERGED / LIVE remains unchanged.
+- **One best next task:** verify exact-head CI for this identifier hardening, then continue only an approved, migration-safe account or gameplay reliability slice.
+
+---
+
 ## Latest run — 2026-11-04 (Mana production verification; Shield gate recheck)
 
 - **Authoritative main SHA:** 8687739bef9ef1effdda5c07ec6353243b180e56. Exact-main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) passed every stage: deterministic tests, isolated Worker/D1 reward concurrency and transient recovery, Underpass cycle/rollover races, atomic defeat history, Chromium housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler validation. Pages preview [41775622351](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622351) succeeded on the same SHA.
