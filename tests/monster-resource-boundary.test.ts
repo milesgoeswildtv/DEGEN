@@ -237,3 +237,18 @@ test('LEAK in monster flavor text and move-description arrays remains descriptiv
     enemyHp: TUNNEL_MAW.maxHp, ability: freeAbility, degen: TEST_DEGEN, enemy: prose,
   }));
 });
+
+
+test('LEAK keys inside descriptive metadata nested under monster mechanics remain prose', () => {
+  const prose = {
+    ...TUNNEL_MAW,
+    signature: { metadata: { LEAK: 'A descriptive reference to a leaking pipe.' } },
+    abilities: [{ name: 'Crush', metadata: { LEAK: 'A descriptive move note.' }, description: { LEAK: 'Flavor only.' } }],
+    loadout: [{ metadata: { LEAK: 'A descriptive loadout note.' } }],
+  } as typeof TUNNEL_MAW;
+  assert.doesNotThrow(() => assertNoMonsterActionResource(prose));
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp, playerMana: TEST_DEGEN.maxMana, playerShield: 0,
+    enemyHp: TUNNEL_MAW.maxHp, ability: freeAbility, degen: TEST_DEGEN, enemy: prose,
+  }));
+});
