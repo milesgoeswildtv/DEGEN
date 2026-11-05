@@ -613,3 +613,42 @@ test('account switch refreshes the current location with the new player unlock s
     { route: 'location', playerId: 'player-2' },
   ], 'a player-owned location view must be rebuilt from the active account snapshot');
 });
+
+test('account switch immediately clears world routes even when the previous snapshot was empty', async () => {
+  const loaded = loadController(previewEvent);
+  let resolveCurrent!: (event: EventSnapshot) => void;
+  const currentEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-2' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: () => new Promise<EventSnapshot>((resolve) => { resolveCurrent = resolve; }),
+  });
+  const state = controller as unknown as {
+    route: string;
+    worldRefreshPlayerId?: string;
+    underpassEvent?: EventSnapshot;
+    worldSyncFailed: boolean;
+    render: () => void;
+    refreshWorld: () => Promise<void>;
+  };
+  state.route = 'district';
+  state.worldRefreshPlayerId = 'player-1';
+  state.underpassEvent = undefined;
+  state.worldSyncFailed = false;
+  const rendered: Array<{ route: string; cycleId?: string }> = [];
+  state.render = () => rendered.push({ route: state.route, cycleId: state.underpassEvent?.cycleId });
+
+  const refresh = state.refreshWorld();
+  assert.deepEqual(rendered, [
+    { route: 'district', cycleId: undefined },
+  ], 'the prior account view must be replaced immediately while the new account is syncing');
+
+  resolveCurrent(currentEvent);
+  await refresh;
+  assert.deepEqual(rendered, [
+    { route: 'district', cycleId: undefined },
+    { route: 'district', cycleId: 'player-2-cycle' },
+  ]);
+});

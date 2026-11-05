@@ -713,7 +713,6 @@ export class AppController {
     const previousPlayerId = this.worldRefreshPlayerId;
     const accountChanged = previousPlayerId !== undefined && previousPlayerId !== playerId;
     if (previousPlayerId !== playerId) {
-      const hadPreviousWorldState = this.underpassEvent !== undefined || this.worldSyncFailed;
       this.worldRefreshPlayerId = playerId;
       this.underpassEvent = undefined;
       this.worldSyncFailed = false;
@@ -731,11 +730,10 @@ export class AppController {
         // Home and location views depend on player-owned furniture and unlocks.
         // Replace the prior account's view immediately rather than waiting for navigation.
         this.render();
-      } else if (accountChanged && hadPreviousWorldState
+      } else if (accountChanged
         && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) {
-        // Clear the prior account's per-player event state even when the caller
-        // will not perform its own post-refresh render (for example, a stale
-        // battle request that exits early after an account switch).
+        // Replace the prior account's world view immediately, even if its
+        // previous event snapshot had not loaded before the identity changed.
         this.render();
       }
     }
