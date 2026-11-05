@@ -156,6 +156,7 @@ test('a stale previous-player response awaits a fail-closed refresh for the acti
     },
   });
 
+  controller.render = () => {};
   const previousRefresh = controller.refreshWorld();
   store.snapshot.id = 'player-2';
   rejectPrevious(new Error('stale player session expired'));
