@@ -27,10 +27,75 @@ const { PlayerStore } = runInNewContext(
   PlayerStore: new (api: unknown) => {
     initialize(identity: { platform: 'browser'; platformUserId: string; displayName: string }): Promise<boolean>;
     snapshot: { id: string; level: number; currency: number };
+    replaceFromServer(player: any): void;
   };
 };
 
 const identity = { platform: 'browser' as const, platformUserId: 'local-dev', displayName: 'Player' };
+
+const playerSnapshot = (id: string, level: number, currency: number) => ({
+  id,
+  displayName: 'Server Player',
+  level,
+  xp: 0,
+  currency,
+  degenId: 'test-degen',
+  inventory: [],
+  unlockedLocations: ['home'],
+  housing: { inventory: ['starter-bed'], placements: [] },
+  defeatedBosses: [],
+});
+
+test('late bootstrap cannot replace a newer active account snapshot', async () => {
+  storage.clear();
+  let resolveBootstrap!: (player: any) => void;
+  let requestedPlayerId = '';
+  const store = new PlayerStore({
+    enabled: true,
+    bootstrap(playerId: string) {
+      requestedPlayerId = playerId;
+      return new Promise((resolve) => { resolveBootstrap = resolve; });
+    },
+  });
+  const originalPlayerId = store.snapshot.id;
+  const pendingInitialization = store.initialize(identity);
+  assert.equal(requestedPlayerId, originalPlayerId);
+
+  store.replaceFromServer(playerSnapshot('second-account', 9, 90));
+  resolveBootstrap(playerSnapshot(originalPlayerId, 2, 20));
+
+  assert.equal(await pendingInitialization, true, 'the Worker was reachable even though its stale snapshot was ignored');
+  assert.deepEqual(
+    [store.snapshot.id, store.snapshot.level, store.snapshot.currency],
+    ['second-account', 9, 90],
+    'a late bootstrap must not replace the account that became active while it was pending',
+  );
+});
+
+test('late bootstrap cannot overwrite the latest snapshot after an A-to-B-to-A account switch', async () => {
+  storage.clear();
+  let resolveBootstrap!: (player: any) => void;
+  const store = new PlayerStore({
+    enabled: true,
+    bootstrap(playerId: string) {
+      return new Promise((resolve) => { resolveBootstrap = resolve; });
+    },
+  });
+  const originalPlayerId = store.snapshot.id;
+  const pendingInitialization = store.initialize(identity);
+
+  store.replaceFromServer(playerSnapshot('second-account', 4, 40));
+  store.replaceFromServer(playerSnapshot(originalPlayerId, 8, 80));
+  resolveBootstrap(playerSnapshot(originalPlayerId, 2, 20));
+
+  assert.equal(await pendingInitialization, true);
+  assert.deepEqual(
+    [store.snapshot.id, store.snapshot.level, store.snapshot.currency],
+    [originalPlayerId, 8, 80],
+    'an older response for the same player ID must not win after the account switched away and back',
+  );
+});
+
 
 test('server-backed initialization reports success only after an authoritative player snapshot', async () => {
   storage.clear();
