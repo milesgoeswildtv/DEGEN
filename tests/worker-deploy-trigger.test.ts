@@ -148,3 +148,11 @@ test('Worker deployment completes the full local QA gate before any remote D1 wr
     'only schema → tracked migrations → Worker deployment may follow the QA gate',
   );
 });
+
+test('production Worker deployments serialize D1 migrations and never cancel an in-flight release', () => {
+  assert.match(
+    deployWorkflow,
+    /^concurrency:\n  group: degen-worker-production\n  cancel-in-progress: false$/m,
+    'production D1 migrations and Worker deployments must share one non-cancelling concurrency lane',
+  );
+});
