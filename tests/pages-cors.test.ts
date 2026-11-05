@@ -33,7 +33,7 @@ const workerSource = readFileSync(new URL('../worker/index.ts', import.meta.url)
   .replace(/^import .*;\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
 const worker = runInNewContext(stripTypeScriptTypes(workerSource, { mode: 'transform' }) + '\nworker;', {
-  Request, Response, URL, crypto, console, Uint32Array, validateHousingPlacements,
+  Request, Response, URL, crypto, console, Uint32Array, TextDecoder, validateHousingPlacements,
 }) as { fetch(request: Request, env: { ALLOWED_ORIGINS: string; DB?: unknown }): Promise<Response> };
 
 async function preflight(origin: string): Promise<Response> {
