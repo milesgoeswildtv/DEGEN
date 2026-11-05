@@ -39,11 +39,16 @@ const fail = (request: Request, env: Env, message: string, status = 400): Respon
   json(request, env, { error: message }, status);
 
 class RequestBodyError extends Error {
-  constructor(message: string) {
+  readonly status: number;
+
+  constructor(message: string, status = 400) {
     super(message);
     this.name = 'RequestBodyError';
+    this.status = status;
   }
 }
+
+const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 
 const body = async <T>(request: Request): Promise<T> => {
   // Require the JSON media type, not merely JSON-looking bytes. This prevents
@@ -52,9 +57,56 @@ const body = async <T>(request: Request): Promise<T> => {
   if (contentType !== 'application/json') {
     throw new RequestBodyError('Content-Type must be application/json.');
   }
+
+  // Content-Length is only an early rejection hint; enforce the same bound while
+  // reading so chunked or dishonest requests cannot bypass the memory limit.
+  const contentLength = request.headers.get('content-length');
+  if (contentLength !== null) {
+    if (!/^\\d+$/.test(contentLength)) {
+      throw new RequestBodyError('Content-Length must be a non-negative integer.');
+    }
+    const declaredLength = Number(contentLength);
+    if (!Number.isSafeInteger(declaredLength)) {
+      throw new RequestBodyError('Content-Length must be a safe integer.');
+    }
+    if (declaredLength > MAX_REQUEST_BODY_BYTES) {
+      throw new RequestBodyError('Request body exceeds the 64 KiB limit.', 413);
+    }
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) throw new RequestBodyError('Request body must be valid JSON.');
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        try { await reader.cancel(); } catch { /* Preserve the size rejection. */ }
+        throw new RequestBodyError('Request body exceeds the 64 KiB limit.', 413);
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof RequestBodyError) throw error;
+    throw new RequestBodyError('Request body must be readable JSON.');
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
   let value: unknown;
   try {
-    value = await request.json();
+    value = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     throw new RequestBodyError('Request body must be valid JSON.');
   }
@@ -1438,7 +1490,7 @@ export default {
       if (request.method === 'POST' && url.pathname === '/api/battle/complete') return await handleCompleteBattle(request, env);
       return fail(request, env, 'Not found', 404);
     } catch (error) {
-      if (error instanceof RequestBodyError) return fail(request, env, error.message, 400);
+      if (error instanceof RequestBodyError) return fail(request, env, error.message, error.status);
       if (error instanceof InventoryIntegrityError) return fail(request, env, error.message, 409);
       console.error(error);
       return fail(request, env, 'Internal server error', 500);
