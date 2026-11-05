@@ -16,6 +16,11 @@ on:
       - 'package-lock.json'
       - '.github/workflows/deploy-worker.yml'
 
+# Migrations and Worker releases share one production lane; never cancel a run mid-write.
+concurrency:
+  group: degen-worker-production
+  cancel-in-progress: false
+
 # Updating this workflow retriggers deployment after Cloudflare credential changes.
 jobs:
   deploy:
