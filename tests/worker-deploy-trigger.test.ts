@@ -149,12 +149,14 @@ test('Worker deployment completes the full local QA gate before any remote D1 wr
   );
 });
 
-test('production Worker deployments serialize D1 migrations and never cancel an in-flight release', () => {
+test('main production deploy jobs serialize migrations without letting feature dispatches occupy the lane', () => {
   assert.match(
     deployWorkflow,
-    /^concurrency:\n  group: degen-worker-production\n  cancel-in-progress: false$/m,
-    'production D1 migrations and Worker deployments must share one non-cancelling concurrency lane',
+    /^jobs:\n  deploy:\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}\n    # Only eligible production deploys enter this non-cancelling migration\/deploy lane\.\n    concurrency:\n      group: degen-worker-production\n      cancel-in-progress: false$/m,
+    'only main deploy jobs may enter the shared non-cancelling production lane',
   );
+  assert.doesNotMatch(deployWorkflow, /^concurrency:/m,
+    'feature-branch workflow_dispatch runs must not occupy or replace a pending production deploy');
 });
 
 test('production Worker deploys run only from main, including manual dispatches', () => {
