@@ -643,6 +643,14 @@ test('monster mechanics cannot use the Degen-only LEAK effect', () => {
       enemy: { ...TUNNEL_MAW, signature: { name: 'LEAK' } } as typeof TUNNEL_MAW,
     },
     {
+      path: 'signature.effects.LEAK',
+      enemy: { ...TUNNEL_MAW, signature: { effects: { LEAK: { duration: 2 } } } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.statuses.leak',
+      enemy: { ...TUNNEL_MAW, loadout: [{ statuses: { leak: { duration: 2 } } }] } as typeof TUNNEL_MAW,
+    },
+    {
       path: 'loadout.0.appliedEffect',
       enemy: { ...TUNNEL_MAW, loadout: [{ appliedEffect: 'leak' }] } as typeof TUNNEL_MAW,
     },
@@ -738,6 +746,7 @@ test('LEAK in monster flavor text is not mistaken for a Degen effect', () => {
   const enemy = {
     ...TUNNEL_MAW,
     description: 'A cracked service pipe leaks water into the tunnel.',
+    metadata: { LEAK: 'A descriptive key about water leaking from a pipe.' },
   };
 
   assert.doesNotThrow(() => resolveCombatTurn({
