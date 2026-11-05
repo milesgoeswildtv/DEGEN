@@ -24,8 +24,8 @@ const createBattleActionHandler = (degen: typeof TEST_DEGEN) => runInNewContext(
 const handleBattleAction = createBattleActionHandler(TEST_DEGEN);
 const shieldGainDegen = {
   ...TEST_DEGEN,
-  abilities: TEST_DEGEN.abilities.map((ability) => ability.id === 'slash'
-    ? { ...ability, shieldGain: 4 }
+  abilities: TEST_DEGEN.abilities.map((ability) => ability.id === 'crack'
+    ? { ...ability, shieldGain: 14 }
     : ability),
 };
 const handleBattleActionWithShieldGain = createBattleActionHandler(shieldGainDegen);
@@ -441,7 +441,7 @@ test('Worker persists successful Degen Shield gain and retaliation absorption in
     cycle_id: 'cycle-1',
     encounter_key: TUNNEL_MAW.id,
     player_hp: TEST_DEGEN.maxHp,
-    player_mana: TEST_DEGEN.maxMana,
+    player_mana: 4,
     player_shield: 0,
     last_shield_absorbed: 0,
     last_retaliation_damage: 0,
@@ -478,7 +478,7 @@ test('Worker persists successful Degen Shield gain and retaliation absorption in
     body: JSON.stringify({
       playerId: 'shield-player',
       permitId: 'shield-gain-permit',
-      abilityId: 'slash',
+      abilityId: 'crack',
       expectedTurnCount: 0,
     }),
   });
@@ -495,9 +495,9 @@ test('Worker persists successful Degen Shield gain and retaliation absorption in
     result.playerHp, result.playerMana, result.playerShield,
     result.shieldAbsorbed, result.retaliationDamage,
     result.enemyHp, result.turnCount, result.status,
-  ], [114, 12, 0, 4, 10, 63, 1, 'active']);
+  ], [120, 0, 4, 10, 10, 57, 1, 'active']);
   assert.equal(updates.length, 1, 'one accepted Worker action performs one permit update');
   assert.deepEqual(updates[0]?.params.slice(0, 9), [
-    114, 12, 0, 4, 10, 63, 0, 0, 'active',
+    120, 0, 4, 10, 10, 57, 0, 0, 'active',
   ], 'the same compare-and-swap persists Shield gain, absorption, HP, and enemy damage together');
 });
