@@ -14,7 +14,7 @@ const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf
 const worker = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\nworker;', {
   TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
   UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
-  crypto: globalThis.crypto, Request, Response, URL, Uint32Array,
+  crypto: globalThis.crypto, Request, Response, URL, Uint32Array, TextDecoder,
   console: { error() {} },
 }) as {
   fetch(request: Request, env: { DB: unknown }): Promise<Response>;
@@ -85,6 +85,79 @@ test('application/json with a charset parameter is accepted as JSON media type',
   assert.deepEqual(await response.json(), { error: 'Request body must be valid JSON.' });
 });
 
+
+const MAX_REQUEST_BODY_BYTES = 64 * 1024;
+
+test('JSON request bodies accept the exact 64 KiB boundary and reject larger bodies before D1', async () => {
+  const emptyPayload = JSON.stringify({ playerId: 'p', displayName: '' });
+  const paddingLength = MAX_REQUEST_BODY_BYTES - new TextEncoder().encode(emptyPayload).byteLength;
+  const exactBody = JSON.stringify({ playerId: 'p', displayName: 'x'.repeat(paddingLength) });
+  assert.equal(new TextEncoder().encode(exactBody).byteLength, MAX_REQUEST_BODY_BYTES);
+
+  let exactBoundaryReachedD1 = false;
+  const exactResponse = await worker.fetch(new Request('https://degen-api.example/api/player/bootstrap', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: exactBody,
+  }), {
+    DB: {
+      prepare() {
+        exactBoundaryReachedD1 = true;
+        throw new Error('Stop after proving the exact body-size boundary was parsed.');
+      },
+    },
+  });
+  assert.equal(exactBoundaryReachedD1, true);
+  assert.equal(exactResponse.status, 500);
+
+  const overLimitBody = JSON.stringify({ playerId: 'p', displayName: 'x'.repeat(paddingLength + 1) });
+  assert.equal(new TextEncoder().encode(overLimitBody).byteLength, MAX_REQUEST_BODY_BYTES + 1);
+  let oversizedBodyReachedD1 = false;
+  const oversizedResponse = await worker.fetch(new Request('https://degen-api.example/api/player/bootstrap', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: overLimitBody,
+  }), {
+    DB: {
+      prepare() {
+        oversizedBodyReachedD1 = true;
+        throw new Error('Oversized JSON must be rejected before D1.');
+      },
+    },
+  });
+  assert.equal(oversizedBodyReachedD1, false);
+  assert.equal(oversizedResponse.status, 413);
+  assert.deepEqual(await oversizedResponse.json(), { error: 'Request body exceeds the 64 KiB limit.' });
+});
+
+test('chunked JSON bodies are bounded while streaming without Content-Length', async () => {
+  const prefix = new TextEncoder().encode('{"playerId":"p","displayName":"');
+  const suffix = new TextEncoder().encode('"}');
+  const padding = new Uint8Array(MAX_REQUEST_BODY_BYTES - prefix.byteLength - suffix.byteLength + 1).fill(0x78);
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(prefix);
+      controller.enqueue(padding);
+      controller.enqueue(suffix);
+      controller.close();
+    },
+  });
+  const request = new Request('https://degen-api.example/api/player/bootstrap', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: stream,
+    duplex: 'half',
+  } as RequestInit);
+  assert.equal(request.headers.get('content-length'), null);
+
+  let d1Touched = false;
+  const response = await worker.fetch(request, {
+    DB: { prepare() { d1Touched = true; throw new Error('Chunked oversized JSON must not reach D1.'); } },
+  });
+  assert.equal(d1Touched, false);
+  assert.equal(response.status, 413);
+  assert.deepEqual(await response.json(), { error: 'Request body exceeds the 64 KiB limit.' });
+});
 
 test('malformed route identity fields return 400 before touching D1', async () => {
   const cases = [
