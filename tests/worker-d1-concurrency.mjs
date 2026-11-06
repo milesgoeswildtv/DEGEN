@@ -847,12 +847,9 @@ try {
     status: 'active',
     playerHp: 80,
     playerMana: 0,
-    playerShield: 0,
-    shieldAbsorbed: 0,
-    retaliationDamage: 0,
     enemyHp: 92,
     turnCount: 0,
-  }, 'rejection must return the unchanged server-authoritative snapshot');
+  }, 'rejection must return the unchanged server-authoritative legacy snapshot without synthesizing Shield audit fields');
   assertPersistedPermitState('permit-insufficient-mana', {
     status: 'active', playerHp: 80, playerMana: 0, enemyHp: 92, turnCount: 0,
   });
