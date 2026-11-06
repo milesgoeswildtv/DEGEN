@@ -1,3 +1,21 @@
+## Latest run — 2026-11-06 (legacy-safe Shield completion forgery regression)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; no direct-main write.
+- **Current feature branch / PR:** continuing `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), OPEN / DRAFT / UNMERGED. Latest code/test commit: `bac0a38e8111dc6c560401f96c7df569cd80dc5c`.
+- **Implementation/test changes:**
+  - `tests/worker-shield-integration.mjs`: Shield-bearing killing blow vs concurrent completion; then concurrent completion retries; assert authoritative terminal HP/Mana/Shield state, one reward receipt/history row, and preserved Shield audit.
+  - `tests/worker-d1-concurrency.mjs`: hostile client `playerShield`, `enemyShield`, Shield-absorption and retaliation fields are included in forged completion. Persisted pools remain zero. The permit is a pre-Shield legacy fixture, so the test correctly preserves its NULL legacy `last_shield_absorbed` / `last_retaliation_damage` audit rather than inventing a zero audit; enemy Shield and absorption remain zero.
+- **QA:** prior complete exact-head CI [42211766892](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42211766892) passed all workflow stages on `50b3b2cea4c896e4b4e9ecc4c629038b319e220d`. Intermediate CI [42219465444](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42219465444) and the next exact-head CI [42220144199](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42220144199) are in progress; migration preflight and deterministic tests passed on both, and Worker/D1 reward concurrency has passed on the intermediate run. Latest commit `bac0a38` requires a fresh exact-head CI run. No full green claim for the new tests yet.
+- **Mana:** COMPLETE / MERGED on main; all Degen-only Mana, Worker persistence/authority, affordability, exact deduction, zero-cost-at-zero, victory/defeat, UI and no-reversion invariants remain intact. No Mana branch revived.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permit state, player HP/Mana/Shield, enemy HP/Shield, action CAS, terminal outcomes/history, reward receipts, progression, currency and inventory. New tests explicitly cover client-authored Shield rejection and concurrent Shield victory settlement; no runtime trust moved to the client.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and tracked `db/migrations`. Shield migrations `0008_degen_shield.sql` / `0009_enemy_shield.sql` remain branch-only/unapplied. Main's `0007_player_inventory_quantity_guards.sql` still conflicts with draft auth PR #14's `0007_player_sessions.sql`; Miles' 2026-10-30 comment explicitly leaves that sequence unresolved. Preserve #114 → #126 → #125. No migration renumbering, production D1 operation, merge or Worker deployment.
+- **Other exact-head gates:** PR #114 CI [41793830515](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41793830515) and PR #126 CI [42022296018](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42022296018) are SUCCESS; both PRs are mergeable but remain OPEN / UNMERGED.
+- **Content authority:** Library has Design Bible v0.12, Monster Log v0.8/v0.9 and Monster Archetype Signatures v0.2, but not the specifically named `02 DEGEN Monster Log v0.11` or roster tracker. Exact universal-status duration/stacking/resistance/cleanse rules remain unresolved. No older roster substitution, monster identity, status behavior or balance was invented.
+- **Delivery:** PUSHED / PR #125. **MERGED / LIVE:** unchanged. No production D1, production Worker deployment, or physical-iPhone QA.
+- **One best next task:** finish exact-head CI for `bac0a38`; investigate any failing D1 race stage without weakening assertions, then refresh PR #125 evidence while keeping the migration release gate intact.
+
+---
+
 ## Latest run — 2026-11-06 (Shield action/completion authority regressions)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; no direct-main write.
