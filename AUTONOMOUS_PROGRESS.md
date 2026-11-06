@@ -1,3 +1,18 @@
+## Latest run — 2026-11-06 (Unicode-format LEAK regression coverage)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main is unchanged.
+- **Current branch / PR:** continued `automation/degen/monster-resource-boundary-v01`, PR #122 OPEN / READY FOR REVIEW / UNMERGED. Test commit `410a5ab92eed5acea8a2927d2967003ceb88474f`; previous runtime/code head `ebb734d1faf83b0b2c6b7be83f713fe8cbaadbfe` and progress head `38413b7092b468f0438eb826b3ecc51bac435c6e` both have exact-head CI SUCCESS (runs [42189281511](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42189281511) and [42189954017](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42189954017)).
+- **Task / files changed:** `tests/combat-progression.test.ts` adds regression coverage for invisible zero-width space, word-joiner, combining-mark, and bidi-format characters disguising GLITCHRAT-owned `LEAK` in mechanic keys and effect values. A prose-only control confirms the mechanic guard still does not misclassify descriptive text. Runtime normalization already strips non-ASCII identifier characters after NFKC/case normalization; no production rule or balance change was needed.
+- **Tests / QA:** prior exact code and docs heads passed full CI. New test head has not yet completed its own CI; no new-head pass is claimed. No local npm/build/Wrangler or physical-iPhone proof is claimed.
+- **Mana:** COMPLETE / MERGED on main. No Mana branch is ahead-only: original sidekick branch is 11 ahead / 104 behind; all 16 named successors are diverged or behind. Degen-only persisted Mana, atomic affordability rejection, exact deduction, zero-cost-at-zero, terminal handling, and no reversion remain intact.
+- **Battle authority / rewards:** Worker/D1 remains authoritative for permits, HP/Mana, enemy HP, turn CAS, terminal outcome/history, audited receipts, progression, currency, inventory, and recovery. This test-only change does not touch reward authority.
+- **D1 / migrations:** `wrangler.toml` binds `DB` to `DEGEN` with `db/migrations`; main tracks through `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a conflicting `0007_player_sessions.sql`; preserve #114 → #126 → #122 deployment ordering. No migration renumbering/application, production D1 write, or Worker deployment.
+- **Miles blockers:** duplicate `0007` ownership/order and inaccessible canonical Monster Log v0.11 remain unresolved. No monster/status canon was invented.
+- **Delivery:** test + continuity changes are PUSHED on PR #122; not merged/live.
+- **One best next task:** verify exact-head CI for the new Unicode-format regressions, then continue the existing review/deploy sequence without duplicating Mana or Shield work.
+
+---
+
 ## Latest run — 2026-11-06 (close separator-disguised LEAK namespace aliases)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) is SUCCESS. Main remains unchanged.
