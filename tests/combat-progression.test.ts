@@ -651,6 +651,10 @@ test('monster mechanics cannot use the Degen-only LEAK effect', () => {
       enemy: { ...TUNNEL_MAW, signature: { effects: { 'ＬＥＡＫ': { enabled: true } } } } as typeof TUNNEL_MAW,
     },
     {
+      path: 'signature.effects.L.E.A.K',
+      enemy: { ...TUNNEL_MAW, signature: { effects: { 'L.E.A.K': { enabled: true } } } } as typeof TUNNEL_MAW,
+    },
+    {
       path: 'statusName.LEAK',
       enemy: { ...TUNNEL_MAW, statusName: { LEAK: { enabled: true } } } as typeof TUNNEL_MAW,
     },
@@ -665,6 +669,10 @@ test('monster mechanics cannot use the Degen-only LEAK effect', () => {
     {
       path: 'abilities.0.effect',
       enemy: { ...TUNNEL_MAW, abilities: [{ effect: 'ＬＥＡＫ' }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'abilities.0.effect',
+      enemy: { ...TUNNEL_MAW, abilities: [{ effect: 'L.E.A.K' }] } as typeof TUNNEL_MAW,
     },
     {
       path: 'status.0',
