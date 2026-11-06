@@ -483,3 +483,47 @@ test('multi-turn recovery rejects a non-deterministic retaliation audit but acce
   assert.equal(engine.snapshot.turnCount, 3);
   assert.equal(engine.snapshot.playerHp, 90);
 });
+
+
+test('authoritative turn validation accepts the minimum-one retaliation for a zero-damage enemy', () => {
+  const zeroDamageEnemy = { ...TUNNEL_MAW, damage: 0 };
+  const permitId = 'zero-damage-enemy-permit';
+  const engine = new BattleEngine(TEST_DEGEN, zeroDamageEnemy, () => undefined, {
+    permitId,
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: zeroDamageEnemy.maxHp,
+    turnCount: 0,
+  });
+  const slash = ability('slash');
+  const turn = resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    enemyHp: zeroDamageEnemy.maxHp,
+    ability: slash,
+    degen: TEST_DEGEN,
+    enemy: zeroDamageEnemy,
+  });
+
+  assert.equal(turn.retaliationDamage, 1);
+  const accepted = engine.applyAuthoritativeAction('slash', {
+    permitId,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    turnCount: 1,
+  });
+
+  assert.equal(accepted, true);
+  assert.equal(engine.snapshot.turnCount, 1);
+  assert.equal(engine.snapshot.playerHp, TEST_DEGEN.maxHp - 1);
+});
