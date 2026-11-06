@@ -2767,6 +2767,42 @@ try {
   ], 'the losing concurrent save must not delete the existing room');
   console.log('PASS concurrent Worker/D1 housing ID race: one owner, normalized 409, losing layout preserved');
 
+  // Concurrent saves for one player must replace a complete layout atomically.
+  // The final snapshot may be either winner, but it must never mix both requests.
+  const samePlayerLayouts = [
+    {
+      placements: [
+        { instanceId: 'housing-same-player-a-bed', furnitureId: 'starter-bed', x: 0, y: 0 },
+        { instanceId: 'housing-same-player-a-chair', furnitureId: 'starter-chair', x: 1, y: 0 },
+      ],
+    },
+    {
+      placements: [
+        { instanceId: 'housing-same-player-b-lamp', furnitureId: 'starter-lamp', x: 6, y: 5 },
+        { instanceId: 'housing-same-player-b-rug', furnitureId: 'starter-rug', x: 7, y: 5 },
+      ],
+    },
+  ];
+  const samePlayerSaveResponses = await Promise.all(
+    samePlayerLayouts.map(layout => housingSave(housingPlayerId, layout)),
+  );
+  assert.deepEqual(
+    samePlayerSaveResponses.map(response => response.status),
+    [204, 204],
+    'both valid concurrent saves for one player must complete successfully',
+  );
+  const persistedSamePlayerLayout = await housingBootstrap(housingPlayerId);
+  const normalizeLayout = placements => placements
+    .map(item => [item.instanceId, item.furnitureId, item.x, item.y].join('|'))
+    .sort()
+    .join('\\n');
+  const persistedSamePlayerSignature = normalizeLayout(persistedSamePlayerLayout);
+  assert.ok(
+    samePlayerLayouts.some(layout => normalizeLayout(layout.placements) === persistedSamePlayerSignature),
+    'the final persisted room must equal one complete submitted layout, never a mixed or partial layout',
+  );
+  console.log('PASS concurrent same-player Worker/D1 housing saves: atomic complete-layout replacement');
+
   const finalEmptySave = await housingSave(housingPlayerId, { placements: [] });
   assert.equal(finalEmptySave.status, 204);
   assert.deepEqual(await housingBootstrap(housingPlayerId), [],
