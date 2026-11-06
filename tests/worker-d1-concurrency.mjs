@@ -1938,8 +1938,9 @@ try {
   assert.deepEqual(expiredVictoryActionReplay.battleState, {
     permitId: 'permit-expired-victory', status: 'victory',
     playerHp: 80, playerMana: 0,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
     enemyHp: 0, turnCount: 1,
-  }, 'the pre-Shield victory retry preserves omitted audit fields and cannot apply another action');
+  }, 'the Shield-aware killing blow persists its zero absorption/retaliation audit and cannot apply another action');
   assertPersistedPermitState('permit-expired-victory', {
     status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
   });
