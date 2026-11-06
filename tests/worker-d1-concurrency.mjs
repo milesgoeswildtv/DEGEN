@@ -815,11 +815,20 @@ try {
       permitId: 'permit-insufficient-mana',
       abilityId: 'crack',
       expectedTurnCount: 0,
+      // Forged combat/economy values cannot make an unaffordable paid action succeed.
+      playerHp: 1, playerMana: 999, enemyHp: 1, turnCount: 999,
+      status: 'victory', victory: true,
+      xp: 999999, currency: 999999, items: ['forged-item'],
+      reward: { xp: 999999, currency: 999999, items: ['forged-item'], tier: 'full' },
     }),
   });
   const insufficientMana = await insufficientManaResponse.json();
   assert.equal(insufficientManaResponse.status, 409);
   assert.equal(insufficientMana.error, 'Not enough Mana for that ability.');
+  assert.deepEqual(Object.keys(insufficientMana).sort(), ['battleState', 'error'],
+    'an unaffordable action must not expose client-supplied victory or economy fields');
+  assert.equal('reward' in insufficientMana, false);
+  assert.equal('player' in insufficientMana, false);
   assert.deepEqual(insufficientMana.battleState, {
     permitId: 'permit-insufficient-mana',
     status: 'active',
