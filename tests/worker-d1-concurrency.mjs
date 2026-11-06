@@ -1705,6 +1705,11 @@ try {
   // let completion observe a client-authored outcome.
   const paidRaceCurrencyBefore = queryRows("SELECT currency FROM characters WHERE player_id='paid-killing-race-player'")[0]?.currency;
   assert.equal(paidRaceCurrencyBefore, 0, 'the isolated race fixture starts with no currency');
+  const paidCompletionForgery = {
+    victory: false, status: 'defeat', playerHp: 1, playerMana: 999, enemyHp: 20, turnCount: 999,
+    xp: 999999, currency: 999999, items: ['forged-item'],
+    reward: { xp: 999999, currency: 999999, items: ['forged-item'], tier: 'reduced' },
+  };
   const [paidRaceActionResponse, paidRaceEarlyCompletion] = await Promise.all([
     fetch(base + '/api/battle/action', {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -1719,11 +1724,7 @@ try {
         reward: { xp: 999999, currency: 999999, items: ['forged-item'], tier: 'full' },
       }),
     }),
-    complete('permit-paid-killing-race', 'paid-killing-race-player', {
-      victory: false, status: 'defeat', playerHp: 1, playerMana: 999, enemyHp: 20, turnCount: 999,
-      xp: 999999, currency: 999999, items: ['forged-item'],
-      reward: { xp: 999999, currency: 999999, items: ['forged-item'], tier: 'reduced' },
-    }),
+    complete('permit-paid-killing-race', 'paid-killing-race-player', paidCompletionForgery),
   ]);
   const paidRaceAction = await paidRaceActionResponse.json();
   assert.equal(paidRaceActionResponse.status, 200, JSON.stringify(paidRaceAction));
@@ -1749,8 +1750,8 @@ try {
     'the authoritative paid killing-blow state must be persisted exactly once');
 
   const [paidCompletionA, paidCompletionB] = await Promise.all([
-    eventuallyComplete('permit-paid-killing-race', {}, 'paid-killing-race-player'),
-    eventuallyComplete('permit-paid-killing-race', {}, 'paid-killing-race-player'),
+    eventuallyComplete('permit-paid-killing-race', paidCompletionForgery, 'paid-killing-race-player'),
+    eventuallyComplete('permit-paid-killing-race', paidCompletionForgery, 'paid-killing-race-player'),
   ]);
   assert.equal(paidCompletionA.reward.tier, 'full');
   assert.deepEqual(paidCompletionB.reward, paidCompletionA.reward,
