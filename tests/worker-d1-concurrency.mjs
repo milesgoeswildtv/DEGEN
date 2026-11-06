@@ -1711,19 +1711,40 @@ try {
       body: JSON.stringify({
         playerId: 'paid-killing-race-player', permitId: 'permit-paid-killing-race',
         abilityId: 'crack', expectedTurnCount: 0,
+        // Even an affordable paid action must use only the persisted Worker snapshot.
+        // These hostile client fields must not replace Mana, HP, enemy HP, turn, or outcome.
+        playerHp: 1, playerMana: 999, enemyHp: 1, turnCount: 999,
+        status: 'defeat', victory: false,
+        xp: 999999, currency: 999999, items: ['forged-item'],
+        reward: { xp: 999999, currency: 999999, items: ['forged-item'], tier: 'full' },
       }),
     }),
-    complete('permit-paid-killing-race', 'paid-killing-race-player'),
+    complete('permit-paid-killing-race', 'paid-killing-race-player', {
+      victory: false, status: 'defeat', playerHp: 1, playerMana: 999, enemyHp: 20, turnCount: 999,
+      xp: 999999, currency: 999999, items: ['forged-item'],
+      reward: { xp: 999999, currency: 999999, items: ['forged-item'], tier: 'reduced' },
+    }),
   ]);
   const paidRaceAction = await paidRaceActionResponse.json();
   assert.equal(paidRaceActionResponse.status, 200, JSON.stringify(paidRaceAction));
+  assert.deepEqual(Object.keys(paidRaceAction).sort(),
+    ['enemyHp', 'permitId', 'playerHp', 'playerMana', 'status', 'turnCount'].sort(),
+    'the action response must expose only the persisted combat snapshot, never rewards or progression');
   assert.equal(paidRaceAction.status, 'victory');
-  assert.equal(paidRaceAction.playerHp, 80, 'a killing blow must not receive retaliation');
-  assert.equal(paidRaceAction.playerMana, 0, 'the paid killing blow must spend the final Mana');
-  assert.equal(paidRaceAction.enemyHp, 0);
-  assert.equal(paidRaceAction.turnCount, 1);
+  assert.equal(paidRaceAction.playerHp, 80, 'forged playerHp must not replace the persisted value or trigger retaliation');
+  assert.equal(paidRaceAction.playerMana, 0, 'the paid killing blow must spend the persisted four Mana exactly once');
+  assert.equal(paidRaceAction.enemyHp, 0, 'forged enemyHp must not replace the persisted killing-blow target');
+  assert.equal(paidRaceAction.turnCount, 1, 'forged turnCount must not advance the server turn');
   assert.ok([200, 409].includes(paidRaceEarlyCompletion.status),
     'completion may see the active permit or the committed Worker victory');
+  if (paidRaceEarlyCompletion.status === 200) {
+    assert.deepEqual(paidRaceEarlyCompletion.data.reward, {
+      xp: 75, currency: 30, items: ['underpass-scrap'], furniture: ['tunnel-trophy'], tier: 'full',
+    }, 'a racing completion must return the canonical Worker reward, not forged client values');
+  } else {
+    assert.equal(paidRaceEarlyCompletion.data.error, 'Battle is not an authoritative victory.');
+    assert.equal('reward' in paidRaceEarlyCompletion.data, false);
+  }
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-paid-killing-race' AND battle_status='victory' AND player_hp=80 AND player_mana=0 AND enemy_hp=0 AND turn_count=1"), 1,
     'the authoritative paid killing-blow state must be persisted exactly once');
 
