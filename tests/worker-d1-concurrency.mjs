@@ -1786,8 +1786,11 @@ try {
   const paidRaceAction = await paidRaceActionResponse.json();
   assert.equal(paidRaceActionResponse.status, 200, JSON.stringify(paidRaceAction));
   assert.deepEqual(Object.keys(paidRaceAction).sort(),
-    ['enemyHp', 'permitId', 'playerHp', 'playerMana', 'status', 'turnCount'].sort(),
-    'the action response must expose only the persisted combat snapshot, never rewards or progression');
+    [
+      'enemyHp', 'permitId', 'playerHp', 'playerMana',
+      'playerShield', 'retaliationDamage', 'shieldAbsorbed', 'status', 'turnCount',
+    ].sort(),
+    'the action response may expose persisted combat resources and audits, never rewards or progression');
   assert.equal(paidRaceAction.status, 'victory');
   assert.equal(paidRaceAction.playerHp, 80, 'forged playerHp must not replace the persisted value or trigger retaliation');
   assert.equal(paidRaceAction.playerMana, 0, 'the paid killing blow must spend the persisted four Mana exactly once');
