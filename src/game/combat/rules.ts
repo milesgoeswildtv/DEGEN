@@ -111,9 +111,13 @@ const DEGEN_MECHANIC_COLLECTION_FIELDS = new Set([
 ]);
 
 const DEGEN_MECHANIC_DIRECT_NAME_FIELDS = new Set([
-  'effect', 'appliedeffect', 'status', 'statusname', 'appliedstatus', 'appliedstatuses', 'appliedstatus', 'appliedstatuses',
-  'effectname', 'signature', 'signaturename',
-  'degeneffect', 'degenstatus', 'mechanic', 'mechanicname',
+  'effect', 'appliedeffect', 'appliedeffects',
+  'status', 'statusname', 'statuseffect', 'statuseffects',
+  'appliedstatus', 'appliedstatuses',
+  'effectname', 'signature', 'signatureeffect', 'signatureeffects', 'signaturename',
+  'degeneffect', 'degeneffects', 'degenstatus',
+  'abilityeffect', 'abilityeffects', 'moveeffect', 'moveeffects',
+  'mechanic', 'mechanicname',
 ]);
 
 const DEGEN_MECHANIC_NESTED_NAME_FIELDS = new Set([
