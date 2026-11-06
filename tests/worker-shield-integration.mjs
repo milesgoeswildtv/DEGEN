@@ -84,7 +84,7 @@ try {
       ('shield-kill-permit','shield-kill','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',5,12,5,10,10,1,1),
       ('shield-defeat-permit','shield-defeat','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',8,0,2,10,10,63,1),
       ('shield-race-permit','shield-race','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,10,10,10,63,1),
-      ('shield-legacy-permit','shield-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,0,NULL,NULL,92,0),
+      ('00000000-0000-4000-8000-000000000001','shield-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,0,NULL,NULL,92,0),
       ('shield-corrupt-legacy-permit','shield-corrupt-legacy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,0,1,NULL,NULL,92,0),
       ('shield-impossible-active-permit','shield-impossible-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,0,0,0,63,1),
       ('shield-impossible-enemy-permit','shield-impossible-enemy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,12,0,0,0,92,0),
@@ -129,26 +129,26 @@ try {
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE id='shield-closure-permit' AND julianday(expires_at) > julianday('now')")[0]?.count,1);
 
   const legacyReplay=await post('/api/battle/start',{
-    playerId:'shield-legacy',eventKey:'underpass',cycleId:'shield-cycle',encounterKey:'tunnel-maw',requestId:'shield-legacy-permit',
+    playerId:'shield-legacy',eventKey:'underpass',cycleId:'shield-cycle',encounterKey:'tunnel-maw',requestId:'00000000-0000-4000-8000-000000000001',
   });
   assert.equal(legacyReplay.status,200);
   assert.deepEqual(legacyReplay.data.initialState,{
-    permitId:'shield-legacy-permit',status:'active',playerHp:120,playerMana:0,enemyHp:92,turnCount:0,
+    permitId:'00000000-0000-4000-8000-000000000001',status:'active',playerHp:120,playerMana:0,enemyHp:92,turnCount:0,
   },'idempotent start recovery must preserve the omitted pre-Shield audit shape');
 
   const legacyConflict=await post('/api/battle/action',{
-    playerId:'shield-legacy',permitId:'shield-legacy-permit',abilityId:'slash',expectedTurnCount:1,
+    playerId:'shield-legacy',permitId:'00000000-0000-4000-8000-000000000001',abilityId:'slash',expectedTurnCount:1,
   });
   assert.equal(legacyConflict.status,409);
   assert.equal(legacyConflict.data.error,'Stale battle turn.');
   assert.deepEqual(legacyConflict.data.battleState,{
-    permitId:'shield-legacy-permit',status:'active',playerHp:120,playerMana:0,enemyHp:92,turnCount:0,
+    permitId:'00000000-0000-4000-8000-000000000001',status:'active',playerHp:120,playerMana:0,enemyHp:92,turnCount:0,
   },'stale-action recovery must not synthesize zero/zero Shield audit fields for legacy history');
 
-  const legacy=await post('/api/battle/action',{playerId:'shield-legacy',permitId:'shield-legacy-permit',abilityId:'slash',expectedTurnCount:0});
+  const legacy=await post('/api/battle/action',{playerId:'shield-legacy',permitId:'00000000-0000-4000-8000-000000000001',abilityId:'slash',expectedTurnCount:0});
   assert.equal(legacy.status,200);
   assert.equal(legacy.data.playerShield,0);
-  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='shield-legacy-permit'"),[
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count,battle_status FROM battle_permits WHERE id='00000000-0000-4000-8000-000000000001'"),[
     {player_hp:110,player_mana:0,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:10,enemy_hp:63,turn_count:1,battle_status:'active'},
   ]);
 

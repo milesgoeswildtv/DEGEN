@@ -22,8 +22,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const maxPlayerAbilityDamage = maxAbilityDamage(TEST_DEGEN);
   // A shielded enemy's current Shield is authoritative state, not a value the client may reinitialize.
   if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
-  // A 0/0 audit with zero Shield is also the compatibility projection
-  // for migrated pre-Shield permits; Worker validation checks the underlying NULLs.
+  // Pre-Shield permits omit all three audit fields; explicit zeros are current-format state.
   const hasConsistentActiveShieldAudit = hasLegacyShieldState
     || (turnCount === 0
       ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
@@ -87,7 +86,7 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   if (state.status === 'active') {
-    // Preserve the zero-Shield/0/0 projection used for migrated pre-Shield permits.
+    // Pre-Shield permits omit all three audit fields; explicit zeros are current-format state.
     const hasConsistentActiveShieldAudit = hasLegacyShieldState
       || (turnCount === 0
         ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
