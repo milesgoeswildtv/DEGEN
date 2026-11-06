@@ -358,12 +358,27 @@ try {
     {player_hp:120,player_mana:0,player_shield:0,last_shield_absorbed:10,last_retaliation_damage:10,enemy_hp:39,enemy_shield:0,last_enemy_shield_absorbed:5,turn_count:2,battle_status:'active'},
   ]);
 
-  // Race a Shield-bearing killing blow against completion. Completion may see
-  // the still-active permit or the committed Worker victory, but never a
-  // client-authored result or a partially persisted Shield audit.
+  // Race a paid Shield-bearing killing blow against completion while both
+  // requests carry hostile client-authored combat and reward fields. The Worker
+  // must resolve the selected ability and every state transition from D1.
+  const shieldKillForgery = {
+    victory:false,status:'defeat',playerHp:1,playerMana:999,playerShield:999,
+    shieldAbsorbed:0,retaliationDamage:0,enemyHp:1,enemyShield:0,
+    enemyShieldAbsorbed:999,turnCount:Number.MAX_SAFE_INTEGER,
+    damage:Number.MAX_SAFE_INTEGER,manaCost:0,shieldGain:Number.MAX_SAFE_INTEGER,
+    ability:{damage:Number.MAX_SAFE_INTEGER,manaCost:0,shieldGain:Number.MAX_SAFE_INTEGER},
+    xp:999999,currency:999999,items:['forged-item'],
+    reward:{xp:999999,currency:999999,items:['forged-item'],tier:'reduced'},
+  };
+  const shieldKillCompletionPayload = {
+    ...shieldKillForgery,playerId:'shield-kill',permitId:'shield-kill-permit',
+  };
   const [kill, earlyKillCompletion] = await Promise.all([
-    post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'crack',expectedTurnCount:1}),
-    post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'}),
+    post('/api/battle/action',{
+      ...shieldKillForgery,playerId:'shield-kill',permitId:'shield-kill-permit',
+      abilityId:'crack',expectedTurnCount:1,
+    }),
+    post('/api/battle/complete',shieldKillCompletionPayload),
   ]);
   assert.equal(kill.status,200);
   assert.equal(kill.data.status,'victory');
@@ -372,6 +387,12 @@ try {
   assert.equal(kill.data.shieldAbsorbed,0);
   assert.equal(kill.data.enemyShieldAbsorbed,5,
     'the killing blow must preserve the final enemy Shield absorption in its action result');
+  for (const field of ['reward','xp','currency','items','victory']) {
+    assert.equal(field in kill.data,false, `battle action must not return client-supplied ${field}`);
+  }
+  assert.deepEqual(sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-kill'"),[
+    {level:1,xp:0,currency:0},
+  ],'an accepted paid action cannot apply client-supplied progression or rewards');
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-kill-permit'"),[
     {player_hp:5,player_mana:8,player_shield:5,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:0,enemy_shield:0,last_enemy_shield_absorbed:5,turn_count:2,battle_status:'victory'},
   ]);
@@ -381,11 +402,18 @@ try {
   // Concurrent completion retries must converge on one receipt after the
   // Shield-bearing terminal snapshot is committed.
   const [completeA, completeB] = await Promise.all([
-    completeEventually({playerId:'shield-kill',permitId:'shield-kill-permit'}),
-    completeEventually({playerId:'shield-kill',permitId:'shield-kill-permit'}),
+    completeEventually(shieldKillCompletionPayload),
+    completeEventually(shieldKillCompletionPayload),
   ]);
   assert.equal(completeA.status,200);
   assert.equal(completeB.status,200);
+  assert.deepEqual(completeA.data.reward,{
+    xp:75,currency:30,items:['underpass-scrap'],furniture:['tunnel-trophy'],tier:'full',
+  },'hostile completion fields cannot replace the Worker-owned Shield victory reward');
+  assert.equal(completeA.data.player.xp,75,'forged client XP cannot replace progression math');
+  assert.equal(completeA.data.player.currency,30,'forged client currency cannot replace the canonical reward');
+  assert.equal(completeA.data.player.inventory.filter(item=>item==='underpass-scrap').length,1);
+  assert.equal(completeA.data.player.housing.inventory.filter(item=>item==='tunnel-trophy').length,1);
   assert.deepEqual(completeB.data.reward,completeA.data.reward,
     'concurrent Shield victory completion must return the same persisted reward receipt');
   assert.equal(completeB.data.player.currency,completeA.data.player.currency,
