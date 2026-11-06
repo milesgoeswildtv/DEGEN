@@ -1,3 +1,17 @@
+## Follow-up run — 2026-11-06 (Shield defeat replay audit)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) remains SUCCESS.
+- **Current branch / PR:** continuing `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), previous head `13ca727223362d80e766b5a6fd2c7ec435fbff50`, OPEN / DRAFT / UNMERGED. No direct-main write.
+- **Task / files changed:** `tests/worker-d1-concurrency.mjs` now also expects `playerShield: 0`, `shieldAbsorbed: 0`, and `retaliationDamage: 10` when a legacy active permit is advanced by an accepted action that resolves defeat. Before that action, the fixture's NULL Shield audit remains omitted; after the accepted action, the Worker persists the explicit Shield/retaliation audit and terminal replay must return it. This is the same contract as the already-corrected killing-blow victory replay. No Worker runtime, combat balance, D1 schema, or client code changed.
+- **QA evidence:** CI [42169652166](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42169652166) passed migration preflight and **360/360 deterministic tests**. Its real Worker/D1 concurrency script advanced past the corrected victory replay and then failed at the corresponding stale defeat-replay expectation (the captured actual response contains the three persisted audit fields above). The new correction requires another exact-head full CI; no pass is claimed.
+- **Mana / Shield:** Mana remains complete and merged on main. Shield foundation remains branch-only on PR #125, with migrations `0008` / `0009` unapplied. The 17 Mana-named branches were compared against main: all code-bearing branches are behind or diverged; the only ahead-only-content branch is documentation-only.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for combat state, action CAS, terminal history, and exactly-once recoverable rewards. No client reward/economy authority changed.
+- **D1 assumptions / blockers:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; main ends at `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still conflicts on `0007_player_sessions.sql`. Keep review order #114 → #126 → #125; no migration renumbering, remote D1 write, merge, or production deploy without Miles' explicit `0007` ownership/order decision.
+- **Delivery:** **PUSHED / PR:** this second test-contract correction is being committed to existing PR #125. **MERGED / LIVE:** unchanged; no Shield code or migrations live.
+- **One best next task:** rerun exact-head CI, inspect the next Worker/D1 integration result, and only change the failing contract when persisted state proves it.
+
+---
+
 ## Latest run — 2026-11-06 (Shield legacy-audit retry contract)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) is SUCCESS. Current main has no Mana or Shield changes after that commit.
