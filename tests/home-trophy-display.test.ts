@@ -89,3 +89,16 @@ test('a placed trophy reports its saved room cell and selected state', () => {
   assert.match(html, /aria-pressed="true"/);
   assert.match(html, /SELECTED/);
 });
+
+test('client history and legacy inventory flags cannot mint a trophy', () => {
+  const player = {
+    ...basePlayer,
+    // These fields are not the persisted housing inventory authority.
+    inventory: ['tunnel-trophy'],
+    defeatedBosses: ['tunnel-maw'],
+  };
+  const html = views.homeView(player);
+  assert.match(html, /0 EARNED/);
+  assert.match(html, /No trophies yet/);
+  assert.doesNotMatch(html, /data-furniture="tunnel-trophy"/);
+});
