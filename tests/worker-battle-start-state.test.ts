@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { assertNoMonsterActionResource, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, assertValidEnemyStartingShield, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } from '../src/game/progression.ts';
 
 // Execute the real Worker start handler with an isolated D1-shaped adapter.
@@ -14,7 +14,7 @@ const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf
   .replace(/^export default\s*\{/m, 'const worker = {');
 const handlerSource = stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleStartBattle;';
 const createStartHandler = (enemy: typeof TUNNEL_MAW) => runInNewContext(handlerSource, {
-  TEST_DEGEN, TUNNEL_MAW: enemy, assertNoMonsterActionResource, canUseAbility, resolveCombatTurn,
+  TEST_DEGEN, TUNNEL_MAW: enemy, assertNoMonsterActionResource, assertValidEnemyStartingShield, canUseAbility, resolveCombatTurn,
   UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
   crypto: globalThis.crypto, Request, Response, URL, console, Uint32Array,
 }) as (request: Request, env: { DB: unknown }) => Promise<Response>;
@@ -144,6 +144,41 @@ test('battle start ignores forged client combat state and returns exactly the De
   );
 });
 
+
+test('battle start initializes a valid enemy starting Shield from the server definition', async () => {
+  const cycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const shieldedEnemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const handler = createStartHandler(shieldedEnemy);
+  const { env, inserts } = makeEnv(cycle);
+  const response = await handler(request(cycle.id), env);
+  assert.equal(response.status, 200);
+  const result = await response.json() as {
+    initialState: { enemyShield?: number };
+  };
+  assert.equal(result.initialState.enemyShield, 5);
+  assert.equal(inserts.length, 1);
+  assert.equal(inserts[0]?.[8], 5, 'the Worker persists the server-selected starting Shield');
+});
+
+test('battle start rejects invalid enemy starting Shield before issuing a permit', async () => {
+  const cycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  for (const startingShield of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN]) {
+    const handler = createStartHandler({ ...TUNNEL_MAW, startingShield });
+    const { env, inserts } = makeEnv(cycle);
+    const response = await handler(request(cycle.id), env);
+    assert.equal(response.status, 500, `invalid starting Shield ${String(startingShield)} must fail before permit creation`);
+    assert.deepEqual(await response.json(), { error: 'Encounter definition is invalid.' });
+    assert.equal(inserts.length, 0, 'invalid enemy Shield must not leave an unusable permit');
+  }
+});
 
 test('battle start rejects malformed request IDs before issuing a permit', async () => {
   const cycle = {
