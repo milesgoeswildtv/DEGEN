@@ -1462,3 +1462,85 @@ test('unknown or authentication resume errors retain the permit and saved key', 
     assert.equal(store.localRewards, 0);
   }
 });
+
+
+test('a successful response with mathematically inconsistent combat state fails closed', async (t) => {
+  timers.length = 0;
+  storage.clear();
+  abilityButtons.length = 0;
+  abilityButtons.push({ dataset: { manaCost: '0', shieldGain: '0' }, disabled: false });
+  t.after(() => { abilityButtons.length = 0; });
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const initialState = {
+    permitId: 'permit-success-conflict',
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('a mathematically rejected success response cannot resolve the battle');
+  }, initialState);
+  const slash = TEST_DEGEN.abilities.find((ability) => ability.id === 'slash');
+  assert.ok(slash);
+  const expected = resolveCombatTurn({
+    playerHp: initialState.playerHp,
+    playerMana: initialState.playerMana,
+    playerShield: initialState.playerShield,
+    enemyHp: initialState.enemyHp,
+    ability: slash,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  const impossible = {
+    permitId: initialState.permitId,
+    status: expected.status,
+    playerHp: expected.playerHp,
+    playerMana: expected.playerMana,
+    playerShield: expected.playerShield,
+    shieldAbsorbed: expected.shieldAbsorbed,
+    retaliationDamage: expected.retaliationDamage,
+    enemyHp: expected.enemyHp + 1,
+    enemyShield: expected.enemyShield,
+    enemyShieldAbsorbed: expected.enemyShieldAbsorbed,
+    turnCount: 1,
+  };
+  const api = {
+    enabled: true,
+    async actUnderpass() { return impossible; },
+    async completeUnderpass() {
+      assert.fail('a rejected combat response cannot request reward completion');
+    },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: initialState.permitId };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('slash');
+
+  assert.equal(actionStatus.hidden, false);
+  assert.match(actionStatus.textContent, /conflicts with the last accepted turn/i);
+  assert.equal(engine.snapshot.turnCount, 0);
+  assert.equal(engine.snapshot.playerHp, initialState.playerHp);
+  assert.equal(engine.snapshot.playerMana, initialState.playerMana);
+  assert.equal(engine.snapshot.enemyHp, initialState.enemyHp);
+  assert.equal(abilityButtons[0]?.disabled, true, 'actions stay disabled until the encounter is safely resynchronized');
+  assert.equal(controller.battlePermit?.permitId, initialState.permitId, 'retain the permit for safe recovery');
+  assert.equal(store.localRewards, 0, 'the client never fabricates rewards');
+});
