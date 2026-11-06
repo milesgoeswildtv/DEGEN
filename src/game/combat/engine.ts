@@ -217,18 +217,20 @@ export class BattleEngine {
   }
 
   // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
-  applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
-    if (this.status !== 'active') return;
+  applyAuthoritativeAction(abilityId: string, result: BattleActionResult): boolean {
+    if (this.status !== 'active') return false;
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
-    if (!ability || !this.isValidAuthoritativeState(result)) return;
-    if (!this.permitId || result.permitId !== this.permitId) return;
+    if (!ability || !this.isValidAuthoritativeState(result)) return false;
+    if (!this.permitId || result.permitId !== this.permitId) return false;
+    // A delayed response older than the already accepted snapshot is harmless;
+    // never let it replace newer state or disable actions against that newer turn.
+    if (result.turnCount < this.turnCount) return true;
     if (result.turnCount !== this.turnCount + 1) {
-      this.synchronizeAuthoritativeState(result);
-      return;
+      return this.synchronizeAuthoritativeState(result);
     }
 
     const expectedTurn = this.resolveAuthoritativeTurn(result, ability);
-    if (!expectedTurn) return;
+    if (!expectedTurn) return false;
 
     const nextPlayerShield = result.playerShield ?? 0;
     const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
@@ -258,7 +260,7 @@ export class BattleEngine {
       this.trimLog();
       this.emit();
       this.finish('victory');
-      return;
+      return true;
     }
 
     if (expectedTurn.retaliationDamage > 0) {
@@ -270,10 +272,11 @@ export class BattleEngine {
       this.trimLog();
       this.emit();
       this.finish('defeat');
-      return;
+      return true;
     }
     this.trimLog();
     this.emit();
+    return true;
   }
 
   synchronizeAuthoritativeState(result: BattleActionResult): boolean {
