@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } from '../src/game/progression.ts';
 
 // Execute the real Worker start handler with an isolated D1-shaped adapter.
@@ -13,11 +13,12 @@ const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
 const handlerSource = stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleStartBattle;';
-const handleStartBattle = runInNewContext(handlerSource, {
-  TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
+const createStartHandler = (enemy: typeof TUNNEL_MAW) => runInNewContext(handlerSource, {
+  TEST_DEGEN, TUNNEL_MAW: enemy, assertNoMonsterActionResource, canUseAbility, resolveCombatTurn,
   UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
   crypto: globalThis.crypto, Request, Response, URL, console, Uint32Array,
 }) as (request: Request, env: { DB: unknown }) => Promise<Response>;
+const handleStartBattle = createStartHandler(TUNNEL_MAW);
 
 function makeEnv(
   cycle: { id: string; event_key: string; opens_at: string; closes_at: string },
@@ -140,6 +141,24 @@ test('battle start ignores forged client combat state and returns exactly the De
   );
 });
 
+
+test('battle start rejects invalid monster resources and Degen-owned effects before D1 access', async () => {
+  const invalidEnemies = [
+    { ...TUNNEL_MAW, signature: { manaCost: 1 } },
+    { ...TUNNEL_MAW, signature: { effects: { 'L.E.A.K': {} } } },
+  ] as unknown as typeof TUNNEL_MAW[];
+
+  for (const enemy of invalidEnemies) {
+    let d1Touches = 0;
+    const handler = createStartHandler(enemy);
+    const response = await handler(request(), {
+      DB: { prepare() { d1Touches += 1; throw new Error('D1 must not be touched for invalid encounter content.'); } },
+    });
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'Encounter definition is invalid.' });
+    assert.equal(d1Touches, 0, 'invalid encounter content must not read or create a permit');
+  }
+});
 
 test('battle start rejects malformed request IDs before issuing a permit', async () => {
   const cycle = {
