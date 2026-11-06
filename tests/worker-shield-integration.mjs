@@ -326,7 +326,13 @@ try {
     {player_hp:120,player_mana:0,player_shield:0,last_shield_absorbed:10,last_retaliation_damage:10,enemy_hp:39,enemy_shield:0,last_enemy_shield_absorbed:5,turn_count:2,battle_status:'active'},
   ]);
 
-  const kill=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'crack',expectedTurnCount:1});
+  // Race a Shield-bearing killing blow against completion. Completion may see
+  // the still-active permit or the committed Worker victory, but never a
+  // client-authored result or a partially persisted Shield audit.
+  const [kill, earlyKillCompletion] = await Promise.all([
+    post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'crack',expectedTurnCount:1}),
+    post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'}),
+  ]);
   assert.equal(kill.status,200);
   assert.equal(kill.data.status,'victory');
   assert.equal(kill.data.playerShield,5);
@@ -334,12 +340,33 @@ try {
   assert.equal(kill.data.shieldAbsorbed,0);
   assert.equal(kill.data.enemyShieldAbsorbed,5,
     'the killing blow must preserve the final enemy Shield absorption in its action result');
-  assert.deepEqual(sql("SELECT last_shield_absorbed,last_retaliation_damage,last_enemy_shield_absorbed FROM battle_permits WHERE id='shield-kill-permit'"),[
-    {last_shield_absorbed:0,last_retaliation_damage:0,last_enemy_shield_absorbed:5},
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-kill-permit'"),[
+    {player_hp:5,player_mana:8,player_shield:5,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:0,enemy_shield:0,last_enemy_shield_absorbed:5,turn_count:2,battle_status:'victory'},
   ]);
+  assert.ok([200,409].includes(earlyKillCompletion.status),
+    'completion may observe the active permit (409) or the committed Worker victory (200)');
 
-  const complete=await post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'});
-  assert.equal(complete.status,200);
+  // Concurrent completion retries must converge on one receipt after the
+  // Shield-bearing terminal snapshot is committed.
+  const [completeA, completeB] = await Promise.all([
+    post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'}),
+    post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'}),
+  ]);
+  assert.equal(completeA.status,200);
+  assert.equal(completeB.status,200);
+  assert.deepEqual(completeB.data.reward,completeA.data.reward,
+    'concurrent Shield victory completion must return the same persisted reward receipt');
+  assert.equal(completeB.data.player.currency,completeA.data.player.currency,
+    'concurrent Shield victory completion must expose one final currency balance');
+  assert.deepEqual(sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-kill'"),[
+    {level:completeA.data.player.level,xp:completeA.data.player.xp,currency:completeA.data.player.currency},
+  ]);
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE id='shield-kill-permit:victory'"),[
+    {count:1},
+  ]);
+  assert.deepEqual(sql("SELECT reward_state,battle_status,player_shield,last_enemy_shield_absorbed FROM battle_permits WHERE id='shield-kill-permit'"),[
+    {reward_state:'awarded',battle_status:'victory',player_shield:5,last_enemy_shield_absorbed:5},
+  ]);
   const replay=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'slash',expectedTurnCount:2});
   assert.equal(replay.status,409);
   assert.equal(replay.data.error,'Battle permit is already completed.');
