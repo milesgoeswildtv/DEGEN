@@ -718,6 +718,10 @@ try {
     status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
   });
 
+  // Capture the legacy Shield audit exactly as stored. The forged completion
+  // must not rewrite it, regardless of NULL-vs-zero migration history.
+  const forgedActiveShieldBefore = queryRows("SELECT player_shield, last_shield_absorbed, last_retaliation_damage, enemy_shield, last_enemy_shield_absorbed FROM battle_permits WHERE id='permit-mana-zero'")[0];
+
   // Client claims cannot turn an active permit into a victory or grant a reward.
   const forgedActiveCompletion = await complete('permit-mana-zero', 'integration-player', {
     victory: true,
@@ -742,7 +746,8 @@ try {
   assertPersistedPermitState('permit-mana-zero', {
     status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
   });
-  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-mana-zero' AND player_shield=0 AND last_shield_absorbed IS NULL AND last_retaliation_damage IS NULL AND enemy_shield=0 AND last_enemy_shield_absorbed=0"), 1,
+  const forgedActiveShieldAfter = queryRows("SELECT player_shield, last_shield_absorbed, last_retaliation_damage, enemy_shield, last_enemy_shield_absorbed FROM battle_permits WHERE id='permit-mana-zero'")[0];
+  assert.deepEqual(forgedActiveShieldAfter, forgedActiveShieldBefore,
     'forged completion Shield fields must not alter either side of the persisted battle snapshot');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-mana-zero:victory','permit-mana-zero:defeat')"), 0,
     'forged completion must not write victory or defeat history');
