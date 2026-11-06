@@ -36,6 +36,8 @@ const RESOURCE_FIELD_SUFFIXES = [
   'max', 'current', 'base', 'starting', 'initial',
 ] as const;
 
+const RESOURCE_DESCRIPTOR_SUFFIXES = ['type', 'kind', 'name', 'key', 'id'] as const;
+
 const normalizeMonsterActionResourceField = (field: string): string =>
   // NFKC folds compatibility characters (for example full-width Latin letters)
   // before separator removal, so visually disguised resource aliases fail closed.
@@ -61,6 +63,20 @@ const isResourceAliasField = (normalizedField: string, alias: string): boolean =
   return false;
 };
 
+const isResourceDescriptorField = (normalizedField: string): boolean =>
+  FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) =>
+    [alias, `${alias}s`].some((base) =>
+      RESOURCE_DESCRIPTOR_SUFFIXES.some((suffix) => normalizedField === `${base}${suffix}`),
+    ),
+  );
+
+const hasForbiddenResourceDescriptorValue = (normalizedField: string, value: unknown): boolean => {
+  if (typeof value !== 'string' || !isResourceDescriptorField(normalizedField)) return false;
+  const normalizedValue = normalizeMonsterActionResourceField(value);
+  return normalizedValue.includes('mana')
+    || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => isResourceAliasField(normalizedValue, alias));
+};
+
 const findForbiddenMonsterActionResource = (
   value: unknown,
   path: string,
@@ -73,7 +89,8 @@ const findForbiddenMonsterActionResource = (
     const fieldPath = path ? `${path}.${field}` : field;
     const normalizedField = normalizeMonsterActionResourceField(field);
     if (normalizedField.includes('mana')
-      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => isResourceAliasField(normalizedField, alias))) {
+      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => isResourceAliasField(normalizedField, alias))
+      || hasForbiddenResourceDescriptorValue(normalizedField, nestedValue)) {
       return fieldPath;
     }
 
