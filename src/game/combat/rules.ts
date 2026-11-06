@@ -41,6 +41,9 @@ const normalizeMonsterActionResourceField = (field: string): string =>
   // before separator removal, so visually disguised resource aliases fail closed.
   field.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+const normalizeMonsterMechanicIdentifier = (value: string): string =>
+  value.normalize('NFKC').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
 const isResourceAliasField = (normalizedField: string, alias: string): boolean => {
   const bases = [alias, `${alias}s`];
   for (const base of bases) {
@@ -137,7 +140,7 @@ const findForbiddenDegenOwnedEffect = (
     // rather than string values (for example signature.effects.LEAK: {...}).
     // Treat those keys as mechanic names only inside a mechanic namespace; prose
     // metadata with a coincidental LEAK key remains descriptive.
-    if (mechanicContext && field.normalize('NFKC').trim().toUpperCase() === 'LEAK') {
+    if (mechanicContext && normalizeMonsterMechanicIdentifier(field) === 'leak') {
       return fieldPath;
     }
     const nestedMechanicName = mechanicContext && DEGEN_MECHANIC_NESTED_NAME_FIELDS.has(normalizedField);
@@ -148,12 +151,12 @@ const findForbiddenDegenOwnedEffect = (
     if (Array.isArray(nestedValue)
       && (directMechanicName || nestedMechanicName || mechanicCollection)) {
       const leakIndex = nestedValue.findIndex((item) => typeof item === 'string'
-        && item.normalize('NFKC').trim().toUpperCase() === 'LEAK');
+        && normalizeMonsterMechanicIdentifier(item) === 'leak');
       if (leakIndex >= 0) return fieldPath + '.' + leakIndex;
     }
 
     if (typeof nestedValue === 'string'
-      && nestedValue.normalize('NFKC').trim().toUpperCase() === 'LEAK'
+      && normalizeMonsterMechanicIdentifier(nestedValue) === 'leak'
       && (directMechanicName || nestedMechanicName)) {
       return fieldPath;
     }
