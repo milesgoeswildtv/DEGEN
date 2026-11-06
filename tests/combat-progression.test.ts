@@ -756,6 +756,63 @@ test('monster mechanics cannot use the Degen-only LEAK effect', () => {
   }
 });
 
+test('LEAK identifiers reject invisible formatting and combining-character disguises', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  // NFKC plus ASCII identifier filtering must not let invisible Unicode
+  // formatting/combining characters disguise GLITCHRAT's Degen-only effect.
+  const disguisedIdentifiers = ['L\u200bEAK', 'L\u2060EAK', 'L\u0307EAK', 'L\u202eEAK'];
+
+  for (const identifier of disguisedIdentifiers) {
+    const forbiddenCases = [
+      {
+        path: 'signature.effects.' + identifier,
+        enemy: {
+          ...TUNNEL_MAW,
+          signature: { effects: { [identifier]: { enabled: true } } },
+        } as typeof TUNNEL_MAW,
+      },
+      {
+        path: 'abilities.0.effect',
+        enemy: {
+          ...TUNNEL_MAW,
+          abilities: [{ effect: identifier }],
+        } as typeof TUNNEL_MAW,
+      },
+    ];
+
+    for (const { path, enemy } of forbiddenCases) {
+      assert.throws(
+        () => resolveCombatTurn({
+          playerHp: TEST_DEGEN.maxHp,
+          playerMana: TEST_DEGEN.maxMana,
+          enemyHp: TUNNEL_MAW.maxHp,
+          ability: free,
+          degen: TEST_DEGEN,
+          enemy,
+        }),
+        (error: unknown) => error instanceof TypeError
+          && error.message.includes('Degen-owned effect LEAK (' + path + ')'),
+        'monster mechanic ' + path + ' must reject disguised LEAK',
+      );
+    }
+  }
+
+  const proseOnly = {
+    ...TUNNEL_MAW,
+    description: 'L\u200bEAK appears here only as descriptive text.',
+  };
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy: proseOnly,
+  }));
+});
+
 test('LEAK in monster flavor text is not mistaken for a Degen effect', () => {
   const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
   assert.ok(free);
