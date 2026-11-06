@@ -227,10 +227,11 @@ test('Worker accepts a free Shield-gain ability at zero Mana and persists the au
 
 test('Worker carries the minimum-one retaliation through persisted zero-damage enemy turns', async () => {
   const zeroDamageEnemy = { ...TUNNEL_MAW, damage: 0 };
+  const zeroDamageDegen = { ...TEST_DEGEN, maxMana: 0 };
   const handleZeroDamageAction = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + String.fromCharCode(10) + 'handleBattleAction;',
     {
-      TEST_DEGEN: degenWithShieldCosts,
+      TEST_DEGEN: zeroDamageDegen,
       TUNNEL_MAW: zeroDamageEnemy,
       canUseAbility,
       resolveCombatTurn,
