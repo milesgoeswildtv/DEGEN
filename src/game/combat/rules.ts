@@ -27,10 +27,15 @@ const RESOURCE_FIELD_SUFFIXES = [
   'max', 'current', 'base', 'starting', 'initial',
 ] as const;
 
+const RESOURCE_DESCRIPTOR_SUFFIXES = ['type', 'kind', 'name', 'key', 'id'] as const;
+
 const normalizeMonsterActionResourceField = (field: string): string =>
   // NFKC folds compatibility characters (for example full-width Latin letters)
   // before separator removal, so visually disguised resource aliases fail closed.
   field.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const normalizeMonsterMechanicIdentifier = (value: string): string =>
+  value.normalize('NFKC').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const isResourceAliasField = (normalizedField: string, alias: string): boolean => {
   const bases = [alias, `${alias}s`];
@@ -49,6 +54,20 @@ const isResourceAliasField = (normalizedField: string, alias: string): boolean =
   return false;
 };
 
+const isResourceDescriptorField = (normalizedField: string): boolean =>
+  FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) =>
+    [alias, `${alias}s`].some((base) =>
+      RESOURCE_DESCRIPTOR_SUFFIXES.some((suffix) => normalizedField === `${base}${suffix}`),
+    ),
+  );
+
+const hasForbiddenResourceDescriptorValue = (normalizedField: string, value: unknown): boolean => {
+  if (typeof value !== 'string' || !isResourceDescriptorField(normalizedField)) return false;
+  const normalizedValue = normalizeMonsterActionResourceField(value);
+  return normalizedValue.includes('mana')
+    || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => isResourceAliasField(normalizedValue, alias));
+};
+
 const findForbiddenMonsterActionResource = (
   value: unknown,
   path: string,
@@ -61,7 +80,8 @@ const findForbiddenMonsterActionResource = (
     const fieldPath = path ? `${path}.${field}` : field;
     const normalizedField = normalizeMonsterActionResourceField(field);
     if (normalizedField.includes('mana')
-      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => isResourceAliasField(normalizedField, alias))) {
+      || FORBIDDEN_MONSTER_ACTION_RESOURCE_ALIASES.some((alias) => isResourceAliasField(normalizedField, alias))
+      || hasForbiddenResourceDescriptorValue(normalizedField, nestedValue)) {
       return fieldPath;
     }
 
@@ -82,14 +102,18 @@ const DEGEN_MECHANIC_COLLECTION_FIELDS = new Set([
 ]);
 
 const DEGEN_MECHANIC_DIRECT_NAME_FIELDS = new Set([
-  'effect', 'appliedeffect', 'status', 'statusname', 'appliedstatus', 'appliedstatuses',
-  'effectname', 'signature', 'signaturename',
-  'degeneffect', 'degenstatus', 'mechanic', 'mechanicname',
+  'effect', 'appliedeffect', 'appliedeffects',
+  'status', 'statusname', 'statuseffect', 'statuseffects',
+  'appliedstatus', 'appliedstatuses',
+  'effectname', 'signature', 'signatureeffect', 'signatureeffects', 'signaturename',
+  'degeneffect', 'degeneffects', 'degenstatus',
+  'abilityeffect', 'abilityeffects', 'moveeffect', 'moveeffects',
+  'mechanic', 'mechanicname',
 ]);
 
 const DEGEN_MECHANIC_NESTED_NAME_FIELDS = new Set([
   'id', 'key', 'name', 'type', 'value',
-  'effect', 'appliedeffect', 'status', 'statusname', 'appliedstatus', 'appliedstatuses',
+  'effect', 'appliedeffect', 'status', 'statusname',
   'effectname', 'signature', 'signaturename',
   'degeneffect', 'degenstatus', 'mechanic', 'mechanicname',
 ]);
@@ -128,7 +152,7 @@ const findForbiddenDegenOwnedEffect = (
     // rather than string values (for example signature.effects.LEAK: {...}).
     // Treat those keys as mechanic names only inside a mechanic namespace; prose
     // metadata with a coincidental LEAK key remains descriptive.
-    if (mechanicContext && field.normalize('NFKC').trim().toUpperCase() === 'LEAK') {
+    if (mechanicContext && normalizeMonsterMechanicIdentifier(field) === 'leak') {
       return fieldPath;
     }
     const nestedMechanicName = mechanicContext && DEGEN_MECHANIC_NESTED_NAME_FIELDS.has(normalizedField);
@@ -139,12 +163,12 @@ const findForbiddenDegenOwnedEffect = (
     if (Array.isArray(nestedValue)
       && (directMechanicName || nestedMechanicName || mechanicCollection)) {
       const leakIndex = nestedValue.findIndex((item) => typeof item === 'string'
-        && item.normalize('NFKC').trim().toUpperCase() === 'LEAK');
+        && normalizeMonsterMechanicIdentifier(item) === 'leak');
       if (leakIndex >= 0) return fieldPath + '.' + leakIndex;
     }
 
     if (typeof nestedValue === 'string'
-      && nestedValue.normalize('NFKC').trim().toUpperCase() === 'LEAK'
+      && normalizeMonsterMechanicIdentifier(nestedValue) === 'leak'
       && (directMechanicName || nestedMechanicName)) {
       return fieldPath;
     }
@@ -179,6 +203,8 @@ export const assertNoMonsterActionResource = (enemy: EnemyDefinition): void => {
     );
   }
 };
+
+
 
 const isValidNonNegativeSafeInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;

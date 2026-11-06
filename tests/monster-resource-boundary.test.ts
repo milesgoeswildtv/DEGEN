@@ -274,3 +274,100 @@ test('descriptive metadata remains subject to the monster resource boundary', ()
     );
   }
 });
+
+
+test('monster resource descriptor values cannot name a universal action resource', () => {
+  const descriptorCases = [
+    { path: 'resourceType', enemy: { ...TUNNEL_MAW, resourceType: 'Mana' } },
+    { path: 'actionResourceName', enemy: { ...TUNNEL_MAW, actionResourceName: 'Energy' } },
+    { path: 'resourceKind', enemy: { ...TUNNEL_MAW, resourceKind: 'MP' } },
+    { path: 'magicPointType', enemy: { ...TUNNEL_MAW, magicPointType: 'Action Points' } },
+  ] as { path: string; enemy: typeof TUNNEL_MAW }[];
+
+  for (const { path, enemy } of descriptorCases) {
+    assert.throws(
+      () => assertNoMonsterActionResource(enemy),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('universal action resource (' + path + ')'),
+      'monster resource descriptor ' + path + ' must reject a universal action resource value',
+    );
+  }
+
+  assert.doesNotThrow(() => assertNoMonsterActionResource({
+    ...TUNNEL_MAW,
+    metadata: { resourceType: 'loot' },
+  } as typeof TUNNEL_MAW), 'descriptive loot metadata remains valid');
+});
+
+test('scalar monster effect descriptors cannot carry GLITCHRAT-owned LEAK', () => {
+  const descriptorCases = [
+    { path: 'statusEffect', enemy: { ...TUNNEL_MAW, statusEffect: 'LEAK' } },
+    { path: 'signatureEffect', enemy: { ...TUNNEL_MAW, signatureEffect: 'LEAK' } },
+    { path: 'abilityEffect', enemy: { ...TUNNEL_MAW, abilityEffect: 'LEAK' } },
+    { path: 'moveEffect', enemy: { ...TUNNEL_MAW, moveEffect: 'LEAK' } },
+    { path: 'statusEffects', enemy: { ...TUNNEL_MAW, statusEffects: 'LEAK' } },
+    { path: 'signatureEffects', enemy: { ...TUNNEL_MAW, signatureEffects: 'LEAK' } },
+    { path: 'abilityEffects', enemy: { ...TUNNEL_MAW, abilityEffects: 'LEAK' } },
+    { path: 'moveEffects', enemy: { ...TUNNEL_MAW, moveEffects: 'LEAK' } },
+  ] as { path: string; enemy: typeof TUNNEL_MAW }[];
+
+  for (const { path, enemy } of descriptorCases) {
+    assert.throws(
+      () => assertNoMonsterActionResource(enemy),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('Degen-owned effect LEAK (' + path + ')'),
+      'monster effect descriptor ' + path + ' must reject GLITCHRAT-owned LEAK',
+    );
+  }
+});
+
+test('LEAK aliases with separators and invisible formatting remain forbidden mechanic IDs', () => {
+  const disguisedIdentifiers = [
+    'ＬＥＡＫ', 'L.E.A.K', 'L_E_A_K', 'L E A K',
+    'L\u200bEAK', 'L\u2060EAK', 'L\u0307EAK', 'L\u202eEAK',
+  ];
+
+  for (const identifier of disguisedIdentifiers) {
+    const byKey = {
+      ...TUNNEL_MAW,
+      signature: { effects: { [identifier]: { enabled: true } } },
+    } as typeof TUNNEL_MAW;
+    const byValue = {
+      ...TUNNEL_MAW,
+      abilities: [{ effect: identifier }],
+    } as typeof TUNNEL_MAW;
+
+    assert.throws(() => assertNoMonsterActionResource(byKey), /Degen-owned effect LEAK/);
+    assert.throws(() => assertNoMonsterActionResource(byValue), /Degen-owned effect LEAK/);
+  }
+
+  const prose = {
+    ...TUNNEL_MAW,
+    description: 'A cracked pipe leaks water into the tunnel.',
+    metadata: { LEAK: 'A descriptive reference to leaking water.' },
+    abilities: [{ description: ['LEAK is only a word in move flavor text.'] }],
+  } as typeof TUNNEL_MAW;
+  assert.doesNotThrow(() => assertNoMonsterActionResource(prose));
+});
+
+test('shared monster objects are checked in both descriptive and mechanic contexts', () => {
+  const sharedMechanic = { name: 'LEAK' };
+  const enemy = {
+    ...TUNNEL_MAW,
+    metadata: sharedMechanic,
+    signature: sharedMechanic,
+  } as typeof TUNNEL_MAW;
+
+  assert.throws(
+    () => assertNoMonsterActionResource(enemy),
+    /Degen-owned effect LEAK/,
+    'a descriptive traversal must not hide the same object when reached as a mechanic',
+  );
+
+  const descriptiveNested = {
+    ...TUNNEL_MAW,
+    signature: { metadata: { LEAK: 'Descriptive flavor only.' } },
+    abilities: [{ metadata: { LEAK: 'Move note only.' }, description: { LEAK: 'Flavor only.' } }],
+  } as typeof TUNNEL_MAW;
+  assert.doesNotThrow(() => assertNoMonsterActionResource(descriptiveNested));
+});
