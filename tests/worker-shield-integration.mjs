@@ -390,14 +390,24 @@ try {
   for (const field of ['reward','xp','currency','items','victory']) {
     assert.equal(field in kill.data,false, `battle action must not return client-supplied ${field}`);
   }
-  assert.deepEqual(sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-kill'"),[
-    {level:1,xp:0,currency:0},
-  ],'an accepted paid action cannot apply client-supplied progression or rewards');
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-kill-permit'"),[
     {player_hp:5,player_mana:8,player_shield:5,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:0,enemy_shield:0,last_enemy_shield_absorbed:5,turn_count:2,battle_status:'victory'},
   ]);
   assert.ok([200,409].includes(earlyKillCompletion.status),
     'completion may observe the active permit (409) or the committed Worker victory (200)');
+  if (earlyKillCompletion.status === 200) {
+    assert.deepEqual(earlyKillCompletion.data.reward,{
+      xp:75,currency:30,items:['underpass-scrap'],furniture:['tunnel-trophy'],tier:'full',
+    },'a completion that wins the race may settle only the Worker-owned reward');
+  } else {
+    assert.equal('reward' in earlyKillCompletion.data,false,
+      'a completion that observes the still-active permit cannot settle a reward');
+  }
+  assert.deepEqual(sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-kill'"),[
+    earlyKillCompletion.status === 200
+      ? {level:1,xp:75,currency:30}
+      : {level:1,xp:0,currency:0},
+  ],'progression after the race must match the authoritative completion outcome, never forged client values');
 
   // Concurrent completion retries must converge on one receipt after the
   // Shield-bearing terminal snapshot is committed.
