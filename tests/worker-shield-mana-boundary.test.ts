@@ -29,7 +29,7 @@ const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf
   .replace(/^export default\s*\{/m, 'const worker = {');
 
 const handleBattleAction = runInNewContext(
-  stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
     TEST_DEGEN: degenWithShieldCosts,
     TUNNEL_MAW,
@@ -166,7 +166,7 @@ test('Worker accepts a free Shield-gain ability at zero Mana and persists the au
           return {
             first: async () => {
               statements.push({ sql, params });
-              return /^UPDATE battle_permits/i.test(sql.trim())
+              if (sql.trim().toUpperCase().startsWith('UPDATE BATTLE_PERMITS')) {
                 ? { turn_count: 1 }
                 : { ...persisted };
             },
