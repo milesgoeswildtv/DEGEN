@@ -102,11 +102,12 @@ export class BattleEngine {
     const shieldAbsorbed = result.shieldAbsorbed === undefined ? 0 : result.shieldAbsorbed;
     const retaliationDamage = result.retaliationDamage === undefined ? 0 : result.retaliationDamage;
     // Multi-turn recovery has no prior action to replay, so its persisted retaliation audit must match shared combat math.
+    if (!Number.isSafeInteger(this.enemy.damage) || this.enemy.damage < 0) return false;
     const expectedRetaliationDamage = Math.max(1, this.enemy.damage - Math.floor(this.degen.guard * 0.45));
     if (!isValidShield(playerShield)
       || !isValidShield(shieldAbsorbed)
       || !isValidShield(retaliationDamage)
-      || retaliationDamage > this.enemy.damage
+      || retaliationDamage > Math.max(1, this.enemy.damage)
       || shieldAbsorbed > retaliationDamage) return false;
 
     switch (result.status) {
