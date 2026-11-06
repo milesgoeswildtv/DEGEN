@@ -1,3 +1,25 @@
+## Latest autonomous build run — 2026-11-06
+
+- **Authoritative main:** `8687739bef9ef1effdda5c07ec6353243b180e56` (unchanged).
+- **Current task branch / PR:** `automation/degen/authoritative-shield-foundation-v02` / PR #125, OPEN / DRAFT / UNMERGED. Code/test head before this progress-only commit: `7d99c0cd3ae2b3d7606b66ab4d37f8971ab8b4c6`; 373 commits ahead / 0 behind main. Old PR #20 is a separate stale, diverged Shield branch; do not copy or merge it.
+- **Exact task and files changed in this run:**
+  - `tests/worker-shield-integration.mjs`: an unaffordable paid Shield-gain action at persisted 0 Mana now carries hostile forged HP/Mana/Shield/enemy state/turn/victory/reward fields. Assertions verify a 409, the unchanged authoritative snapshot, and no permit, progression, or battle-history mutation.
+  - `src/game/combat/rules.ts`: one shared `assertValidEnemyStartingShield` guard is used by deterministic combat resolution.
+  - `worker/index.ts`: validates the server-selected enemy starting Shield before reading or issuing a permit, so malformed starting Shield cannot strand a newly issued unusable permit.
+  - `tests/worker-battle-start-state.test.ts`: covers positive server-owned starting Shield initialization and rejects negative, fractional, unsafe-integer, and NaN values before any permit insert.
+- **Tests / evidence:**
+  - Intermediate Worker-only commit `bfe126e542a5d47d49a1fb336be4f21804f81211` failed `npm test` because the isolated VM test harness had not yet been given the newly imported validator. This was a test-harness integration failure, not a runtime assertion failure; the next commit injected the helper and added the positive/invalid Shield cases.
+  - Exact code/test-head CI [42268376910](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42268376910) on `7d99c0c`: migration-version preflight PASS and deterministic game tests PASS. Worker/D1 reward-concurrency stage is still IN PROGRESS; recovery, cycle/rollover, defeat, Shield integration, housing browser, build, Chromium battle, and Wrangler stages are not yet verified on this head.
+  - Earlier full exact-head CI [42255519950](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42255519950) passed all 17 substantive stages on prior head `042bc0c0592b74a81181b9c70ee96b75c7568a96`; it does not substitute for the new changes. The Pages preview for `7d99c0c` deployed successfully at [b37730e9.degen-8ze.pages.dev](https://b37730e9.degen-8ze.pages.dev).
+- **Mana status:** Degen-only Mana remains complete on main. No monster Mana/equivalent resource, client-owned Mana, or 0-Mana reversion was introduced.
+- **Shield status:** generic player Shield, optional enemy starting Shield, server-owned permit state, absorption audit, HUD, and D1 migrations are implemented on this feature branch. This run adds a pre-permit starting-Shield guard and stronger no-mutation coverage for unaffordable paid actions.
+- **Battle authority / reward idempotency:** main retains Worker-owned action/completion/reward state and recovery. PR #125 keeps Shield/retaliation audit in the permit and adds no client reward authority.
+- **D1 / migration assumptions:** main still owns `0007_player_inventory_quantity_guards.sql`; PR #125's `0008_degen_shield.sql` and `0009_enemy_shield.sql` remain branch-only. Branch migration preflight passed. PR #14's draft `0007_player_sessions.sql` collision remains unresolved. Preserve review order #114 → #126 → #125; no renumbering, remote D1 write, migration apply, merge, or Worker deployment occurred.
+- **Canonical content / blockers:** Library has Design Bible v0.12 and older Monster Log v0.9, but the requested Monster Log v0.11 / roster trackers were not found. Design Bible v0.12 still leaves exact status duration, resistance, stacking, and cleanse rules unresolved, so no status engine or monster content was invented.
+- **One best next task:** finish exact-head CI on PR #125; if green, preserve the migration/review gate and continue with approved content only after its canonical source is available.
+
+---
+
 ## Latest run — 2026-11-06 (exact-head Shield QA refresh and authority recheck)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`. Main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) is SUCCESS. The last verified production Worker deployment remains [40959555285](https://github.com/milesgoeswildtv/DEGEN/actions/runs/40959555285) on `4cc3bcbced85c46674067f43825223b959269a66`. Main is four commits ahead of that deployment, but the compared changes are client/navigation/docs/tests only; no Worker runtime, migration, or Wrangler change requires a production redeploy. No production D1 write or Worker deployment occurred.
