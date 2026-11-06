@@ -65,4 +65,4 @@ The Worker deployment workflow now applies tracked D1 migrations automatically b
 npm run db:migrate
 ```
 
-The Worker persists authoritative player HP/Mana, enemy HP, battle status, and turn count on each permit. `/api/battle/complete` grants rewards only when that persisted battle state is already a server-resolved victory.
+The Worker persists authoritative player HP/Mana/Shield, enemy HP/optional starting Shield, battle status, and turn count on each permit. `/api/battle/complete` grants rewards only when that persisted battle state is already a server-resolved victory.
