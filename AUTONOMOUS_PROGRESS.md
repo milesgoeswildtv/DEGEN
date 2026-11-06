@@ -1,3 +1,18 @@
+## Latest run — 2026-11-06 (reject duplicate player identity query parameters)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main remains unchanged.
+- **Current branch / PR:** continuing `automation/degen/worker-identity-input-validation-v01`, PR [#124](https://github.com/milesgoeswildtv/DEGEN/pull/124), OPEN / READY FOR REVIEW / UNMERGED. This change extends prior head `363b63a573daeca05ab32f91b0288521518f8d5b`; no competing branch or direct-main write.
+- **Task / files changed:** `worker/index.ts` now requires exactly one canonical `playerId` query parameter on both `/api/world/underpass` and `/api/battle/pending-rewards`. Duplicate keys are rejected even when values match; no query parameter pollution or first-value/last-value ambiguity is allowed to reach D1. `tests/worker-request-body.test.ts` covers four duplicate shapes across both read routes and asserts 400 with zero D1 access. Existing clients send one `playerId`; mutation routes are unchanged.
+- **Tests / QA:** the immediately prior exact-head CI [42166259537](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42166259537) passed on `363b63a573daeca05ab32f91b0288521518f8d5b`: **284/284 deterministic tests**, Worker/D1 reward concurrency, transient reward recovery, Underpass cycle/rollover concurrency, atomic defeat history, Chromium housing persistence, production build, real Chromium mobile battle/reward/Home-trophy vertical slice, and Wrangler validation. This new duplicate-query regression requires its own exact-head CI; no pass is claimed for the new head yet.
+- **Mana:** COMPLETE / MERGED on main. Degen-only max Mana and bespoke costs, authoritative persisted `player_mana`, battle-start initialization, atomic unaffordable rejection, exact deduction, zero-cost-at-zero, terminal victory/defeat, cost-aware controls, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 continues to own permits, HP/Mana/enemy HP, action turn CAS, terminal outcomes/history, audited receipts, XP/level-up, currency, inventory, and recoverable exactly-once settlement. This request-shape hardening does not move combat or economy authority to the client.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; schema → tracked migrations → Worker remains the deployment order. Main's `0007_player_inventory_quantity_guards.sql` still conflicts by version with draft auth PR #14's `0007_player_sessions.sql`; preserve #114 → #126 → #125 and do not renumber/apply/deploy around the ownership decision. No production D1 operation or Worker deployment.
+- **Miles blockers:** duplicate `0007` ownership/order; production Discord/Telegram signed-session credentials and approved legacy identity-collision policy; canonical Monster Log v0.11 and unresolved universal status rules. No canon was invented.
+- **Delivery state:** code + regression test are committed only to the existing feature branch; PR #124 remains the delivery path. Main and production remain unchanged.
+- **One best next task:** verify exact-head CI for duplicate-query rejection, then continue only a demonstrated non-blocked Worker reliability gap.
+
+---
+
 ## Latest run — 2026-11-06 (reject invalid UTF-8 before Worker persistence)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; no main write.

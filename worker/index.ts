@@ -126,6 +126,14 @@ const isCanonicalIdentifier = (value: unknown): value is string =>
   && value.trim() === value
   && !ROUTE_IDENTIFIER_NONCANONICAL_CHARACTERS.test(value);
 
+// Read routes accept one identity value only; duplicate query keys are ambiguous.
+const singleCanonicalQueryIdentifier = (url: URL, key: string): string | undefined => {
+  const values = url.searchParams.getAll(key);
+  if (values.length !== 1) return undefined;
+  const value = values[0];
+  return isCanonicalIdentifier(value) ? value : undefined;
+};
+
 const iso = (value = Date.now()): string => new Date(value).toISOString();
 const randomInt = (min: number, max: number): number => {
   const bytes = new Uint32Array(1);
@@ -1475,13 +1483,13 @@ export default {
       if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return await handleBootstrap(request, env);
       if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(request, env);
       if (request.method === 'GET' && url.pathname === '/api/battle/pending-rewards') {
-        const playerId = url.searchParams.get('playerId');
-        if (!isCanonicalIdentifier(playerId)) return fail(request, env, 'playerId is required');
+        const playerId = singleCanonicalQueryIdentifier(url, 'playerId');
+        if (!playerId) return fail(request, env, 'playerId is required');
         return await handlePendingBattleRewards(request, env, playerId);
       }
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
-        const playerId = url.searchParams.get('playerId');
-        if (!isCanonicalIdentifier(playerId)) return fail(request, env, 'playerId is required');
+        const playerId = singleCanonicalQueryIdentifier(url, 'playerId');
+        if (!playerId) return fail(request, env, 'playerId is required');
         const snapshot = await worldSnapshot(env.DB, playerId);
         return json(request, env, snapshot);
       }

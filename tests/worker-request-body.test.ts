@@ -372,6 +372,34 @@ test('padded player IDs on read routes are rejected before touching D1', async (
 });
 
 
+test('duplicate playerId query parameters are rejected before touching D1', async () => {
+  const routes = ['/api/world/underpass', '/api/battle/pending-rewards'];
+  const queries = [
+    '?playerId=first&playerId=second',
+    '?playerId=first&playerId=',
+    '?playerId=&playerId=first',
+    '?playerId=same&playerId=same',
+  ];
+
+  for (const route of routes) {
+    for (const query of queries) {
+      let d1Touched = false;
+      const response = await worker.fetch(new Request(`https://degen-api.example${route}${query}`), {
+        DB: {
+          prepare() {
+            d1Touched = true;
+            throw new Error('Duplicate playerId query keys must be rejected before D1.');
+          },
+        },
+      });
+
+      assert.equal(d1Touched, false, route + query);
+      assert.equal(response.status, 400, route + query);
+      assert.deepEqual(await response.json(), { error: 'playerId is required' }, route + query);
+    }
+  }
+});
+
 test('tab and line-break padding on opaque route identifiers is rejected before D1 access', async () => {
   const cases = [
     {
