@@ -1753,11 +1753,21 @@ try {
     eventuallyComplete('permit-paid-killing-race', paidCompletionForgery, 'paid-killing-race-player'),
     eventuallyComplete('permit-paid-killing-race', paidCompletionForgery, 'paid-killing-race-player'),
   ]);
-  assert.equal(paidCompletionA.reward.tier, 'full');
+  assert.deepEqual(paidCompletionA.reward, {
+    xp: 75, currency: 30, items: ['underpass-scrap'], furniture: ['tunnel-trophy'], tier: 'full',
+  }, 'hostile completion payloads must not replace the canonical first-clear reward');
   assert.deepEqual(paidCompletionB.reward, paidCompletionA.reward,
     'concurrent retries must return the same stored paid-killing-blow receipt');
-  assert.equal(paidCompletionA.player.currency, paidRaceCurrencyBefore + paidCompletionA.reward.currency,
-    'the paid killing-blow reward must apply currency exactly once');
+  assert.equal(paidCompletionA.player.level, 1);
+  assert.equal(paidCompletionA.player.xp, 75, 'client XP must not replace Worker progression math');
+  assert.equal(paidCompletionA.player.currency, paidRaceCurrencyBefore + 30,
+    'client currency must not replace the canonical Worker reward');
+  assert.equal(paidCompletionA.player.inventory.filter(item => item === 'underpass-scrap').length, 1,
+    'forged items must not be added to the authoritative inventory');
+  assert.equal(paidCompletionA.player.housing.inventory.filter(item => item === 'tunnel-trophy').length, 1,
+    'the canonical trophy must be awarded exactly once');
+  assert.equal(paidCompletionA.worldEvent.fullRewardClears, 1,
+    'client reward fields must not alter the server-owned clear counter');
   assert.equal(paidCompletionB.player.currency, paidCompletionA.player.currency);
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id='permit-paid-killing-race:victory'"), 1,
     'one victory history row must exist for the paid killing-blow permit');
