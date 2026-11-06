@@ -1,3 +1,21 @@
+# DEGEN — AUTONOMOUS PROGRESS
+
+## Latest run — 2026-11-06 (Shield snapshot integrity + main reconciliation)
+
+- **Authoritative main SHA:** 794aa106493860d3633530dbf95bf8d7bb2c5adf. PR #128 is merged at bf3212c78588fceffbe951255e84e8c15708e536; PR #129 is merged at 794aa106493860d3633530dbf95bf8d7bb2c5adf. Main CI [42305957095](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42305957095) is still running: deterministic tests and Worker/D1 reward concurrency passed; transient reward recovery is running. Main Pages preview [42305957054](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42305957054) passed. No production Worker deploy was triggered by these docs/test-only main changes.
+- **Current branch / PR:** automation/degen/authoritative-shield-foundation-v02 / PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125). Current code/test head: 1cf1f4ab4f6829836a6194063c8656c5e2ce7ad0; compares 390 commits ahead / 0 behind current main; PR remains OPEN / DRAFT / UNMERGED / mergeable. The existing branch was reconciled with a normal two-parent merge commit 7c2ea0c3c627345b32c975b54779bea434decc4c (parents: previous Shield head a5542911aa3c4af278f087de33de4a0c022292ed and current main 794aa106493860d3633530dbf95bf8d7bb2c5adf). No force-push, history rewrite, competing branch, or direct-main write.
+- **Integrity fix:** client API validation and BattleEngine recovery validation now cap current enemy Shield at the server-defined starting pool and require current Shield plus the last absorption audit to fit within that pool, including multi-turn recovery. Shared deterministic combat also rejects an enemy Shield value above its definition. Worker/D1 already rejected the same overdraw; client, engine, resolver and Worker now agree.
+- **Files changed in the Shield branch:** src/app/api.ts; src/game/combat/engine.ts; src/game/combat/rules.ts; tests/client-worker-mana-consistency.test.ts; tests/shield-foundation.test.ts; tests/battle-start-client.test.ts; tests/combat-progression.test.ts; tests/enemy-shield-foundation.test.ts; tests/worker-d1-concurrency.mjs; plus this continuity file. Test-only enemy Shield fixtures now declare their startingShield; the forged-action response contract permits only persisted Shield audit fields alongside HP/Mana/status/turn/permit, never rewards or progression.
+- **Exact-head CI:** [42307126158](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42307126158) is IN PROGRESS on code/test head 1cf1f4a. Tracked migration-version preflight and deterministic tests have passed; isolated Worker/D1 reward concurrency is running. Reward recovery, Underpass cycle/rollover, defeat history, Shield integration, Chromium housing persistence, build, Chromium battle vertical slice and Wrangler validation are pending. Do not claim full CI green until every stage finishes.
+- **Diagnosed earlier failures:** [42306247547](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42306247547) and [42306940837](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42306940837) failed in worker-d1-concurrency because the merged PR #128 action-response key assertion omitted the three now-authoritative Shield/audit fields; fixed in head 1cf1f4a. [42306762021](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42306762021) failed deterministic tests because three old fixtures supplied Shield without a matching server-defined startingShield; fixtures were corrected in 25c8659. These failures are not attributed to the current head.
+- **Prior Shield full CI:** old head a5542911aa3c4af278f087de33de4a0c022292ed passed [42300055727](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42300055727), including 371/371 deterministic tests, migration preflight, Worker/D1 reward/recovery, Underpass cycle/rollover, atomic defeat, Shield integration, Chromium housing persistence, production build, Chromium mobile battle vertical slice and Wrangler validation. This success predates the current reconciliation and integrity fix.
+- **Mana:** COMPLETE / MERGED on main. Degen-only maxMana/manaCost, authoritative battle-start and permit Mana, atomic unaffordable rejection, exact one-time deduction, zero-cost at zero, killing blow/defeat, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource and no Mana-triggered reversion remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 owns permits, player HP/Mana/Shield, enemy HP/optional Shield, action compare-and-swap, terminal state/history, reward claim/receipt, XP/level-up, currency and inventory. Client does not calculate or grant rewards. Existing retry/recovery and concurrent action/completion coverage remains in place.
+- **D1 / deploy assumptions:** wrangler.toml binds DB to DEGEN and db/migrations. Shield migrations 0008_degen_shield.sql and 0009_enemy_shield.sql are additive column migrations, tracked on this feature branch only. The deploy workflow validates migration versions, runs deterministic and isolated Worker/D1/browser/build/Wrangler checks, applies migrations, then deploys Worker. No production D1 write, migration apply, or Worker deployment occurred.
+- **Miles blocker / content authority:** main's 0007_player_inventory_quantity_guards.sql still conflicts by version with draft auth PR #14's 0007_player_sessions.sql. Preserve #114 → #126 → #125; keep #125 DRAFT until the explicit 0007 ownership/order decision. Approved Monster Log v0.11/roster tracker and exact universal status mechanics were not available in the inspected source set; no monster, archetype, signature, Degen kit, status or balance canon was invented.
+- **One best next task:** finish exact-head CI on 1cf1f4a. If green, keep the Shield PR draft/release gate intact and wait for the 0007 ownership/order decision before merge or deployment.
+
+---
 ## Latest run — 2026-11-06 (Shield branch reconciled with merged main)
 
 - **Authoritative main SHA:** 794aa106493860d3633530dbf95bf8d7bb2c5adf. PR #129 was squash-merged; its documentation-only exact-head CI [42303503155](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42303503155) completed SUCCESS.
@@ -887,8 +905,6 @@ undefined
 - **One best next task:** verify post-merge main CI and Pages/Worker deployment status for `98d607d`; then choose the next scoped reliability task without reopening the superseded Mana branch.
 
 ---
-
-# DEGEN — AUTONOMOUS PROGRESS
 
 ## Latest run — 2026-10-29 (validate authoritative player bootstrap snapshots)
 
@@ -3495,4 +3511,5 @@ Deliver the active-permit Mana backfill as a focused PR with malformed-expiry an
 - **Miles blocker:** production Discord/Telegram credentials, controlled identity/session verification, and the approved legacy identity-collision policy remain release gates. No additional canon decision is required for this client-side validation guard.
 - **Delivery state:** PUSHED on PR #111; not merged or deployed. No direct-main write, production D1 operation, or Worker deployment was performed.
 - **One best next task:** verify exact-head CI on the new PR #111 head; fix only demonstrated failures, then continue the next non-gated reliability gap.
+
 
