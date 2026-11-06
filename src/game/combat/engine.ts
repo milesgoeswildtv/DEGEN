@@ -90,10 +90,14 @@ export class BattleEngine {
     const enemyShield = result.enemyShield === undefined ? (this.enemy.startingShield ?? 0) : result.enemyShield;
     if ((this.enemy.startingShield ?? 0) > 0 && result.enemyShield === undefined) return false;
     const maxEnemyShieldAbsorbed = maxAbilityDamage(this.degen);
+    const maxEnemyStartingShield = this.enemy.startingShield ?? 0;
+    const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
     if (!isValidShield(enemyShield)
+      || enemyShield > maxEnemyStartingShield
       || maxEnemyShieldAbsorbed === undefined
-      || (result.enemyShieldAbsorbed !== undefined
-        && (!isValidShield(result.enemyShieldAbsorbed) || result.enemyShieldAbsorbed > maxEnemyShieldAbsorbed))) return false;
+      || !isValidShield(enemyShieldAbsorbed)
+      || enemyShieldAbsorbed > maxEnemyShieldAbsorbed
+      || enemyShieldAbsorbed > maxEnemyStartingShield - enemyShield) return false;
 
     const shieldFields = [result.playerShield, result.shieldAbsorbed, result.retaliationDamage];
     const hasLegacyShieldState = shieldFields.every((field) => field === undefined);

@@ -47,6 +47,20 @@ test('shared combat math rejects invalid HP and unsafe damage inputs before reso
   }
 });
 
+test('shared combat math rejects an enemy Shield pool above its server-defined starting value', () => {
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  assert.throws(() => resolveCombatTurn({
+    playerHp: 50,
+    playerMana: 0,
+    playerShield: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 6,
+    ability: ability('slash'),
+    degen: TEST_DEGEN,
+    enemy,
+  }), /Invalid enemy Shield/);
+});
+
 test('Degen Shield absorbs retaliation before HP and consumes only the absorbed amount', () => {
   const result = resolveCombatTurn({
     playerHp: 50, playerMana: 0, playerShield: 4, enemyHp: TUNNEL_MAW.maxHp,

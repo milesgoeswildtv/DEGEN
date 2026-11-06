@@ -719,6 +719,14 @@ test('client rejects enemy Shield absorption above one Degen hit on multi-turn r
   assert.equal(validators.isAuthoritativeBattleActionState(impossibleRecovery, permitId), false,
     'the API boundary must reject an absorption delta larger than any one defined Degen hit');
 
+  const impossibleRemainingPool = {
+    ...impossibleRecovery,
+    enemyShield: 4,
+    enemyShieldAbsorbed: 2,
+  };
+  assert.equal(validators.isAuthoritativeBattleActionState(impossibleRemainingPool, permitId), false,
+    'multi-turn recovery cannot claim remaining Shield plus the last absorption exceeds the starting pool');
+
   const initial = {
     permitId,
     status: 'active' as const,
@@ -734,7 +742,16 @@ test('client rejects enemy Shield absorption above one Degen hit on multi-turn r
   const engine = new BattleEngine(TEST_DEGEN, shieldedEnemy, () => undefined, initial);
   const before = engine.snapshot;
   assert.equal(engine.synchronizeAuthoritativeState(impossibleRecovery as never), false,
-    'the engine boundary must reject the same impossible multi-turn recovery');
+    'the engine boundary must reject an absorption delta larger than one Degen hit');
+  assert.equal(engine.synchronizeAuthoritativeState(impossibleRemainingPool as never), false,
+    'the engine boundary must reject a remaining Shield pool larger than the starting Shield after the last absorption');
+  assert.equal(validators.isAuthoritativeBattleStartState(impossibleRemainingPool, permitId), false,
+    'an idempotent start retry must reject the same impossible persisted Shield audit');
+  assert.throws(
+    () => new BattleEngine(TEST_DEGEN, shieldedEnemy, () => undefined, impossibleRemainingPool as never),
+    /Invalid authoritative battle start state/,
+    'the engine constructor must reject an impossible multi-turn Shield snapshot',
+  );
   assert.deepEqual(engine.snapshot, before, 'invalid audit data must not change the displayed battle');
 });
 

@@ -20,6 +20,8 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   const turnCount = state.turnCount;
   const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
   const maxPlayerAbilityDamage = maxAbilityDamage(TEST_DEGEN);
+  const maxEnemyStartingShield = TUNNEL_MAW.startingShield ?? 0;
+  const enemyShieldAbsorbed = state.enemyShieldAbsorbed === undefined ? 0 : state.enemyShieldAbsorbed;
   // A shielded enemy's current Shield is authoritative state, not a value the client may reinitialize.
   if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
   // Pre-Shield permits omit all three audit fields; explicit zeros are current-format state.
@@ -38,9 +40,9 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     && isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
     && isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
     && isBoundedSafeInteger(retaliationDamage, 0, Math.max(1, TUNNEL_MAW.damage))
-    && isBoundedSafeInteger(enemyShield, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(enemyShield, 0, maxEnemyStartingShield)
     && maxPlayerAbilityDamage !== undefined
-    && (state.enemyShieldAbsorbed === undefined || isBoundedSafeInteger(state.enemyShieldAbsorbed, 0, maxPlayerAbilityDamage))
+    && isBoundedSafeInteger(enemyShieldAbsorbed, 0, Math.min(maxPlayerAbilityDamage, maxEnemyStartingShield - enemyShield))
     && shieldAbsorbed <= retaliationDamage
     // A fresh start has no Shield or retaliation. An idempotent retry may return
     // the current Shield and last-action audit after one or more accepted turns.
@@ -71,6 +73,8 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   const turnCount = state.turnCount;
   const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
   const maxPlayerAbilityDamage = maxAbilityDamage(TEST_DEGEN);
+  const maxEnemyStartingShield = TUNNEL_MAW.startingShield ?? 0;
+  const enemyShieldAbsorbed = state.enemyShieldAbsorbed === undefined ? 0 : state.enemyShieldAbsorbed;
   if (state.permitId !== permitId
     || (state.status !== 'active' && state.status !== 'victory' && state.status !== 'defeat')
     || !isBoundedSafeInteger(playerHp, 0, TEST_DEGEN.maxHp)
@@ -78,9 +82,9 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
     || !isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
     || !isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
     || !isBoundedSafeInteger(retaliationDamage, 0, Math.max(1, TUNNEL_MAW.damage))
-    || !isBoundedSafeInteger(enemyShield, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(enemyShield, 0, maxEnemyStartingShield)
     || maxPlayerAbilityDamage === undefined
-    || (state.enemyShieldAbsorbed !== undefined && !isBoundedSafeInteger(state.enemyShieldAbsorbed, 0, maxPlayerAbilityDamage))
+    || !isBoundedSafeInteger(enemyShieldAbsorbed, 0, Math.min(maxPlayerAbilityDamage, maxEnemyStartingShield - enemyShield))
     || shieldAbsorbed > retaliationDamage
     || !isBoundedSafeInteger(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
