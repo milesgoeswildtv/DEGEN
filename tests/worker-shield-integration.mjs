@@ -308,7 +308,17 @@ try {
     {reward_state:'awarded',battle_status:'victory'},
   ]);
 
-  const rejected=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'crack',expectedTurnCount:1});
+  const carryBeforeReject = sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-carry-permit'");
+  const carryCharacterBeforeReject = sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-carry'");
+  const carryHistoryBeforeReject = sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='shield-carry'");
+  const rejected=await post('/api/battle/action',{
+    playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'crack',expectedTurnCount:1,
+    playerHp:0,playerMana:12,playerShield:999,shieldAbsorbed:0,retaliationDamage:0,
+    enemyHp:0,enemyShield:999,enemyShieldAbsorbed:999,turnCount:Number.MAX_SAFE_INTEGER,
+    status:'victory',victory:true,damage:Number.MAX_SAFE_INTEGER,manaCost:0,shieldGain:Number.MAX_SAFE_INTEGER,
+    ability:{damage:Number.MAX_SAFE_INTEGER,manaCost:0,shieldGain:Number.MAX_SAFE_INTEGER},
+    reward:{xp:999999,currency:999999,items:['forged-item']},xp:999999,currency:999999,items:['forged-item'],
+  });
   assert.equal(rejected.status,409);
   assert.equal(rejected.data.battleState.playerShield,12);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count FROM battle_permits WHERE id='shield-carry-permit'"),[
