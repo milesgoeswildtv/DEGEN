@@ -320,10 +320,21 @@ try {
     reward:{xp:999999,currency:999999,items:['forged-item']},xp:999999,currency:999999,items:['forged-item'],
   });
   assert.equal(rejected.status,409);
-  assert.equal(rejected.data.battleState.playerShield,12);
-  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,turn_count FROM battle_permits WHERE id='shield-carry-permit'"),[
-    {player_hp:120,player_mana:0,player_shield:12,last_shield_absorbed:10,last_retaliation_damage:10,enemy_hp:63,turn_count:1},
-  ]);
+  assert.equal(rejected.data.error,'Not enough Mana for that ability.');
+  assert.deepEqual([
+    rejected.data.battleState.playerHp,rejected.data.battleState.playerMana,
+    rejected.data.battleState.playerShield,rejected.data.battleState.shieldAbsorbed,
+    rejected.data.battleState.retaliationDamage,rejected.data.battleState.enemyHp,
+    rejected.data.battleState.turnCount,rejected.data.battleState.status,
+  ],[120,0,12,10,10,63,1,'active']);
+  assert.equal('reward' in rejected.data,false,'an unaffordable Shield-bearing action never returns a reward payload');
+  assert.equal('victory' in rejected.data,false,'client victory fields are ignored on rejection');
+  assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-carry-permit'"),carryBeforeReject,
+    'forged HP/Mana/Shield/enemy state/victory fields must not mutate the permit on affordability rejection');
+  assert.deepEqual(sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-carry'"),carryCharacterBeforeReject,
+    'forged reward fields must not mutate player progression on affordability rejection');
+  assert.deepEqual(sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='shield-carry'"),carryHistoryBeforeReject,
+    'an unaffordable action must not create terminal battle history');
   const carry=await post('/api/battle/action',{playerId:'shield-carry',permitId:'shield-carry-permit',abilityId:'slash',expectedTurnCount:1});
   assert.equal(carry.status,200);
   assert.deepEqual([carry.data.playerHp,carry.data.playerShield,carry.data.shieldAbsorbed,carry.data.retaliationDamage],[120,2,10,10]);
