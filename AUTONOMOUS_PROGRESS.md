@@ -1,3 +1,20 @@
+## Latest run — 2026-11-06 (Shield reward retries made concurrency-safe)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main unchanged.
+- **Current feature branch / PR:** continuing `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), OPEN / DRAFT / UNMERGED. Latest code/test commit: `39d5b0aa136301f113731d7eac4afccf40f4d5c9`.
+- **Task / files changed:** `tests/worker-shield-integration.mjs` adds a bounded `completeEventually` retry helper for the two concurrent completion callers. A concurrent completion may legitimately observe the active/claiming window and return 409/500 before the same persisted receipt becomes replayable; retries accept only eventual 200 and still require both callers to return the identical reward/player result. The early action-vs-completion race remains a single-shot assertion allowing only 409-before-commit or 200-after-commit.
+- **Other new coverage:** `tests/worker-d1-concurrency.mjs` sends forged client HP/Mana/Shield/audit/victory/reward fields to completion and compares the exact persisted Shield pools/audit before and after rejection, preserving legacy NULL/zero state.
+- **CI evidence:** prior complete exact-head CI [42211766892](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42211766892) passed all stages on `50b3b2c`. Run [42220144199](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42220144199) failed only because a test assumed a fixed legacy Shield audit default; that assertion is corrected to compare before/after state. Run [42220641567](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42220641567) is in progress on the preceding head `b01e653e`; migration preflight and deterministic tests passed, Worker/D1 reward concurrency was running at last check. Latest head `39d5b0a` requires fresh exact-head CI; no new-test green claim yet.
+- **Mana:** COMPLETE / MERGED on main; Degen-only Mana, server-owned persisted state, affordability rejection, exact deduction, zero-cost-at-zero, victory/defeat, UI, client/Worker math, no monster Mana and no reversion remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 remains sole authority for permit combat state, action CAS, terminal history, reward receipts, progression, currency and inventory. This run changes test retry behavior only; it does not weaken assertions or move authority to the client.
+- **D1 / migration:** Shield migrations `0008_degen_shield.sql` / `0009_enemy_shield.sql` remain branch-only. The `0007` conflict between main's inventory guard and draft auth PR #14's player-session migration remains unresolved by Miles. Preserve #114 → #126 → #125; no renumbering, production D1 operation, merge or Worker deployment.
+- **Other gates:** PR #114 exact-head CI [41793830515](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41793830515) and PR #126 exact-head CI [42022296018](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42022296018) are SUCCESS and mergeable, OPEN / UNMERGED.
+- **Content authority:** specified `02 DEGEN Monster Log v0.11` and roster tracker are not in the accessible Library; older v0.8/v0.9 and signature v0.2 documents are not substituted. Universal-status behavior remains blocked on exact duration/stacking/resistance/cleanse rules. No canon invented.
+- **Delivery:** PUSHED / PR #125. **MERGED / LIVE:** unchanged. No production D1, Worker deploy or physical-iPhone QA.
+- **One best next task:** verify exact-head CI for `39d5b0a`; if it fails, inspect the actual failing assertion/log and correct only the test or runtime defect demonstrated.
+
+---
+
 ## Latest run — 2026-11-06 (Shield completion forgery test corrected to preserve legacy audit)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main unchanged.
