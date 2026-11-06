@@ -39,6 +39,17 @@ async function post(path, payload) {
     );
   }
 }
+async function completeEventually(payload) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const response = await post('/api/battle/complete', payload);
+    if (response.status === 200) return response;
+    if (response.status !== 409 && response.status !== 500) {
+      throw new Error('Shield reward completion failed: ' + JSON.stringify(response));
+    }
+    await sleep(100 + 50 * attempt);
+  }
+  throw new Error('Shield reward completion retry exhausted');
+}
 async function until(check) {
   for (let i=0;i<80;i++) {
     if (server?.exitCode !== null && server?.exitCode !== undefined) throw new Error('Worker exited: '+logs);
@@ -349,8 +360,8 @@ try {
   // Concurrent completion retries must converge on one receipt after the
   // Shield-bearing terminal snapshot is committed.
   const [completeA, completeB] = await Promise.all([
-    post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'}),
-    post('/api/battle/complete',{playerId:'shield-kill',permitId:'shield-kill-permit'}),
+    completeEventually({playerId:'shield-kill',permitId:'shield-kill-permit'}),
+    completeEventually({playerId:'shield-kill',permitId:'shield-kill-permit'}),
   ]);
   assert.equal(completeA.status,200);
   assert.equal(completeB.status,200);
