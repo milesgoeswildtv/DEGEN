@@ -12,16 +12,21 @@ import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } fr
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
-const createBattleActionHandler = (degen: typeof TEST_DEGEN) => runInNewContext(
+const createBattleActionHandler = (
+  degen: typeof TEST_DEGEN,
+  enemy: typeof TUNNEL_MAW = TUNNEL_MAW,
+) => runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
-    TEST_DEGEN: degen, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
+    TEST_DEGEN: degen, TUNNEL_MAW: enemy, canUseAbility, resolveCombatTurn,
     UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
     crypto: webcrypto, Request, Response, URL, console, Uint32Array,
   },
 ) as (request: Request, env: { DB: unknown }) => Promise<Response>;
 
 const handleBattleAction = createBattleActionHandler(TEST_DEGEN);
+const shieldedEnemy = { ...TUNNEL_MAW, startingShield: 5 };
+const handleBattleActionWithEnemyShield = createBattleActionHandler(TEST_DEGEN, shieldedEnemy);
 const shieldGainDegen = {
   ...TEST_DEGEN,
   abilities: TEST_DEGEN.abilities.map((ability) => ability.id === 'crack'
@@ -43,7 +48,8 @@ const actionRequest = (permitId: string, expectedTurnCount = 0): Request => new 
 
 const battleState = (row: {
   permitId: string; battle_status: string; player_hp: number; player_mana: number;
-  player_shield: number; last_shield_absorbed: number; last_retaliation_damage: number; last_enemy_shield_absorbed: number; enemy_hp: number; turn_count: number;
+  player_shield: number; last_shield_absorbed: number; last_retaliation_damage: number;
+  enemy_shield?: number; last_enemy_shield_absorbed: number; enemy_hp: number; turn_count: number;
 }) => ({
   permitId: row.permitId,
   status: row.battle_status,
@@ -52,6 +58,7 @@ const battleState = (row: {
   playerShield: row.player_shield,
   shieldAbsorbed: row.last_shield_absorbed,
   retaliationDamage: row.last_retaliation_damage,
+  ...(row.enemy_shield !== undefined ? { enemyShield: row.enemy_shield } : {}),
   ...(row.last_enemy_shield_absorbed > 0 ? { enemyShieldAbsorbed: row.last_enemy_shield_absorbed } : {}),
   enemyHp: row.enemy_hp,
   turnCount: row.turn_count,
@@ -67,7 +74,7 @@ test('replayed action after reward settlement returns the persisted Shield victo
     player_mana: 8,
     player_shield: 5,
     last_shield_absorbed: 0,
-    last_retaliation_damage: 0, last_enemy_shield_absorbed: 5,
+    last_retaliation_damage: 0, enemy_shield: 0, last_enemy_shield_absorbed: 5,
     enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
@@ -94,7 +101,7 @@ test('replayed action after reward settlement returns the persisted Shield victo
     },
   };
 
-  const response = await handleBattleAction(actionRequest('shield-permit', 3), { DB: db });
+  const response = await handleBattleActionWithEnemyShield(actionRequest('shield-permit', 3), { DB: db });
   const result = await response.json() as { error: string; battleState?: unknown };
 
   assert.equal(response.status, 409);
@@ -110,7 +117,7 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
       row: {
         cycle_id: 'cycle-1', event_key: 'underpass', cycle_event_key: 'underpass', encounter_key: TUNNEL_MAW.id,
         player_hp: 120, player_mana: 8, player_shield: 5,
-        last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 5,
+        last_shield_absorbed: 0, last_retaliation_damage: 0, enemy_shield: 0, last_enemy_shield_absorbed: 5,
         enemy_hp: 0, battle_status: 'victory', turn_count: 1,
         completed_at: null, reward_state: 'pending',
         victory_history_marker_count: 0, defeat_history_marker_count: 0,
@@ -122,8 +129,8 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
       row: {
         cycle_id: 'cycle-1', event_key: 'underpass', cycle_event_key: 'underpass', encounter_key: TUNNEL_MAW.id,
         player_hp: 0, player_mana: 0, player_shield: 0,
-        last_shield_absorbed: 2, last_retaliation_damage: 10, last_enemy_shield_absorbed: 0,
-        enemy_hp: TUNNEL_MAW.maxHp - 29, battle_status: 'defeat', turn_count: 1,
+        last_shield_absorbed: 2, last_retaliation_damage: 10, enemy_shield: 0, last_enemy_shield_absorbed: 5,
+        enemy_hp: TUNNEL_MAW.maxHp - 24, battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
         victory_history_marker_count: 0, defeat_history_marker_count: 0,
       },
@@ -152,7 +159,7 @@ test('expired pending Shield victory and defeat recover snapshots without applyi
       },
     };
 
-    const response = await handleBattleAction(actionRequest(permitId), { DB: db });
+    const response = await handleBattleActionWithEnemyShield(actionRequest(permitId), { DB: db });
     const result = await response.json() as { error: string; battleState?: unknown };
 
     assert.equal(response.status, 409);
@@ -497,4 +504,105 @@ test('Worker persists successful Degen Shield gain and retaliation absorption in
   assert.deepEqual(updates[0]?.params.slice(0, 9), [
     120, 0, 4, 10, 10, 57, 0, 0, 'active',
   ], 'the same compare-and-swap persists Shield gain, absorption, HP, and enemy damage together');
+});
+
+test('Worker accepts only the enemy Shield pool selected by the server encounter definition', async () => {
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const handleAction = createBattleActionHandler(TEST_DEGEN, enemy);
+  const permit = {
+    event_key: 'underpass',
+    cycle_event_key: 'underpass',
+    cycle_id: 'cycle-1',
+    encounter_key: enemy.id,
+    player_hp: TEST_DEGEN.maxHp,
+    player_mana: TEST_DEGEN.maxMana,
+    player_shield: 0,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
+    enemy_hp: enemy.maxHp,
+    enemy_shield: 5,
+    last_enemy_shield_absorbed: 0,
+    battle_status: 'active',
+    turn_count: 0,
+  };
+  const updates: Array<{ sql: string; params: unknown[] }> = [];
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...params: unknown[]) {
+          return {
+            first: async () => {
+              if (sql.includes('UPDATE battle_permits')) {
+                updates.push({ sql, params });
+                return { turn_count: 1 };
+              }
+              if (sql.includes('FROM battle_permits AS permit') && sql.includes('completed_at IS NULL')) {
+                return permit;
+              }
+              throw new Error('Unexpected query in enemy Shield authority test: ' + sql);
+            },
+          };
+        },
+      };
+    },
+  };
+  const request = new Request('https://degen-api.example/api/battle/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      playerId: 'shield-player', permitId: 'enemy-shield-permit',
+      abilityId: 'slash', expectedTurnCount: 0,
+      enemyShield: 0, enemyShieldAbsorbed: Number.MAX_SAFE_INTEGER,
+    }),
+  });
+
+  const response = await handleAction(request, { DB: db });
+  const result = await response.json() as {
+    playerHp: number; playerMana: number; enemyShield: number;
+    enemyShieldAbsorbed: number; enemyHp: number; turnCount: number; status: string;
+  };
+  assert.equal(response.status, 200);
+  assert.deepEqual([
+    result.playerHp, result.playerMana, result.enemyShield,
+    result.enemyShieldAbsorbed, result.enemyHp, result.turnCount, result.status,
+  ], [110, 12, 0, 5, 68, 1, 'active']);
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0]?.params.slice(0, 9), [
+    110, 12, 0, 0, 10, 68, 0, 5, 'active',
+  ], 'the Worker persists the server-selected Shield pool and its exact absorption audit');
+
+  for (const corrupt of [
+    { enemy_shield: 6, last_enemy_shield_absorbed: 0 },
+    { enemy_shield: 0, last_enemy_shield_absorbed: 6 },
+    { enemy_shield: 3, last_enemy_shield_absorbed: 3 },
+  ]) {
+    const corruptPermit = { ...permit, ...corrupt };
+    let mutationCount = 0;
+    const corruptDb = {
+      prepare(sql: string) {
+        return {
+          bind(..._params: unknown[]) {
+            return {
+              first: async () => {
+                if (sql.includes('UPDATE battle_permits')) {
+                  mutationCount += 1;
+                  throw new Error('Corrupt enemy Shield state must not mutate.');
+                }
+                if (sql.includes('FROM battle_permits AS permit') && sql.includes('completed_at IS NULL')) {
+                  return corruptPermit;
+                }
+                throw new Error('Unexpected query in corrupt enemy Shield test: ' + sql);
+              },
+            };
+          },
+        };
+      },
+    };
+    const rejected = await handleAction(actionRequest('corrupt-enemy-shield'), { DB: corruptDb });
+    const payload = await rejected.json() as { error: string; battleState?: unknown };
+    assert.equal(rejected.status, 409);
+    assert.equal(payload.error, 'Battle state is invalid.');
+    assert.equal('battleState' in payload, false);
+    assert.equal(mutationCount, 0, 'an impossible enemy Shield pool/audit must fail before D1 mutation');
+  }
 });

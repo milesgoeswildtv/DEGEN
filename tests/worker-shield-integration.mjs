@@ -104,7 +104,6 @@ try {
       ('shield-closure-permit','shield-closure','underpass','shield-closure-cycle','tunnel-maw',datetime('now','-5 minutes'),datetime('now','+20 minutes'),'active',120,0,4,10,10,63,1);
   `);
   cli(['d1','execute','DEGEN','--local','--persist-to='+persist,'--file='+seed]);
-  sql("UPDATE battle_permits SET enemy_shield=5 WHERE id IN ('shield-enemy-permit','shield-enemy-kill-permit','shield-kill-permit','shield-closure-permit','shield-race-permit')");
   server=spawn(wrangler,['dev','--local','--persist-to='+persist,'--ip=127.0.0.1','--port=8791'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
   for(const stream of [server.stdout,server.stderr]) stream.on('data',d=>{logs=(logs+d.toString()).slice(-10000);});
   await until(async()=>{const r=await fetch(base+'/api/health',{signal:AbortSignal.timeout(600)});return r.ok&&(await r.json()).ok;});
@@ -120,7 +119,8 @@ try {
   ]);
 
   // Closing an event does not invalidate a still-unexpired permit issued during that cycle.
-  // Exercise the Shield-bearing snapshot and both Shield pools through the real Worker action path.
+  // Exercise the persisted player Shield through the real Worker action path.
+  // Tunnel Maw has no approved starting enemy Shield, so D1 cannot invent one.
   sql("UPDATE battle_permits SET enemy_shield=1 WHERE id='shield-impossible-enemy-permit'");
   sql("UPDATE world_event_cycles SET closes_at=datetime('now','-1 minute') WHERE id='shield-closure-cycle'");
   const afterClosure=await post('/api/battle/action',{
@@ -130,11 +130,11 @@ try {
   assert.deepEqual([
     afterClosure.data.playerHp,afterClosure.data.playerMana,afterClosure.data.playerShield,
     afterClosure.data.shieldAbsorbed,afterClosure.data.retaliationDamage,
-    afterClosure.data.enemyShield ?? 0,afterClosure.data.enemyShieldAbsorbed,
+    afterClosure.data.enemyShield ?? 0,afterClosure.data.enemyShieldAbsorbed ?? 0,
     afterClosure.data.enemyHp,afterClosure.data.turnCount,afterClosure.data.status,
-  ],[114,0,0,4,10,0,5,39,2,'active']);
+  ],[114,0,0,4,10,0,0,34,2,'active']);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,turn_count,battle_status FROM battle_permits WHERE id='shield-closure-permit'"),[
-    {player_hp:114,player_mana:0,player_shield:0,last_shield_absorbed:4,last_retaliation_damage:10,enemy_hp:39,enemy_shield:0,turn_count:2,battle_status:'active'},
+    {player_hp:114,player_mana:0,player_shield:0,last_shield_absorbed:4,last_retaliation_damage:10,enemy_hp:34,enemy_shield:0,turn_count:2,battle_status:'active'},
   ],'closed-cycle combat must preserve the accepted Shield and HP transition in the original permit');
   assert.equal(sql("SELECT COUNT(*) AS count FROM world_event_cycles WHERE id='shield-closure-cycle' AND julianday(closes_at) < julianday('now')")[0]?.count,1);
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE id='shield-closure-permit' AND julianday(expires_at) > julianday('now')")[0]?.count,1);
@@ -179,8 +179,8 @@ try {
     {player_hp:110,player_mana:0,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:63,turn_count:1,battle_status:'active'},
   ]);
 
-  // A turn-zero permit must still carry the encounter's server-owned starting enemy Shield.
-  // A forged/corrupt D1 value cannot be accepted as a post-turn snapshot.
+  // A turn-zero permit must still carry the encounter's server-owned starting enemy Shield (zero here).
+  // A forged/corrupt D1 value cannot be accepted as a valid starting snapshot.
   const impossibleEnemy=await post('/api/battle/action',{
     playerId:'shield-impossible-enemy',permitId:'shield-impossible-enemy-permit',
     abilityId:'slash',expectedTurnCount:0,
@@ -255,15 +255,15 @@ try {
     reward:{xp:999999,currency:999999,items:['forged-item']},
   });
   assert.equal(enemyShieldAction.status,200);
-  assert.equal(enemyShieldAction.data.enemyShieldAbsorbed,5,'Worker damage must consume persisted enemy Shield before HP');
-  assert.equal(enemyShieldAction.data.enemyHp,68,'only damage remaining after Shield reaches enemy HP');
-  assert.equal(enemyShieldAction.data.playerHp,100,'enemy retaliation still resolves after the Shield absorbs the hit');
+  assert.equal(enemyShieldAction.data.enemyShieldAbsorbed ?? 0,0,'client-supplied enemy Shield cannot override the encounter definition');
+  assert.equal(enemyShieldAction.data.enemyHp,63,'the server resolves damage from the selected enemy definition');
+  assert.equal(enemyShieldAction.data.playerHp,100,'enemy retaliation still resolves after the Degen action');
   assert.deepEqual(sql("SELECT enemy_shield,last_enemy_shield_absorbed,enemy_hp,turn_count FROM battle_permits WHERE id='shield-enemy-permit'"),[
-    {enemy_shield:0,last_enemy_shield_absorbed:5,enemy_hp:68,turn_count:2},
+    {enemy_shield:0,last_enemy_shield_absorbed:0,enemy_hp:63,turn_count:2},
   ]);
   assert.equal('reward' in enemyShieldAction.data,false,'client reward fields remain ignored');
 
-  // A persisted last-action Shield audit cannot exceed any currently defined Degen action.
+  // A persisted enemy Shield audit cannot exceed the encounter's starting Shield or any Degen action.
   // Corrupt D1 state must fail closed instead of being overwritten by another accepted turn.
   sql("UPDATE battle_permits SET last_enemy_shield_absorbed=9007199254740991 WHERE id='shield-enemy-permit'");
   const impossibleEnemyAbsorption=await post('/api/battle/action',{
@@ -273,10 +273,10 @@ try {
   assert.equal(impossibleEnemyAbsorption.data.error,'Battle state is invalid.');
   assert.equal('battleState' in impossibleEnemyAbsorption.data,false);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-enemy-permit'"),[
-    {player_hp:100,player_mana:12,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:10,enemy_hp:68,enemy_shield:0,last_enemy_shield_absorbed:9007199254740991,turn_count:2,battle_status:'active'},
+    {player_hp:100,player_mana:12,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:10,enemy_hp:63,enemy_shield:0,last_enemy_shield_absorbed:9007199254740991,turn_count:2,battle_status:'active'},
   ]);
 
-  // A paid killing blow must consume the remaining enemy Shield, skip retaliation,
+  // A paid killing blow must use the encounter's server-selected enemy Shield (zero here), skip retaliation,
   // persist the terminal state, and settle its reward receipt exactly once.
   const enemyShieldKill=await post('/api/battle/action',{
     playerId:'shield-enemy-kill',permitId:'shield-enemy-kill-permit',abilityId:'crack',expectedTurnCount:1,
@@ -287,11 +287,11 @@ try {
   assert.deepEqual([
     enemyShieldKill.data.playerHp,enemyShieldKill.data.playerMana,enemyShieldKill.data.playerShield,
     enemyShieldKill.data.shieldAbsorbed,enemyShieldKill.data.retaliationDamage,
-    enemyShieldKill.data.enemyShieldAbsorbed,enemyShieldKill.data.enemyHp,
+    enemyShieldKill.data.enemyShieldAbsorbed ?? 0,enemyShieldKill.data.enemyHp,
     enemyShieldKill.data.turnCount,enemyShieldKill.data.status,
-  ],[110,8,0,0,0,5,0,2,'victory']);
+  ],[110,8,0,0,0,0,0,2,'victory']);
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-enemy-kill-permit'"),[
-    {player_hp:110,player_mana:8,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:0,enemy_shield:0,last_enemy_shield_absorbed:5,turn_count:2,battle_status:'victory'},
+    {player_hp:110,player_mana:8,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:0,enemy_shield:0,last_enemy_shield_absorbed:0,turn_count:2,battle_status:'victory'},
   ]);
 
   const enemyKillCompletion=await post('/api/battle/complete',{playerId:'shield-enemy-kill',permitId:'shield-enemy-kill-permit'});
@@ -352,13 +352,13 @@ try {
   assert.equal(raceConflict?.data.battleState.turnCount, 2);
   assert.equal(raceConflict?.data.battleState.shieldAbsorbed, 10);
   assert.equal(raceConflict?.data.battleState.retaliationDamage, 10);
-  assert.equal(raceConflict?.data.battleState.enemyShieldAbsorbed, 5,
-    'stale-turn recovery includes the committed enemy Shield absorption audit');
+  assert.equal(raceConflict?.data.battleState.enemyShieldAbsorbed ?? 0, 0,
+    'stale-turn recovery cannot invent an enemy Shield absorption audit');
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-race-permit'"),[
-    {player_hp:120,player_mana:0,player_shield:0,last_shield_absorbed:10,last_retaliation_damage:10,enemy_hp:39,enemy_shield:0,last_enemy_shield_absorbed:5,turn_count:2,battle_status:'active'},
+    {player_hp:120,player_mana:0,player_shield:0,last_shield_absorbed:10,last_retaliation_damage:10,enemy_hp:34,enemy_shield:0,last_enemy_shield_absorbed:0,turn_count:2,battle_status:'active'},
   ]);
 
-  // Race a paid Shield-bearing killing blow against completion while both
+  // Race a paid player-Shield-bearing killing blow against completion while both
   // requests carry hostile client-authored combat and reward fields. The Worker
   // must resolve the selected ability and every state transition from D1.
   const shieldKillForgery = {
@@ -385,13 +385,13 @@ try {
   assert.equal(kill.data.playerShield,5);
   assert.equal(kill.data.retaliationDamage,0);
   assert.equal(kill.data.shieldAbsorbed,0);
-  assert.equal(kill.data.enemyShieldAbsorbed,5,
-    'the killing blow must preserve the final enemy Shield absorption in its action result');
+  assert.equal(kill.data.enemyShieldAbsorbed ?? 0,0,
+    'the killing blow must not invent enemy Shield absorption for an unshielded encounter');
   for (const field of ['reward','xp','currency','items','victory']) {
     assert.equal(field in kill.data,false, `battle action must not return client-supplied ${field}`);
   }
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-kill-permit'"),[
-    {player_hp:5,player_mana:8,player_shield:5,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:0,enemy_shield:0,last_enemy_shield_absorbed:5,turn_count:2,battle_status:'victory'},
+    {player_hp:5,player_mana:8,player_shield:5,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:0,enemy_shield:0,last_enemy_shield_absorbed:0,turn_count:2,battle_status:'victory'},
   ]);
   assert.ok([200,409].includes(earlyKillCompletion.status),
     'completion may observe the active permit (409) or the committed Worker victory (200)');
@@ -435,15 +435,15 @@ try {
     {count:1},
   ]);
   assert.deepEqual(sql("SELECT reward_state,battle_status,player_shield,last_enemy_shield_absorbed FROM battle_permits WHERE id='shield-kill-permit'"),[
-    {reward_state:'awarded',battle_status:'victory',player_shield:5,last_enemy_shield_absorbed:5},
+    {reward_state:'awarded',battle_status:'victory',player_shield:5,last_enemy_shield_absorbed:0},
   ]);
   const replay=await post('/api/battle/action',{playerId:'shield-kill',permitId:'shield-kill-permit',abilityId:'slash',expectedTurnCount:2});
   assert.equal(replay.status,409);
   assert.equal(replay.data.error,'Battle permit is already completed.');
   assert.equal(replay.data.battleState.shieldAbsorbed,0);
   assert.equal(replay.data.battleState.retaliationDamage,0);
-  assert.equal(replay.data.battleState.enemyShieldAbsorbed,5,
-    'completed terminal recovery preserves the final enemy Shield absorption audit');
+  assert.equal(replay.data.battleState.enemyShieldAbsorbed ?? 0,0,
+    'completed terminal recovery preserves the zero enemy Shield absorption audit');
 
   const defeat=await post('/api/battle/action',{playerId:'shield-defeat',permitId:'shield-defeat-permit',abilityId:'slash',expectedTurnCount:1});
   assert.equal(defeat.status,200);

@@ -15,14 +15,16 @@ import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } fr
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
-const handleBattleAction = runInNewContext(
+const createBattleActionHandler = (enemy: typeof TUNNEL_MAW = TUNNEL_MAW) => runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
-    TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
+    TEST_DEGEN, TUNNEL_MAW: enemy, canUseAbility, resolveCombatTurn,
     UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
     crypto: webcrypto, Request, Response, URL, console, Uint32Array,
   },
 ) as (request: Request, env: { DB: unknown }) => Promise<Response>;
+const handleBattleAction = createBattleActionHandler();
+const handleBattleActionWithEnemyShield = createBattleActionHandler({ ...TUNNEL_MAW, startingShield: 7 });
 
 test('unaffordable battle conflict returns the latest persisted snapshot after a concurrent turn', async () => {
   const staleSnapshot = {
@@ -73,7 +75,7 @@ enemy_hp: 50,
     }),
   });
 
-  const response = await handleBattleAction(request, { DB: db });
+  const response = await handleBattleActionWithEnemyShield(request, { DB: db });
   const result = await response.json() as {
     error: string;
     battleState?: {

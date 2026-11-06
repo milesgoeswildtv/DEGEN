@@ -195,6 +195,9 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
     0,
     ...TEST_DEGEN.abilities.map((ability) => ability.damage + Math.floor(TEST_DEGEN.power * 0.5)),
   );
+  // This encounter has no enemy Shield gain/restore action. The remaining pool
+  // plus the last accepted absorption must stay within its server-owned start.
+  const maxEnemyStartingShield = TUNNEL_MAW.startingShield ?? 0;
   const turnCount = state.turn_count;
 
   // Pre-Mana terminal permits can legitimately retain NULL: Mana did not exist
@@ -207,8 +210,9 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
     || !isSafeIntegerBetween(playerShield, 0, Number.MAX_SAFE_INTEGER)
     || (!hasLegacyShieldAudit && !hasValidShieldAudit)
     || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
-    || !isSafeIntegerBetween(enemyShield, 0, Number.MAX_SAFE_INTEGER)
-    || !isSafeIntegerBetween(lastEnemyShieldAbsorbed, 0, maxPlayerAbilityDamage)
+    || !isSafeIntegerBetween(enemyShield, 0, maxEnemyStartingShield)
+    || !isSafeIntegerBetween(lastEnemyShieldAbsorbed, 0, Math.min(maxPlayerAbilityDamage, maxEnemyStartingShield))
+    || enemyShield + lastEnemyShieldAbsorbed > maxEnemyStartingShield
     || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   switch (state.battle_status) {
