@@ -197,7 +197,6 @@ const authoritativeCompletion = {
     defeatedBosses: [],
   },
   reward: { xp: 75, currency: 30, items: [], furniture: [], tier: 'full' },
-  levelTransition: { previousLevel: 1, currentLevel: 2 },
   worldEvent: {
     eventKey: 'underpass',
     cycleId: 'cycle-1',

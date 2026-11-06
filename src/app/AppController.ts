@@ -1,13 +1,12 @@
 import type Phaser from 'phaser';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/testDegen';
-import { getFurniture, WORLD_LOCATIONS } from '../data/world';
+import { WORLD_LOCATIONS } from '../data/world';
 import { bindCityViewport, type CityCamera } from '../ui/cityViewport';
-import type { BattleActionResult, BattlePermit, BattleReward, RouteKey, WorldEventSnapshot } from '../domain/types';
-import { createBattleGame } from '../game/createBattleGame';
+import type { BattleActionResult, BattlePermit, RouteKey, WorldEventSnapshot } from '../domain/types';
 import { BattleEngine } from '../game/combat/engine';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import { underpassRewardForClear } from '../game/progression';
-import { battleView, districtView, homeView, locationView, mapView, rewardReceiptView, underpassView, updateBattleDom } from '../ui/views';
+import { battleView, districtView, homeView, locationView, mapView, underpassView, updateBattleDom } from '../ui/views';
 import { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } from './api';
 import { PlayerStore } from './state';
 import { createPreviewPermit, getPreviewUnderpass, recordPreviewClear } from './worldPreview';
@@ -23,21 +22,12 @@ const shouldRetryBattleRecovery = (error: unknown): boolean => {
   const message = typeof payload === 'object' && payload !== null && 'error' in payload
     ? (payload as { error?: unknown }).error
     : undefined;
-  // Only explicit lease/contention conflicts retry. Keep the old combined
-  // response temporarily for a rolling deployment where an older Worker may
-  // still serve this client; the current Worker separates permanent invalid state.
-  return message === 'Battle reward is already being claimed.'
-    || message === 'Battle reward is already being claimed, or the permit expired.'
+  // These Worker 409 responses explicitly describe a race that can settle or
+  // become recoverable after a claim lease expires. Other 409s are invariant
+  // violations or invalid requests and must not create an endless retry loop.
+  return message === 'Battle reward is already being claimed, or the permit expired.'
     || message === 'Reward claim changed; retry.'
     || message === 'Concurrent reward updates; retry completion.';
-};
-
-type RewardNotice = {
-  playerId: string;
-  permitId: string;
-  reward: BattleReward;
-  previousLevel: number;
-  currentLevel: number;
 };
 
 export class AppController {
@@ -48,11 +38,11 @@ export class AppController {
   private releaseCityViewport?: () => void;
   private worldSyncFailed = false;
   private selectedFurniture?: string;
-  private housingAnnouncement = '';
   private battleGame?: Phaser.Game;
   private battleEngine?: BattleEngine;
   private battleReturnTimer?: number;
   private worldRefreshTimer?: number;
+  private worldRefreshGeneration = 0;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
   private battlePermitOwnerId?: string;
@@ -62,8 +52,6 @@ export class AppController {
   private rewardResolution: Promise<void> = Promise.resolve();
   private rewardCompletionInFlight = new Map<string, Promise<void>>();
   private rewardRetryTimers = new Map<string, number>();
-  private rewardNotices = new Map<string, RewardNotice[]>();
-  private displayedRewardPermits = new Set<string>();
 
   constructor(
     private readonly root: HTMLElement,
@@ -72,22 +60,36 @@ export class AppController {
   ) {}
 
   async start(): Promise<void> {
-    await this.refreshWorld();
+    // Render the Map before platform identity and Worker bootstrap can delay startup.
     this.render();
+  }
+
+  onPlayerInitialized(): void {
+    // Bootstrap may finish after the player has navigated away from the Map.
+    // Re-render the active route with the authoritative player snapshot first.
+    this.render();
+    void this.refreshWorld(true);
     if (this.api.enabled) {
       const playerId = this.store.snapshot.id;
-      for (const permitId of this.rewardReceiptPermits(playerId)) {
-        void this.queueRewardCompletion(permitId, playerId);
-      }
       const localPending = new Set(this.pendingRewardPermits(playerId));
       for (const permitId of localPending) void this.queueRewardCompletion(permitId, playerId);
       void this.discoverPendingBattleRewards(playerId);
     }
-    this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
+    if (this.worldRefreshTimer === undefined) {
+      this.worldRefreshTimer = window.setInterval(() => void this.refreshWorld(true), 30_000);
+    }
+  }
+
+  onPlayerInitializationFailed(): void {
+    if (!this.api.enabled) {
+      this.onPlayerInitialized();
+      return;
+    }
+    this.worldSyncFailed = true;
+    this.render();
   }
 
   private navigate(route: RouteKey): void {
-    if (route !== 'home') this.housingAnnouncement = '';
     if (this.route === 'underpass' && route !== 'underpass') {
       this.battleResumeAttempt += 1;
       this.battleResumePending = false;
@@ -95,6 +97,14 @@ export class AppController {
     if (route !== 'battle') this.destroyBattle();
     this.route = route;
     this.render();
+    this.focusRouteContent();
+    // Underpass availability is time-sensitive. Refresh when the player enters
+    // the location instead of relying only on the background 30-second poll.
+    if (route === 'underpass' && this.api.enabled) void this.refreshWorld(true);
+  }
+
+  private focusRouteContent(): void {
+    this.root.querySelector<HTMLElement>('main.screen')?.focus();
   }
 
   private render(): void {
@@ -110,7 +120,7 @@ export class AppController {
         this.root.innerHTML = locationView(player, this.selectedLocationId);
         break;
       case 'home':
-        this.root.innerHTML = homeView(player, this.selectedFurniture, this.housingAnnouncement);
+        this.root.innerHTML = homeView(player, this.selectedFurniture);
         break;
       case 'underpass': {
         const hasRecoverableEncounter = this.api.enabled && (
@@ -129,8 +139,6 @@ export class AppController {
         break;
     }
 
-    // Never overlay a new encounter with a receipt from an earlier battle.
-    if (this.route !== 'battle') this.renderRewardNotice();
     this.bindCommonNavigation();
     this.bindCityNavigation();
     if (this.route === 'map') {
@@ -138,37 +146,7 @@ export class AppController {
     }
     if (this.route === 'home') this.bindHousing();
     if (this.route === 'underpass') this.bindUnderpass();
-    if (this.route === 'battle') this.mountBattle();
-  }
-
-  private renderRewardNotice(): void {
-    const playerId = this.store.snapshot.id;
-    const notice = this.rewardNotices.get(playerId)?.[0];
-    if (!notice) return;
-
-    const topbar = this.root.querySelector?.('.topbar');
-    if (!topbar) return;
-    topbar.insertAdjacentHTML('afterend', rewardReceiptView(
-      notice.reward,
-      notice.previousLevel,
-      notice.currentLevel,
-      notice.permitId,
-    ));
-    this.root.querySelector?.('[data-dismiss-reward]')?.addEventListener('click', () => {
-      this.dismissRewardNotice(playerId, notice.permitId);
-    });
-  }
-
-  private dismissRewardNotice(playerId: string, permitId: string): void {
-    if (this.store.snapshot.id !== playerId) return;
-    const notices = this.rewardNotices.get(playerId);
-    if (!notices || notices[0]?.permitId !== permitId) return;
-
-    notices.shift();
-    this.forgetRewardReceipt(permitId, playerId);
-    if (notices.length === 0) this.rewardNotices.delete(playerId);
-    this.root.querySelector?.('[data-battle-reward-receipt]')?.remove();
-    this.renderRewardNotice();
+    if (this.route === 'battle') void this.mountBattle();
   }
 
   private bindCommonNavigation(): void {
@@ -205,65 +183,25 @@ export class AppController {
   private bindHousing(): void {
     this.root.querySelectorAll<HTMLButtonElement>('[data-furniture]').forEach((button) => {
       button.addEventListener('click', () => {
-        const furnitureId = button.dataset.furniture;
-        if (!furnitureId) return;
-        this.selectedFurniture = furnitureId;
-        const name = getFurniture(furnitureId)?.name ?? 'Furniture';
-        this.housingAnnouncement = `${name} selected. Choose a room cell.`;
+        this.selectedFurniture = button.dataset.furniture;
         this.render();
-        const buttonSelector = button.classList.contains('trophy-select') ? '.trophy-select' : '.inventory-item';
-        Array.from(this.root.querySelectorAll<HTMLButtonElement>(`${buttonSelector}[data-furniture]`))
-          .find((candidate) => candidate.dataset.furniture === furnitureId)
-          ?.focus();
       });
     });
 
     this.root.querySelector<HTMLButtonElement>('[data-clear-selection]')?.addEventListener('click', () => {
       this.selectedFurniture = undefined;
-      this.housingAnnouncement = 'Furniture selection cleared.';
       this.render();
-      this.root.querySelector<HTMLButtonElement>('[data-clear-selection]')?.focus();
     });
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-room-x][data-room-y]').forEach((cell) => {
       cell.addEventListener('click', () => {
         const x = Number(cell.dataset.roomX);
         const y = Number(cell.dataset.roomY);
-        if (!Number.isInteger(x) || x < 0 || x > 7 || !Number.isInteger(y) || y < 0 || y > 5) return;
+        if (!Number.isInteger(x) || !Number.isInteger(y)) return;
 
-        const player = this.store.snapshot;
-        const placement = player.housing.placements.find((item) => item.x === x && item.y === y);
-        if (this.selectedFurniture) {
-          const furnitureId = this.selectedFurniture;
-          if (!player.housing.inventory.includes(furnitureId)) {
-            this.selectedFurniture = undefined;
-            this.housingAnnouncement = 'Selected furniture is no longer available.';
-            this.render();
-            this.root.querySelector<HTMLButtonElement>('[data-clear-selection]')?.focus();
-            return;
-          }
-          const name = getFurniture(furnitureId)?.name ?? 'Furniture';
-          const alreadyPlaced = player.housing.placements.some((item) => item.furnitureId === furnitureId);
-          this.store.placeFurniture(furnitureId, x, y);
-          const placed = this.store.snapshot.housing.placements.some(
-            (item) => item.furnitureId === furnitureId && item.x === x && item.y === y,
-          );
-          this.housingAnnouncement = placed
-            ? `${name} ${alreadyPlaced ? 'moved' : 'placed'} in room cell ${x + 1}, ${y + 1}.`
-            : 'Your room is still syncing. Try placing furniture again in a moment.';
-        } else if (placement) {
-          const name = getFurniture(placement.furnitureId)?.name ?? 'Furniture';
-          this.store.removeFurnitureAt(x, y);
-          const removed = !this.store.snapshot.housing.placements.some((item) => item.x === x && item.y === y);
-          this.housingAnnouncement = removed
-            ? `${name} removed from room cell ${x + 1}, ${y + 1}.`
-            : 'Your room is still syncing. Try removing furniture again in a moment.';
-        } else {
-          this.housingAnnouncement = `Room cell ${x + 1}, ${y + 1} is empty. Select furniture to place it.`;
-        }
-
+        if (this.selectedFurniture) this.store.placeFurniture(this.selectedFurniture, x, y);
+        else this.store.removeFurnitureAt(x, y);
         this.render();
-        this.root.querySelector<HTMLButtonElement>(`[data-room-x="${x}"][data-room-y="${y}"]`)?.focus();
       });
     });
   }
@@ -381,17 +319,17 @@ export class AppController {
     }
   }
 
-  private mountBattle(): void {
+  private async mountBattle(): Promise<void> {
+    if (this.battleEngine) return;
     const parent = this.root.querySelector<HTMLElement>('#phaser-battle');
     const permit = this.battlePermit;
     if (!parent || !permit) return;
 
-    this.battleEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+    const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
       void this.finishBattle(status);
     }, this.api.enabled ? permit.initialState : undefined);
-
-    this.battleEngine.subscribe(updateBattleDom);
-    this.battleGame = createBattleGame(parent, this.battleEngine);
+    this.battleEngine = engine;
+    engine.subscribe(updateBattleDom);
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -399,6 +337,25 @@ export class AppController {
         if (ability) void this.useBattleAbility(ability);
       });
     });
+
+    this.setBattleActionStatus('Loading battle scene…');
+    try {
+      // Phaser is only needed once a player enters a Degen encounter. Keep it out
+      // of the initial map/home route bundle for faster mobile and Activity startup.
+      const { createBattleGame } = await import('../game/createBattleGame');
+      if (this.route !== 'battle' || this.battleEngine !== engine || !parent.isConnected) return;
+      this.battleGame = createBattleGame(parent, engine);
+      this.setBattleActionStatus();
+    } catch (error) {
+      if (this.battleEngine === engine) {
+        this.battleEngine = undefined;
+        this.root.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
+          button.disabled = true;
+        });
+        this.setBattleActionStatus('Battle visuals could not load. Return to the Underpass and try again.');
+      }
+      console.error('Could not load the battle renderer.', error);
+    }
   }
 
   private async useBattleAbility(abilityId: string): Promise<void> {
@@ -630,42 +587,6 @@ export class AppController {
     }
   }
 
-  private rewardReceiptKey(playerId: string): string {
-    return `degen.reward.receipts.v1:${playerId}`;
-  }
-
-  private rewardReceiptPermits(playerId: string): string[] {
-    try {
-      const parsed: unknown = JSON.parse(localStorage.getItem(this.rewardReceiptKey(playerId)) ?? '[]');
-      if (!Array.isArray(parsed)) return [];
-      return [...new Set(parsed.filter((id): id is string =>
-        typeof id === 'string' && id.trim().length > 0 && id === id.trim() && id.length <= 256))];
-    } catch {
-      return [];
-    }
-  }
-
-  private rememberRewardReceipt(permitId: string, playerId: string): void {
-    try {
-      const ids = this.rewardReceiptPermits(playerId);
-      if (!ids.includes(permitId)) {
-        localStorage.setItem(this.rewardReceiptKey(playerId), JSON.stringify([...ids, permitId]));
-      }
-    } catch (error) {
-      console.warn('Unable to persist battle receipt display hint.', error);
-    }
-  }
-
-  private forgetRewardReceipt(permitId: string, playerId: string): void {
-    try {
-      localStorage.setItem(this.rewardReceiptKey(playerId), JSON.stringify(
-        this.rewardReceiptPermits(playerId).filter((id) => id !== permitId),
-      ));
-    } catch (error) {
-      console.warn('Unable to acknowledge battle receipt display hint.', error);
-    }
-  }
-
   private rememberPendingReward(permitId: string, playerId: string): void {
     try {
       const ids = this.pendingRewardPermits(playerId);
@@ -721,25 +642,7 @@ export class AppController {
         const result = await this.api.completeUnderpass(playerId, permitId);
         if (!result) throw new Error('Missing authoritative battle completion response.');
         this.clearRewardCompletionRetry(key);
-        // Persist only the permit ID; every reload replays the validated receipt with the Worker.
-        this.rememberRewardReceipt(permitId, playerId);
-        const currentPlayer = this.store.snapshot;
-        const isCurrentPlayer = currentPlayer.id === playerId;
-        const displayKey = this.rewardCompletionKey(playerId, permitId);
-        if (!this.displayedRewardPermits.has(displayKey)) {
-          const notices = this.rewardNotices.get(playerId) ?? [];
-          notices.push({
-            playerId,
-            permitId,
-            reward: result.reward,
-            // If another account is active, its level is not valid history for this receipt.
-            // Use the authoritative result level rather than inventing a transition.
-            previousLevel: result.levelTransition.previousLevel,
-            currentLevel: result.levelTransition.currentLevel,
-          });
-          this.rewardNotices.set(playerId, notices);
-          this.displayedRewardPermits.add(displayKey);
-        }
+        const isCurrentPlayer = this.store.snapshot.id === playerId;
         if (isCurrentPlayer) {
           this.store.replaceFromServer(result.player);
           this.underpassEvent = result.worldEvent;
@@ -785,19 +688,7 @@ export class AppController {
         clearsBeforeThisFight + 1,
         this.underpassEvent?.fullRewardLimit,
       );
-      const playerBeforeReward = this.store.snapshot;
       this.store.applyReward(previewReward);
-      const playerAfterReward = this.store.snapshot;
-      const notices = this.rewardNotices.get(playerAfterReward.id) ?? [];
-      notices.push({
-        playerId: playerAfterReward.id,
-        permitId,
-        reward: previewReward,
-        previousLevel: playerBeforeReward.level,
-        currentLevel: playerAfterReward.level,
-      });
-      this.rewardNotices.set(playerAfterReward.id, notices);
-      this.displayedRewardPermits.add(this.rewardCompletionKey(playerAfterReward.id, permitId));
       this.store.markBossDefeated(TUNNEL_MAW.id);
       this.underpassEvent = getPreviewUnderpass();
     }
@@ -816,9 +707,24 @@ export class AppController {
   }
 
   private async refreshWorld(rerender = false): Promise<void> {
+    const playerId = this.store.snapshot.id;
+    const generation = ++this.worldRefreshGeneration;
+    const isCurrentRequest = (): boolean =>
+      generation === this.worldRefreshGeneration && this.store.snapshot.id === playerId;
+    const refreshAfterAccountChange = async (): Promise<void> => {
+      // Ignore superseded reads for the same account. If the active identity
+      // changed without starting another refresh, immediately fetch its world.
+      if (generation !== this.worldRefreshGeneration || this.store.snapshot.id === playerId) return;
+      await this.refreshWorld(true);
+    };
+
     try {
       if (this.api.enabled) {
-        const snapshot = await this.api.getUnderpass(this.store.snapshot.id);
+        const snapshot = await this.api.getUnderpass(playerId);
+        if (!isCurrentRequest()) {
+          await refreshAfterAccountChange();
+          return;
+        }
         if (!snapshot) throw new Error('Missing authoritative world-event snapshot.');
         this.underpassEvent = snapshot;
       } else {
@@ -826,12 +732,20 @@ export class AppController {
       }
       this.worldSyncFailed = false;
     } catch (error) {
+      if (!isCurrentRequest()) {
+        await refreshAfterAccountChange();
+        return;
+      }
       console.warn('World-event sync failed; server-backed combat is unavailable.', error);
       this.worldSyncFailed = this.api.enabled;
       // Never fabricate a preview cycle for a server-backed player.
       this.underpassEvent = this.api.enabled ? undefined : getPreviewUnderpass();
     }
 
+    if (!isCurrentRequest()) {
+      await refreshAfterAccountChange();
+      return;
+    }
     if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 

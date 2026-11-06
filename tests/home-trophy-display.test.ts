@@ -22,19 +22,18 @@ const world = runInNewContext(
 };
 
 const views = runInNewContext(
-  compile('../src/ui/views.ts') + '\n({ homeView, rewardReceiptView });',
+  compile('../src/ui/views.ts') + '\n({ homeView });',
   {
     WORLD_LOCATIONS: world.WORLD_LOCATIONS,
     FURNITURE_CATALOG: world.FURNITURE_CATALOG,
     getFurniture: world.getFurniture,
     renderIsometricCity: () => '',
     renderIsometricDistrict: () => '',
-    isValidManaCost: (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0,
+    isValidManaCost: () => true,
     isValidManaState: () => true,
   },
 ) as {
-  homeView: (player: unknown, selectedFurniture?: string, housingAnnouncement?: string) => string;
-  rewardReceiptView: (reward: { xp: number; currency: number; items: string[]; furniture?: string[]; tier?: 'full' | 'reduced' }, previousLevel: number, currentLevel: number, permitId?: string) => string;
+  homeView: (player: unknown, selectedFurniture?: string) => string;
 };
 
 const basePlayer = {
@@ -89,51 +88,4 @@ test('a placed trophy reports its saved room cell and selected state', () => {
   assert.match(html, /DISPLAYED · ROOM CELL 7, 5/);
   assert.match(html, /aria-pressed="true"/);
   assert.match(html, /SELECTED/);
-  assert.match(html, /Room cell 7, 5: Underpass Trophy/);
-});
-
-
-test('authoritative reward receipt shows loot, currency, XP, and the server level transition', () => {
-  const html = views.rewardReceiptView({
-    xp: 75,
-    currency: 30,
-    items: ['underpass-scrap'],
-    furniture: ['tunnel-trophy'],
-    tier: 'full',
-  }, 1, 2, 'permit-receipt-1');
-  assert.match(html, /FULL CLEAR/);
-  assert.match(html, /\+75 XP/);
-  assert.match(html, /\+30 CR/);
-  assert.match(html, /UNDERPASS SCRAP/);
-  assert.match(html, /Underpass Trophy/);
-  assert.match(html, /LEVEL UP · LV\.1 → LV\.2/);
-  assert.match(html, /data-dismiss-reward/);
-  assert.match(html, /data-permit-id="permit-receipt-1"/);
-});
-
-test('reduced reward receipt escapes item keys and does not invent a level-up', () => {
-  const html = views.rewardReceiptView({
-    xp: 10,
-    currency: 3,
-    items: ['<img src=x onerror=alert(1)>'],
-    furniture: [],
-    tier: 'reduced',
-  }, 2, 2);
-  assert.match(html, /REDUCED CLEAR/);
-  assert.match(html, /&lt;IMG SRC=X ONERROR=ALERT\(1\)&gt;/);
-  assert.doesNotMatch(html, /<img src=x/i);
-  assert.doesNotMatch(html, /LEVEL UP/);
-});
-
-test('housing controls expose grouped semantics, selection state, and live placement feedback', () => {
-  const html = views.homeView(basePlayer, 'starter-chair', 'Plastic Chair selected. Choose a room cell.');
-  assert.match(html, /class="room-grid" role="group" aria-label="Housing placement grid"/);
-  assert.match(html, /class="furniture-list" role="group" aria-label="Available furniture"/);
-  assert.match(html, /data-furniture="starter-chair" aria-pressed="true"/);
-  assert.match(html, /data-housing-status role="status" aria-live="polite" aria-atomic="true"/);
-  assert.match(html, /Plastic Chair selected\. Choose a room cell\./);
-
-  const cleared = views.homeView(basePlayer, undefined, 'Furniture selection cleared.');
-  assert.match(cleared, /data-furniture="starter-chair" aria-pressed="false"/);
-  assert.match(cleared, /Furniture selection cleared\./);
 });

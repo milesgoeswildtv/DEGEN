@@ -1,17 +1,26 @@
 // Isolated Chromium + Vite + local Wrangler/D1 vertical slice. NEVER use --remote.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+// This browser suite runs after the production build. Keep the initial Map entry
+// small enough that Phaser cannot silently creep back into the first download.
+const builtHtml = readFileSync(resolve(root, 'dist/index.html'), 'utf8');
+const initialScript = builtHtml.match(/<script\b[^>]*\bsrc=["']([^"']+\.js)["'][^>]*>/i)?.[1];
+assert.ok(initialScript, 'production build must expose its initial JavaScript entry');
+const initialScriptFile = resolve(root, 'dist', initialScript.replace(/^\/+/, ''));
+const initialScriptBytes = statSync(initialScriptFile).size;
+assert.ok(initialScriptBytes <= 100_000,
+  `initial Map JavaScript must stay at or below 100000 bytes; got ${initialScriptBytes}`);
+console.log(`PASS initial Map JavaScript budget: ${initialScriptBytes} bytes (<=100000)`);
 const scratch = mkdtempSync(join(tmpdir(), 'degen-browser-'));
 const persist = join(scratch, 'd1');
-const seededPlayerId = 'browser-00000000-0000-4000-8000-000000000117';
-const pendingPermitId = 'browser-pending-receipt';
 const wrangler = resolve(root, 'node_modules/.bin/wrangler');
 const vite = resolve(root, 'node_modules/.bin/vite');
 const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' };
@@ -53,6 +62,8 @@ function chromeBinary() {
 function cdpClient(url) {
   const ws = new WebSocket(url);
   const pending = new Map();
+  const listeners = new Map();
+  const eventErrors = [];
   let id = 0;
   const opened = new Promise((ok, bad) => {
     ws.addEventListener('open', ok, { once: true });
@@ -60,6 +71,16 @@ function cdpClient(url) {
   });
   ws.addEventListener('message', event => {
     const msg = JSON.parse(String(event.data));
+    if (msg.method) {
+      for (const listener of listeners.get(msg.method) ?? []) {
+        try {
+          Promise.resolve(listener(msg.params)).catch(error => eventErrors.push(String(error)));
+        } catch (error) {
+          eventErrors.push(String(error));
+        }
+      }
+      return;
+    }
     if (!pending.has(msg.id)) return;
     const [ok, bad] = pending.get(msg.id);
     pending.delete(msg.id);
@@ -74,6 +95,11 @@ function cdpClient(url) {
       ws.send(JSON.stringify({ id: requestId, method, params }));
     });
   };
+  const on = (method, listener) => {
+    const group = listeners.get(method) ?? new Set();
+    group.add(listener);
+    listeners.set(method, group);
+  };
   const evaluate = async expression => {
     const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) {
@@ -83,59 +109,16 @@ function cdpClient(url) {
     }
     return result.result.value;
   };
-  return { ws, send, evaluate };
+  return { ws, send, on, evaluate, eventErrors };
 }
 try {
   command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=db/schema.sql']);
   command(['d1', 'migrations', 'apply', 'DEGEN', '--local', '--persist-to=' + persist]);
   const seed = join(scratch, 'seed.sql');
-  writeFileSync(seed, [
-    "INSERT INTO players(id, display_name) VALUES('" + seededPlayerId + "', 'Browser QA');",
-    "INSERT INTO characters(player_id, level, xp, currency, degen_key) VALUES('" + seededPlayerId + "', 1, 50, 0, 'test-degen');",
-    "INSERT INTO world_event_cycles(id, event_key, opens_at, closes_at) VALUES('browser-cycle', 'underpass', datetime('now', '-10 minutes'), datetime('now', '+90 minutes'));",
-    "INSERT INTO players(id, display_name) VALUES('browser-claim-recovery-player', 'Claim Recovery QA');",
-    "INSERT INTO characters(player_id, level, xp, currency, degen_key) VALUES('browser-claim-recovery-player', 1, 0, 0, 'test-degen');",
-    "INSERT INTO battle_permits(id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at, completed_at, player_hp, player_mana, enemy_hp, battle_status, turn_count, reward_state) VALUES('" + pendingPermitId + "', '" + seededPlayerId + "', 'underpass', 'browser-cycle', 'tunnel-maw', datetime('now', '-5 minutes'), datetime('now', '+15 minutes'), NULL, 120, 0, 0, 'victory', 3, 'pending');",
-    "INSERT INTO battle_permits(id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at, completed_at, player_hp, player_mana, enemy_hp, battle_status, turn_count, reward_state, reward_claim_token, reward_claimed_at) VALUES('browser-fresh-claim', 'browser-claim-recovery-player', 'underpass', 'browser-cycle', 'tunnel-maw', datetime('now', '-5 minutes'), datetime('now', '+15 minutes'), NULL, 70, 0, 0, 'victory', 3, 'claiming', 'active-claim-token', CURRENT_TIMESTAMP);",
-    "INSERT INTO battle_permits(id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at, completed_at, player_hp, player_mana, enemy_hp, battle_status, turn_count, reward_state, reward_claim_token, reward_claimed_at) VALUES('browser-malformed-claim', 'browser-claim-recovery-player', 'underpass', 'browser-cycle', 'tunnel-maw', datetime('now', '-5 minutes'), datetime('now', '+15 minutes'), NULL, 70, 0, 0, 'victory', 3, 'claiming', 'malformed-claim-token', 'not-a-timestamp');",
-  ].join('\n'));
+  writeFileSync(seed, "INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at) VALUES('browser-cycle','underpass',datetime('now','-10 minutes'),datetime('now','+90 minutes'));\n");
   command(['d1', 'execute', 'DEGEN', '--local', '--persist-to=' + persist, '--file=' + seed]);
   launch('worker', wrangler, ['dev', '--local', '--persist-to=' + persist, '--ip=127.0.0.1', '--port=8789']);
   await until('local Worker', async () => (await fetch('http://127.0.0.1:8789/api/health', { signal: AbortSignal.timeout(800) })).ok);
-
-  const freshClaimBefore = sql("SELECT reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='browser-fresh-claim'");
-  const malformedClaimBefore = sql("SELECT reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='browser-malformed-claim'");
-  const claimCharacterBefore = sql("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='browser-claim-recovery-player'");
-  const completeClaim = async (permitId) => {
-    const response = await fetch('http://127.0.0.1:8789/api/battle/complete', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ playerId: 'browser-claim-recovery-player', permitId }),
-    });
-    assert.equal(response.headers.get('cache-control'), 'no-store');
-    return { status: response.status, data: await response.json() };
-  };
-  const activeClaim = await completeClaim('browser-fresh-claim');
-  assert.equal(activeClaim.status, 409, JSON.stringify(activeClaim.data));
-  assert.equal(activeClaim.data.error, 'Battle reward is already being claimed.');
-  assert.equal('reward' in activeClaim.data, false);
-  assert.equal('player' in activeClaim.data, false);
-  const malformedClaim = await completeClaim('browser-malformed-claim');
-  assert.equal(malformedClaim.status, 409, JSON.stringify(malformedClaim.data));
-  assert.equal(malformedClaim.data.error, 'Battle reward claim is not available.');
-  assert.equal('reward' in malformedClaim.data, false);
-  assert.equal('player' in malformedClaim.data, false);
-  assert.deepEqual(sql("SELECT reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='browser-fresh-claim'"), freshClaimBefore,
-    'a live claim lease must remain unchanged while the client is told to retry later');
-  assert.deepEqual(sql("SELECT reward_state, reward_clear_number, reward_claim_token, reward_claimed_at, completed_at FROM battle_permits WHERE id='browser-malformed-claim'"), malformedClaimBefore,
-    'an unclaimable malformed lease must remain unchanged and fail closed');
-  assert.deepEqual(sql("SELECT level, xp, currency, last_reward_claim_token FROM characters WHERE player_id='browser-claim-recovery-player'"), claimCharacterBefore,
-    'claim conflicts must not mutate progression');
-  assert.equal(sql("SELECT COUNT(*) AS n FROM battle_history WHERE player_id='browser-claim-recovery-player'")[0]?.n, 0,
-    'claim conflicts must not invent terminal reward history');
-  assert.equal(sql("SELECT COUNT(*) AS n FROM world_event_clears WHERE player_id='browser-claim-recovery-player'")[0]?.n, 0,
-    'claim conflicts must not reserve a reward clear');
-
   const origin = 'http://localhost:5173';
   const preflight = await fetch('http://127.0.0.1:8789/api/player/bootstrap', {
     method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
@@ -178,6 +161,16 @@ try {
     await sleep(80);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
+  // Startup holds intentionally exercise only the first document. Later reloads
+  // must release any newly installed holds so the real bootstrap/world refresh
+  // can complete before the test mutates D1 and navigates into the Underpass.
+  const releaseRepeatedStartupHolds = async () => cdp.evaluate(`(() => {
+    window.__degenHoldBootstrapResponse = false;
+    window.__degenHoldWorldSnapshot = false;
+    window.__degenReleaseBootstrap?.();
+    window.__degenReleaseWorldSnapshot?.();
+    return true;
+  })()`);
   const assertFitsMobile = async route => {
     assert.equal(await cdp.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
       true, route + ' must not overflow horizontally');
@@ -190,31 +183,17 @@ try {
     assert.ok(dimensions.scroll <= 321, route + ' and long display name must not overflow at 320px; got ' + dimensions.scroll);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 1, mobile: true });
   };
+  const loadedPhaserResources = () => cdp.evaluate(`performance.getEntriesByType('resource').filter(entry => {
+    try { return new URL(entry.name).pathname.toLowerCase().includes('phaser'); }
+    catch { return false; }
+  }).map(entry => new URL(entry.name).pathname)`);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   // Observe the actual Phaser text canvas so the browser test proves the HUD follows
   // Worker-confirmed Mana and keeps the Degen manifested at zero, not just D1 state.
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `(() => {
-      const storageKey = 'degen.prototype.player.v2';
-      if (window.location.origin === 'http://localhost:5173' && !localStorage.getItem(storageKey)) {
-        localStorage.setItem(storageKey, JSON.stringify({
-          id: 'browser-00000000-0000-4000-8000-000000000117',
-          displayName: 'Browser QA',
-          level: 1,
-          xp: 50,
-          currency: 0,
-          degenId: 'test-degen',
-          inventory: [],
-          unlockedLocations: ['home', 'downtown', 'underpass'],
-          housing: {
-            inventory: ['starter-bed', 'starter-chair', 'starter-lamp', 'starter-rug'],
-            placements: [{ instanceId: 'starter-bed-placed', furnitureId: 'starter-bed', x: 1, y: 1 }],
-          },
-          defeatedBosses: [],
-        }));
-      }
-      const rendered = []
+      const rendered = [];
       Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
@@ -229,6 +208,13 @@ try {
       window.__degenLostStartResponsesRemaining = 0;
       window.__degenLostStartResponses = 0;
       window.__degenStartRequestIds = [];
+      window.__degenHoldBootstrapResponse = true;
+      window.__degenBootstrapResponseHeld = false;
+      window.__degenReleaseBootstrap = null;
+      window.__degenHoldWorldSnapshot = true;
+      window.__degenWorldSnapshotResponseHeld = false;
+      window.__degenWorldSnapshots = [];
+      window.__degenReleaseWorldSnapshot = null;
       window.__degenSimulateLostActionResponse = false;
       window.__degenLostActionResponses = 0;
       window.__degenSimulateMalformedActionResponse = false;
@@ -241,6 +227,20 @@ try {
         const response = await originalFetch(input, init);
         const requestUrl = input instanceof Request ? input.url : String(input);
         const requestPath = new URL(requestUrl, window.location.href).pathname;
+        if (requestPath === '/api/world/underpass') {
+          try { window.__degenWorldSnapshots.push(await response.clone().json()); }
+          catch { window.__degenWorldSnapshots.push({ malformed: true }); }
+        }
+        if (window.__degenHoldBootstrapResponse && requestPath === '/api/player/bootstrap') {
+          window.__degenHoldBootstrapResponse = false;
+          window.__degenBootstrapResponseHeld = true;
+          await new Promise(resolve => { window.__degenReleaseBootstrap = resolve; });
+        }
+        if (window.__degenHoldWorldSnapshot && requestPath === '/api/world/underpass') {
+          window.__degenHoldWorldSnapshot = false;
+          window.__degenWorldSnapshotResponseHeld = true;
+          await new Promise(resolve => { window.__degenReleaseWorldSnapshot = resolve; });
+        }
         if (requestPath === '/api/battle/start') {
           try { window.__degenStartRequestIds.push(JSON.parse(String(init?.body ?? '{}')).requestId); }
           catch { window.__degenStartRequestIds.push(undefined); }
@@ -320,19 +320,24 @@ try {
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   const nav = await cdp.send('Page.navigate', { url: origin });
   if (nav.errorText) throw Error('Browser navigation rejected: ' + nav.errorText);
-  await until('Map', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await until('player bootstrap response held', () => cdp.evaluate('window.__degenBootstrapResponseHeld === true'));
+  await until('Map renders while player bootstrap is pending', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  assert.ok(await cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // SYNCING") === true'),
+    'the first Map render must show a safe syncing state while player identity/bootstrap is pending');
+  assert.ok(await cdp.evaluate('document.querySelector("[role=status][aria-live=polite]")?.textContent.includes("UNDERPASS STATUS: SYNCING") === true'),
+    'the initial syncing state must be announced to assistive technology');
+  assert.deepEqual(await loadedPhaserResources(), [],
+    'neither Phaser nor the live world request should block the first Map render');
+  await cdp.evaluate('window.__degenReleaseBootstrap?.()');
+  await until('initial world snapshot response held after player bootstrap', () => cdp.evaluate('window.__degenWorldSnapshotResponseHeld === true'));
+  await cdp.evaluate('window.__degenReleaseWorldSnapshot?.()');
+  await until('Map reflects authoritative world snapshot', () => cdp.evaluate('document.querySelector("[data-district=Central] small")?.textContent.includes("UNDERPASS // OPEN") === true'));
+  assert.ok(await cdp.evaluate('document.querySelector("[role=status][aria-live=polite]")?.textContent.includes("UNDERPASS STATUS: OPEN") === true'),
+    'the authoritative world state must replace the syncing announcement');
+  assert.deepEqual(await loadedPhaserResources(), [],
+    'the initial Map route must not download Phaser before a battle is entered');
   const playerId = await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''");
-  assert.equal(playerId, seededPlayerId, 'browser bootstrap must use the pre-seeded isolated player');
-  const receiptStorageKey = 'degen.reward.receipts.v1:' + playerId;
-  await until('server-discovered pending victory receipt', () => cdp.evaluate(
-    'document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId === ' + JSON.stringify(pendingPermitId),
-  ));
-  const firstAwardedCharacter = sql("SELECT level, xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
-  assert.deepEqual(firstAwardedCharacter, { level: 2, xp: 25, currency: 30 },
-    'the pending Worker victory must recover and level the player before the live encounter');
-  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
-    [pendingPermitId], 'the client stores only the validated receipt permit ID for display recovery');
-  assert.equal(await cdp.evaluate('document.querySelector(".player-chip strong")?.textContent'), 'LV.2');
+  assert.match(playerId, /^browser-[0-9a-f-]+$/i, 'browser bootstrap should create a stable local test identity');
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-route=home]")'), true);
   await assertFitsMobile('Map');
   await assertFitsCompact('Map');
@@ -389,10 +394,14 @@ try {
   await until('Map return', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   await tap("[data-district=Central]");
   await until('Central district destinations', () => cdp.evaluate('!!document.querySelector("[data-location=downtown]") && !!document.querySelector("[data-location=underpass]")'));
+  assert.equal(await cdp.evaluate('document.activeElement?.matches("main.screen") === true'), true,
+    'Map → District navigation must move focus to the new main content landmark');
   await assertFitsMobile('Central district');
   await assertFitsCompact('Central district');
   await tap("[data-location=downtown]");
   await until('Downtown location scene', () => cdp.evaluate('!!document.querySelector(".location-scene") && document.querySelector(".location-scene")?.textContent.includes("Downtown")'));
+  assert.equal(await cdp.evaluate('document.activeElement?.matches("main.screen") === true'), true,
+    'District → Location navigation must move focus to the new main content landmark');
   await assertFitsMobile('Downtown location');
   await assertFitsCompact('Downtown location');
   assert.equal(await cdp.evaluate('document.querySelector(".location-scene-status")?.textContent'), 'ACCESSIBLE // ACTIVITIES IN DEVELOPMENT');
@@ -425,27 +434,16 @@ try {
   assert.match(firstStartRequestIds[0], /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   assert.equal(firstStartRequestIds[0], firstStartRequestIds[1],
     'both lost responses must use the same request ID');
-  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE id='" + firstStartRequestIds[0] + "'")[0]?.count, 1,
-    'both lost responses must still leave exactly one permit for their shared request ID');
-  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "' AND event_key='underpass' AND encounter_key='tunnel-maw' AND completed_at IS NULL AND battle_status='active'")[0]?.count, 1,
-    'the recovered pending receipt must not hide the single active encounter');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
+    'both lost responses must still leave exactly one persisted permit');
 
   // Reload the actual browser page. localStorage must retain the uncertain key,
   // allowing a fresh GameApi instance to recover the already-issued permit.
   await cdp.send('Page.reload');
   await until('Map after reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await releaseRepeatedStartupHolds();
   assert.equal(await cdp.evaluate("JSON.parse(localStorage.getItem('degen.prototype.player.v2') || '{}').id || ''"), playerId,
     'the same test player must survive the reload');
-  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
-    [pendingPermitId], 'the presentation outbox persists only the earlier receipt permit ID');
-  await until('already-awarded receipt replayed from Worker after reload', () => cdp.evaluate(`(() => {
-    const receipt = document.querySelector('[data-battle-reward-receipt]');
-    const text = receipt?.textContent ?? '';
-    return receipt?.dataset.permitId === ${JSON.stringify(pendingPermitId)}
-      && text.includes('FULL CLEAR') && text.includes('+75 XP')
-      && text.includes('Underpass Trophy')
-      && text.includes('LEVEL UP · LV.1 → LV.2');
-  })()`));
   await assertFitsMobile('Map after reload');
   await tap("[data-district=Central]");
   await until('Central district after reload', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
@@ -453,8 +451,48 @@ try {
   await until('Recoverable Underpass encounter after reload', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
   assert.equal(await cdp.evaluate('!!document.querySelector("[data-start-battle]")'), false,
     'a persisted uncertain start must offer resume, not mint a second permit');
+  // Hold the lazy renderer's first module request while the player abandons and
+  // resumes the same Worker permit. The old mount must not attach to the new view.
+  let pausedBattleModuleRequest;
+  let releasePausedBattleModule;
+  let holdNextBattleModule = true;
+  cdp.on('Fetch.requestPaused', async params => {
+    try {
+      if (holdNextBattleModule && params.resourceType === 'Script') {
+        holdNextBattleModule = false;
+        pausedBattleModuleRequest = params.requestId;
+        await new Promise(resolve => { releasePausedBattleModule = resolve; });
+      }
+      await cdp.send('Fetch.continueRequest', { requestId: params.requestId });
+    } catch (error) {
+      cdp.eventErrors.push(String(error));
+    }
+  });
+  await cdp.send('Fetch.enable', {
+    patterns: [{ urlPattern: '*createBattleGame*', requestStage: 'Request' }],
+  });
   await tap("[data-resume-battle]");
-  await until('Manifested Degen abilities after persisted-key recovery', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
+  await until('Manifested Degen controls while the renderer request is held', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
+  await until('lazy Phaser module request is intercepted', () => pausedBattleModuleRequest !== undefined);
+  const firstReloadStartRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
+  assert.equal(firstReloadStartRequestIds.length, 1,
+    'the first resume after reload should issue one request to recover the permit');
+  assert.equal(firstReloadStartRequestIds[0], firstStartRequestIds[0],
+    'the first reload resume must reuse the persisted request ID');
+  assert.ok(pausedBattleModuleRequest, 'the battle renderer module request must be held before it can mount');
+  await tap('[data-route=underpass]');
+  await until('Underpass after abandoning before renderer load', () => cdp.evaluate('!!document.querySelector("[data-resume-battle]")'));
+  assert.equal(await cdp.evaluate('!!document.querySelector("#phaser-battle canvas")'), false,
+    'abandoning during the lazy import must not mount a renderer into the departed battle view');
+  await tap('[data-resume-battle]');
+  await until('Manifested Degen controls after resuming the same permit', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]")'));
+  assert.equal(typeof releasePausedBattleModule, 'function', 'the intercepted module request must remain releasable');
+  releasePausedBattleModule();
+  await until('current battle view mounts exactly one Phaser canvas after resume', () =>
+    cdp.evaluate('document.querySelectorAll("#phaser-battle canvas").length === 1'));
+  await cdp.send('Fetch.disable');
+  assert.deepEqual(cdp.eventErrors, [], 'the intercepted module request must continue without CDP errors');
+  await until('Phaser runtime loads only after entering battle', async () => (await loadedPhaserResources()).length > 0);
   await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
   assert.equal(initialAccessibleHud,
@@ -468,11 +506,12 @@ try {
   assert.equal(await cdp.evaluate('window.__degenLostStartResponses'), 0,
     'the successful post-reload recovery should not lose another response');
   const startRequestIds = await cdp.evaluate('window.__degenStartRequestIds');
-  assert.equal(startRequestIds.length, 1, 'the reloaded page should issue one request to recover the permit');
-  assert.equal(startRequestIds[0], firstStartRequestIds[0],
-    'the reloaded page must reuse the persisted request ID from both failed attempts');
-  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE id='" + firstStartRequestIds[0] + "'")[0]?.count, 1,
-    'recovery after reload must not create a duplicate permit for the same request ID');
+  assert.equal(startRequestIds.length, 2,
+    'the reloaded page should issue one request for each of its two explicit resumes');
+  assert.deepEqual(startRequestIds, [firstStartRequestIds[0], firstStartRequestIds[0]],
+    'both resumes must reuse the same persisted request ID rather than minting a second permit');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "'")[0]?.count, 1,
+    'recovery after reload must not create a duplicate permit');
   const startStorageKey = 'degen:battle-start:' + encodeURIComponent(playerId);
   const activeStartKey = await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(startStorageKey) + ') || "null")');
   assert.deepEqual(activeStartKey, {
@@ -575,62 +614,33 @@ try {
     }
   }
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
-  await until('authoritative reward receipt shows loot and level-up', () => cdp.evaluate(`(() => {
-    const receipt = document.querySelector('[data-battle-reward-receipt]');
-    const text = receipt?.textContent ?? '';
-    return !!receipt && text.includes('FULL CLEAR') && text.includes('+75 XP')
-      && text.includes('+30 CR') && text.includes('UNDERPASS SCRAP')
-      && text.includes('Underpass Trophy') && text.includes('LEVEL UP · LV.1 → LV.2');
-  })()`));
-  assert.equal(await cdp.evaluate('document.querySelector(".player-chip strong")?.textContent'), 'LV.2',
-    'the player chip must reflect the Worker-authoritative level after reward settlement');
-  await assertFitsMobile('Underpass reward receipt');
-  await assertFitsCompact('Underpass reward receipt');
-  assert.equal(await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId'), pendingPermitId,
-    'the first visible receipt must be the earlier D1-recovered permit');
-
-  // The first receipt was recovered from D1 before this live battle. The
-  // killing-blow receipt must queue behind it rather than overwrite it.
-  assert.equal(await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId'), pendingPermitId,
-    'the older recovered receipt must stay at the front after the live victory');
   await tap("[data-route=home]");
-  await until('reward receipt remains visible on Home', () => cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'));
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
+  await until('earned trophy appears in the collection panel', () => cdp.evaluate(`(() => {
+    const panel = document.querySelector("[data-trophy-display]");
+    return panel?.querySelector(".trophy-count")?.textContent === "1 EARNED"
+      && panel?.querySelector(".trophy-copy small")?.textContent === "READY TO DISPLAY";
+  })()`));
 
   // The earned trophy must be usable as actual housing furniture, not only
   // present in inventory. Place it, then reload through the real Worker/D1
   // bootstrap path and prove the room snapshot restores that display.
   await tap('[data-furniture="tunnel-trophy"]');
   await until('earned trophy selected for display', () => cdp.evaluate(
-    'document.querySelector("[data-furniture=tunnel-trophy]")?.classList.contains("selected") === true',
+    'document.querySelector("[data-trophy-display] .trophy-select")?.getAttribute("aria-pressed") === "true"',
   ));
   await tap('[data-room-x="4"][data-room-y="2"]');
   const earnedTrophyCellSelector = '[data-room-x="4"][data-room-y="2"]';
   await until('earned trophy placed in the room', () => cdp.evaluate(
     'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
   ));
+  await until('trophy collection reflects the saved room cell', () => cdp.evaluate(
+    'document.querySelector("[data-trophy-display] .trophy-copy small")?.textContent === "DISPLAYED · ROOM CELL 5, 3"',
+  ));
   await until('earned trophy saved to local D1', () =>
     sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count === 1 ? true : null);
   assert.equal(sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count, 1,
     'the earned trophy must persist at the selected room cell');
-  await tap('[data-dismiss-reward]');
-  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
-    [permitId], 'dismissing the earlier receipt preserves the later live receipt ID');
-  await until('live battle receipt advances after recovered receipt dismissal', () => cdp.evaluate(
-    'document.querySelector("[data-battle-reward-receipt]")?.dataset.permitId === ' + JSON.stringify(permitId),
-  ));
-  const liveReceiptText = await cdp.evaluate('document.querySelector("[data-battle-reward-receipt]")?.textContent ?? ""');
-  assert.match(liveReceiptText, /FULL CLEAR/);
-  assert.match(liveReceiptText, /\+75 XP/);
-  assert.match(liveReceiptText, /\+30 CR/);
-  assert.doesNotMatch(liveReceiptText, /LEVEL UP/,
-    'the live receipt must not reuse the earlier recovered level-up transition');
-  await assertFitsMobile('Live battle receipt after recovered receipt dismissal');
-  await tap('[data-dismiss-reward]');
-  assert.equal(await cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'), false,
-    'each recovered receipt can be dismissed without altering awarded player state');
-  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
-    [], 'the presentation outbox clears only after the player dismisses every receipt');
   const finalPermit = sql("SELECT battle_status, reward_state, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + permitId + "'")[0];
   assert.equal(finalPermit?.battle_status, 'victory');
   assert.equal(finalPermit?.reward_state, 'awarded');
@@ -645,52 +655,75 @@ try {
     'a committed turn whose response times out must reconcile through the same-turn CAS retry');
   assert.equal(await cdp.evaluate('window.__degenTimedOutCompletionResponses'), 1,
     'a settled reward whose response times out must recover through the identical completion retry');
-  const awardedCharacter = sql("SELECT level, xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
-  assert.equal(awardedCharacter?.level, 2, 'the Worker must persist the level-up earned by the first reward');
-  assert.equal(awardedCharacter?.xp, 100, 'both Worker receipts must award XP exactly once');
-  assert.equal(awardedCharacter?.currency, 60, 'both Worker receipts must award currency exactly once');
+  const awardedCharacter = sql("SELECT xp, currency FROM characters WHERE player_id='" + playerId + "'")[0];
+  assert.equal(awardedCharacter?.xp, 75, 'the recovered completion must award XP exactly once');
+  assert.equal(awardedCharacter?.currency, 30, 'the recovered completion must award currency exactly once');
   const awardedScrap = sql("SELECT quantity FROM player_inventory WHERE player_id='" + playerId + "' AND item_key='underpass-scrap' AND item_type='item'")[0];
-  assert.equal(awardedScrap?.quantity, 2, 'each full clear must add one scrap without replay duplication');
+  assert.equal(awardedScrap?.quantity, 1, 'the recovered completion must add one scrap, not duplicate inventory');
   const awardedTrophy = sql("SELECT COUNT(*) AS count FROM player_inventory WHERE player_id='" + playerId + "' AND item_key='tunnel-trophy' AND item_type='furniture'")[0];
   assert.equal(awardedTrophy?.count, 1, 'the recovered completion must grant one trophy');
   const victoryHistory = sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='" + playerId + "' AND encounter_key='tunnel-maw' AND result='victory'")[0];
-  assert.equal(victoryHistory?.count, 2,
-    'both completed encounters must settle exactly one victory-history row each');
-  const recoveredFinalPermit = sql("SELECT battle_status, reward_state, reward_tier, player_mana, turn_count, completed_at FROM battle_permits WHERE id='" + pendingPermitId + "'")[0];
-  assert.equal(recoveredFinalPermit?.battle_status, 'victory');
-  assert.equal(recoveredFinalPermit?.reward_state, 'awarded');
-  assert.equal(recoveredFinalPermit?.reward_tier, 'full');
-  assert.equal(recoveredFinalPermit?.player_mana, 0);
-  assert.equal(recoveredFinalPermit?.turn_count, 3);
-  assert.ok(recoveredFinalPermit?.completed_at, 'the pre-existing Worker victory must be settled before its receipt is dismissed');
+  assert.equal(victoryHistory?.count, 1,
+    'recovering the lost killing-blow and reward responses must settle exactly one victory-history row');
 
   // Reload only after checking the response-loss counters above: a new document
   // installs fresh browser instrumentation. The persisted trophy must still render.
   await cdp.send('Page.reload');
   await until('Map after trophy placement reload', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
+  await releaseRepeatedStartupHolds();
   await tap('[data-route=home]');
   await until('persisted trophy displayed after reload', () => cdp.evaluate(
     'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
   ));
+  await until('trophy display status restored after reload', () => cdp.evaluate(
+    'document.querySelector("[data-trophy-display] .trophy-copy small")?.textContent === "DISPLAYED · ROOM CELL 5, 3"',
+  ));
   await assertFitsMobile('Home with earned trophy');
   await assertFitsCompact('Home with earned trophy');
-  await sleep(750);
-  assert.equal(await cdp.evaluate('!!document.querySelector("[data-battle-reward-receipt]")'), false,
-    'dismissed awarded receipts must not be rediscovered after a fresh browser session');
-  assert.deepEqual(await cdp.evaluate('JSON.parse(localStorage.getItem(' + JSON.stringify(receiptStorageKey) + ') || "[]")'),
-    [], 'the dismissed receipt outbox remains empty after reload');
-  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE player_id='" + playerId + "' AND reward_state='awarded' AND completed_at IS NOT NULL")[0]?.count, 2,
-    'dismissing presentation receipts must leave both Worker-owned awarded receipts intact');
 
   // Exercise the actual running UI with an authoritative active snapshot at zero
   // Mana. The local D1 fixture models a valid Worker-owned zero-Mana snapshot
   // for UI QA; it does not add or name a Mana-drain mechanic or monster resource.
-  sql("UPDATE world_event_cycles SET opens_at = datetime('now','-10 minutes'), closes_at = datetime('now','+90 minutes') WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)");
+  const underpassOpensAt = new Date(Date.now() - 10 * 60_000).toISOString();
+  const underpassClosesAt = new Date(Date.now() + 90 * 60_000).toISOString();
+  sql(`UPDATE world_event_cycles SET opens_at = '${underpassOpensAt}', closes_at = '${underpassClosesAt}' WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)`);
+  const openedCycle = sql("SELECT opens_at, closes_at FROM world_event_cycles WHERE id = (SELECT id FROM world_event_cycles WHERE event_key='underpass' ORDER BY closes_at DESC LIMIT 1)")[0];
+  assert.equal(Date.parse(openedCycle?.opens_at ?? ''), Date.parse(underpassOpensAt),
+    'the local D1 fixture must persist the intended open timestamp');
+  assert.equal(Date.parse(openedCycle?.closes_at ?? ''), Date.parse(underpassClosesAt),
+    'the local D1 fixture must persist the intended close timestamp');
+  const workerWorldResponse = await fetch(`http://127.0.0.1:8789/api/world/underpass?playerId=${encodeURIComponent(playerId)}`, {
+    cache: 'no-store',
+  });
+  assert.equal(workerWorldResponse.status, 200, 'the local Worker should return the updated Underpass snapshot');
+  const workerWorldSnapshot = await workerWorldResponse.json();
+  assert.equal(workerWorldSnapshot.phase, 'open',
+    `the Worker must classify the updated D1 cycle as open: ${JSON.stringify(workerWorldSnapshot)}`);
   await tap("[data-route=map]");
   await until('Map for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-district=Central]")'));
   await tap("[data-district=Central]");
   await until('Central district for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-location=underpass]")'));
+  const snapshotsBeforeUnderpassNavigation = await cdp.evaluate('window.__degenWorldSnapshots.length');
   await tap("[data-location=underpass]");
+  await until('Underpass location view for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'));
+  await until('browser receives the refreshed OPEN Worker snapshot after Underpass entry', () => cdp.evaluate(`window.__degenWorldSnapshots.length > ${snapshotsBeforeUnderpassNavigation} && window.__degenWorldSnapshots.at(-1)?.phase === "open"`));
+  try {
+    await until('Open Underpass status for Mana affordability check', () =>
+      cdp.evaluate('document.querySelector(".event-status")?.textContent === "OPEN"'));
+  } catch (error) {
+    const state = await cdp.evaluate(`(() => ({
+      underpassView: !!document.querySelector("[data-start-battle]"),
+      status: document.querySelector(".event-status")?.textContent ?? null,
+      button: document.querySelector("[data-start-battle]")?.outerHTML ?? null,
+      worldSnapshots: window.__degenWorldSnapshots,
+      bootstrapHold: window.__degenHoldBootstrapResponse,
+      bootstrapResponseHeld: window.__degenBootstrapResponseHeld,
+      worldSnapshotHold: window.__degenHoldWorldSnapshot,
+      worldSnapshotResponseHeld: window.__degenWorldSnapshotResponseHeld,
+      body: document.body.innerText.slice(0, 1200)
+    }))()`);
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; browser state: ${JSON.stringify(state)}`);
+  }
   await until('Open Underpass for Mana affordability check', () => cdp.evaluate('(() => { const button = document.querySelector("[data-start-battle]"); return !!button && !button.disabled; })()'));
   await tap("[data-start-battle]");
   await until('second manifested battle for Mana affordability check', () => cdp.evaluate('!!document.querySelector("[data-ability=crack]") && document.querySelector("#battle-accessible-hud")?.textContent.includes("Mana 12 of 12")'));

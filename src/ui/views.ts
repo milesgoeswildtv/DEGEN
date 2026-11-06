@@ -2,7 +2,7 @@ import { renderIsometricCity, renderIsometricDistrict } from './isometricCity';
 import { FURNITURE_CATALOG, WORLD_LOCATIONS, getFurniture } from '../data/world';
 import { isValidManaCost, isValidManaState } from '../game/combat/rules';
 import type { BattleSnapshot } from '../game/combat/engine';
-import type { BattleReward, DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
+import type { DegenDefinition, PlayerState, WorldEventSnapshot } from '../domain/types';
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>'\"]/g, (char) => ({
@@ -37,6 +37,13 @@ const worldConnectionNotice = (backendOffline: boolean): string =>
     ? '<p class="world-connection-error" role="status">LIVE WORLD UNAVAILABLE — The game cannot reach its server. New Underpass entry is disabled; an existing server-issued encounter can still be recovered when its permit service is reachable.</p>'
     : '';
 
+const worldStatusAnnouncement = (
+  status: { label: string; detail: string },
+  backendOffline: boolean,
+): string => backendOffline
+  ? ''
+  : `<p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">UNDERPASS STATUS: ${escapeHtml(status.label)}. ${escapeHtml(status.detail)}</p>`;
+
 export const appShell = (player: PlayerState, content: string): string => `
   <header class="topbar">
     <button class="brand" type="button" data-route="map">DEGEN</button>
@@ -46,35 +53,12 @@ export const appShell = (player: PlayerState, content: string): string => `
       <span>${player.currency} cr</span>
     </div>
   </header>
-  <main class="screen">${content}</main>
+  <main class="screen" tabindex="-1">${content}</main>
   <nav class="bottom-nav" aria-label="Primary">
     <button type="button" data-route="map">MAP</button>
     <button type="button" data-route="home">HOME</button>
   </nav>
 `;
-
-const rewardItemLabel = (key: string): string => key.replace(/[-_]+/g, ' ').toUpperCase();
-
-export const rewardReceiptView = (reward: BattleReward, previousLevel: number, currentLevel: number, permitId?: string): string => {
-  const tierLabel = reward.tier === 'full' ? 'FULL CLEAR' : reward.tier === 'reduced' ? 'REDUCED CLEAR' : 'BATTLE REWARD';
-  const loot = [
-    ...reward.items.map((item) => `<li><small>ITEM</small><strong>${escapeHtml(rewardItemLabel(item))}</strong></li>`),
-    ...(reward.furniture ?? []).map((item) => `<li><small>FURNITURE</small><strong>${escapeHtml(getFurniture(item)?.name ?? rewardItemLabel(item))}</strong></li>`),
-  ];
-  const levelUp = currentLevel > previousLevel
-    ? `<p class="battle-reward-level-up">LEVEL UP · LV.${previousLevel} → LV.${currentLevel}</p>`
-    : '';
-
-  return `<aside class="battle-reward-receipt" data-battle-reward-receipt${permitId ? ` data-permit-id="${escapeHtml(permitId)}"` : ''} role="status" aria-live="polite" aria-atomic="true">
-    <div class="battle-reward-heading">
-      <div><span class="eyebrow">UNDERPASS // REWARD RECEIPT</span><strong>${tierLabel}</strong></div>
-      <button class="battle-reward-dismiss" type="button" data-dismiss-reward aria-label="Dismiss battle reward receipt">×</button>
-    </div>
-    <div class="battle-reward-totals"><span>+${reward.xp} XP</span><span>+${reward.currency} CR</span></div>
-    ${levelUp}
-    ${loot.length ? `<ul class="battle-reward-loot">${loot.join('')}</ul>` : '<p class="battle-reward-empty">No item drops this clear.</p>'}
-  </aside>`;
-};
 
 export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot, backendOffline = false): string => {
   const status = worldStatus(underpass, backendOffline);
@@ -84,6 +68,7 @@ export const mapView = (player: PlayerState, underpass?: WorldEventSnapshot, bac
       <h1>Choose your district.</h1>
       <p>Explore the connected metropolis. Tap a district to reveal its locations. Home is always one tap away.</p>
     </section>
+    ${worldStatusAnnouncement(status, backendOffline)}
     <section class="city-overview" aria-label="City map">
       <div class="city-map-header"><span>DEGEN // CITY GRID</span><span>SELECT A DISTRICT</span></div>
       ${renderIsometricCity(WORLD_LOCATIONS, player.unlockedLocations, status.label)}
@@ -115,6 +100,7 @@ export const districtView = (player: PlayerState, district: string, underpass?: 
     <section class="district-hero ${district === 'Central' ? 'central' : 'residential'}"><span class="eyebrow">CITY DISTRICT</span><h1>${escapeHtml(district)}</h1>
       <p>Select a location to enter.</p>
     </section>
+    ${worldStatusAnnouncement(status, backendOffline)}
     ${renderIsometricDistrict(district, locations, player.unlockedLocations, status.label)}
     ${worldConnectionNotice(backendOffline)}
     <section class="district-locations" aria-label="${escapeHtml(district)} locations">${cards}</section>
@@ -144,7 +130,7 @@ export const locationView = (player: PlayerState, locationId: string): string =>
   `);
 };
 
-export const homeView = (player: PlayerState, selectedFurniture?: string, housingAnnouncement = ''): string => {
+export const homeView = (player: PlayerState, selectedFurniture?: string): string => {
   const cells = Array.from({ length: 48 }, (_, index) => {
     const x = index % 8;
     const y = Math.floor(index / 8);
@@ -160,7 +146,8 @@ export const homeView = (player: PlayerState, selectedFurniture?: string, housin
   const furnitureButtons = FURNITURE_CATALOG
     .filter((item) => player.housing.inventory.includes(item.id))
     .map((item) => `
-      <button class="inventory-item ${selectedFurniture === item.id ? 'selected' : ''}" type="button" data-furniture="${escapeHtml(item.id)}" aria-pressed="${selectedFurniture === item.id ? 'true' : 'false'}">
+      <button class="inventory-item ${selectedFurniture === item.id ? 'selected' : ''}" type="button"
+        data-furniture="${escapeHtml(item.id)}" aria-pressed="${selectedFurniture === item.id ? 'true' : 'false'}">
         <span>${escapeHtml(item.icon)}</span>
         <small>${escapeHtml(item.name)}</small>
       </button>
@@ -202,7 +189,7 @@ export const homeView = (player: PlayerState, selectedFurniture?: string, housin
       <h1>Make it yours.</h1>
       <p>Select furniture, then tap a room cell to place or move it. With nothing selected, tapping occupied furniture removes it.</p>
     </section>
-    <section class="trophy-display" aria-labelledby="trophy-display-title">
+    <section class="trophy-display" data-trophy-display aria-labelledby="trophy-display-title">
       <div class="trophy-display-heading">
         <div><span class="eyebrow">HOME // COLLECTION</span><h2 id="trophy-display-title">TROPHY DISPLAY</h2></div>
         <span class="trophy-count">${trophyItems.length} EARNED</span>
@@ -219,7 +206,6 @@ export const homeView = (player: PlayerState, selectedFurniture?: string, housin
         <div class="furniture-list" role="group" aria-label="Available furniture">${furnitureButtons}</div>
       </aside>
     </section>
-    <p class="housing-action-status" data-housing-status role="status" aria-live="polite" aria-atomic="true" ${housingAnnouncement ? '' : 'hidden'}>${escapeHtml(housingAnnouncement)}</p>
   `);
 };
 
