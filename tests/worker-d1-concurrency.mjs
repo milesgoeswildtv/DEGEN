@@ -724,7 +724,12 @@ try {
     status: 'victory',
     playerHp: 0,
     playerMana: 999,
+    playerShield: 999,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: 0,
+    enemyShield: 999,
+    enemyShieldAbsorbed: 999,
     turnCount: 999,
     xp: 999999,
     currency: 999999,
@@ -737,6 +742,8 @@ try {
   assertPersistedPermitState('permit-mana-zero', {
     status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
   });
+  assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-mana-zero' AND player_shield=0 AND last_shield_absorbed=0 AND last_retaliation_damage=0 AND enemy_shield=0 AND last_enemy_shield_absorbed=0"), 1,
+    'forged completion Shield fields must not alter either side of the persisted battle snapshot');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-mana-zero:victory','permit-mana-zero:defeat')"), 0,
     'forged completion must not write victory or defeat history');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-mana-zero' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
