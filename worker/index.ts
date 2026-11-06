@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
-import { assertNoMonsterActionResource, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
+import { assertNoMonsterActionResource, assertValidEnemyStartingShield, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear, xpNeededForLevel } from '../src/game/progression';
 import { validateHousingPlacements } from './housingQuantityGuard';
 
@@ -465,6 +465,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   // Invalid content must never leave the player holding an unusable battle permit.
   try {
     assertNoMonsterActionResource(TUNNEL_MAW);
+    assertValidEnemyStartingShield(TUNNEL_MAW);
   } catch {
     return fail(request, env, 'Encounter definition is invalid.', 500);
   }
