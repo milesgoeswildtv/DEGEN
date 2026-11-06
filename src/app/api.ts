@@ -37,7 +37,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
     && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
     && isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
     && isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
-    && isBoundedSafeInteger(retaliationDamage, 0, TUNNEL_MAW.damage)
+    && isBoundedSafeInteger(retaliationDamage, 0, Math.max(1, TUNNEL_MAW.damage))
     && isBoundedSafeInteger(enemyShield, 0, Number.MAX_SAFE_INTEGER)
     && maxPlayerAbilityDamage !== undefined
     && (state.enemyShieldAbsorbed === undefined || isBoundedSafeInteger(state.enemyShieldAbsorbed, 0, maxPlayerAbilityDamage))
@@ -77,7 +77,7 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
     || !isBoundedSafeInteger(playerMana, 0, TEST_DEGEN.maxMana)
     || !isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
     || !isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
-    || !isBoundedSafeInteger(retaliationDamage, 0, TUNNEL_MAW.damage)
+    || !isBoundedSafeInteger(retaliationDamage, 0, Math.max(1, TUNNEL_MAW.damage))
     || !isBoundedSafeInteger(enemyShield, 0, Number.MAX_SAFE_INTEGER)
     || maxPlayerAbilityDamage === undefined
     || (state.enemyShieldAbsorbed !== undefined && !isBoundedSafeInteger(state.enemyShieldAbsorbed, 0, maxPlayerAbilityDamage))
