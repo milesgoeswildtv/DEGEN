@@ -606,3 +606,36 @@ test('128-code-unit opaque identifiers pass validation before D1 access', async 
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: 'Internal server error' });
 });
+
+test('an underreported Content-Length cannot bypass the streamed JSON byte limit', async () => {
+  const oversizedBytes = new TextEncoder().encode(JSON.stringify({
+    playerId: 'p',
+    displayName: 'x'.repeat(MAX_REQUEST_BODY_BYTES),
+  }));
+  assert.ok(oversizedBytes.byteLength > MAX_REQUEST_BODY_BYTES);
+
+  const request = new Request('https://degen-api.example/api/player/bootstrap', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      // Treat this as an untrusted early hint: the stream still exceeds the cap.
+      'content-length': '1',
+    },
+    body: oversizedBytes,
+  });
+  assert.equal(request.headers.get('content-length'), '1');
+
+  let d1Touched = false;
+  const response = await worker.fetch(request, {
+    DB: {
+      prepare() {
+        d1Touched = true;
+        throw new Error('A dishonest Content-Length must not bypass the streamed byte limit.');
+      },
+    },
+  });
+
+  assert.equal(d1Touched, false);
+  assert.equal(response.status, 413);
+  assert.deepEqual(await response.json(), { error: 'Request body exceeds the 64 KiB limit.' });
+});
