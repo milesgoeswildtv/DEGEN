@@ -424,7 +424,13 @@ export class AppController {
           }
           return;
         }
-        engine.applyAuthoritativeAction(abilityId, authoritative);
+        const applied = engine.applyAuthoritativeAction(abilityId, authoritative);
+        if (!applied) {
+          rejectedAuthoritativeSnapshot = true;
+          this.setBattleActionStatus(
+            'The server returned a battle result that conflicts with the last accepted turn. Reopen the encounter to safely resync before acting.',
+          );
+        }
       } else {
         engine.useAbility(abilityId);
       }
