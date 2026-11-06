@@ -894,3 +894,26 @@ test('LEAK keys inside descriptive metadata nested under monster mechanics remai
     enemy,
   }));
 });
+
+
+test('singular and scalar monster effect descriptors cannot carry GLITCHRAT LEAK', () => {
+  const descriptorCases = [
+    { path: 'statusEffect', enemy: { ...TUNNEL_MAW, statusEffect: 'LEAK' } },
+    { path: 'signatureEffect', enemy: { ...TUNNEL_MAW, signatureEffect: 'LEAK' } },
+    { path: 'abilityEffect', enemy: { ...TUNNEL_MAW, abilityEffect: 'LEAK' } },
+    { path: 'moveEffect', enemy: { ...TUNNEL_MAW, moveEffect: 'LEAK' } },
+    { path: 'statusEffects', enemy: { ...TUNNEL_MAW, statusEffects: 'LEAK' } },
+    { path: 'signatureEffects', enemy: { ...TUNNEL_MAW, signatureEffects: 'LEAK' } },
+    { path: 'abilityEffects', enemy: { ...TUNNEL_MAW, abilityEffects: 'LEAK' } },
+    { path: 'moveEffects', enemy: { ...TUNNEL_MAW, moveEffects: 'LEAK' } },
+  ] as { path: string; enemy: typeof TUNNEL_MAW }[];
+
+  for (const { path, enemy } of descriptorCases) {
+    assert.throws(
+      () => assertNoMonsterActionResource(enemy),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('Degen-owned effect LEAK (' + path + ')'),
+      'monster effect descriptor ' + path + ' must not claim GLITCHRAT\'s LEAK mechanic',
+    );
+  }
+});
