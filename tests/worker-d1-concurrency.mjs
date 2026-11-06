@@ -1416,9 +1416,8 @@ try {
     'unaffordable-action state and error responses must not be cached');
   assert.deepEqual(unaffordable.battleState, {
     permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
-    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
     enemyHp: 50, turnCount: 0,
-  });
+  }, 'the pre-Shield zero-Mana permit remains unchanged without synthetic audit fields');
   assertPersistedPermitState('permit-mana-zero', unaffordable.battleState);
 
   const freeAtZeroResponse = await fetch(base + '/api/battle/action', {
