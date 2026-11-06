@@ -629,6 +629,30 @@ test('monster descriptive metadata and loot labels are not mistaken for action-r
   }));
 });
 
+test('monster resource descriptor values cannot disguise a universal Mana-equivalent resource', () => {
+  const descriptorCases = [
+    { field: 'resourceType', value: 'Mana' },
+    { field: 'actionResourceName', value: 'Energy' },
+    { field: 'resourceKind', value: 'MP' },
+    { field: 'magicPointType', value: 'Action Points' },
+  ];
+
+  for (const { field, value } of descriptorCases) {
+    const enemy = { ...TUNNEL_MAW, signature: { [field]: value } } as typeof TUNNEL_MAW;
+    assert.throws(
+      () => assertNoMonsterActionResource(enemy),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('universal action resource (signature.' + field + ')'),
+      'monster resource descriptor ' + field + ' must reject a universal action resource name',
+    );
+  }
+
+  assert.doesNotThrow(() => assertNoMonsterActionResource({
+    ...TUNNEL_MAW,
+    metadata: { resourceType: 'loot' },
+  } as typeof TUNNEL_MAW), 'descriptive non-action resource metadata remains allowed');
+});
+
 test('monster mechanics cannot use the Degen-only LEAK effect', () => {
   const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
   assert.ok(free);
