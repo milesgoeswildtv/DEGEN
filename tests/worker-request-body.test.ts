@@ -86,6 +86,32 @@ test('application/json with a charset parameter is accepted as JSON media type',
 });
 
 
+test('invalid UTF-8 JSON bytes are rejected before touching D1', async () => {
+  // A replacement-character decoder would turn these invalid bytes into a
+  // valid-looking player ID and allow the request to reach persistence.
+  const malformedUtf8Json = Uint8Array.from([
+    0x7b, 0x22, 0x70, 0x6c, 0x61, 0x79, 0x65, 0x72, 0x49, 0x64,
+    0x22, 0x3a, 0x22, 0xc3, 0x28, 0x22, 0x7d,
+  ]);
+  let d1Touched = false;
+  const response = await worker.fetch(new Request('https://degen-api.example/api/player/bootstrap', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: malformedUtf8Json,
+  }), {
+    DB: {
+      prepare() {
+        d1Touched = true;
+        throw new Error('Invalid UTF-8 must be rejected before D1.');
+      },
+    },
+  });
+
+  assert.equal(d1Touched, false);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Request body must be valid JSON.' });
+});
+
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 
 test('JSON request bodies accept the exact 64 KiB boundary and reject larger bodies before D1', async () => {

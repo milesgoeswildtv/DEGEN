@@ -106,7 +106,7 @@ const body = async <T>(request: Request): Promise<T> => {
 
   let value: unknown;
   try {
-    value = JSON.parse(new TextDecoder().decode(bytes));
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } catch {
     throw new RequestBodyError('Request body must be valid JSON.');
   }

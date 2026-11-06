@@ -1,3 +1,18 @@
+## Latest run — 2026-11-06 (reject invalid UTF-8 before Worker persistence)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; no main write.
+- **Current branch / PR:** continuing `automation/degen/worker-identity-input-validation-v01`, PR [#124](https://github.com/milesgoeswildtv/DEGEN/pull/124), OPEN / READY FOR REVIEW / UNMERGED. Pre-change head: `bf4babdb2ca62139d267c6d0aa02efcbbf9ad4b2`.
+- **Task / files changed:** `worker/index.ts` now decodes request JSON with fatal UTF-8 validation. The previous default decoder silently replaced malformed byte sequences with U+FFFD, which could turn invalid wire bytes into valid-looking JSON string data. `tests/worker-request-body.test.ts` supplies invalid UTF-8 inside a `playerId` and proves the Worker returns the generic 400 before touching D1. No route semantics, account policy, combat, rewards, schema, or deployment config changed.
+- **Tests / QA:** regression is committed to this branch; exact-head CI for the new commit is pending. Previous branch head `bf4babd` passed CI [42152673562](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42152673562), including 283 deterministic tests, isolated Worker/D1 reward concurrency and recovery, Underpass cycle/rollover concurrency, atomic defeat history, Chromium housing persistence and battle vertical slice, production build, and Wrangler dry-run. Do not attribute that pass to the new head.
+- **Mana:** COMPLETE / MERGED on main; Degen-only max Mana/cost, Worker-owned persisted Mana, atomic affordability rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no Mana reversion remain intact. The legacy Mana branch and all checked successors are superseded, diverged, or behind; no duplicate Mana implementation.
+- **Battle authority / reward idempotency:** Worker/D1 still owns permits, HP/Mana/enemy HP, action turn CAS, terminal outcomes/history, audited receipts, XP, currency, inventory, and recovery. This request-parser hardening does not change battle/economy authority.
+- **D1 / migration assumptions:** `wrangler.toml` still binds `DB` to `DEGEN` and `db/migrations`; Mana migrations `0003` and `0006` are tracked. Main's `0007_player_inventory_quantity_guards.sql` still conflicts by version with draft auth PR #14's `0007_player_sessions.sql`; preserve the #114 → #126 → #125 review gate. No migration apply or remote D1 operation.
+- **Miles blockers:** duplicate `0007` ownership/order, production Discord/Telegram signed-session credentials and identity-collision policy, and unavailable canonical Monster Log v0.11 / unresolved universal status rules. No canon was invented.
+- **Delivery:** **PUSHED / PR #124** new Worker + regression-test commit; exact-head CI not yet observed. **MERGED / LIVE:** main unchanged; no Worker deployment, production D1 write, or physical-device QA.
+- **One best next task:** inspect exact-head CI for the invalid-UTF-8 guard, then continue only the next proven Worker request-validation gap without changing identity/auth policy.
+
+---
+
 ## Latest run — 2026-11-05 (Worker request-body parser edge-case regression PASS)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main exact-head CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) is SUCCESS. Main remains unchanged.
