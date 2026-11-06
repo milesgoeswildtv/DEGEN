@@ -14,19 +14,22 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
   .replace(/^export /gm, '')
   .replace(/^const API_BASE = .*;\n/m, "const API_BASE = '';\n");
 const compiled = stripTypeScriptTypes(source, { mode: 'transform' });
-const apiModule = runInNewContext(compiled + '\n({ GameApi, GameApiProtocolError });', {
-  TEST_DEGEN,
-  TUNNEL_MAW,
-  maxAbilityDamage,
-  AbortController,
-  Response,
-  URL,
-  crypto: globalThis.crypto,
-  setTimeout,
-  clearTimeout,
-  SyntaxError: globalThis.SyntaxError,
-  console,
-}) as {
+const createApiModule = (enemy: typeof TUNNEL_MAW) => runInNewContext(
+  compiled + '\n({ GameApi, GameApiProtocolError, isAuthoritativeBattleStartState, isAuthoritativeBattleActionState });',
+  {
+    TEST_DEGEN,
+    TUNNEL_MAW: enemy,
+    maxAbilityDamage,
+    AbortController,
+    Response,
+    URL,
+    crypto: globalThis.crypto,
+    setTimeout,
+    clearTimeout,
+    SyntaxError: globalThis.SyntaxError,
+    console,
+  },
+) as {
   GameApi: new (apiBase: string, fetcher: typeof fetch) => {
     bootstrap(playerId: string, identity: { platform: string; platformUserId: string; displayName: string }): Promise<any>;
     getUnderpass(playerId: string): Promise<unknown>;
@@ -36,7 +39,10 @@ const apiModule = runInNewContext(compiled + '\n({ GameApi, GameApiProtocolError
     completeUnderpass(playerId: string, permitId: string): Promise<unknown>;
   };
   GameApiProtocolError: new (...args: any[]) => Error;
+  isAuthoritativeBattleStartState(value: unknown, permitId: string): boolean;
+  isAuthoritativeBattleActionState(value: unknown, permitId: string): boolean;
 };
+const apiModule = createApiModule(TUNNEL_MAW);
 
 const validPlayerSnapshot = (id = 'player-1') => ({
   id,
@@ -367,4 +373,27 @@ test('malformed completion receipt is a protocol error without client recovery d
     apiModule.GameApiProtocolError,
   );
   assert.equal(requests, 1, 'a malformed receipt must not be treated as a valid completion');
+});
+
+
+test('client accepts minimum-one retaliation snapshots for a zero-damage enemy', () => {
+  const zeroDamageEnemy = { ...TUNNEL_MAW, damage: 0 };
+  const zeroDamageApi = createApiModule(zeroDamageEnemy);
+  const permitId = 'zero-damage-client-permit';
+  const slash = TEST_DEGEN.abilities.find((ability) => ability.id === 'slash');
+  assert.ok(slash);
+  const snapshot = {
+    permitId,
+    status: 'active',
+    playerHp: TEST_DEGEN.maxHp - 1,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 1,
+    enemyHp: TUNNEL_MAW.maxHp - (slash.damage + Math.floor(TEST_DEGEN.power * 0.5)),
+    turnCount: 1,
+  };
+
+  assert.equal(zeroDamageApi.isAuthoritativeBattleStartState(snapshot, permitId), true);
+  assert.equal(zeroDamageApi.isAuthoritativeBattleActionState(snapshot, permitId), true);
 });
