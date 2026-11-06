@@ -571,10 +571,16 @@ test('Worker accepts only the enemy Shield pool selected by the server encounter
     110, 12, 0, 0, 10, 68, 0, 5, 'active',
   ], 'the Worker persists the server-selected Shield pool and its exact absorption audit');
 
+  const postTurnAudit = {
+    turn_count: 1,
+    player_hp: TEST_DEGEN.maxHp - 10,
+    last_retaliation_damage: 10,
+    enemy_hp: enemy.maxHp - 24,
+  };
   for (const corrupt of [
-    { enemy_shield: 6, last_enemy_shield_absorbed: 0 },
-    { enemy_shield: 0, last_enemy_shield_absorbed: 6 },
-    { enemy_shield: 3, last_enemy_shield_absorbed: 3 },
+    { ...postTurnAudit, enemy_shield: 6, last_enemy_shield_absorbed: 0 },
+    { ...postTurnAudit, enemy_shield: 0, last_enemy_shield_absorbed: 6 },
+    { ...postTurnAudit, enemy_shield: 3, last_enemy_shield_absorbed: 3 },
   ]) {
     const corruptPermit = { ...permit, ...corrupt };
     let mutationCount = 0;
