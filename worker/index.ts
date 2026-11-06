@@ -109,6 +109,21 @@ const projectEnemyShield = (enemyShield: number): { enemyShield: number } =>
 const projectEnemyShieldAbsorbed = (absorbed: number): { enemyShieldAbsorbed: number } =>
   absorbed > 0 ? { enemyShieldAbsorbed: absorbed } : {};
 
+// Preserve pre-Shield history as an omitted legacy shape. Explicit zero/zero
+// audits are reserved for permits created or advanced after migration 0008.
+const projectPlayerShieldAudit = (
+  state: Pick<BattlePermitStateRow, 'player_shield' | 'last_shield_absorbed' | 'last_retaliation_damage'>,
+): { playerShield?: number; shieldAbsorbed?: number; retaliationDamage?: number } => {
+  if (state.player_shield === 0
+    && state.last_shield_absorbed === null
+    && state.last_retaliation_damage === null) return {};
+  return {
+    playerShield: state.player_shield ?? 0,
+    shieldAbsorbed: state.last_shield_absorbed ?? 0,
+    retaliationDamage: state.last_retaliation_damage ?? 0,
+  };
+};
+
 // The current PlayerState contract expands stack quantities into string[] entries.
 // Keep malformed/corrupt D1 rows from allocating unbounded arrays; this is an API
 // snapshot safety bound, not a gameplay inventory or stack-balance rule.
@@ -532,9 +547,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         status: existing.battle_status,
         playerHp: existing.player_hp as number,
         playerMana: playerManaForSnapshot(existing),
-        playerShield: existing.player_shield ?? 0,
-        shieldAbsorbed: existing.last_shield_absorbed ?? 0,
-        retaliationDamage: existing.last_retaliation_damage ?? 0,
+        ...projectPlayerShieldAudit(existing),
         ...projectEnemyShield(existing.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
           ...projectEnemyShieldAbsorbed(existing.last_enemy_shield_absorbed ?? 0),
         enemyHp: existing.enemy_hp as number,
@@ -693,9 +706,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           status: completed.battle_status,
           playerHp: completed.player_hp,
           playerMana: playerManaForSnapshot(completed),
-          playerShield: completed.player_shield ?? 0,
-          shieldAbsorbed: completed.last_shield_absorbed ?? 0,
-          retaliationDamage: completed.last_retaliation_damage ?? 0,
+          ...projectPlayerShieldAudit(completed),
           ...projectEnemyShield(completed.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
           ...projectEnemyShieldAbsorbed(completed.last_enemy_shield_absorbed ?? 0),
           enemyHp: completed.enemy_hp,
@@ -752,9 +763,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           status: terminal.battle_status,
           playerHp: terminal.player_hp,
           playerMana: playerManaForSnapshot(terminal),
-          playerShield: terminal.player_shield ?? 0,
-          shieldAbsorbed: terminal.last_shield_absorbed ?? 0,
-          retaliationDamage: terminal.last_retaliation_damage ?? 0,
+          ...projectPlayerShieldAudit(terminal),
           ...projectEnemyShield(terminal.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
           ...projectEnemyShieldAbsorbed(terminal.last_enemy_shield_absorbed ?? 0),
           enemyHp: terminal.enemy_hp,
@@ -781,9 +790,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     status: permit.battle_status,
     playerHp: permit.player_hp,
     playerMana: playerManaForSnapshot(permit),
-    playerShield: permit.player_shield,
-    shieldAbsorbed: permit.last_shield_absorbed ?? 0,
-    retaliationDamage: permit.last_retaliation_damage ?? 0,
+    ...projectPlayerShieldAudit(permit),
     ...projectEnemyShield(permit.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
           ...projectEnemyShieldAbsorbed(permit.last_enemy_shield_absorbed ?? 0),
     enemyHp: permit.enemy_hp,
@@ -838,9 +845,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         status: latest.battle_status,
         playerHp: latest.player_hp,
         playerMana: playerManaForSnapshot(latest),
-        playerShield: latest.player_shield ?? 0,
-        shieldAbsorbed: latest.last_shield_absorbed ?? 0,
-        retaliationDamage: latest.last_retaliation_damage ?? 0,
+        ...projectPlayerShieldAudit(latest),
         ...projectEnemyShield(latest.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
           ...projectEnemyShieldAbsorbed(latest.last_enemy_shield_absorbed ?? 0),
         enemyHp: latest.enemy_hp,
@@ -966,9 +971,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           status: latest.battle_status,
           playerHp: latest.player_hp,
           playerMana: playerManaForSnapshot(latest),
-          playerShield: latest.player_shield ?? 0,
-          shieldAbsorbed: latest.last_shield_absorbed ?? 0,
-          retaliationDamage: latest.last_retaliation_damage ?? 0,
+          ...projectPlayerShieldAudit(latest),
           ...projectEnemyShield(latest.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
           ...projectEnemyShieldAbsorbed(latest.last_enemy_shield_absorbed ?? 0),
           enemyHp: latest.enemy_hp,

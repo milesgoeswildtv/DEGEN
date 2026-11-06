@@ -128,6 +128,23 @@ try {
   assert.equal(sql("SELECT COUNT(*) AS count FROM world_event_cycles WHERE id='shield-closure-cycle' AND julianday(closes_at) < julianday('now')")[0]?.count,1);
   assert.equal(sql("SELECT COUNT(*) AS count FROM battle_permits WHERE id='shield-closure-permit' AND julianday(expires_at) > julianday('now')")[0]?.count,1);
 
+  const legacyReplay=await post('/api/battle/start',{
+    playerId:'shield-legacy',eventKey:'underpass',cycleId:'shield-cycle',encounterKey:'tunnel-maw',requestId:'shield-legacy-permit',
+  });
+  assert.equal(legacyReplay.status,200);
+  assert.deepEqual(legacyReplay.data.initialState,{
+    permitId:'shield-legacy-permit',status:'active',playerHp:120,playerMana:0,enemyHp:92,turnCount:0,
+  },'idempotent start recovery must preserve the omitted pre-Shield audit shape');
+
+  const legacyConflict=await post('/api/battle/action',{
+    playerId:'shield-legacy',permitId:'shield-legacy-permit',abilityId:'slash',expectedTurnCount:1,
+  });
+  assert.equal(legacyConflict.status,409);
+  assert.equal(legacyConflict.data.error,'Stale battle turn.');
+  assert.deepEqual(legacyConflict.data.battleState,{
+    permitId:'shield-legacy-permit',status:'active',playerHp:120,playerMana:0,enemyHp:92,turnCount:0,
+  },'stale-action recovery must not synthesize zero/zero Shield audit fields for legacy history');
+
   const legacy=await post('/api/battle/action',{playerId:'shield-legacy',permitId:'shield-legacy-permit',abilityId:'slash',expectedTurnCount:0});
   assert.equal(legacy.status,200);
   assert.equal(legacy.data.playerShield,0);

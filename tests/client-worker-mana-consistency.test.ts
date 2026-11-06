@@ -480,7 +480,7 @@ test('a terminal authoritative result cannot be reopened by a later active snaps
 });
 
 
-test('client rejects impossible active Shield audits and preserves the legacy zero/zero sentinel', () => {
+test('client rejects fabricated zero/zero Shield audits and preserves omitted legacy snapshots', () => {
   const permitId = 'shield-audit-validation';
   const base = {
     permitId,
@@ -507,8 +507,11 @@ test('client rejects impossible active Shield audits and preserves the legacy ze
   }, permitId), true);
   assert.equal(isAuthoritativeBattleActionState({
     ...base, playerShield: 0,
-  }, permitId), true,
-  'the zero-Shield, zero/zero audit is the compatibility projection for migrated legacy permits');
+  }, permitId), false,
+  'an advanced current-format turn cannot use explicit zero/zero fields to impersonate legacy history');
+  const validators = createBattleValidators(TUNNEL_MAW);
+  assert.equal(validators.isAuthoritativeBattleStartState({ ...base, playerShield: 0 }, permitId), false,
+    'start recovery must reject the same fabricated zero/zero audit');
   assert.equal(isAuthoritativeBattleActionState({
     ...base, playerShield: 0, turnCount: 0,
   }, permitId), true, 'a fresh permit begins with zero Shield and zero retaliation audit');
@@ -527,6 +530,21 @@ test('client rejects impossible active Shield audits and preserves the legacy ze
   delete legacy.retaliationDamage;
   assert.equal(isAuthoritativeBattleActionState(legacy, permitId), true,
     'pre-Shield snapshots remain readable when all Shield audit fields are absent');
+  assert.equal(validators.isAuthoritativeBattleStartState(legacy, permitId), true,
+    'idempotent start recovery preserves the omitted legacy audit shape');
+
+  const explicitZeroDefeat = {
+    ...base, status: 'defeat' as const, playerHp: 0, playerShield: 0,
+    shieldAbsorbed: 0, retaliationDamage: 0,
+  };
+  assert.equal(isAuthoritativeBattleActionState(explicitZeroDefeat, permitId), false,
+    'a current-format defeat must prove residual retaliation damage');
+  const legacyDefeat = { ...explicitZeroDefeat } as Record<string, unknown>;
+  delete legacyDefeat.playerShield;
+  delete legacyDefeat.shieldAbsorbed;
+  delete legacyDefeat.retaliationDamage;
+  assert.equal(isAuthoritativeBattleActionState(legacyDefeat, permitId), true,
+    'only the omitted legacy shape may recover a pre-Shield defeat without audit deltas');
 });
 
 test('server-backed BattleEngine cannot simulate local actions or emit client rewards', () => {
@@ -567,6 +585,8 @@ test('BattleEngine rejects malformed initial Worker Shield snapshots', () => {
     { ...valid, shieldAbsorbed: undefined },
     { ...valid, retaliationDamage: TUNNEL_MAW.damage + 1 },
     { ...valid, playerShield: 1, turnCount: 1 },
+    { ...valid, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, turnCount: 1 },
+    { ...valid, status: 'defeat' as const, playerHp: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, turnCount: 1 },
     { ...valid, playerShield: 1, turnCount: 1, retaliationDamage: 0 },
     { ...valid, playerShield: 5, turnCount: 1, shieldAbsorbed: 0, retaliationDamage: 10 },
     { ...valid, status: 'victory' as const, enemyHp: 0, turnCount: 1, retaliationDamage: 1 },

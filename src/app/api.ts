@@ -24,11 +24,7 @@ const isAuthoritativeBattleStartState = (value: unknown, permitId: string): valu
   if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
   // A 0/0 audit with zero Shield is also the compatibility projection
   // for migrated pre-Shield permits; Worker validation checks the underlying NULLs.
-  const hasLegacyShieldAuditSentinel = playerShield === 0
-    && shieldAbsorbed === 0
-    && retaliationDamage === 0;
   const hasConsistentActiveShieldAudit = hasLegacyShieldState
-    || hasLegacyShieldAuditSentinel
     || (turnCount === 0
       ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
       : retaliationDamage === expectedRetaliationDamage
@@ -92,11 +88,7 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
 
   if (state.status === 'active') {
     // Preserve the zero-Shield/0/0 projection used for migrated pre-Shield permits.
-    const hasLegacyShieldAuditSentinel = playerShield === 0
-      && shieldAbsorbed === 0
-      && retaliationDamage === 0;
     const hasConsistentActiveShieldAudit = hasLegacyShieldState
-      || hasLegacyShieldAuditSentinel
       || (turnCount === 0
         ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
         : retaliationDamage === expectedRetaliationDamage
@@ -108,11 +100,10 @@ export const isAuthoritativeBattleActionState = (value: unknown, permitId: strin
   }
   if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0
     && enemyShield === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
-  // Legacy permits predate the Shield audit columns and use a zero/zero sentinel.
-  // New-format defeat snapshots carry persisted deltas and must show residual damage.
-  const recoveredTerminalSnapshot = shieldAbsorbed === 0 && retaliationDamage === 0;
+  // A pre-Shield defeat is legacy only when all three audit fields are omitted.
+  // Explicit zero/zero fields cannot stand in for missing historical evidence.
   return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0
-    && (hasLegacyShieldState || recoveredTerminalSnapshot
+    && (hasLegacyShieldState
       || (retaliationDamage === expectedRetaliationDamage && shieldAbsorbed < retaliationDamage));
 };
 

@@ -111,11 +111,7 @@ export class BattleEngine {
 
     switch (result.status) {
       case 'active': {
-        const hasLegacyAuditSentinel = playerShield === 0
-          && shieldAbsorbed === 0
-          && retaliationDamage === 0;
         const hasConsistentAudit = hasLegacyShieldState
-          || hasLegacyAuditSentinel
           || (result.turnCount === 0
             ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
             : retaliationDamage === expectedRetaliationDamage
@@ -133,8 +129,7 @@ export class BattleEngine {
           && enemyShield === 0
           && shieldAbsorbed === 0 && retaliationDamage === 0;
       case 'defeat': {
-        const legacyTerminalAudit = hasLegacyShieldState
-          || (shieldAbsorbed === 0 && retaliationDamage === 0);
+        const legacyTerminalAudit = hasLegacyShieldState;
         return result.turnCount > 0 && result.playerHp === 0 && result.enemyHp > 0
           && playerShield === 0
           && (legacyTerminalAudit || (retaliationDamage === expectedRetaliationDamage && shieldAbsorbed < retaliationDamage));

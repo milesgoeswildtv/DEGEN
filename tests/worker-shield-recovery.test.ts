@@ -424,9 +424,6 @@ test('legacy terminal permits with NULL Mana and pre-Shield audit remain recover
       status,
       playerHp,
       playerMana: TEST_DEGEN.maxMana,
-      playerShield: 0,
-      shieldAbsorbed: 0,
-      retaliationDamage: 0,
       enemyHp,
       turnCount: 1,
     }, 'legacy terminal state is projected safely without inventing prior Mana or Shield activity');
