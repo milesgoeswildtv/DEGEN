@@ -181,7 +181,7 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
   const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
   const hasValidShieldAudit = hasLegacyShieldAudit
     || (isSafeIntegerBetween(lastShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
-      && isSafeIntegerBetween(lastRetaliationDamage, 0, TUNNEL_MAW.damage)
+      && isSafeIntegerBetween(lastRetaliationDamage, 0, Math.max(1, TUNNEL_MAW.damage))
       && lastShieldAbsorbed <= lastRetaliationDamage
       && (state.battle_status === 'victory'
         ? lastShieldAbsorbed === 0 && lastRetaliationDamage === 0
