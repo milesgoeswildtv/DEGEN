@@ -639,3 +639,68 @@ test('an underreported Content-Length cannot bypass the streamed JSON byte limit
   assert.equal(response.status, 413);
   assert.deepEqual(await response.json(), { error: 'Request body exceeds the 64 KiB limit.' });
 });
+
+
+test('malformed Content-Length values are rejected before reading or touching D1', async () => {
+  const cases = [
+    { value: 'abc', error: 'Content-Length must be a non-negative integer.' },
+    { value: '-1', error: 'Content-Length must be a non-negative integer.' },
+    { value: '1.5', error: 'Content-Length must be a non-negative integer.' },
+    { value: '1e3', error: 'Content-Length must be a non-negative integer.' },
+    { value: '9007199254740992', error: 'Content-Length must be a safe integer.' },
+  ];
+
+  for (const scenario of cases) {
+    const request = new Request('https://degen-api.example/api/player/bootstrap', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': scenario.value,
+      },
+      body: JSON.stringify({ playerId: 'player-1' }),
+    });
+    assert.equal(request.headers.get('content-length'), scenario.value);
+
+    let d1Touched = false;
+    const response = await worker.fetch(request, {
+      DB: {
+        prepare() {
+          d1Touched = true;
+          throw new Error('Malformed Content-Length must be rejected before D1 access.');
+        },
+      },
+    });
+
+    assert.equal(d1Touched, false, scenario.value);
+    assert.equal(response.status, 400, scenario.value);
+    assert.deepEqual(await response.json(), { error: scenario.error }, scenario.value);
+  }
+});
+
+test('a failed request-body stream is rejected without exposing stream errors or touching D1', async () => {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.error(new Error('private upstream stream failure'));
+    },
+  });
+  const request = new Request('https://degen-api.example/api/player/bootstrap', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: stream,
+    duplex: 'half',
+  } as RequestInit);
+
+  let d1Touched = false;
+  const response = await worker.fetch(request, {
+    DB: {
+      prepare() {
+        d1Touched = true;
+        throw new Error('An unreadable request body must not reach D1.');
+      },
+    },
+  });
+
+  assert.equal(d1Touched, false);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Request body must be readable JSON.' });
+});
