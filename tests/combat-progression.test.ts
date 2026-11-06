@@ -262,6 +262,7 @@ test('enemy Shield absorbs incoming damage before HP and a killing blow skips re
   const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
   assert.ok(free);
   const shieldDegen = { ...TEST_DEGEN, maxMana: 0, abilities: [free] };
+  const shieldedEnemy = { ...TUNNEL_MAW, startingShield: 5 };
 
   const result = resolveCombatTurn({
     playerHp: 1,
@@ -271,7 +272,7 @@ test('enemy Shield absorbs incoming damage before HP and a killing blow skips re
     enemyShield: 5,
     ability: free,
     degen: shieldDegen,
-    enemy: TUNNEL_MAW,
+    enemy: shieldedEnemy,
   });
 
   assert.equal(result.status, 'victory');

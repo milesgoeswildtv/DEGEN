@@ -674,7 +674,8 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
     ...active, playerHp: 70, playerMana: 0, enemyHp: 20, turnCount: 1,
     playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyShield: 5,
   };
-  assert.equal(isAuthoritativeBattleActionState(enemyShieldSnapshot, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState(enemyShieldSnapshot, 'permit-1'), false,
+    'the default Tunnel Maw cannot claim enemy Shield absent from its server encounter definition');
   for (const enemyShield of [-1, 0.5, null, Number.MAX_SAFE_INTEGER + 1]) {
     assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, enemyShield }, 'permit-1'), false);
   }

@@ -25,13 +25,14 @@ test('enemy Shield absorbs Degen damage before HP and still permits retaliation'
 });
 
 test('enemy Shield carries across turns and a killing blow consumes it before HP', () => {
+  const largeShieldEnemy = { ...TUNNEL_MAW, startingShield: 40 };
   const carried = resolveCombatTurn({
-    playerHp: 50, playerMana: 0, enemyHp: TUNNEL_MAW.maxHp, enemyShield: 40,
-    ability: slash, degen: TEST_DEGEN, enemy: shieldedEnemy,
+    playerHp: 50, playerMana: 0, enemyHp: largeShieldEnemy.maxHp, enemyShield: 40,
+    ability: slash, degen: TEST_DEGEN, enemy: largeShieldEnemy,
   });
   assert.equal(carried.enemyShieldAbsorbed, carried.playerDamage);
   assert.equal(carried.enemyShield, 40 - carried.playerDamage);
-  assert.equal(carried.enemyHp, TUNNEL_MAW.maxHp);
+  assert.equal(carried.enemyHp, largeShieldEnemy.maxHp);
 
   const killing = resolveCombatTurn({
     playerHp: 5, playerMana: 0, enemyHp: 1, enemyShield: 5,
