@@ -70,6 +70,7 @@ try {
       ('shield-impossible-active','Shield Impossible Active'),('shield-partial-active','Shield Partial Active'),
       ('shield-wrong-retaliation','Shield Wrong Retaliation'),
       ('shield-impossible-enemy','Shield Impossible Enemy'),
+      ('shield-corrupt-completion','Shield Corrupt Completion'),
       ('shield-closure','Shield Closure');
     INSERT INTO characters(player_id,level,xp,currency,degen_key) VALUES
       ('shield-start',1,0,0,'test-degen'),('shield-action',1,0,0,'test-degen'),('shield-enemy',1,0,0,'test-degen'),('shield-enemy-kill',1,0,0,'test-degen'),
@@ -79,6 +80,7 @@ try {
       ('shield-impossible-active',1,0,0,'test-degen'),('shield-partial-active',1,0,0,'test-degen'),
       ('shield-wrong-retaliation',1,0,0,'test-degen'),
       ('shield-impossible-enemy',1,0,0,'test-degen'),
+      ('shield-corrupt-completion',1,0,0,'test-degen'),
       ('shield-closure',1,0,0,'test-degen');
     INSERT INTO world_event_cycles(id,event_key,opens_at,closes_at)
       VALUES
@@ -101,9 +103,11 @@ try {
       ('shield-impossible-enemy-permit','shield-impossible-enemy','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',120,12,0,0,0,92,0),
       ('shield-partial-active-permit','shield-partial-active','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,5,0,10,63,1),
       ('shield-wrong-retaliation-permit','shield-wrong-retaliation','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'active',110,0,0,0,9,63,1),
+      ('shield-corrupt-completion-permit','shield-corrupt-completion','underpass','shield-cycle','tunnel-maw',datetime('now'),datetime('now','+20 minutes'),'victory',80,0,0,0,0,0,1),
       ('shield-closure-permit','shield-closure','underpass','shield-closure-cycle','tunnel-maw',datetime('now','-5 minutes'),datetime('now','+20 minutes'),'active',120,0,4,10,10,63,1);
   `);
   cli(['d1','execute','DEGEN','--local','--persist-to='+persist,'--file='+seed]);
+  sql("UPDATE battle_permits SET enemy_shield=1 WHERE id='shield-corrupt-completion-permit'");
   server=spawn(wrangler,['dev','--local','--persist-to='+persist,'--ip=127.0.0.1','--port=8791'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
   for(const stream of [server.stdout,server.stderr]) stream.on('data',d=>{logs=(logs+d.toString()).slice(-10000);});
   await until(async()=>{const r=await fetch(base+'/api/health',{signal:AbortSignal.timeout(600)});return r.ok&&(await r.json()).ok;});
@@ -205,6 +209,24 @@ try {
   assert.deepEqual(sql("SELECT player_hp,player_mana,player_shield,last_shield_absorbed,last_retaliation_damage,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,battle_status FROM battle_permits WHERE id='shield-impossible-enemy-permit'"),[
     {player_hp:120,player_mana:12,player_shield:0,last_shield_absorbed:0,last_retaliation_damage:0,enemy_hp:92,enemy_shield:0,last_enemy_shield_absorbed:1,turn_count:0,battle_status:'active'},
   ],'the rejected corrupt audit must not advance or rewrite the permit');
+
+  // A corrupt pending victory must not bypass the same server-selected enemy Shield invariant
+  // and reach reward settlement through /api/battle/complete.
+  const corruptCompletionPermitBefore=sql("SELECT battle_status,player_hp,player_mana,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,reward_state,reward_clear_number,reward_claim_token,reward_claimed_at,completed_at FROM battle_permits WHERE id='shield-corrupt-completion-permit'");
+  const corruptCompletionProgressBefore=sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-corrupt-completion'");
+  const corruptCompletion=await post('/api/battle/complete',{
+    playerId:'shield-corrupt-completion',permitId:'shield-corrupt-completion-permit',
+  });
+  assert.equal(corruptCompletion.status,409);
+  assert.equal(corruptCompletion.data.error,'Battle state is invalid.');
+  assert.deepEqual(sql("SELECT battle_status,player_hp,player_mana,enemy_hp,enemy_shield,last_enemy_shield_absorbed,turn_count,reward_state,reward_clear_number,reward_claim_token,reward_claimed_at,completed_at FROM battle_permits WHERE id='shield-corrupt-completion-permit'"),corruptCompletionPermitBefore,
+    'a corrupt enemy Shield victory must remain an untouched pending receipt');
+  assert.deepEqual(sql("SELECT level,xp,currency FROM characters WHERE player_id='shield-corrupt-completion'"),corruptCompletionProgressBefore,
+    'corrupt enemy Shield state must not award XP or currency');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM battle_history WHERE player_id='shield-corrupt-completion'")[0]?.count,0,
+    'corrupt enemy Shield state must not create victory history');
+  assert.equal(sql("SELECT COUNT(*) AS count FROM world_event_clears WHERE player_id='shield-corrupt-completion'")[0]?.count,0,
+    'corrupt enemy Shield state must not reserve a full-clear slot');
 
   const partialActive=await post('/api/battle/action',{playerId:'shield-partial-active',permitId:'shield-partial-active-permit',abilityId:'slash',expectedTurnCount:1});
   assert.equal(partialActive.status,409);
