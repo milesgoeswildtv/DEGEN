@@ -1,3 +1,22 @@
+## Latest run — 2026-11-06 (Shield action/completion authority regressions)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; no direct-main write.
+- **Current feature branch / PR:** continuing `automation/degen/authoritative-shield-foundation-v02`, PR [#125](https://github.com/milesgoeswildtv/DEGEN/pull/125), OPEN / DRAFT / UNMERGED. Latest code/test commit: `2d2f23cf16191cf7249c7da2bfae11b75fd46335`.
+- **Task / files changed this run:**
+  - `tests/worker-shield-integration.mjs`: races a Shield-bearing killing blow against `/api/battle/complete`; then races two completion retries and asserts one persisted victory/reward/history receipt, identical reward replay, and preservation of the final player/enemy Shield audit.
+  - `tests/worker-d1-concurrency.mjs`: extends the forged-active-completion request with hostile `playerShield`, `enemyShield`, Shield-absorption, and retaliation fields. It asserts those client values do not alter either side's persisted Shield/audit state and cannot claim a reward.
+- **Persisted Shield race expectations:** the killing blow starts from player HP 5 / Mana 12 / Shield 5 and enemy HP 1 / Shield 5; Worker result must persist player HP 5 / Mana 8 / Shield 5, enemy HP/Shield 0, enemy Shield absorption 5, turn 2, victory, then award once. The active-permit completion forgery must leave both Shield pools and all Shield audit deltas at zero.
+- **QA:** exact-head CI [42211766892](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42211766892) passed every stage on the preceding implementation head `50b3b2cea4c896e4b4e9ecc4c629038b319e220d`. CI [42219465444](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42219465444) is still running on the intermediate head `e0118425760514a6826575df31407c3c512f4efe); migration preflight and deterministic tests passed, Worker/D1 reward concurrency was in progress at last check. The two new Shield-authority assertions are on `2d2f23c` and require their own exact-head CI; no green result is claimed yet.
+- **Mana:** COMPLETE / MERGED on main. Degen-only max Mana/costs, persisted Worker-owned player Mana, atomic affordability rejection, exact deduction, zero-cost-at-zero, terminal victory/defeat, cost-aware UI, shared client/Worker math, no monster Mana/equivalent resource, and no Mana-triggered reversion remain intact.
+- **Battle authority / reward idempotency:** Worker/D1 owns permits, player HP/Mana/Shield, enemy HP/Shield, action compare-and-swap, terminal outcomes/history, reward receipts, XP/level-up, currency, and inventory. New coverage explicitly rejects client-authored Shield at completion and exercises concurrent Shield victory settlement; no runtime authority moved to the client.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and tracked `db/migrations`. Shield migrations `0008_degen_shield.sql` / `0009_enemy_shield.sql` remain branch-only/unapplied. Main's `0007_player_inventory_quantity_guards.sql` still conflicts by version with draft auth PR #14's `0007_player_sessions.sql`; Miles' 2026-10-30 PR #14 comment explicitly leaves that sequencing decision unresolved. Preserve #114 → #126 → #125; no renumbering, production D1 operation, merge, or Worker deploy.
+- **Other verified release gates:** PR #114 exact-head CI [41793830515](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41793830515) and PR #126 exact-head CI [42022296018](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42022296018) are SUCCESS and both branches are mergeable. They remain OPEN / UNMERGED; no merge authority was assumed.
+- **Content authority:** accessible Library search found Design Bible v0.12, Monster Log v0.8/v0.9, and Monster Archetype Signatures v0.2, but not the specifically named `02 DEGEN Monster Log v0.11` or roster tracker. Older archetype docs are not substituted for the named monster roster. Status duration/stacking/resistance/cleanse and exact balance remain unresolved; no status behavior or monster identity was invented.
+- **Delivery:** PUSHED / PR #125. **MERGED / LIVE:** unchanged. No production D1, production Worker deployment, or physical-iPhone QA.
+- **One best next task:** finish exact-head CI for the Shield completion races; investigate any failing concurrency stage without weakening assertions, then update the PR evidence while preserving the `0007` release gate.
+
+---
+
 ## Latest run — 2026-11-06 (Shield killing-blow / completion race coverage)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main remains unchanged.
