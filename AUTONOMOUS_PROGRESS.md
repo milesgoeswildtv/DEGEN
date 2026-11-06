@@ -1,3 +1,17 @@
+## Latest run — 2026-11-06 (close separator-disguised LEAK namespace aliases)
+
+- **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`; main CI [41775622276](https://github.com/milesgoeswildtv/DEGEN/actions/runs/41775622276) is SUCCESS. Main remains unchanged.
+- **Current branch / PR:** continuing `automation/degen/monster-resource-boundary-v01`, PR [#122](https://github.com/milesgoeswildtv/DEGEN/pull/122), OPEN / READY FOR REVIEW / UNMERGED. Code/test head `ebb734d1faf83b0b2c6b7be83f713fe8cbaadbfe`, based directly on main; no direct-main write, merge, rebase, or force-push.
+- **Task / files changed:** `src/game/combat/rules.ts` adds NFKC/case/trim/separator normalization for monster mechanic identifiers before rejecting GLITCHRAT-owned `LEAK`. This closes disguised forms such as `L.E.A.K` in mechanic object keys and ability-effect values while preserving descriptive metadata exemptions. `tests/combat-progression.test.ts` adds full-width object-key and separator-disguised key/value regressions. The existing universal monster resource guard remains unchanged; no new monster, archetype, move, Degen kit, status vocabulary, or balance canon was invented.
+- **Exact-head QA:** CI [42189281511](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42189281511) is IN PROGRESS on the exact code/test head. The deterministic test stage passed; isolated Worker/D1 reward concurrency is running. Earlier test-only head `d8f1d9e` has separate CI [42188806272] still in progress. No full CI/build/Chromium/Wrangler pass is claimed for the new head yet. No local shell checkout was available in this run.
+- **Mana:** COMPLETE / MERGED on main. Degen-only `maxMana` / bespoke `manaCost`, authoritative persisted `player_mana`, affordability rejection, exact deduction, zero-cost-at-zero, terminal handling, cost-aware UI, no monster Mana/equivalent resource, and no Mana-triggered reversion remain intact. The original `sidekick/degen-mana-foundation-v01` remains 11 ahead / 104 behind and diverged; all 16 Mana-named successors are behind or diverged. No duplicate Mana work was started.
+- **Battle authority / reward idempotency:** Worker/D1 remains authoritative for permits, HP/Mana/enemy HP/turn CAS, terminal outcomes/history, audited receipts, progression, currency, inventory, and recoverable exactly-once settlement. This guard changes no reward or economy authority.
+- **D1 / migration assumptions:** `wrangler.toml` binds `DB` to `DEGEN` and `db/migrations`; main tracks through `0007_player_inventory_quantity_guards.sql`. Draft auth PR #14 still proposes a conflicting `0007_player_sessions.sql`. Preserve #114 → #126 → #122 before any Worker-imported shared resolver merge; no migration was renumbered/applied and no production D1 or Worker deployment occurred.
+- **Miles/content blockers:** the required Monster Log v0.11 and roster tracker were not found in the accessible Library/repository; older Monster Log copies are not substituted. The duplicate-`0007` ownership/order decision remains explicit. No status engine or monster content was invented.
+- **One best next task:** finish exact-head CI for #122; then preserve the #114 → #126 deploy-gate sequence before merging the Worker-imported combat resolver guard. Keep Shield PR #125 behind the explicit migration-order decision.
+
+---
+
 ## Latest run — 2026-11-05 (monster LEAK namespace map-key guard)
 
 - **Authoritative main SHA:** `8687739bef9ef1effdda5c07ec6353243b180e56`.
