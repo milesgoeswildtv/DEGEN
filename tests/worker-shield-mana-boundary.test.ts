@@ -166,7 +166,7 @@ test('Worker accepts a free Shield-gain ability at zero Mana and persists the au
           return {
             first: async () => {
               statements.push({ sql, params });
-              if (sql.trim().toUpperCase().startsWith('UPDATE BATTLE_PERMITS')) {
+              return /^UPDATE battle_permits/i.test(sql.trim())
                 ? { turn_count: 1 }
                 : { ...persisted };
             },
@@ -273,7 +273,7 @@ test('Worker carries the minimum-one retaliation through persisted zero-damage e
         bind(...params: unknown[]) {
           return {
             first: async () => {
-              if (/^\\s*UPDATE battle_permits/i.test(sql.trim())) {
+              if (sql.trim().toUpperCase().startsWith('UPDATE BATTLE_PERMITS')) {
                 Object.assign(persisted, {
                   player_hp: params[0],
                   player_mana: params[1],
