@@ -223,3 +223,105 @@ test('Worker accepts a free Shield-gain ability at zero Mana and persists the au
   assert.deepEqual(statements[1]?.params.slice(0, 9), [113, 0, 0, 3, 10, 63, 0, 0, 'active'],
     'the D1 compare-and-swap persists HP, zero Mana, both Shield audit fields, and the turn result');
 });
+
+
+test('Worker carries the minimum-one retaliation through persisted zero-damage enemy turns', async () => {
+  const zeroDamageEnemy = { ...TUNNEL_MAW, damage: 0 };
+  const handleZeroDamageAction = runInNewContext(
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\\nhandleBattleAction;',
+    {
+      TEST_DEGEN: degenWithShieldCosts,
+      TUNNEL_MAW: zeroDamageEnemy,
+      canUseAbility,
+      resolveCombatTurn,
+      UNDERPASS_FULL_REWARD_LIMIT,
+      advanceLevel,
+      underpassRewardForClear,
+      xpNeededForLevel,
+      validateHousingPlacements: () => [],
+      crypto: webcrypto,
+      Request,
+      Response,
+      URL,
+      console,
+      Uint32Array,
+    },
+  ) as (request: Request, env: { DB: unknown }) => Promise<Response>;
+
+  const persisted: Record<string, any> = {
+    event_key: 'underpass',
+    cycle_event_key: 'underpass',
+    cycle_id: 'zero-damage-cycle',
+    encounter_key: zeroDamageEnemy.id,
+    player_hp: TEST_DEGEN.maxHp,
+    player_mana: 0,
+    player_shield: 0,
+    last_shield_absorbed: 0,
+    last_retaliation_damage: 0,
+    enemy_hp: zeroDamageEnemy.maxHp,
+    enemy_shield: 0,
+    last_enemy_shield_absorbed: 0,
+    battle_status: 'active',
+    turn_count: 0,
+    victory_history_marker_count: 0,
+    defeat_history_marker_count: 0,
+    permit_is_unexpired: 1,
+  };
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...params: unknown[]) {
+          return {
+            first: async () => {
+              if (/^\\s*UPDATE battle_permits/i.test(sql.trim())) {
+                Object.assign(persisted, {
+                  player_hp: params[0],
+                  player_mana: params[1],
+                  player_shield: params[2],
+                  last_shield_absorbed: params[3],
+                  last_retaliation_damage: params[4],
+                  enemy_hp: params[5],
+                  enemy_shield: params[6],
+                  last_enemy_shield_absorbed: params[7],
+                  battle_status: params[8],
+                  turn_count: persisted.turn_count + 1,
+                });
+                return { turn_count: persisted.turn_count };
+              }
+              return { ...persisted };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const action = async (expectedTurnCount: number) => handleZeroDamageAction(
+    new Request('https://degen-api.example/api/battle/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: 'zero-damage-player',
+        permitId: 'zero-damage-permit',
+        abilityId: 'slash',
+        expectedTurnCount,
+      }),
+    }),
+    { DB: db },
+  );
+
+  const first = await action(0);
+  assert.equal(first.status, 200);
+  const firstState = await first.json() as Record<string, unknown>;
+  assert.equal(firstState.retaliationDamage, 1);
+  assert.equal(firstState.playerHp, TEST_DEGEN.maxHp - 1);
+  assert.equal(firstState.turnCount, 1);
+
+  const second = await action(1);
+  assert.equal(second.status, 200, 'the persisted one-point retaliation audit must remain valid on the next turn');
+  const secondState = await second.json() as Record<string, unknown>;
+  assert.equal(secondState.retaliationDamage, 1);
+  assert.equal(secondState.playerHp, TEST_DEGEN.maxHp - 2);
+  assert.equal(secondState.turnCount, 2);
+  assert.equal(persisted.last_retaliation_damage, 1);
+});
