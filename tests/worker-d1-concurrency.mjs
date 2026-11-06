@@ -1635,9 +1635,9 @@ try {
   assert.equal(completedAction.error, 'Battle permit is already completed.');
   assert.deepEqual(completedAction.battleState, {
     permitId: 'permit-b', status: 'victory', playerHp: 70,
-    playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    playerMana: 0,
     enemyHp: 0, turnCount: 3,
-  });
+  }, 'the seeded pre-Shield victory retains its omitted legacy audit shape');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-b' AND completed_at IS NOT NULL AND reward_state='awarded' AND battle_status='victory' AND turn_count=3"), 1,
     'retrying an action after settlement must not change the completed permit or receipt');
   // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
@@ -1937,9 +1937,9 @@ try {
   assert.equal(expiredVictoryActionReplay.error, 'Battle victory is awaiting reward completion.');
   assert.deepEqual(expiredVictoryActionReplay.battleState, {
     permitId: 'permit-expired-victory', status: 'victory',
-    playerHp: 80, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    playerHp: 80, playerMana: 0,
     enemyHp: 0, turnCount: 1,
-  }, 'the retry may recover a terminal snapshot but cannot apply another action');
+  }, 'the pre-Shield victory retry preserves omitted audit fields and cannot apply another action');
   assertPersistedPermitState('permit-expired-victory', {
     status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
   });
@@ -1992,9 +1992,9 @@ try {
   assert.equal(expiredDefeatReplay.error, 'Battle is already defeated.');
   assert.deepEqual(expiredDefeatReplay.battleState, {
     permitId: 'permit-expired-defeat', status: 'defeat',
-    playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
+    playerHp: 0, playerMana: 0,
     enemyHp: 63, turnCount: 1,
-  });
+  }, 'the pre-Shield defeat retry preserves omitted audit fields');
   assertPersistedPermitState('permit-expired-defeat', {
     status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
   });
