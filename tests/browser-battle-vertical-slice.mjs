@@ -690,18 +690,26 @@ try {
   await until('Reward settled and Underpass returned', () => cdp.evaluate('!!document.querySelector("[data-start-battle]")'), 40000);
   await tap("[data-route=home]");
   await until('Server-earned trophy in Home', () => cdp.evaluate('document.querySelector(".furniture-list")?.textContent?.includes("Underpass Trophy")'), 30000);
+  await until('earned trophy appears in the collection panel', () => cdp.evaluate(`(() => {
+    const panel = document.querySelector("[data-trophy-display]");
+    return panel?.querySelector(".trophy-count")?.textContent === "1 EARNED"
+      && panel?.querySelector(".trophy-copy small")?.textContent === "READY TO DISPLAY";
+  })()`));
 
   // The earned trophy must be usable as actual housing furniture, not only
   // present in inventory. Place it, then reload through the real Worker/D1
   // bootstrap path and prove the room snapshot restores that display.
   await tap('[data-furniture="tunnel-trophy"]');
   await until('earned trophy selected for display', () => cdp.evaluate(
-    'document.querySelector("[data-furniture=tunnel-trophy]")?.classList.contains("selected") === true',
+    'document.querySelector("[data-trophy-display] .trophy-select")?.getAttribute("aria-pressed") === "true"',
   ));
   await tap('[data-room-x="4"][data-room-y="2"]');
   const earnedTrophyCellSelector = '[data-room-x="4"][data-room-y="2"]';
   await until('earned trophy placed in the room', () => cdp.evaluate(
     'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+  ));
+  await until('trophy collection reflects the saved room cell', () => cdp.evaluate(
+    'document.querySelector("[data-trophy-display] .trophy-copy small")?.textContent === "DISPLAYED · ROOM CELL 5, 3"',
   ));
   await until('earned trophy saved to local D1', () =>
     sql("SELECT COUNT(*) AS count FROM housing_placements WHERE player_id='" + playerId + "' AND furniture_key='tunnel-trophy' AND grid_x=4 AND grid_y=2")[0]?.count === 1 ? true : null);
@@ -740,6 +748,9 @@ try {
   await tap('[data-route=home]');
   await until('persisted trophy displayed after reload', () => cdp.evaluate(
     'document.querySelector(' + JSON.stringify(earnedTrophyCellSelector) + ')?.getAttribute("aria-label")?.includes("Underpass Trophy") === true',
+  ));
+  await until('trophy display status restored after reload', () => cdp.evaluate(
+    'document.querySelector("[data-trophy-display] .trophy-copy small")?.textContent === "DISPLAYED · ROOM CELL 5, 3"',
   ));
   await assertFitsMobile('Home with earned trophy');
   await assertFitsCompact('Home with earned trophy');

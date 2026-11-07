@@ -147,11 +147,41 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
   const furnitureButtons = FURNITURE_CATALOG
     .filter((item) => player.housing.inventory.includes(item.id))
     .map((item) => `
-      <button class="inventory-item ${selectedFurniture === item.id ? 'selected' : ''}" type="button" data-furniture="${item.id}">
+      <button class="inventory-item ${selectedFurniture === item.id ? 'selected' : ''}" type="button"
+        data-furniture="${escapeHtml(item.id)}" aria-pressed="${selectedFurniture === item.id ? 'true' : 'false'}">
         <span>${escapeHtml(item.icon)}</span>
         <small>${escapeHtml(item.name)}</small>
       </button>
     `).join('');
+
+  const trophyItems = FURNITURE_CATALOG
+    .filter((item) => item.id.endsWith('-trophy') && player.housing.inventory.includes(item.id));
+  const trophies = trophyItems.map((item) => {
+    const placement = player.housing.placements.find((entry) => entry.furnitureId === item.id);
+    const selected = selectedFurniture === item.id;
+    const status = placement
+      ? `DISPLAYED · ROOM CELL ${placement.x + 1}, ${placement.y + 1}`
+      : 'READY TO DISPLAY';
+    const action = selected ? 'SELECTED' : placement ? 'MOVE TROPHY' : 'PLACE TROPHY';
+    return `
+      <article class="trophy-card">
+        <span class="trophy-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
+        <div class="trophy-copy">
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>${status}</small>
+        </div>
+        <button class="trophy-select ${selected ? 'selected' : ''}" type="button"
+          data-furniture="${escapeHtml(item.id)}" aria-pressed="${selected ? 'true' : 'false'}"
+          aria-label="${action} ${escapeHtml(item.name)}">${action}</button>
+      </article>
+    `;
+  }).join('');
+  const trophyContent = trophies || `
+    <p class="trophy-empty">
+      <strong>No trophies yet.</strong>
+      <span>A full Underpass clear awards the first display piece.</span>
+    </p>
+  `;
 
   return appShell(player, `
     <div class="city-breadcrumb"><button type="button" data-route="map">← CITY MAP</button><span>/</span><button type="button" data-district="Residential">RESIDENTIAL</button><span>/</span><strong>HOME</strong></div>
@@ -160,14 +190,21 @@ export const homeView = (player: PlayerState, selectedFurniture?: string): strin
       <h1>Make it yours.</h1>
       <p>Select furniture, then tap a room cell to place or move it. With nothing selected, tapping occupied furniture removes it.</p>
     </section>
+    <section class="trophy-display" data-trophy-display aria-labelledby="trophy-display-title">
+      <div class="trophy-display-heading">
+        <div><span class="eyebrow">HOME // COLLECTION</span><h2 id="trophy-display-title">TROPHY DISPLAY</h2></div>
+        <span class="trophy-count">${trophyItems.length} EARNED</span>
+      </div>
+      <div class="trophy-list">${trophyContent}</div>
+    </section>
     <section class="housing-layout">
-      <div class="room-grid" aria-label="Housing placement grid">${cells}</div>
+      <div class="room-grid" role="group" aria-label="Housing placement grid">${cells}</div>
       <aside class="furniture-panel">
         <div class="panel-heading">
           <strong>FURNITURE</strong>
           <button type="button" data-clear-selection>CLEAR</button>
         </div>
-        <div class="furniture-list">${furnitureButtons}</div>
+        <div class="furniture-list" role="group" aria-label="Available furniture">${furnitureButtons}</div>
       </aside>
     </section>
   `);
