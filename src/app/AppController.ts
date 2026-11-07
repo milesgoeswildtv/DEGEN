@@ -43,6 +43,7 @@ export class AppController {
   private battleReturnTimer?: number;
   private worldRefreshTimer?: number;
   private worldRefreshGeneration = 0;
+  private worldRefreshPlayerId?: string;
   private underpassEvent?: WorldEventSnapshot;
   private battlePermit?: BattlePermit;
   private battlePermitOwnerId?: string;
@@ -709,11 +710,39 @@ export class AppController {
   private async refreshWorld(rerender = false): Promise<void> {
     const playerId = this.store.snapshot.id;
     const generation = ++this.worldRefreshGeneration;
+    const previousPlayerId = this.worldRefreshPlayerId;
+    const accountChanged = previousPlayerId !== undefined && previousPlayerId !== playerId;
+    if (previousPlayerId !== playerId) {
+      this.worldRefreshPlayerId = playerId;
+      this.underpassEvent = undefined;
+      this.worldSyncFailed = false;
+      if (accountChanged) this.selectedFurniture = undefined;
+      if (accountChanged && this.route === 'battle' && this.battlePermitOwnerId !== playerId) {
+        // Never leave a previous account's manifested Degen or battle state on
+        // screen after the active identity changes. Keep the old player's
+        // persisted start key untouched so that player can resume on return.
+        this.battleResumeAttempt += 1;
+        this.battleResumePending = false;
+        this.battlePermit = undefined;
+        this.battlePermitOwnerId = undefined;
+        this.navigate('map');
+      } else if (accountChanged && (this.route === 'home' || this.route === 'location')) {
+        // Home and location views depend on player-owned furniture and unlocks.
+        // Replace the prior account's view immediately rather than waiting for navigation.
+        this.render();
+      } else if (accountChanged
+        && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) {
+        // Replace the prior account's world view immediately, even if its
+        // previous event snapshot had not loaded before the identity changed.
+        this.render();
+      }
+    }
+
     const isCurrentRequest = (): boolean =>
       generation === this.worldRefreshGeneration && this.store.snapshot.id === playerId;
     const refreshAfterAccountChange = async (): Promise<void> => {
-      // Ignore superseded reads for the same account. If the active identity
-      // changed without starting another refresh, immediately fetch its world.
+      // A newer refresh already owns the current player, or this response still
+      // belongs to the active account. Only the latest stale request may restart.
       if (generation !== this.worldRefreshGeneration || this.store.snapshot.id === playerId) return;
       await this.refreshWorld(true);
     };
@@ -746,7 +775,8 @@ export class AppController {
       await refreshAfterAccountChange();
       return;
     }
-    if (rerender && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
+    if ((rerender || accountChanged)
+      && (this.route === 'map' || this.route === 'district' || this.route === 'underpass')) this.render();
   }
 
   private destroyBattle(): void {

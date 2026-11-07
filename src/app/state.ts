@@ -26,6 +26,8 @@ const createDefaultPlayer = (id = newPlayerId()): PlayerState => ({
 
 export class PlayerStore {
   private state: PlayerState;
+  // A slower bootstrap must not overwrite a newer authoritative server snapshot.
+  private playerSnapshotGeneration = 0;
   private listeners = new Set<(state: PlayerState) => void>();
   private housingSaveInFlight = false;
   private housingSavePlayerId?: string;
@@ -60,12 +62,21 @@ export class PlayerStore {
 
     if (!this.api.enabled) return true;
 
+    const playerId = this.state.id;
+    const snapshotGeneration = ++this.playerSnapshotGeneration;
+    const isCurrentSnapshot = () => this.state.id === playerId
+      && this.playerSnapshotGeneration === snapshotGeneration;
+
     try {
-      const remote = await this.api.bootstrap(this.state.id, identity);
+      const remote = await this.api.bootstrap(playerId, identity);
+      // Ignore late success, empty, or failed responses after a newer server
+      // snapshot has arrived. The generation also protects an A → B → A switch.
+      if (!isCurrentSnapshot()) return true;
       if (!remote) return false;
       this.replaceFromServer(remote);
       return true;
     } catch (error) {
+      if (!isCurrentSnapshot()) return true;
       console.warn('DEGEN backend unavailable; retaining local preview state.', error);
       return false;
     }
@@ -85,6 +96,8 @@ export class PlayerStore {
   }
 
   replaceFromServer(player: PlayerState): void {
+    // Invalidate any bootstrap already in flight, including same-account snapshots.
+    this.playerSnapshotGeneration += 1;
     // Preserve unsaved placement edits for this account even if another account
     // was active while the save was queued or in flight. Inventory and progression
     // always come from the server response.

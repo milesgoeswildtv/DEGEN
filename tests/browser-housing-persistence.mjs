@@ -122,10 +122,13 @@ async function click(selector) {
 
 async function stopAll() {
   for (const child of children.reverse()) {
-    if (child.exitCode !== null) continue;
+    if (child.exitCode !== null || child.signalCode !== null) continue;
     child.kill('SIGTERM');
     await Promise.race([new Promise(resolveExit => child.once('exit', resolveExit)), sleep(1500)]);
-    if (child.exitCode === null) child.kill('SIGKILL');
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+      await Promise.race([new Promise(resolveExit => child.once('exit', resolveExit)), sleep(1500)]);
+    }
   }
 }
 
@@ -230,5 +233,5 @@ try {
 } finally {
   if (cdp) cdp.ws.close();
   await stopAll();
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

@@ -34,8 +34,13 @@ function loadController(preview: EventSnapshot) {
     AppController: new (
       root: unknown,
       store: { snapshot: { id: string } },
-      api: { enabled: boolean; getUnderpass: (id: string) => Promise<EventSnapshot> },
-    ) => { refreshWorld: () => Promise<void>; underpassEvent?: EventSnapshot };
+      api: {
+        enabled: boolean;
+        getUnderpass: (id: string) => Promise<EventSnapshot>;
+        hasRecoverableUnderpassStart?: (playerId: string) => boolean;
+        discardUnrecoverableUnderpassStart?: (playerId: string, permitId: string) => void;
+      },
+    ) => { refreshWorld: () => Promise<void>; underpassEvent?: EventSnapshot; worldSyncFailed?: boolean; render: () => void };
   };
   return { AppController: loaded.AppController, previewCalls: () => previewCalls };
 }
@@ -65,6 +70,242 @@ test('server-backed world refresh failure never fabricates a local Underpass cyc
   assert.equal(loaded.previewCalls(), 0, 'server-backed mode must not call the local preview generator');
 });
 
+
+test('a world refresh from a previous player cannot overwrite the active player snapshot', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let resolvePrevious!: (event: EventSnapshot) => void;
+  const previousEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
+  };
+  const currentEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        return new Promise<EventSnapshot>((resolve) => { resolvePrevious = resolve; });
+      }
+      return Promise.resolve(currentEvent);
+    },
+  });
+
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
+  const previousRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  resolvePrevious(previousEvent);
+  await previousRefresh;
+
+  assert.deepEqual(requests, ['player-1', 'player-2']);
+  assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(renderCount, 2, 'the old account view clears immediately and the active account snapshot renders after refresh');
+});
+
+test('a stale previous-player world failure cannot mark the active player offline', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let rejectPrevious!: (error: Error) => void;
+  const currentEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        return new Promise<EventSnapshot>((_resolve, reject) => { rejectPrevious = reject; });
+      }
+      return Promise.resolve(currentEvent);
+    },
+  });
+
+  controller.render = () => {};
+  controller.render = () => {};
+  const previousRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  rejectPrevious(new Error('stale player session expired'));
+  await previousRefresh;
+
+  assert.deepEqual(requests, ['player-1', 'player-2']);
+  assert.equal(controller.underpassEvent?.cycleId, 'player-2-cycle');
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(loaded.previewCalls(), 0);
+});
+
+
+
+test('a stale previous-player response awaits a fail-closed refresh for the active player', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let rejectPrevious!: (error: Error) => void;
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        return new Promise<EventSnapshot>((_resolve, reject) => { rejectPrevious = reject; });
+      }
+      return Promise.reject(new Error('active player session unavailable'));
+    },
+  });
+
+  controller.render = () => {};
+  const previousRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  rejectPrevious(new Error('stale player session expired'));
+  await previousRefresh;
+
+  assert.deepEqual(requests, ['player-1', 'player-2']);
+  assert.equal(controller.underpassEvent, undefined);
+  assert.equal(controller.worldSyncFailed, true);
+  assert.equal(loaded.previewCalls(), 0, 'an active-player failure must never fall back to preview state');
+});
+
+test('an older player refresh cannot overwrite or restart while the active player refresh is pending', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let playerOneReads = 0;
+  let resolveOlder!: (event: EventSnapshot) => void;
+  let resolveCurrent!: (event: EventSnapshot) => void;
+  const initialEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-initial-cycle', fullRewardClears: 2, source: 'server',
+  };
+  const staleEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-stale-cycle', fullRewardClears: 3, source: 'server',
+  };
+  const currentEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-current-cycle', fullRewardClears: 1, source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        playerOneReads += 1;
+        return playerOneReads === 1
+          ? Promise.resolve(initialEvent)
+          : new Promise<EventSnapshot>((resolve) => { resolveOlder = resolve; });
+      }
+      return new Promise<EventSnapshot>((resolve) => { resolveCurrent = resolve; });
+    },
+  });
+  Object.assign(controller, { route: 'underpass' });
+  const renderedFullRewardClears: Array<number | undefined> = [];
+  let renderCount = 0;
+  controller.render = () => {
+    renderCount += 1;
+    renderedFullRewardClears.push(controller.underpassEvent?.fullRewardClears);
+  };
+
+  await controller.refreshWorld();
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-initial-cycle');
+  assert.equal(controller.underpassEvent?.fullRewardClears, 2);
+
+  const olderRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  const activeRefresh = controller.refreshWorld();
+
+  assert.equal(renderCount, 1, 'the previous account snapshot is cleared and rerendered immediately');
+  assert.deepEqual(requests, ['player-1', 'player-1', 'player-2']);
+  assert.equal(controller.underpassEvent, undefined,
+    'the previous account event must be cleared while the active account is syncing');
+
+  resolveOlder(staleEvent);
+  await olderRefresh;
+
+  assert.deepEqual(requests, ['player-1', 'player-1', 'player-2'],
+    'a superseded stale request must not start a duplicate active-player read');
+  assert.equal(controller.underpassEvent, undefined,
+    'a stale response must not repopulate the previous account event while the active read is pending');
+
+  resolveCurrent(currentEvent);
+  await activeRefresh;
+
+  assert.equal(controller.underpassEvent?.cycleId, 'player-2-current-cycle');
+  assert.equal(controller.underpassEvent?.fullRewardClears, 1);
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(loaded.previewCalls(), 0);
+  assert.equal(renderCount, 2, 'the active player snapshot is rendered after its refresh settles');
+  assert.deepEqual(
+    renderedFullRewardClears,
+    [undefined, 1],
+    'the Underpass UI must render a cleared state, then only the active player clear count; the previous player count must never be shown',
+  );
+});
+
+test('an account switch renders fail-closed state after the new player refresh fails', async () => {
+  const loaded = loadController(previewEvent);
+  const previousEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => {
+      if (playerId === 'player-1') return previousEvent;
+      throw new Error('player-2 session unavailable');
+    },
+  });
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
+
+  await controller.refreshWorld();
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-cycle');
+
+  store.snapshot.id = 'player-2';
+  const refresh = controller.refreshWorld();
+  assert.equal(controller.underpassEvent, undefined,
+    'the previous account event is cleared before the new account request settles');
+  assert.equal(renderCount, 1, 'the previous account view is cleared immediately');
+
+  await refresh;
+  assert.equal(controller.underpassEvent, undefined);
+  assert.equal(controller.worldSyncFailed, true);
+  assert.equal(renderCount, 2, 'the active account failure is rendered without restoring prior-player state');
+  assert.equal(loaded.previewCalls(), 0);
+});
+
+test('an older overlapping world read cannot replace a newer snapshot for the same player', async () => {
+  const loaded = loadController(previewEvent);
+  let resolveOlder!: (event: EventSnapshot) => void;
+  let requestCount = 0;
+  const olderEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'older-cycle', source: 'server',
+  };
+  const newerEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'newer-cycle', source: 'server',
+  };
+  const controller = new loaded.AppController(
+    {},
+    { snapshot: { id: 'player-1' } },
+    {
+      enabled: true,
+      getUnderpass: () => {
+        requestCount += 1;
+        return requestCount === 1
+          ? new Promise<EventSnapshot>((resolve) => { resolveOlder = resolve; })
+          : Promise.resolve(newerEvent);
+      },
+    },
+  );
+
+  const olderRefresh = controller.refreshWorld();
+  await controller.refreshWorld();
+  resolveOlder(olderEvent);
+  await olderRefresh;
+
+  assert.equal(requestCount, 2);
+  assert.equal(controller.underpassEvent?.cycleId, 'newer-cycle');
+});
+
 test('offline preview still uses its local Underpass cycle when no Worker is configured', async () => {
   const loaded = loadController(previewEvent);
   const controller = new loaded.AppController(
@@ -77,4 +318,340 @@ test('offline preview still uses its local Underpass cycle when no Worker is con
 
   assert.equal(controller.underpassEvent, previewEvent);
   assert.equal(loaded.previewCalls(), 1);
+});
+
+test('rapid account switches cannot let an intermediate player response overwrite the newest account', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let resolveIntermediate!: (event: EventSnapshot) => void;
+  let resolveNewest!: (event: EventSnapshot) => void;
+  const firstEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-cycle', source: 'server',
+  };
+  const intermediateEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
+  };
+  const newestEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-3-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') return Promise.resolve(firstEvent);
+      if (playerId === 'player-2') {
+        return new Promise<EventSnapshot>((resolve) => { resolveIntermediate = resolve; });
+      }
+      if (playerId === 'player-3') {
+        return new Promise<EventSnapshot>((resolve) => { resolveNewest = resolve; });
+      }
+      throw new Error(`Unexpected player refresh: ${playerId}`);
+    },
+  });
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
+
+  await controller.refreshWorld();
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-cycle');
+
+  store.snapshot.id = 'player-2';
+  const intermediateRefresh = controller.refreshWorld(true);
+  assert.equal(controller.underpassEvent, undefined,
+    'switching accounts clears the previous event before the next read settles');
+
+  store.snapshot.id = 'player-3';
+  const newestRefresh = controller.refreshWorld(true);
+  assert.deepEqual(requests, ['player-1', 'player-2', 'player-3']);
+  assert.equal(controller.underpassEvent, undefined);
+
+  resolveIntermediate(intermediateEvent);
+  await intermediateRefresh;
+  assert.deepEqual(requests, ['player-1', 'player-2', 'player-3'],
+    'an intermediate stale response must not start another refresh for the newest account');
+  assert.equal(controller.underpassEvent, undefined,
+    'the intermediate account must not repopulate world state while the newest account is pending');
+
+  resolveNewest(newestEvent);
+  await newestRefresh;
+  assert.equal(controller.underpassEvent?.cycleId, 'player-3-cycle');
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(renderCount, 3,
+    'each account change clears the prior view immediately and the newest account renders after its response');
+});
+
+test('an A-to-B-to-A account switch cannot let the first A response overwrite the latest A snapshot', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  let playerOneReads = 0;
+  let resolveOlderPlayerOne!: (event: EventSnapshot) => void;
+  let resolvePlayerTwo!: (event: EventSnapshot) => void;
+  const initialEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-initial-cycle', fullRewardClears: 1, source: 'server',
+  };
+  const stalePlayerOneEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-stale-cycle', fullRewardClears: 4, source: 'server',
+  };
+  const intermediatePlayerTwoEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-intermediate-cycle', fullRewardClears: 3, source: 'server',
+  };
+  const latestPlayerOneEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-1-latest-cycle', fullRewardClears: 2, source: 'server',
+  };
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: (playerId: string) => {
+      requests.push(playerId);
+      if (playerId === 'player-1') {
+        playerOneReads += 1;
+        if (playerOneReads === 1) return Promise.resolve(initialEvent);
+        if (playerOneReads === 2) {
+          return new Promise<EventSnapshot>((resolve) => { resolveOlderPlayerOne = resolve; });
+        }
+        return Promise.resolve(latestPlayerOneEvent);
+      }
+      if (playerId === 'player-2') {
+        return new Promise<EventSnapshot>((resolve) => { resolvePlayerTwo = resolve; });
+      }
+      throw new Error(`Unexpected player refresh: ${playerId}`);
+    },
+  });
+  let renderCount = 0;
+  controller.render = () => { renderCount += 1; };
+
+  await controller.refreshWorld();
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-initial-cycle');
+
+  const olderPlayerOneRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-2';
+  const playerTwoRefresh = controller.refreshWorld();
+  store.snapshot.id = 'player-1';
+  const latestPlayerOneRefresh = controller.refreshWorld();
+
+  await latestPlayerOneRefresh;
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-latest-cycle');
+  assert.equal(controller.underpassEvent?.fullRewardClears, 2);
+
+  resolveOlderPlayerOne(stalePlayerOneEvent);
+  resolvePlayerTwo(intermediatePlayerTwoEvent);
+  await Promise.all([olderPlayerOneRefresh, playerTwoRefresh]);
+
+  assert.deepEqual(requests, ['player-1', 'player-1', 'player-2', 'player-1']);
+  assert.equal(controller.underpassEvent?.cycleId, 'player-1-latest-cycle',
+    'an older response from the same account ID must not win after an A-to-B-to-A switch');
+  assert.equal(controller.underpassEvent?.fullRewardClears, 2);
+  assert.equal(controller.worldSyncFailed, false);
+  assert.equal(renderCount, 3, 'both account changes clear immediately and the latest A snapshot renders after its response');
+  assert.equal(loaded.previewCalls(), 0);
+});
+
+test('switching accounts during battle closes the old account view but preserves its recoverable start', async () => {
+  const loaded = loadController(previewEvent);
+  const requests: string[] = [];
+  const discarded: string[] = [];
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => {
+      requests.push(playerId);
+      return { ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server' };
+    },
+    hasRecoverableUnderpassStart: (playerId: string) => playerId === 'player-1',
+    discardUnrecoverableUnderpassStart: (playerId: string, permitId: string) => {
+      discarded.push(`${playerId}:${permitId}`);
+    },
+  });
+  const state = controller as unknown as {
+    route: string;
+    battlePermit?: { permitId: string; cycleId: string };
+    battlePermitOwnerId?: string;
+    battleGame?: { destroy: (removeCanvas?: boolean) => void };
+    battleEngine?: unknown;
+    battleActionPending: boolean;
+    battleResumeAttempt: number;
+    underpassEvent?: EventSnapshot;
+    render: () => void;
+    refreshWorld: () => Promise<void>;
+  };
+
+  await state.refreshWorld();
+  assert.equal(state.underpassEvent?.cycleId, 'player-1-cycle');
+  state.route = 'battle';
+  state.battlePermit = { permitId: 'player-1-permit', cycleId: 'player-1-cycle' };
+  state.battlePermitOwnerId = 'player-1';
+  let destroyed = 0;
+  state.battleGame = { destroy: (removeCanvas) => {
+    assert.equal(removeCanvas, true);
+    destroyed += 1;
+  } };
+  state.battleEngine = {};
+  state.battleActionPending = true;
+  state.battleResumeAttempt = 4;
+
+  const rendered: Array<{ route: string; cycleId?: string }> = [];
+  state.render = () => rendered.push({ route: state.route, cycleId: state.underpassEvent?.cycleId });
+
+  store.snapshot.id = 'player-2';
+  await state.refreshWorld();
+
+  assert.deepEqual(requests, ['player-1', 'player-2']);
+  assert.deepEqual(rendered, [
+    { route: 'map', cycleId: undefined },
+    { route: 'map', cycleId: 'player-2-cycle' },
+  ], 'the old manifested battle must be hidden before the new account world state renders');
+  assert.equal(state.route, 'map');
+  assert.equal(state.battlePermit, undefined);
+  assert.equal(state.battlePermitOwnerId, undefined);
+  assert.equal(state.battleGame, undefined);
+  assert.equal(state.battleEngine, undefined);
+  assert.equal(state.battleActionPending, false);
+  assert.equal(state.battleResumeAttempt, 5, 'pending resume attempts from the old account are invalidated');
+  assert.equal(destroyed, 1, 'the old Phaser battle is destroyed exactly once');
+  assert.equal(discarded.length, 0, 'the old account recovery key is not discarded');
+  assert.equal(state.underpassEvent?.cycleId, 'player-2-cycle');
+  assert.equal(state.selectedFurniture, undefined, 'a prior account furniture selection must not carry into the new room');
+});
+
+test('account refresh preserves a battle already owned by the newly active player', async () => {
+  const loaded = loadController(previewEvent);
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => ({
+      ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server',
+    }),
+  });
+  const state = controller as unknown as {
+    route: string;
+    battlePermit?: { permitId: string; cycleId: string };
+    battlePermitOwnerId?: string;
+    battleGame?: { destroy: (removeCanvas?: boolean) => void };
+    battleEngine?: unknown;
+    battleActionPending: boolean;
+    underpassEvent?: EventSnapshot;
+    refreshWorld: () => Promise<void>;
+  };
+
+  await state.refreshWorld();
+  state.route = 'battle';
+  const currentPermit = { permitId: 'player-2-permit', cycleId: 'player-2-cycle' };
+  const currentGame = { destroy: () => { throw new Error('the active player battle must remain mounted'); } };
+  state.battlePermit = currentPermit;
+  state.battlePermitOwnerId = 'player-2';
+  state.battleGame = currentGame;
+  state.battleEngine = {};
+  state.battleActionPending = true;
+
+  store.snapshot.id = 'player-2';
+  await state.refreshWorld();
+
+  assert.equal(state.route, 'battle');
+  assert.equal(state.battlePermit, currentPermit);
+  assert.equal(state.battlePermitOwnerId, 'player-2');
+  assert.equal(state.battleGame, currentGame);
+  assert.notEqual(state.battleEngine, undefined);
+  assert.equal(state.battleActionPending, true);
+  assert.equal(state.underpassEvent?.cycleId, 'player-2-cycle');
+});
+
+test('account switch refreshes Home immediately with the new player room', async () => {
+  const loaded = loadController(previewEvent);
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => ({
+      ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server',
+    }),
+  });
+  const state = controller as unknown as {
+    route: string;
+    underpassEvent?: EventSnapshot;
+    selectedFurniture?: string;
+    render: () => void;
+    refreshWorld: () => Promise<void>;
+  };
+
+  await state.refreshWorld();
+  state.route = 'home';
+  state.selectedFurniture = 'starter-bed';
+  const rendered: Array<{ route: string; playerId: string }> = [];
+  state.render = () => rendered.push({ route: state.route, playerId: store.snapshot.id });
+
+  store.snapshot.id = 'player-2';
+  await state.refreshWorld();
+
+  assert.deepEqual(rendered, [
+    { route: 'home', playerId: 'player-2' },
+  ], 'the previous account room must be replaced as soon as the new account is detected');
+  assert.equal(state.underpassEvent?.cycleId, 'player-2-cycle');
+});
+
+test('account switch refreshes the current location with the new player unlock state', async () => {
+  const loaded = loadController(previewEvent);
+  const store = { snapshot: { id: 'player-1' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: async (playerId: string) => ({
+      ...previewEvent, cycleId: `${playerId}-cycle`, source: 'server',
+    }),
+  });
+  const state = controller as unknown as {
+    route: string;
+    selectedLocationId: string;
+    render: () => void;
+    refreshWorld: () => Promise<void>;
+  };
+
+  await state.refreshWorld();
+  state.route = 'location';
+  state.selectedLocationId = 'downtown';
+  const rendered: Array<{ route: string; playerId: string }> = [];
+  state.render = () => rendered.push({ route: state.route, playerId: store.snapshot.id });
+
+  store.snapshot.id = 'player-2';
+  await state.refreshWorld();
+
+  assert.deepEqual(rendered, [
+    { route: 'location', playerId: 'player-2' },
+  ], 'a player-owned location view must be rebuilt from the active account snapshot');
+});
+
+test('account switch immediately clears world routes even when the previous snapshot was empty', async () => {
+  const loaded = loadController(previewEvent);
+  let resolveCurrent!: (event: EventSnapshot) => void;
+  const currentEvent: EventSnapshot = {
+    ...previewEvent, cycleId: 'player-2-cycle', source: 'server',
+  };
+  const store = { snapshot: { id: 'player-2' } };
+  const controller = new loaded.AppController({ querySelector: () => undefined }, store, {
+    enabled: true,
+    getUnderpass: () => new Promise<EventSnapshot>((resolve) => { resolveCurrent = resolve; }),
+  });
+  const state = controller as unknown as {
+    route: string;
+    worldRefreshPlayerId?: string;
+    underpassEvent?: EventSnapshot;
+    worldSyncFailed: boolean;
+    render: () => void;
+    refreshWorld: () => Promise<void>;
+  };
+  state.route = 'district';
+  state.worldRefreshPlayerId = 'player-1';
+  state.underpassEvent = undefined;
+  state.worldSyncFailed = false;
+  const rendered: Array<{ route: string; cycleId?: string }> = [];
+  state.render = () => rendered.push({ route: state.route, cycleId: state.underpassEvent?.cycleId });
+
+  const refresh = state.refreshWorld();
+  assert.deepEqual(rendered, [
+    { route: 'district', cycleId: undefined },
+  ], 'the prior account view must be replaced immediately while the new account is syncing');
+
+  resolveCurrent(currentEvent);
+  await refresh;
+  assert.deepEqual(rendered, [
+    { route: 'district', cycleId: undefined },
+    { route: 'district', cycleId: 'player-2-cycle' },
+  ]);
 });

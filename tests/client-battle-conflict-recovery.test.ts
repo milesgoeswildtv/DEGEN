@@ -1018,14 +1018,32 @@ test('a delayed expired-permit refresh cannot navigate after the active account 
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(controller.battlePermit, undefined, 'the unusable permit is cleared before refresh finishes');
 
-  // Simulate the active account changing while the old encounter's world refresh is pending.
+  // The new account starts its own encounter while the old account's expired
+  // permit cleanup is still waiting on a world refresh.
+  const newEngine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('the new account battle must remain authoritative and mounted');
+  }, {
+    permitId: 'permit-player-2-new',
+    status: 'active',
+    playerHp: 120,
+    playerMana: 12,
+    enemyHp: 92,
+    turnCount: 0,
+  });
   store.snapshot.id = 'player-2';
+  controller.battlePermit = { permitId: 'permit-player-2-new' };
+  controller.battlePermitOwnerId = 'player-2';
+  controller.battleEngine = newEngine;
   resolveWorld(undefined);
   await pendingAction;
 
   assert.equal(controller.route, 'battle', 'old cleanup must not navigate the newly active account');
-  assert.equal(controller.battlePermit, undefined);
-  assert.equal(controller.battleEngine, oldEngine, 'the stale request must not mutate another account’s encounter');
+  assert.equal(controller.battlePermit?.permitId, 'permit-player-2-new');
+  assert.equal(controller.battlePermitOwnerId, 'player-2');
+  assert.equal(controller.battleEngine, newEngine, 'the stale request must not mutate another account’s encounter');
+  assert.equal(newEngine.snapshot.status, 'active');
+  assert.equal(newEngine.snapshot.turnCount, 0);
+  assert.equal(newEngine.snapshot.playerMana, 12);
   assert.equal(completionCalls, 0);
   assert.equal(store.localRewards, 0);
 });
