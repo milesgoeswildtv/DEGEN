@@ -51,5 +51,28 @@ test('Worker handler validates complete layout before D1 batch', () => {
   assert.ok(start>=0 && end>start);
   assert.ok(handler.indexOf('validateHousingPlacements(')>=0);
   assert.ok(handler.indexOf('validateHousingPlacements(')<handler.indexOf('await env.DB.batch(['));
-  assert.match(handler,/typeof input.playerId !== 'string'/);
+  assert.match(handler,/isCanonicalIdentifier\(input\.playerId\)/);
+});
+
+
+test('placement instance IDs are bounded and canonical', () => {
+  const maxPlayerId = 'p'.repeat(128);
+  const seededStarterId = `${maxPlayerId}:starter-bed-placed`;
+  assert.ok(seededStarterId.length <= 256, 'the maximum supported player ID still fits its server-seeded placement key');
+  assert.equal(validateHousingPlacements(owned, [bed(seededStarterId, 1)]).length, 1);
+
+  const maxLengthId = 'i'.repeat(256);
+  assert.equal(validateHousingPlacements(owned, [bed(maxLengthId, 1)]).length, 1);
+  const invalidIds = [
+    'i'.repeat(257),
+    ' leading',
+    'trailing ',
+    'line\nbreak',
+    'control\u0000id',
+    'format\u200Bid',
+    'bidi\u202Eid',
+  ];
+  for (const id of invalidIds) {
+    assert.throws(() => validateHousingPlacements(owned, [bed(id, 1)]), /Invalid housing placement/);
+  }
 });

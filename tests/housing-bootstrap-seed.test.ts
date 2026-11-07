@@ -11,7 +11,7 @@ const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf
   .replace(/^export default\s*\{/m, 'const worker = {');
 const { ensurePlayer, handleHousing, worker } = runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ ensurePlayer, handleHousing, worker });',
-  { crypto, console, Request, Response, URL, Uint32Array, validateHousingPlacements },
+  { crypto, console, Request, Response, URL, Uint32Array, TextDecoder, validateHousingPlacements },
 ) as {
   ensurePlayer: (db: unknown, playerId: string, displayName: string) => Promise<void>;
   handleHousing: (request: Request, env: unknown) => Promise<Response>;

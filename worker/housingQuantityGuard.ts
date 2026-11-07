@@ -1,6 +1,18 @@
 // Validate against server-owned furniture inventory, not client inventory.
 // Caller identity must be independently authenticated before public release.
 export interface OwnedFurnitureRow { item_key: string; quantity: number }
+
+const MAX_HOUSING_PLACEMENT_INSTANCE_ID_LENGTH = 256;
+const NONCANONICAL_HOUSING_ID_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]|\p{Cf}/u;
+
+// Placement IDs are persisted as global D1 keys. 256 code units leaves room
+// for a maximum-length player ID plus the server-seeded starter-bed suffix.
+const isCanonicalHousingPlacementInstanceId = (value: unknown): value is string =>
+  typeof value === 'string'
+  && value.length > 0
+  && value.length <= MAX_HOUSING_PLACEMENT_INSTANCE_ID_LENGTH
+  && value.trim() === value
+  && !NONCANONICAL_HOUSING_ID_CHARACTERS.test(value);
 export interface RequestedPlacement {
   instanceId: string; furnitureId: string; x: number; y: number; rotation?: number;
 }
@@ -23,7 +35,7 @@ export function validateHousingPlacements(
   const cells = new Set<string>();
   const validated: RequestedPlacement[] = [];
   for (const item of requested) {
-    if (!item || typeof item.instanceId !== 'string' || !item.instanceId ||
+    if (!item || !isCanonicalHousingPlacementInstanceId(item.instanceId) ||
       typeof item.furnitureId !== 'string' || !item.furnitureId ||
       !Number.isSafeInteger(item.x) || !Number.isSafeInteger(item.y) ||
       item.x < 0 || item.x > 7 || item.y < 0 || item.y > 5 ||

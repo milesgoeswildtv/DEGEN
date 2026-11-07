@@ -39,11 +39,16 @@ const fail = (request: Request, env: Env, message: string, status = 400): Respon
   json(request, env, { error: message }, status);
 
 class RequestBodyError extends Error {
-  constructor(message: string) {
+  readonly status: number;
+
+  constructor(message: string, status = 400) {
     super(message);
     this.name = 'RequestBodyError';
+    this.status = status;
   }
 }
+
+const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 
 const body = async <T>(request: Request): Promise<T> => {
   // Require the JSON media type, not merely JSON-looking bytes. This prevents
@@ -52,9 +57,56 @@ const body = async <T>(request: Request): Promise<T> => {
   if (contentType !== 'application/json') {
     throw new RequestBodyError('Content-Type must be application/json.');
   }
+
+  // Content-Length is only an early rejection hint; enforce the same bound while
+  // reading so chunked or dishonest requests cannot bypass the memory limit.
+  const contentLength = request.headers.get('content-length');
+  if (contentLength !== null) {
+    if (!/^\d+$/.test(contentLength)) {
+      throw new RequestBodyError('Content-Length must be a non-negative integer.');
+    }
+    const declaredLength = Number(contentLength);
+    if (!Number.isSafeInteger(declaredLength)) {
+      throw new RequestBodyError('Content-Length must be a safe integer.');
+    }
+    if (declaredLength > MAX_REQUEST_BODY_BYTES) {
+      throw new RequestBodyError('Request body exceeds the 64 KiB limit.', 413);
+    }
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) throw new RequestBodyError('Request body must be valid JSON.');
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        try { await reader.cancel(); } catch { /* Preserve the size rejection. */ }
+        throw new RequestBodyError('Request body exceeds the 64 KiB limit.', 413);
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof RequestBodyError) throw error;
+    throw new RequestBodyError('Request body must be readable JSON.');
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
   let value: unknown;
   try {
-    value = await request.json();
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } catch {
     throw new RequestBodyError('Request body must be valid JSON.');
   }
@@ -63,6 +115,25 @@ const body = async <T>(request: Request): Promise<T> => {
   }
   return value as T;
 };
+
+// Opaque IDs must stay small and canonical before they reach D1.
+const MAX_ROUTE_IDENTIFIER_LENGTH = 128;
+const ROUTE_IDENTIFIER_NONCANONICAL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]|\p{Cf}/u;
+const isCanonicalIdentifier = (value: unknown): value is string =>
+  typeof value === 'string'
+  && value.length > 0
+  && value.length <= MAX_ROUTE_IDENTIFIER_LENGTH
+  && value.trim() === value
+  && !ROUTE_IDENTIFIER_NONCANONICAL_CHARACTERS.test(value);
+
+// Read routes accept one identity value only; duplicate query keys are ambiguous.
+const singleCanonicalQueryIdentifier = (url: URL, key: string): string | undefined => {
+  const values = url.searchParams.getAll(key);
+  if (values.length !== 1) return undefined;
+  const value = values[0];
+  return isCanonicalIdentifier(value) ? value : undefined;
+};
+
 const iso = (value = Date.now()): string => new Date(value).toISOString();
 const randomInt = (min: number, max: number): number => {
   const bytes = new Uint32Array(1);
@@ -288,7 +359,24 @@ async function worldSnapshot(db: D1Database, playerId: string, cycle?: CycleRow)
 
 async function handleBootstrap(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; displayName?: string; platform?: string; platformUserId?: string }>(request);
-  if (!input.playerId) return fail(request, env, 'playerId is required');
+  if (!isCanonicalIdentifier(input.playerId)) return fail(request, env, 'playerId is required');
+  if (input.displayName !== undefined && typeof input.displayName !== 'string') {
+    return fail(request, env, 'displayName must be a string.');
+  }
+  if (input.platform !== undefined && typeof input.platform !== 'string') {
+    return fail(request, env, 'platform must be a string.');
+  }
+  if (input.platform !== undefined && !['browser', 'discord', 'telegram'].includes(input.platform)) {
+    return fail(request, env, 'platform must be browser, discord, or telegram.');
+  }
+  if (input.platformUserId !== undefined && typeof input.platformUserId !== 'string') {
+    return fail(request, env, 'platformUserId must be a string.');
+  }
+  if (input.platformUserId !== undefined
+    && (!isCanonicalIdentifier(input.platformUserId)
+      || input.platformUserId !== input.platformUserId.trim())) {
+    return fail(request, env, 'platformUserId must be a non-empty canonical string.');
+  }
   await ensurePlayer(env.DB, input.playerId, input.displayName || 'Player');
 
   if ((input.platform === 'discord' || input.platform === 'telegram') && input.platformUserId) {
@@ -306,7 +394,7 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     playerId?: string;
     housing?: { inventory?: string[]; placements?: Array<{ instanceId: string; furnitureId: string; x: number; y: number; rotation?: number }> };
   }>(request);
-  if (!input || typeof input.playerId !== 'string' || !input.playerId
+  if (!input || !isCanonicalIdentifier(input.playerId)
     || !input.housing || typeof input.housing !== 'object') {
     return fail(request, env, 'playerId and housing are required');
   }
@@ -370,7 +458,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   const input = await body<{
     playerId?: string; eventKey?: string; cycleId?: string; encounterKey?: string; requestId?: string;
   }>(request);
-  if (!input.playerId || input.eventKey !== 'underpass' || !input.cycleId || input.encounterKey !== TUNNEL_MAW.id) {
+  if (!isCanonicalIdentifier(input.playerId) || input.eventKey !== 'underpass'
+    || !isCanonicalIdentifier(input.cycleId) || input.encounterKey !== TUNNEL_MAW.id) {
     return fail(request, env, 'Invalid battle start request');
   }
   if (input.requestId !== undefined
@@ -547,7 +636,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 
 async function handleBattleAction(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount: number }>(request);
-  if (!input.playerId || !input.permitId || !input.abilityId) {
+  if (!isCanonicalIdentifier(input.playerId) || !isCanonicalIdentifier(input.permitId)
+    || !isCanonicalIdentifier(input.abilityId)) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
   }
   // This is a compare-and-swap precondition only; combat state remains Worker-owned.
@@ -885,7 +975,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
 
 async function handleCompleteBattle(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; permitId?: string }>(request);
-  if (!input.playerId || !input.permitId) return fail(request, env, 'playerId and permitId are required');
+  if (!isCanonicalIdentifier(input.playerId) || !isCanonicalIdentifier(input.permitId)) {
+    return fail(request, env, 'playerId and permitId are required');
+  }
 
   type ReceiptRow = {
     cycle_id: string; encounter_key: string; reward_state: 'pending' | 'claiming' | 'awarded';
@@ -1391,12 +1483,12 @@ export default {
       if (request.method === 'POST' && url.pathname === '/api/player/bootstrap') return await handleBootstrap(request, env);
       if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(request, env);
       if (request.method === 'GET' && url.pathname === '/api/battle/pending-rewards') {
-        const playerId = url.searchParams.get('playerId');
+        const playerId = singleCanonicalQueryIdentifier(url, 'playerId');
         if (!playerId) return fail(request, env, 'playerId is required');
         return await handlePendingBattleRewards(request, env, playerId);
       }
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
-        const playerId = url.searchParams.get('playerId');
+        const playerId = singleCanonicalQueryIdentifier(url, 'playerId');
         if (!playerId) return fail(request, env, 'playerId is required');
         const snapshot = await worldSnapshot(env.DB, playerId);
         return json(request, env, snapshot);
@@ -1406,7 +1498,7 @@ export default {
       if (request.method === 'POST' && url.pathname === '/api/battle/complete') return await handleCompleteBattle(request, env);
       return fail(request, env, 'Not found', 404);
     } catch (error) {
-      if (error instanceof RequestBodyError) return fail(request, env, error.message, 400);
+      if (error instanceof RequestBodyError) return fail(request, env, error.message, error.status);
       if (error instanceof InventoryIntegrityError) return fail(request, env, error.message, 409);
       console.error(error);
       return fail(request, env, 'Internal server error', 500);

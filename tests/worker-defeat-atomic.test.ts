@@ -12,7 +12,7 @@ const workerSource = readFileSync(new URL('../worker/index.ts', import.meta.url)
   .replace(/^import .*;\n/gm, '').replace(/^export default\s*\{/m, 'const worker = {');
 const action = runInNewContext(stripTypeScriptTypes(workerSource, { mode: 'transform' }) + '\nhandleBattleAction;',
   { TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn, crypto: webcrypto,
-    Request, Response, URL, console, Uint32Array },
+    Request, Response, URL, console, Uint32Array, TextDecoder },
 ) as (request: Request, env: unknown) => Promise<Response>;
 
 function setup(hp = 1) {
