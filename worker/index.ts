@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
-import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
+import { assertNoMonsterActionResource, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear, xpNeededForLevel } from '../src/game/progression';
 import { validateHousingPlacements } from './housingQuantityGuard';
 
@@ -377,6 +377,14 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     && (typeof input.requestId !== 'string'
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestId))) {
     return fail(request, env, 'Invalid battle start request id');
+  }
+
+  // Validate the server-selected encounter before reading or creating any permit.
+  // Invalid content must never leave the player holding an unusable battle permit.
+  try {
+    assertNoMonsterActionResource(TUNNEL_MAW);
+  } catch {
+    return fail(request, env, 'Encounter definition is invalid.', 500);
   }
 
   // The client retries only the same start attempt with the same random requestId.

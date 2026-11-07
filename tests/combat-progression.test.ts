@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 import {
   UNDERPASS_FULL_REWARD_LIMIT,
@@ -19,7 +19,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class /g, 'class ');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, isValidManaState, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,
@@ -292,4 +292,628 @@ test('monster definitions do not expose a Mana resource', () => {
     [],
     'monster combat state must not acquire a Mana-equivalent field',
   );
+});
+
+
+test('BattleEngine rejects a monster resource before exposing a battle snapshot', () => {
+  const invalidEnemy = {
+    ...TUNNEL_MAW,
+    signature: { resourceRegeneration: 1 },
+  } as typeof TUNNEL_MAW;
+
+  assert.throws(
+    () => new BattleEngine(TEST_DEGEN, invalidEnemy, () => {}),
+    (error: unknown) => error instanceof TypeError
+      && error.message.includes('universal action resource (signature.resourceRegeneration)'),
+  );
+});
+
+test('combat rules reject universal monster action-resource aliases before resolving damage', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  const forbiddenFields = [
+    'mana',
+    'maxMana',
+    'currentMana',
+    'manaCost',
+    'manaPool',
+    'monsterMana',
+    'monster_mana',
+    'max_mana',
+    'current_mana',
+    'mana_cost',
+    'm-a-n-a',
+    'm a n a',
+    'm.a.n.a',
+    'm_a_n_a',
+    'm/a/n/a',
+    'M-A_N.A',
+    'ｍａｎａ',
+    'ＭＡＮＡＣＯＳＴ',
+    'resource',
+    'RESOURCE',
+    'resourcePool',
+    'ResourcePool',
+    'resource_pool',
+    'RESOURCE_POOL',
+    'Resource-Pool',
+    'resource.amount',
+    'resource amount',
+    'resource/amount',
+    'resource:amount',
+    'resourceCost',
+    'RESOURCE_COST',
+    'resource_cost',
+    'resourceRegeneration',
+    'resource_regen',
+    'resourceSteal',
+    'resource_steal',
+    'resourceDrain',
+    'resource-drain',
+    'resourceRecovery',
+    'resourceRestore',
+    'resourceGain',
+    'actionResource',
+    'ACTION_RESOURCE',
+    'action_resource',
+    'actionPoints',
+    'ACTION-POINTS',
+    'action_points',
+    'actionPoint',
+    'maxActionPoints',
+    'actionPointCost',
+    'actionPointRegeneration',
+    'energy',
+    'Energy',
+    'maxEnergy',
+    'energyCost',
+    'energyRegeneration',
+    'energySteal',
+    'energyDrain',
+    'energyRecovery',
+    'energyRestore',
+    'energyGain',
+    'energyPoint',
+    'energyPoints',
+    'maxEnergyPoints',
+    'startingFocusPoints',
+    'baseResourcePoints',
+    'initialStaminaPoints',
+    'staminaPoint',
+    'staminaPoints',
+    'focusPoint',
+    'focusPoints',
+    'resourcePoint',
+    'resourcePoints',
+    'stamina',
+    'STAMINA',
+    'maxStamina',
+    'staminaCost',
+    'staminaRegeneration',
+    'staminaSteal',
+    'staminaDrain',
+    'staminaRecovery',
+    'staminaRestore',
+    'staminaGain',
+    'focus',
+    'maxFocus',
+    'focusCost',
+    'focusRegeneration',
+    'focusSteal',
+    'focusDrain',
+    'focusRecovery',
+    'focusRestore',
+    'focusGain',
+    'mp',
+    'MP',
+    'maxMp',
+    'currentMp',
+    'mpCost',
+    'mpPool',
+    'mpRegeneration',
+    'mpRegen',
+    'mpSteal',
+    'mpDrain',
+    'mpRecovery',
+    'mpRestore',
+    'mpGain',
+    'magicPoint',
+    'magicPoints',
+    'magicPointCost',
+    'magicPointRegeneration',
+    'magicPoint',
+    'mpMax',
+    'mpCurrent',
+    'mpBase',
+    'mpStarting',
+    'mpInitial',
+    'maxResource',
+    'currentResource',
+    'resource_max',
+    'maxActionPoints',
+    'actionResourceCost',
+    'm-p',
+    'm_p',
+    'm.p.',
+    'm p',
+    'ｍｐ',
+    'ＭＰＣＯＳＴ',
+  ] as const;
+
+  for (const field of forbiddenFields) {
+    const invalidEnemy = { ...TUNNEL_MAW, [field]: 1 } as typeof TUNNEL_MAW;
+    assert.throws(
+      () => resolveCombatTurn({
+        playerHp: TEST_DEGEN.maxHp,
+        playerMana: TEST_DEGEN.maxMana,
+        enemyHp: TUNNEL_MAW.maxHp,
+        ability: free,
+        degen: TEST_DEGEN,
+        enemy: invalidEnemy,
+      }),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes(`universal action resource (${field})`),
+      `monster field ${field} must be rejected before combat resolves`,
+    );
+  }
+});
+
+
+test('combat rules reject nested monster action resources and safely inspect cyclic signature data', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  const nestedCases = [
+    {
+      path: 'signature.m-a-n-a',
+      enemy: { ...TUNNEL_MAW, signature: { 'm-a-n-a': 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.currentMana',
+      enemy: { ...TUNNEL_MAW, signature: { currentMana: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.ｍａｎａ',
+      enemy: { ...TUNNEL_MAW, signature: { 'ｍａｎａ': 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resource_pool',
+      enemy: { ...TUNNEL_MAW, signature: { resource_pool: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resource.amount',
+      enemy: { ...TUNNEL_MAW, signature: { 'resource.amount': 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resource amount',
+      enemy: { ...TUNNEL_MAW, signature: { 'resource amount': 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.energy',
+      enemy: { ...TUNNEL_MAW, loadout: [{ energy: 1 }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.maxEnergy',
+      enemy: { ...TUNNEL_MAW, signature: { maxEnergy: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.focus',
+      enemy: { ...TUNNEL_MAW, signature: { focus: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resourceAmount',
+      enemy: { ...TUNNEL_MAW, signature: { resourceAmount: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resourceRegeneration',
+      enemy: { ...TUNNEL_MAW, signature: { resourceRegeneration: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.actionPointCost',
+      enemy: { ...TUNNEL_MAW, signature: { actionPointCost: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.energyRegeneration',
+      enemy: { ...TUNNEL_MAW, signature: { energyRegeneration: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.staminaSteal',
+      enemy: { ...TUNNEL_MAW, loadout: [{ staminaSteal: 1 }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.focusRecovery',
+      enemy: { ...TUNNEL_MAW, signature: { focusRecovery: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.resource_steal',
+      enemy: { ...TUNNEL_MAW, loadout: [{ resource_steal: 1 }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resource-drain',
+      enemy: { ...TUNNEL_MAW, signature: { 'resource-drain': 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.mpPool',
+      enemy: { ...TUNNEL_MAW, signature: { mpPool: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.magicPointCost',
+      enemy: { ...TUNNEL_MAW, loadout: [{ magicPointCost: 1 }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.resource_max',
+      enemy: { ...TUNNEL_MAW, signature: { resource_max: 1 } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.maxStamina',
+      enemy: { ...TUNNEL_MAW, loadout: [{ maxStamina: 1 }] } as typeof TUNNEL_MAW,
+    },
+  ];
+
+  for (const { path, enemy } of nestedCases) {
+    assert.throws(
+      () => resolveCombatTurn({
+        playerHp: TEST_DEGEN.maxHp,
+        playerMana: TEST_DEGEN.maxMana,
+        enemyHp: TUNNEL_MAW.maxHp,
+        ability: free,
+        degen: TEST_DEGEN,
+        enemy,
+      }),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes(`universal action resource (${path})`),
+      `nested monster field ${path} must be rejected before combat resolves`,
+    );
+  }
+
+  const cyclicSignature: Record<string, unknown> = {};
+  cyclicSignature.self = cyclicSignature;
+  cyclicSignature.mana = 1;
+  const cyclicEnemy = { ...TUNNEL_MAW, signature: cyclicSignature } as typeof TUNNEL_MAW;
+
+  assert.throws(
+    () => resolveCombatTurn({
+      playerHp: TEST_DEGEN.maxHp,
+      playerMana: TEST_DEGEN.maxMana,
+      enemyHp: TUNNEL_MAW.maxHp,
+      ability: free,
+      degen: TEST_DEGEN,
+      enemy: cyclicEnemy,
+    }),
+    /universal action resource \(signature\.mana\)/,
+    'cyclic nested monster data must be checked without infinite recursion',
+  );
+});
+
+
+test('ordinary monster move names containing the letters mp remain valid', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    signature: { jump: true, stomp: true },
+  } as typeof TUNNEL_MAW;
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
+});
+
+
+test('monster descriptive metadata and loot labels are not mistaken for action-resource pools', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    energyColor: 'cold blue',
+    focusDescription: 'tracks the loudest movement',
+    staminaAnimation: 'heavy',
+    resourceDrops: ['underpass-scrap'],
+    magicPointColor: 'dim white',
+    abilities: [{ name: 'Focus', description: 'The monster watches its target.' }],
+  } as typeof TUNNEL_MAW;
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
+});
+
+test('monster resource descriptor values cannot disguise a universal Mana-equivalent resource', () => {
+  const descriptorCases = [
+    { field: 'resourceType', value: 'Mana' },
+    { field: 'actionResourceName', value: 'Energy' },
+    { field: 'resourceKind', value: 'MP' },
+    { field: 'magicPointType', value: 'Action Points' },
+  ];
+
+  for (const { field, value } of descriptorCases) {
+    const enemy = { ...TUNNEL_MAW, signature: { [field]: value } } as typeof TUNNEL_MAW;
+    assert.throws(
+      () => assertNoMonsterActionResource(enemy),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('universal action resource (signature.' + field + ')'),
+      'monster resource descriptor ' + field + ' must reject a universal action resource name',
+    );
+  }
+
+  assert.doesNotThrow(() => assertNoMonsterActionResource({
+    ...TUNNEL_MAW,
+    metadata: { resourceType: 'loot' },
+  } as typeof TUNNEL_MAW), 'descriptive non-action resource metadata remains allowed');
+});
+
+test('monster mechanics cannot use the Degen-only LEAK effect', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  const forbiddenCases = [
+    {
+      path: 'status',
+      enemy: { ...TUNNEL_MAW, status: 'LEAK' } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.name',
+      enemy: { ...TUNNEL_MAW, signature: { name: 'LEAK' } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.effects.LEAK',
+      enemy: { ...TUNNEL_MAW, signature: { effects: { LEAK: { enabled: true } } } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.effects.ＬＥＡＫ',
+      enemy: { ...TUNNEL_MAW, signature: { effects: { 'ＬＥＡＫ': { enabled: true } } } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.effects.L.E.A.K',
+      enemy: { ...TUNNEL_MAW, signature: { effects: { 'L.E.A.K': { enabled: true } } } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'statusName.LEAK',
+      enemy: { ...TUNNEL_MAW, statusName: { LEAK: { enabled: true } } } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.statuses.leak',
+      enemy: { ...TUNNEL_MAW, loadout: [{ statuses: { leak: { enabled: true } } }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.appliedEffect',
+      enemy: { ...TUNNEL_MAW, loadout: [{ appliedEffect: 'leak' }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'abilities.0.effect',
+      enemy: { ...TUNNEL_MAW, abilities: [{ effect: 'ＬＥＡＫ' }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'abilities.0.effect',
+      enemy: { ...TUNNEL_MAW, abilities: [{ effect: 'L.E.A.K' }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'status.0',
+      enemy: { ...TUNNEL_MAW, status: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'appliedStatus',
+      enemy: { ...TUNNEL_MAW, appliedStatus: 'LEAK' } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'appliedStatuses.0',
+      enemy: { ...TUNNEL_MAW, appliedStatuses: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'abilities.0.appliedStatus',
+      enemy: { ...TUNNEL_MAW, abilities: [{ appliedStatus: 'LEAK' }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.appliedStatuses.0',
+      enemy: { ...TUNNEL_MAW, loadout: [{ appliedStatuses: ['LEAK'] }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'statusEffects.0',
+      enemy: { ...TUNNEL_MAW, statusEffects: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signatureEffects.0.name',
+      enemy: { ...TUNNEL_MAW, signatureEffects: [{ name: 'LEAK' }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'degenEffects.0',
+      enemy: { ...TUNNEL_MAW, degenEffects: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'degenStatuses.0',
+      enemy: { ...TUNNEL_MAW, degenStatuses: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'abilityEffects.0',
+      enemy: { ...TUNNEL_MAW, abilityEffects: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'moveEffects.0',
+      enemy: { ...TUNNEL_MAW, moveEffects: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'effects.0',
+      enemy: { ...TUNNEL_MAW, effects: ['LEAK'] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'loadout.0.effects.0',
+      enemy: { ...TUNNEL_MAW, loadout: [{ effects: ['LEAK'] }] } as typeof TUNNEL_MAW,
+    },
+    {
+      path: 'signature.name',
+      enemy: (() => {
+        const sharedMechanic = { name: 'LEAK' };
+        return {
+          ...TUNNEL_MAW,
+          metadata: sharedMechanic,
+          signature: sharedMechanic,
+        } as typeof TUNNEL_MAW;
+      })(),
+    },
+  ];
+
+  for (const { path, enemy } of forbiddenCases) {
+    assert.throws(
+      () => resolveCombatTurn({
+        playerHp: TEST_DEGEN.maxHp,
+        playerMana: TEST_DEGEN.maxMana,
+        enemyHp: TUNNEL_MAW.maxHp,
+        ability: free,
+        degen: TEST_DEGEN,
+        enemy,
+      }),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('Degen-owned effect LEAK (' + path + ')'),
+      'monster mechanic ' + path + ' must not claim GLITCHRAT\'s LEAK effect',
+    );
+  }
+});
+
+test('LEAK identifiers reject invisible formatting and combining-character disguises', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+
+  // NFKC plus ASCII identifier filtering must not let invisible Unicode
+  // formatting/combining characters disguise GLITCHRAT's Degen-only effect.
+  const disguisedIdentifiers = ['L\u200bEAK', 'L\u2060EAK', 'L\u0307EAK', 'L\u202eEAK'];
+
+  for (const identifier of disguisedIdentifiers) {
+    const forbiddenCases = [
+      {
+        path: 'signature.effects.' + identifier,
+        enemy: {
+          ...TUNNEL_MAW,
+          signature: { effects: { [identifier]: { enabled: true } } },
+        } as typeof TUNNEL_MAW,
+      },
+      {
+        path: 'abilities.0.effect',
+        enemy: {
+          ...TUNNEL_MAW,
+          abilities: [{ effect: identifier }],
+        } as typeof TUNNEL_MAW,
+      },
+    ];
+
+    for (const { path, enemy } of forbiddenCases) {
+      assert.throws(
+        () => resolveCombatTurn({
+          playerHp: TEST_DEGEN.maxHp,
+          playerMana: TEST_DEGEN.maxMana,
+          enemyHp: TUNNEL_MAW.maxHp,
+          ability: free,
+          degen: TEST_DEGEN,
+          enemy,
+        }),
+        (error: unknown) => error instanceof TypeError
+          && error.message.includes('Degen-owned effect LEAK (' + path + ')'),
+        'monster mechanic ' + path + ' must reject disguised LEAK',
+      );
+    }
+  }
+
+  const proseOnly = {
+    ...TUNNEL_MAW,
+    description: 'L\u200bEAK appears here only as descriptive text.',
+  };
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy: proseOnly,
+  }));
+});
+
+test('LEAK in monster flavor text is not mistaken for a Degen effect', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    description: 'A cracked service pipe leaks water into the tunnel.',
+    metadata: { LEAK: 'A descriptive key about water leaking from a pipe.' },
+  };
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
+});
+
+test('LEAK in a move flavor-text array is not treated as a mechanic ID', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    abilities: [{ description: ['LEAK is only a word in this move description.'] }],
+  } as typeof TUNNEL_MAW;
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
+});
+
+
+test('LEAK keys inside descriptive metadata nested under monster mechanics remain prose', () => {
+  const free = TEST_DEGEN.abilities.find((candidate) => candidate.manaCost === 0);
+  assert.ok(free);
+  const enemy = {
+    ...TUNNEL_MAW,
+    signature: { metadata: { LEAK: 'A descriptive reference to a leaking pipe.' } },
+    abilities: [{ name: 'Crush', metadata: { LEAK: 'A descriptive move note.' }, description: { LEAK: 'Flavor only.' } }],
+    loadout: [{ metadata: { LEAK: 'A descriptive loadout note.' } }],
+  } as typeof TUNNEL_MAW;
+
+  assert.doesNotThrow(() => resolveCombatTurn({
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    enemyHp: TUNNEL_MAW.maxHp,
+    ability: free,
+    degen: TEST_DEGEN,
+    enemy,
+  }));
+});
+
+
+test('singular and scalar monster effect descriptors cannot carry GLITCHRAT LEAK', () => {
+  const descriptorCases = [
+    { path: 'statusEffect', enemy: { ...TUNNEL_MAW, statusEffect: 'LEAK' } },
+    { path: 'signatureEffect', enemy: { ...TUNNEL_MAW, signatureEffect: 'LEAK' } },
+    { path: 'abilityEffect', enemy: { ...TUNNEL_MAW, abilityEffect: 'LEAK' } },
+    { path: 'moveEffect', enemy: { ...TUNNEL_MAW, moveEffect: 'LEAK' } },
+    { path: 'statusEffects', enemy: { ...TUNNEL_MAW, statusEffects: 'LEAK' } },
+    { path: 'signatureEffects', enemy: { ...TUNNEL_MAW, signatureEffects: 'LEAK' } },
+    { path: 'abilityEffects', enemy: { ...TUNNEL_MAW, abilityEffects: 'LEAK' } },
+    { path: 'moveEffects', enemy: { ...TUNNEL_MAW, moveEffects: 'LEAK' } },
+  ] as { path: string; enemy: typeof TUNNEL_MAW }[];
+
+  for (const { path, enemy } of descriptorCases) {
+    assert.throws(
+      () => assertNoMonsterActionResource(enemy),
+      (error: unknown) => error instanceof TypeError
+        && error.message.includes('Degen-owned effect LEAK (' + path + ')'),
+      'monster effect descriptor ' + path + ' must not claim GLITCHRAT\'s LEAK mechanic',
+    );
+  }
 });
