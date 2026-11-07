@@ -63,7 +63,7 @@ export class PlayerStore {
     if (!this.api.enabled) return true;
 
     const playerId = this.state.id;
-    const snapshotGeneration = this.playerSnapshotGeneration;
+    const snapshotGeneration = ++this.playerSnapshotGeneration;
     const isCurrentSnapshot = () => this.state.id === playerId
       && this.playerSnapshotGeneration === snapshotGeneration;
 

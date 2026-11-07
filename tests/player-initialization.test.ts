@@ -137,6 +137,31 @@ test('late bootstrap cannot overwrite the latest snapshot after an A-to-B-to-A a
 });
 
 
+test('the newest same-account bootstrap wins even when an older request resolves first', async () => {
+  storage.clear();
+  const resolutions: Array<(player: unknown) => void> = [];
+  const store = new PlayerStore({
+    enabled: true,
+    bootstrap() {
+      return new Promise((resolve) => { resolutions.push(resolve); });
+    },
+  });
+  const playerId = store.snapshot.id;
+  const olderInitialization = store.initialize(identity);
+  const newerInitialization = store.initialize(identity);
+  assert.equal(resolutions.length, 2);
+
+  resolutions[0]!(playerSnapshot(playerId, 2, 20));
+  assert.equal(await olderInitialization, true, 'a superseded bootstrap is harmless');
+  resolutions[1]!(playerSnapshot(playerId, 9, 90));
+  assert.equal(await newerInitialization, true);
+  assert.deepEqual(
+    [store.snapshot.id, store.snapshot.level, store.snapshot.currency],
+    [playerId, 9, 90],
+    'a later-started bootstrap must not be invalidated by an older response arriving first',
+  );
+});
+
 test('server-backed initialization reports success only after an authoritative player snapshot', async () => {
   storage.clear();
   let requestedPlayerId = '';
