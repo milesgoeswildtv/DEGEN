@@ -6,6 +6,11 @@ on:
     branches: [main]
     paths:
       - 'worker/**'
+      # Worker imports these shared runtime modules directly; changing them must deploy the new Worker bundle.
+      - 'src/data/combatPrototype.ts'
+      - 'src/domain/types.ts'
+      - 'src/game/combat/rules.ts'
+      - 'src/game/progression.ts'
       - 'db/**'
       - 'wrangler.toml'
       - 'package.json'
@@ -15,6 +20,11 @@ on:
 # Updating this workflow retriggers deployment after Cloudflare credential changes.
 jobs:
   deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    # Only eligible production deploys enter this non-cancelling migration/deploy lane.
+    concurrency:
+      group: degen-worker-production
+      cancel-in-progress: false
     environment: production
     runs-on: ubuntu-latest
     steps:
@@ -26,6 +36,30 @@ jobs:
           node-version: 22
       - name: Install
         run: npm install
+      - name: Validate tracked D1 migration versions
+        run: npm run check:migrations
+      - name: Run deterministic game tests
+        run: npm test
+      - name: Exercise isolated local Worker/D1 reward concurrency
+        run: node tests/worker-d1-concurrency.mjs
+      - name: Verify reward recovery after transient local D1 failure
+        run: node tests/worker-d1-reward-recovery.mjs
+      - name: Exercise isolated local Worker/D1 Underpass cycle concurrency
+        run: node tests/worker-d1-cycle-race.mjs
+      - name: Exercise isolated local Worker/D1 Underpass rollover concurrency
+        run: node tests/worker-d1-cycle-rollover.mjs
+      - name: Verify atomic defeat history on isolated local Worker/D1
+        run: node tests/worker-d1-defeat-atomic.mjs
+      - name: Exercise isolated local Worker/D1 Shield state
+        run: node tests/worker-shield-integration.mjs
+      - name: Exercise mobile browser housing persistence with isolated local Worker/D1
+        run: node tests/browser-housing-persistence.mjs
+      - name: Build web app
+        run: npm run build
+      - name: Exercise real Chromium mobile battle vertical slice with local Worker/D1
+        run: node tests/browser-battle-vertical-slice.mjs
+      - name: Validate Cloudflare Worker
+        run: npm run check:worker
       - name: Apply D1 schema
         run: npm run db:apply
         env:

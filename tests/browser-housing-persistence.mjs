@@ -35,12 +35,17 @@ function sql(query) {
   return row?.results ?? row?.result?.[0]?.results ?? [];
 }
 
-function launch(name, executable, args, extraEnv = {}) {
+function launch(name, executable, args, extraEnv = {}, options = {}) {
   const child = spawn(executable, args, {
     cwd: root,
     env: { ...env, ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: options.detached === true,
   });
+  // Chromium owns renderer/GPU/utility descendants. Track its isolated POSIX
+  // process group so cleanup waits for the whole browser tree, not only its
+  // parent process, before deleting the profile directory.
+  child.killProcessGroup = options.detached === true;
   logs.set(name, '');
   for (const stream of [child.stdout, child.stderr]) {
     stream.on('data', data => logs.set(name, (logs.get(name) + data.toString()).slice(-12000)));
@@ -120,12 +125,66 @@ async function click(selector) {
   assert.equal(await cdp.evaluate(expression), true, 'expected browser control: ' + selector);
 }
 
+async function waitForExit(child, timeout) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return Promise.race([
+    new Promise(resolveExit => child.once('exit', () => resolveExit(true))),
+    sleep(timeout).then(() => false),
+  ]);
+}
+
+async function waitForProcessGroupExit(pid, timeout) {
+  if (process.platform === 'win32') return true;
+  const deadline = Date.now() + timeout;
+  while (true) {
+    try {
+      process.kill(-pid, 0);
+    } catch (error) {
+      if (error?.code === 'ESRCH') return true;
+      throw error;
+    }
+    if (Date.now() >= deadline) return false;
+    await sleep(50);
+  }
+}
+
+function signalChild(child, signal) {
+  if (child.killProcessGroup && process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+    } catch (error) {
+      if (error?.code !== 'ESRCH') throw error;
+    }
+    return;
+  }
+  if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+}
+
 async function stopAll() {
   for (const child of children.reverse()) {
-    if (child.exitCode !== null) continue;
-    child.kill('SIGTERM');
-    await Promise.race([new Promise(resolveExit => child.once('exit', resolveExit)), sleep(1500)]);
-    if (child.exitCode === null) child.kill('SIGKILL');
+    const groupPid = child.killProcessGroup && process.platform !== 'win32' ? child.pid : undefined;
+    const childAlreadyExited = child.exitCode !== null || child.signalCode !== null;
+    const groupAlreadyExited = !groupPid || await waitForProcessGroupExit(groupPid, 0);
+    if (childAlreadyExited && groupAlreadyExited) continue;
+
+    signalChild(child, 'SIGTERM');
+    const childStopped = await waitForExit(child, 1500);
+    const groupStopped = !groupPid || await waitForProcessGroupExit(groupPid, 1500);
+    if (childStopped && groupStopped) continue;
+
+    signalChild(child, 'SIGKILL');
+    assert.equal(
+      await waitForExit(child, 5000),
+      true,
+      'child process must exit before its browser profile is removed',
+    );
+    if (groupPid) {
+      assert.equal(
+        await waitForProcessGroupExit(groupPid, 5000),
+        true,
+        'all browser descendants must exit before the profile directory is removed',
+      );
+    }
   }
 }
 
@@ -151,7 +210,7 @@ try {
     '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--remote-allow-origins=*', '--remote-debugging-port=9222',
     '--user-data-dir=' + join(scratch, 'chrome'), 'about:blank',
-  ]);
+  ], {}, { detached: process.platform !== 'win32' });
   const target = await until('Chrome page target', async () => {
     const response = await fetch('http://127.0.0.1:9222/json/list', { signal: AbortSignal.timeout(800) });
     if (!response.ok) return null;
@@ -230,5 +289,5 @@ try {
 } finally {
   if (cdp) cdp.ws.close();
   await stopAll();
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
 }

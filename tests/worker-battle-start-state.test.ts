@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, assertValidEnemyStartingShield, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } from '../src/game/progression.ts';
 
 // Execute the real Worker start handler with an isolated D1-shaped adapter.
@@ -13,11 +13,12 @@ const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
 const handlerSource = stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleStartBattle;';
-const handleStartBattle = runInNewContext(handlerSource, {
-  TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
+const createStartHandler = (enemy: typeof TUNNEL_MAW) => runInNewContext(handlerSource, {
+  TEST_DEGEN, TUNNEL_MAW: enemy, assertNoMonsterActionResource, assertValidEnemyStartingShield, canUseAbility, resolveCombatTurn,
   UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
   crypto: globalThis.crypto, Request, Response, URL, console, Uint32Array,
 }) as (request: Request, env: { DB: unknown }) => Promise<Response>;
+const handleStartBattle = createStartHandler(TUNNEL_MAW);
 
 function makeEnv(
   cycle: { id: string; event_key: string; opens_at: string; closes_at: string },
@@ -108,8 +109,8 @@ test('battle start ignores forged client combat state and returns exactly the De
     permitId: string;
     expiresAt: string;
     initialState: {
-      permitId: string; status: string; playerHp: number; playerMana: number;
-      enemyHp: number; turnCount: number;
+      permitId: string; status: string; playerHp: number; playerMana: number; playerShield: number;
+      shieldAbsorbed: number; retaliationDamage: number; enemyHp: number; turnCount: number;
     };
   };
 
@@ -119,27 +120,65 @@ test('battle start ignores forged client combat state and returns exactly the De
     status: 'active',
     playerHp: TEST_DEGEN.maxHp,
     playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   });
   assert.equal(inserts.length, 1);
-  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp,
+  const [permitId, playerId, cycleId, encounterKey, playerHp, playerMana, playerShield, enemyHp, enemyShield,
     cycleGuardId, activePlayerGuardId, victoryMarkerGuardId, defeatMarkerGuardId] = inserts[0] as unknown[];
   assert.equal(permitId, result.permitId);
   assert.equal(cycleGuardId, cycle.id);
   assert.equal(activePlayerGuardId, 'player-1', 'the same-player active-permit guard must bind the current owner');
   assert.equal(victoryMarkerGuardId, result.permitId, 'the insert must bind the victory history key guard');
   assert.equal(defeatMarkerGuardId, result.permitId, 'the insert must bind the defeat history key guard');
-  assert.equal(inserts[0]?.length, 11,
+  assert.equal(inserts[0]?.length, 13,
     'start/expiry timestamps come from D1 and the atomic insert binds cycle, owner, and terminal-history guards');
   assert.equal(result.expiresAt, persistedExpiry, 'the API must return the expiry returned from the persisted D1 row');
   assert.deepEqual(
-    [playerId, cycleId, encounterKey, playerHp, playerMana, enemyHp],
+    [playerId, cycleId, encounterKey, playerHp, playerMana, playerShield, enemyHp, enemyShield],
     ['player-1', cycle.id, TUNNEL_MAW.id, result.initialState.playerHp,
-      result.initialState.playerMana, result.initialState.enemyHp],
+      result.initialState.playerMana, result.initialState.playerShield, result.initialState.enemyHp, TUNNEL_MAW.startingShield ?? 0],
   );
 });
 
+
+test('battle start initializes a valid enemy starting Shield from the server definition', async () => {
+  const cycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const shieldedEnemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const handler = createStartHandler(shieldedEnemy);
+  const { env, inserts } = makeEnv(cycle);
+  const response = await handler(request(cycle.id), env);
+  assert.equal(response.status, 200);
+  const result = await response.json() as {
+    initialState: { enemyShield?: number };
+  };
+  assert.equal(result.initialState.enemyShield, 5);
+  assert.equal(inserts.length, 1);
+  assert.equal(inserts[0]?.[8], 5, 'the Worker persists the server-selected starting Shield');
+});
+
+test('battle start rejects invalid enemy starting Shield before issuing a permit', async () => {
+  const cycle = {
+    id: 'open-cycle', event_key: 'underpass',
+    opens_at: new Date(Date.now() - 60_000).toISOString(),
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  for (const startingShield of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN]) {
+    const handler = createStartHandler({ ...TUNNEL_MAW, startingShield });
+    const { env, inserts } = makeEnv(cycle);
+    const response = await handler(request(cycle.id), env);
+    assert.equal(response.status, 500, `invalid starting Shield ${String(startingShield)} must fail before permit creation`);
+    assert.deepEqual(await response.json(), { error: 'Encounter definition is invalid.' });
+    assert.equal(inserts.length, 0, 'invalid enemy Shield must not leave an unusable permit');
+  }
+});
 
 test('battle start rejects malformed request IDs before issuing a permit', async () => {
   const cycle = {
@@ -168,7 +207,7 @@ test('battle start replays the same active permit after event closure without in
     reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
     reward_tier: null, reward_level: null, reward_remaining_xp: null,
     reward_claim_token: null, reward_claimed_at: null,
-    player_hp: 64, player_mana: 4, enemy_hp: 50, battle_status: 'active', turn_count: 2,
+    player_hp: 64, player_mana: 4, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 10, last_enemy_shield_absorbed: 0, enemy_hp: 50, battle_status: 'active', turn_count: 2,
     cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
     victory_history_marker_count: 0, defeat_history_marker_count: 0,
   };
@@ -183,7 +222,7 @@ test('battle start replays the same active permit after event closure without in
     encounterKey: TUNNEL_MAW.id,
     expiresAt: persistedExpiry,
     initialState: {
-      permitId: requestId, status: 'active', playerHp: 64, playerMana: 4, enemyHp: 50, turnCount: 2,
+      permitId: requestId, status: 'active', playerHp: 64, playerMana: 4, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 50, turnCount: 2,
     },
   });
   assert.equal(inserts.length, 0, 'recovery must return the persisted snapshot without issuing a second permit');
@@ -202,7 +241,7 @@ test('battle start rejects foreign, expired, terminal, or corrupt request ID reu
     reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
     reward_tier: null, reward_level: null, reward_remaining_xp: null,
     reward_claim_token: null, reward_claimed_at: null,
-    player_hp: 80, player_mana: 12, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+    player_hp: 80, player_mana: 12, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0, enemy_hp: 92, battle_status: 'active', turn_count: 0,
     cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
     victory_history_marker_count: 0, defeat_history_marker_count: 0,
   };
@@ -238,7 +277,7 @@ test('battle start recovers a concurrent request-ID insert without issuing a dup
     reward_state: 'pending', reward_clear_number: null, reward_xp: null, reward_currency: null,
     reward_tier: null, reward_level: null, reward_remaining_xp: null,
     reward_claim_token: null, reward_claimed_at: null,
-    player_hp: 72, player_mana: 0, enemy_hp: 41, battle_status: 'active', turn_count: 1,
+    player_hp: 72, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 10, last_enemy_shield_absorbed: 0, enemy_hp: 41, battle_status: 'active', turn_count: 1,
     cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
     victory_history_marker_count: 0, defeat_history_marker_count: 0,
   };
@@ -249,7 +288,7 @@ test('battle start recovers a concurrent request-ID insert without issuing a dup
   const result = await response.json() as { permitId: string; initialState: Record<string, unknown> };
   assert.equal(result.permitId, requestId);
   assert.deepEqual(result.initialState, {
-    permitId: requestId, status: 'active', playerHp: 72, playerMana: 0, enemyHp: 41, turnCount: 1,
+    permitId: requestId, status: 'active', playerHp: 72, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 41, turnCount: 1,
   });
   assert.equal(inserts.length, 0, 'a concurrent winner owns the one permit row; the retry must only replay it');
 });
@@ -267,7 +306,7 @@ test('battle start rejects active request-ID replay with conflicting terminal hi
     completed_at: null, reward_state: 'pending', reward_clear_number: null, reward_xp: null,
     reward_currency: null, reward_tier: null, reward_level: null, reward_remaining_xp: null,
     reward_claim_token: null, reward_claimed_at: null,
-    player_hp: 80, player_mana: 12, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+    player_hp: 80, player_mana: 12, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0, enemy_hp: 92, battle_status: 'active', turn_count: 0,
     cycle_event_key: 'underpass', permit_started_in_cycle: 1, permit_is_unexpired: 1,
     victory_history_marker_count: 0, defeat_history_marker_count: 0,
   };
@@ -298,6 +337,31 @@ test('battle start rechecks the Underpass window atomically before issuing a per
   assert.deepEqual(await response.json(), { error: 'The Underpass is sealed.' });
   assert.equal(inserts.length, 0, 'no permit may be issued after the cycle closes');
 });
+
+test('battle start rejects invalid monster resources and Degen-owned effects before D1 access', async () => {
+  const invalidEnemies = [
+    { ...TUNNEL_MAW, signature: { manaCost: 1 } },
+    { ...TUNNEL_MAW, signature: { effects: { 'L.E.A.K': { enabled: true } } } },
+    { ...TUNNEL_MAW, statusEffect: 'LEAK' },
+  ] as unknown as typeof TUNNEL_MAW[];
+
+  for (const enemy of invalidEnemies) {
+    let d1Touches = 0;
+    const handler = createStartHandler(enemy);
+    const response = await handler(request('open-cycle'), {
+      DB: {
+        prepare() {
+          d1Touches += 1;
+          throw new Error('D1 must not be touched for invalid encounter content.');
+        },
+      },
+    });
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'Encounter definition is invalid.' });
+    assert.equal(d1Touches, 0, 'invalid encounter content must not read or create a permit');
+  }
+});
+
 test('monster definitions do not acquire a Mana resource namespace', () => {
   assert.equal(Object.keys(TUNNEL_MAW).some((key) => /mana/i.test(key)), false);
 });

@@ -21,14 +21,35 @@ function cli(args) {
 }
 async function complete(permitId, playerId = 'integration-player', extraFields = {}) {
   let r;
-  try {
-    r = await fetch(base + '/api/battle/complete', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...extraFields, playerId, permitId }),
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch (error) {
-    throw new Error(`Battle completion request ${permitId} failed or timed out: ${String(error)}`);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      r = await fetch(base + '/api/battle/complete', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...extraFields, playerId, permitId }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      break;
+    } catch (error) {
+      // The isolated Wrangler D1 CLI and Miniflare share local persistence; a
+      // CLI read can briefly drop the local HTTP socket while the Worker stays
+      // healthy. Completion is idempotent, so retry the same permit once only
+      // after a health check confirms that the same Worker still serves.
+      if (attempt === 0 && server?.exitCode === null) {
+        await sleep(100);
+        try {
+          const health = await fetch(base + '/api/health', { signal: AbortSignal.timeout(2_000) });
+          if (health.ok && (await health.json()).ok) continue;
+        } catch {}
+      }
+      throw new Error(
+        `Battle completion request ${permitId} failed or timed out: ${String(error)}` +
+        `\nWorker exit code: ${server?.exitCode ?? 'running'}` +
+        `\nCaptured Worker logs:\n${logs}`,
+      );
+    }
+  }
+  if (!r) {
+    throw new Error(`Battle completion request ${permitId} produced no response.\nCaptured Worker logs:\n${logs}`);
   }
   assert.equal(r.headers.get('cache-control'), 'no-store',
     '/api/battle/complete success and error responses must not be cached');
@@ -95,6 +116,7 @@ function assertPersistedPermitState(permitId, state) {
   const query = `SELECT COUNT(*) AS n FROM battle_permits WHERE id = '${permitId}'
     AND completed_at IS NULL AND battle_status = '${state.status}'
     AND player_hp = ${state.playerHp} AND player_mana = ${state.playerMana}
+    AND player_shield = ${state.playerShield ?? 0}
     AND enemy_hp = ${state.enemyHp} AND turn_count = ${state.turnCount}`;
   assert.equal(countRows(query), 1, `persisted Worker state must match the authoritative snapshot for ${permitId}`);
 }
@@ -696,13 +718,22 @@ try {
     status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
   });
 
+  // Capture the legacy Shield audit exactly as stored. The forged completion
+  // must not rewrite it, regardless of NULL-vs-zero migration history.
+  const forgedActiveShieldBefore = queryRows("SELECT player_shield, last_shield_absorbed, last_retaliation_damage, enemy_shield, last_enemy_shield_absorbed FROM battle_permits WHERE id='permit-mana-zero'")[0];
+
   // Client claims cannot turn an active permit into a victory or grant a reward.
   const forgedActiveCompletion = await complete('permit-mana-zero', 'integration-player', {
     victory: true,
     status: 'victory',
     playerHp: 0,
     playerMana: 999,
+    playerShield: 999,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
     enemyHp: 0,
+    enemyShield: 999,
+    enemyShieldAbsorbed: 999,
     turnCount: 999,
     xp: 999999,
     currency: 999999,
@@ -715,6 +746,9 @@ try {
   assertPersistedPermitState('permit-mana-zero', {
     status: 'active', playerHp: 80, playerMana: 0, enemyHp: 50, turnCount: 0,
   });
+  const forgedActiveShieldAfter = queryRows("SELECT player_shield, last_shield_absorbed, last_retaliation_damage, enemy_shield, last_enemy_shield_absorbed FROM battle_permits WHERE id='permit-mana-zero'")[0];
+  assert.deepEqual(forgedActiveShieldAfter, forgedActiveShieldBefore,
+    'forged completion Shield fields must not alter either side of the persisted battle snapshot');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_history WHERE id IN ('permit-mana-zero:victory','permit-mana-zero:defeat')"), 0,
     'forged completion must not write victory or defeat history');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-mana-zero' AND reward_state='pending' AND reward_clear_number IS NULL AND completed_at IS NULL"), 1,
@@ -836,7 +870,7 @@ try {
     playerMana: 0,
     enemyHp: 92,
     turnCount: 0,
-  }, 'rejection must return the unchanged server-authoritative snapshot');
+  }, 'rejection must return the unchanged server-authoritative legacy snapshot without synthesizing Shield audit fields');
   assertPersistedPermitState('permit-insufficient-mana', {
     status: 'active', playerHp: 80, playerMana: 0, enemyHp: 92, turnCount: 0,
   });
@@ -884,7 +918,8 @@ try {
   assert.equal(duplicateAction.error, 'Stale battle turn.');
   assert.deepEqual(duplicateAction.battleState, {
     permitId: 'permit-insufficient-mana', status: 'active',
-    playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
+    playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
+    enemyHp: 63, turnCount: 1,
   });
   assertPersistedPermitState('permit-insufficient-mana', {
     status: 'active', playerHp: 70, playerMana: 0, enemyHp: 63, turnCount: 1,
@@ -1297,8 +1332,17 @@ try {
   assert.equal(recoveredStartReplay.permitId, startReplayRequestId);
   assert.equal(recoveredStartReplay.expiresAt,
     queryRows("SELECT expires_at FROM battle_permits WHERE id='" + startReplayRequestId + "'")[0]?.expires_at);
-  assert.deepEqual(recoveredStartReplay.initialState, progressedStartReplay,
-    'a closed-cycle start retry must return the persisted progressed snapshot, not reinitialize combat');
+  assert.deepEqual(recoveredStartReplay.initialState, {
+    permitId: progressedStartReplay.permitId,
+    status: progressedStartReplay.status,
+    playerHp: progressedStartReplay.playerHp,
+    playerMana: progressedStartReplay.playerMana,
+    playerShield: progressedStartReplay.playerShield,
+    shieldAbsorbed: 0,
+    retaliationDamage: 10,
+    enemyHp: progressedStartReplay.enemyHp,
+    turnCount: progressedStartReplay.turnCount,
+  }, 'a closed-cycle start retry must return persisted combat state without replaying transient turn presentation metadata');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='" + startReplayRequestId + "' AND player_id='start-replay-player'"), 1,
     'start recovery after closure must not issue a second permit');
   assertPersistedPermitState(startReplayRequestId, recoveredStartReplay.initialState);
@@ -1349,6 +1393,9 @@ try {
     status: firstAction.status,
     playerHp: firstAction.playerHp,
     playerMana: firstAction.playerMana,
+    playerShield: firstAction.playerShield,
+    shieldAbsorbed: 0,
+    retaliationDamage: 10,
     enemyHp: firstAction.enemyHp,
     turnCount: firstAction.turnCount,
   });
@@ -1391,7 +1438,7 @@ try {
   assert.deepEqual(unaffordable.battleState, {
     permitId: 'permit-mana-zero', status: 'active', playerHp: 80, playerMana: 0,
     enemyHp: 50, turnCount: 0,
-  });
+  }, 'the pre-Shield zero-Mana permit remains unchanged without synthetic audit fields');
   assertPersistedPermitState('permit-mana-zero', unaffordable.battleState);
 
   const freeAtZeroResponse = await fetch(base + '/api/battle/action', {
@@ -1609,8 +1656,9 @@ try {
   assert.equal(completedAction.error, 'Battle permit is already completed.');
   assert.deepEqual(completedAction.battleState, {
     permitId: 'permit-b', status: 'victory', playerHp: 70,
-    playerMana: 0, enemyHp: 0, turnCount: 3,
-  });
+    playerMana: 0,
+    enemyHp: 0, turnCount: 3,
+  }, 'the seeded pre-Shield victory retains its omitted legacy audit shape');
   assert.equal(countRows("SELECT COUNT(*) AS n FROM battle_permits WHERE id='permit-b' AND completed_at IS NOT NULL AND reward_state='awarded' AND battle_status='victory' AND turn_count=3"), 1,
     'retrying an action after settlement must not change the completed permit or receipt');
   // Once awarded, the persisted receipt remains replayable even if the combat snapshot is later corrupt.
@@ -1738,8 +1786,11 @@ try {
   const paidRaceAction = await paidRaceActionResponse.json();
   assert.equal(paidRaceActionResponse.status, 200, JSON.stringify(paidRaceAction));
   assert.deepEqual(Object.keys(paidRaceAction).sort(),
-    ['enemyHp', 'permitId', 'playerHp', 'playerMana', 'status', 'turnCount'].sort(),
-    'the action response must expose only the persisted combat snapshot, never rewards or progression');
+    [
+      'enemyHp', 'permitId', 'playerHp', 'playerMana',
+      'playerShield', 'retaliationDamage', 'shieldAbsorbed', 'status', 'turnCount',
+    ].sort(),
+    'the action response may expose persisted combat resources and audits, never rewards or progression');
   assert.equal(paidRaceAction.status, 'victory');
   assert.equal(paidRaceAction.playerHp, 80, 'forged playerHp must not replace the persisted value or trigger retaliation');
   assert.equal(paidRaceAction.playerMana, 0, 'the paid killing blow must spend the persisted four Mana exactly once');
@@ -1942,8 +1993,10 @@ try {
   assert.equal(expiredVictoryActionReplay.error, 'Battle victory is awaiting reward completion.');
   assert.deepEqual(expiredVictoryActionReplay.battleState, {
     permitId: 'permit-expired-victory', status: 'victory',
-    playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
-  }, 'the retry may recover a terminal snapshot but cannot apply another action');
+    playerHp: 80, playerMana: 0,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0,
+    enemyHp: 0, turnCount: 1,
+  }, 'the Shield-aware killing blow persists its zero absorption/retaliation audit and cannot apply another action');
   assertPersistedPermitState('permit-expired-victory', {
     status: 'victory', playerHp: 80, playerMana: 0, enemyHp: 0, turnCount: 1,
   });
@@ -1996,8 +2049,10 @@ try {
   assert.equal(expiredDefeatReplay.error, 'Battle is already defeated.');
   assert.deepEqual(expiredDefeatReplay.battleState, {
     permitId: 'permit-expired-defeat', status: 'defeat',
-    playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
-  });
+    playerHp: 0, playerMana: 0,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10,
+    enemyHp: 63, turnCount: 1,
+  }, 'the accepted defeat turn persists its zero Shield and full-retaliation audit for terminal recovery');
   assertPersistedPermitState('permit-expired-defeat', {
     status: 'defeat', playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
   });

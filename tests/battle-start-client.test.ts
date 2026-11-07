@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test, { beforeEach } from 'node:test';
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
+import { maxAbilityDamage } from '../src/game/combat/rules.ts';
 
 const startRequestStorage = new Map<string, string>();
 const testLocalStorage = {
@@ -21,7 +22,7 @@ const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8
   .replace(/\bexport class /g, 'class ')
   .replace(/\bexport const /g, 'const ');
 const { GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState } = runInNewContext(stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ GameApi, GameApiError, GameApiProtocolError, isAuthoritativeBattleActionState });', {
-  __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW,
+  __API_BASE: 'https://degen-api.example', TEST_DEGEN, TUNNEL_MAW, maxAbilityDamage,
   fetch: (...args: any[]) => globalThis.fetch(...args), Response, URL, AbortController, setTimeout, clearTimeout,
   crypto: globalThis.crypto, localStorage: testLocalStorage, Date, Number, JSON, Error, encodeURIComponent, console,
 }) as {
@@ -52,6 +53,21 @@ assert.ok(startControllerMethod, 'AppController start handler must remain availa
 const enterUnderpass = runInNewContext(
   stripTypeScriptTypes(`async function enterUnderpass(): Promise<void> {${startControllerMethod[1]}\n}\nenterUnderpass;`, { mode: 'transform' }),
   { console: { warn() {} }, Error },
+) as (this: any) => Promise<void>;
+
+const mountBattleMethod = controllerSource.match(/private async mountBattle\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  private async useBattleAbility/);
+assert.ok(mountBattleMethod, 'AppController battle mount must remain available for the server-authority regression');
+const battleEngineCreations: unknown[][] = [];
+let rejectBattleEngineState = false;
+const TestBattleEngine = function (...args: unknown[]) {
+  if (rejectBattleEngineState) throw new Error('invalid authoritative state');
+  battleEngineCreations.push(args);
+  return { subscribe() {} };
+};
+const mountBattle = runInNewContext(
+  stripTypeScriptTypes(`async function mountBattle(): Promise<void> {${mountBattleMethod[1]}\n}\nmountBattle;`, { mode: 'transform' }),
+  { TEST_DEGEN, TUNNEL_MAW, BattleEngine: TestBattleEngine, updateBattleDom() {} },
+  { importModuleDynamically: async () => ({ createBattleGame() { return {}; } }) },
 ) as (this: any) => Promise<void>;
 
 const validPermit = (permitId = 'permit-1') => {
@@ -449,15 +465,40 @@ test('server-backed battle start rejects a snapshot for another permit or an out
   await assert.rejects(apiReturning(excessiveMana), /Missing or malformed authoritative battle start state/);
 });
 
-test('server-backed battle start accepts a valid progressed snapshot when recovering a lost response', async () => {
+test('server-backed battle start accepts a valid progressed Shield snapshot when recovering a lost response', async () => {
   const permit = validPermit();
   permit.initialState.playerHp = 64;
   permit.initialState.playerMana = 4;
+  permit.initialState.playerShield = 4;
+  permit.initialState.shieldAbsorbed = 10;
+  permit.initialState.retaliationDamage = 10;
   permit.initialState.enemyHp = 50;
   permit.initialState.turnCount = 2;
 
   const result = await apiReturning(permit) as typeof permit;
   assert.deepEqual(result.initialState, permit.initialState);
+});
+
+test('server-backed battle start rejects a recovered snapshot with partial Shield absorption and Shield remaining', async () => {
+  const permit = validPermit();
+  permit.initialState.playerHp = 64;
+  permit.initialState.playerShield = 4;
+  permit.initialState.shieldAbsorbed = 5;
+  permit.initialState.retaliationDamage = 10;
+  permit.initialState.enemyHp = 50;
+  permit.initialState.turnCount = 2;
+  await assert.rejects(apiReturning(permit), /Missing or malformed authoritative battle start state/);
+});
+
+test('server-backed battle start rejects Shield before the first accepted turn', async () => {
+  const shieldAtStart = validPermit();
+  shieldAtStart.initialState.playerShield = 1;
+  await assert.rejects(apiReturning(shieldAtStart), /Missing or malformed authoritative battle start state/);
+
+  const retaliationAtStart = validPermit();
+  retaliationAtStart.initialState.shieldAbsorbed = 1;
+  retaliationAtStart.initialState.retaliationDamage = 1;
+  await assert.rejects(apiReturning(retaliationAtStart), /Missing or malformed authoritative battle start state/);
 });
 
 test('server-backed battle start rejects active snapshots outside battle invariants', async () => {
@@ -604,7 +645,48 @@ test('client battle-state validation mirrors Worker active-turn and terminal-sta
   assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, turnCount: 0 }, 'permit-1'), false,
     'defeat requires at least one resolved turn');
   assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'victory', enemyHp: 0, turnCount: 1 }, 'permit-1'), true);
-  assert.equal(isAuthoritativeBattleActionState({ ...active, status: 'defeat', playerHp: 0, turnCount: 1 }, 'permit-1'), true);
+  const legacyDefeat = { ...active, status: 'defeat', playerHp: 0, turnCount: 1 };
+  assert.equal(isAuthoritativeBattleActionState(legacyDefeat, 'permit-1'), true,
+    'pre-Shield Worker terminal snapshots remain readable when every Shield field is absent');
+
+  const shieldDefeat = {
+    ...active, status: 'defeat', playerHp: 0, turnCount: 1,
+    playerShield: 0, shieldAbsorbed: 2, retaliationDamage: 10,
+  };
+  assert.equal(isAuthoritativeBattleActionState(shieldDefeat, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 10 }, 'permit-1'), false,
+    'a defeat cannot claim that Shield absorbed all retaliation while player HP reached zero');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, shieldAbsorbed: 0, retaliationDamage: 0 }, 'permit-1'), false,
+    'explicit zero/zero fields cannot impersonate a legacy defeat with omitted audit columns');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldDefeat, retaliationDamage: undefined }, 'permit-1'), false,
+    'partially omitted Shield state is malformed rather than a legacy snapshot');
+
+  const shieldSnapshot = { ...active, playerShield: 3, shieldAbsorbed: 10, retaliationDamage: 10 };
+  assert.equal(isAuthoritativeBattleActionState(shieldSnapshot, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, playerShield: null }, 'permit-1'), false,
+    'an explicit null Shield is not a legacy omitted field');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, shieldAbsorbed: null }, 'permit-1'), false,
+    'an explicit null absorption value is malformed');
+  assert.equal(isAuthoritativeBattleActionState({ ...shieldSnapshot, retaliationDamage: null }, 'permit-1'), false,
+    'an explicit null retaliation value is malformed');
+
+  const enemyShieldSnapshot = {
+    ...active, playerHp: 70, playerMana: 0, enemyHp: 20, turnCount: 1,
+    playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyShield: 5,
+  };
+  assert.equal(isAuthoritativeBattleActionState(enemyShieldSnapshot, 'permit-1'), false,
+    'the default Tunnel Maw cannot claim enemy Shield absent from its server encounter definition');
+  for (const enemyShield of [-1, 0.5, null, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, enemyShield }, 'permit-1'), false);
+  }
+  assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, enemyShieldAbsorbed: -1 }, 'permit-1'), false);
+  assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, status: 'victory', enemyHp: 0 }, 'permit-1'), false,
+    'a terminal victory cannot retain enemy Shield');
+  assert.equal(isAuthoritativeBattleActionState({
+    ...enemyShieldSnapshot, status: 'victory', enemyHp: 0, enemyShield: 0, retaliationDamage: 0,
+  }, 'permit-1'), true);
+  assert.equal(isAuthoritativeBattleActionState({ ...enemyShieldSnapshot, turnCount: 0 }, 'permit-1'), false,
+    'a fresh permit cannot claim enemy Shield absent from the server encounter definition');
 });
 
 
@@ -874,4 +956,115 @@ test('discarding an unrecoverable resume clears only the matching saved permit k
 
   api.discardUnrecoverableUnderpassStart('player-1', permit.permitId);
   assert.equal(startRequestStorage.size, 0, 'the definitive rejection clears the exact unrecoverable key');
+});
+
+
+test('server-backed battle route without an attached permit returns to Underpass instead of showing an empty fight', async () => {
+  battleEngineCreations.length = 0;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: undefined,
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  await mountBattle.call(controller);
+
+  assert.equal(controller.route, 'underpass');
+  assert.match(controller.statusMessage, /no active server-issued battle permit/i);
+  assert.equal(battleEngineCreations.length, 0, 'a missing server permit must never mount local combat simulation');
+});
+
+test('server-backed battle without an authoritative start snapshot returns to Underpass without local simulation', async () => {
+  battleEngineCreations.length = 0;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: { permitId: 'permit-1' },
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  await mountBattle.call(controller);
+
+  assert.equal(controller.route, 'underpass');
+  assert.match(controller.statusMessage, /authoritative battle snapshot/i);
+  assert.equal(controller.battlePermit.permitId, 'permit-1', 'keep the permit so the player can resume');
+  assert.equal(battleEngineCreations.length, 0, 'a server-backed battle must not mount the offline preview engine');
+});
+
+test('server-backed battle rejects an initial snapshot bound to a different permit', async () => {
+  battleEngineCreations.length = 0;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: {
+      permitId: 'permit-1',
+      initialState: { permitId: 'other-permit', status: 'active', playerHp: 100, playerMana: 0, enemyHp: 60, turnCount: 0 },
+    },
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  await mountBattle.call(controller);
+
+  assert.equal(controller.route, 'underpass');
+  assert.match(controller.statusMessage, /matching authoritative battle snapshot/i);
+  assert.equal(controller.battlePermit.permitId, 'permit-1');
+  assert.equal(battleEngineCreations.length, 0, 'mismatched permit state cannot create a client battle');
+});
+
+test('server-backed battle with a rejected snapshot returns to Underpass and preserves the permit', async () => {
+  battleEngineCreations.length = 0;
+  rejectBattleEngineState = true;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: {
+      permitId: 'permit-1',
+      initialState: { permitId: 'permit-1', status: 'active', playerHp: 100, playerMana: 0, enemyHp: 60, turnCount: 0 },
+    },
+    api: { enabled: true },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+  };
+
+  try {
+    await mountBattle.call(controller);
+  } finally {
+    rejectBattleEngineState = false;
+  }
+
+  assert.equal(controller.route, 'underpass');
+  assert.match(controller.statusMessage, /snapshot was invalid/i);
+  assert.equal(controller.battlePermit.permitId, 'permit-1');
+  assert.equal(battleEngineCreations.length, 0);
+});
+
+test('offline preview still mounts without a server-owned initial snapshot', async () => {
+  battleEngineCreations.length = 0;
+  const controller = {
+    root: { querySelector: () => ({}), querySelectorAll: () => [] },
+    battlePermit: { permitId: 'preview-permit' },
+    api: { enabled: false },
+    route: 'battle',
+    statusMessage: '',
+    navigate(route: string) { this.route = route; },
+    setUnderpassActionStatus(message: string) { this.statusMessage = message; },
+    setBattleActionStatus() {},
+  };
+
+  await mountBattle.call(controller);
+
+  assert.equal(controller.route, 'battle');
+  assert.equal(battleEngineCreations.length, 1);
+  assert.equal(battleEngineCreations[0]?.[3], undefined, 'offline preview keeps its local initializer');
 });

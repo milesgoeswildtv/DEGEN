@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype';
-import { canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
+import { assertNoMonsterActionResource, assertValidEnemyStartingShield, canUseAbility, resolveCombatTurn } from '../src/game/combat/rules';
 import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear, xpNeededForLevel } from '../src/game/progression';
 import { validateHousingPlacements } from './housingQuantityGuard';
 
@@ -63,6 +63,9 @@ const body = async <T>(request: Request): Promise<T> => {
   }
   return value as T;
 };
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0;
 const iso = (value = Date.now()): string => new Date(value).toISOString();
 const randomInt = (min: number, max: number): number => {
   const bytes = new Uint32Array(1);
@@ -77,7 +80,12 @@ type BattlePermitStateRow = {
   encounter_key: string;
   player_hp: number | null;
   player_mana: number | null;
+  player_shield: number | null;
+  last_shield_absorbed: number | null;
+  last_retaliation_damage: number | null;
   enemy_hp: number | null;
+  enemy_shield: number | null;
+  last_enemy_shield_absorbed: number;
   battle_status: 'active' | 'victory' | 'defeat';
   turn_count: number;
 };
@@ -95,6 +103,26 @@ type BattleActionConflictRow = BattleActionPermitRow & {
 
 const isSafeIntegerBetween = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
+
+const projectEnemyShield = (enemyShield: number): { enemyShield: number } =>
+  (TUNNEL_MAW.startingShield ?? 0) > 0 || enemyShield > 0 ? { enemyShield } : {};
+const projectEnemyShieldAbsorbed = (absorbed: number): { enemyShieldAbsorbed: number } =>
+  absorbed > 0 ? { enemyShieldAbsorbed: absorbed } : {};
+
+// Preserve pre-Shield history as an omitted legacy shape. Explicit zero/zero
+// audits are reserved for permits created or advanced after migration 0008.
+const projectPlayerShieldAudit = (
+  state: Pick<BattlePermitStateRow, 'player_shield' | 'last_shield_absorbed' | 'last_retaliation_damage'>,
+): { playerShield?: number; shieldAbsorbed?: number; retaliationDamage?: number } => {
+  if (state.player_shield === 0
+    && state.last_shield_absorbed === null
+    && state.last_retaliation_damage === null) return {};
+  return {
+    playerShield: state.player_shield ?? 0,
+    shieldAbsorbed: state.last_shield_absorbed ?? 0,
+    retaliationDamage: state.last_retaliation_damage ?? 0,
+  };
+};
 
 // The current PlayerState contract expands stack quantities into string[] entries.
 // Keep malformed/corrupt D1 rows from allocating unbounded arrays; this is an API
@@ -143,7 +171,33 @@ const isValidProgressionState = (level: unknown, xp: unknown): boolean => {
 const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
   const playerHp = state.player_hp;
   const playerMana = state.player_mana;
+  const playerShield = state.player_shield;
+  const lastShieldAbsorbed = state.last_shield_absorbed;
+  const lastRetaliationDamage = state.last_retaliation_damage;
+  // Migration 0008 gives every pre-Shield permit zero Shield; NULL audit deltas only mark that legacy state.
+  const hasLegacyShieldAudit = lastShieldAbsorbed === null
+    && lastRetaliationDamage === null
+    && playerShield === 0;
+  const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
+  const hasValidShieldAudit = hasLegacyShieldAudit
+    || (isSafeIntegerBetween(lastShieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+      && isSafeIntegerBetween(lastRetaliationDamage, 0, Math.max(1, TUNNEL_MAW.damage))
+      && lastShieldAbsorbed <= lastRetaliationDamage
+      && (state.battle_status === 'victory'
+        ? lastShieldAbsorbed === 0 && lastRetaliationDamage === 0
+        : state.turn_count === 0
+          ? lastShieldAbsorbed === 0 && lastRetaliationDamage === 0
+          : lastRetaliationDamage === expectedRetaliationDamage));
   const enemyHp = state.enemy_hp;
+  const enemyShield = state.enemy_shield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemy_shield;
+  const lastEnemyShieldAbsorbed = state.last_enemy_shield_absorbed;
+  const maxPlayerAbilityDamage = Math.max(
+    0,
+    ...TEST_DEGEN.abilities.map((ability) => ability.damage + Math.floor(TEST_DEGEN.power * 0.5)),
+  );
+  // This encounter has no enemy Shield gain/restore action. The remaining pool
+  // plus the last accepted absorption must stay within its server-owned start.
+  const maxEnemyStartingShield = TUNNEL_MAW.startingShield ?? 0;
   const turnCount = state.turn_count;
 
   // Pre-Mana terminal permits can legitimately retain NULL: Mana did not exist
@@ -153,17 +207,34 @@ const isValidBattlePermitState = (state: BattlePermitStateRow): boolean => {
 
   if (!isSafeIntegerBetween(playerHp, 0, TEST_DEGEN.maxHp)
     || !hasValidMana
+    || !isSafeIntegerBetween(playerShield, 0, Number.MAX_SAFE_INTEGER)
+    || (!hasLegacyShieldAudit && !hasValidShieldAudit)
     || !isSafeIntegerBetween(enemyHp, 0, TUNNEL_MAW.maxHp)
+    || !isSafeIntegerBetween(enemyShield, 0, maxEnemyStartingShield)
+    || !isSafeIntegerBetween(lastEnemyShieldAbsorbed, 0, Math.min(maxPlayerAbilityDamage, maxEnemyStartingShield))
+    || enemyShield + lastEnemyShieldAbsorbed > maxEnemyStartingShield
     || !isSafeIntegerBetween(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
   switch (state.battle_status) {
-    case 'active':
+    case 'active': {
+      // Every accepted non-terminal turn includes retaliation; a fresh permit has
+      // a zero/zero audit. Preserve migrated pre-Shield permits with NULL audit.
+      const hasConsistentActiveShieldAudit = hasLegacyShieldAudit
+        || (turnCount === 0
+          ? playerShield === 0 && lastShieldAbsorbed === 0 && lastRetaliationDamage === 0
+          : lastRetaliationDamage > 0
+            && (playerShield === 0 || lastShieldAbsorbed === lastRetaliationDamage));
       // An accepted action must be able to increment turn_count without leaving safe-integer range.
-      return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
+      return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
+        && (turnCount !== 0 || (enemyShield === (TUNNEL_MAW.startingShield ?? 0) && lastEnemyShieldAbsorbed === 0))
+        && hasConsistentActiveShieldAudit;
+    }
     case 'victory':
-      return turnCount > 0 && playerHp > 0 && enemyHp === 0;
+      return turnCount > 0 && playerHp > 0 && enemyHp === 0 && enemyShield === 0
+        && (hasLegacyShieldAudit || (lastShieldAbsorbed === 0 && lastRetaliationDamage === 0));
     case 'defeat':
-      return turnCount > 0 && playerHp === 0 && enemyHp > 0;
+      return turnCount > 0 && playerHp === 0 && playerShield === 0 && enemyHp > 0
+        && (hasLegacyShieldAudit || lastRetaliationDamage > lastShieldAbsorbed);
     default:
       return false;
   }
@@ -288,7 +359,21 @@ async function worldSnapshot(db: D1Database, playerId: string, cycle?: CycleRow)
 
 async function handleBootstrap(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; displayName?: string; platform?: string; platformUserId?: string }>(request);
-  if (!input.playerId) return fail(request, env, 'playerId is required');
+  if (!isNonEmptyString(input.playerId)) return fail(request, env, 'playerId is required');
+  if (input.displayName !== undefined && typeof input.displayName !== 'string') {
+    return fail(request, env, 'displayName must be a string.');
+  }
+  if (input.platform !== undefined && typeof input.platform !== 'string') {
+    return fail(request, env, 'platform must be a string.');
+  }
+  if (input.platformUserId !== undefined && typeof input.platformUserId !== 'string') {
+    return fail(request, env, 'platformUserId must be a string.');
+  }
+  if (input.platformUserId !== undefined
+    && (!isNonEmptyString(input.platformUserId)
+      || input.platformUserId !== input.platformUserId.trim())) {
+    return fail(request, env, 'platformUserId must be a non-empty canonical string.');
+  }
   await ensurePlayer(env.DB, input.playerId, input.displayName || 'Player');
 
   if ((input.platform === 'discord' || input.platform === 'telegram') && input.platformUserId) {
@@ -306,7 +391,7 @@ async function handleHousing(request: Request, env: Env): Promise<Response> {
     playerId?: string;
     housing?: { inventory?: string[]; placements?: Array<{ instanceId: string; furnitureId: string; x: number; y: number; rotation?: number }> };
   }>(request);
-  if (!input || typeof input.playerId !== 'string' || !input.playerId
+  if (!input || !isNonEmptyString(input.playerId)
     || !input.housing || typeof input.housing !== 'object') {
     return fail(request, env, 'playerId and housing are required');
   }
@@ -370,13 +455,23 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   const input = await body<{
     playerId?: string; eventKey?: string; cycleId?: string; encounterKey?: string; requestId?: string;
   }>(request);
-  if (!input.playerId || input.eventKey !== 'underpass' || !input.cycleId || input.encounterKey !== TUNNEL_MAW.id) {
+  if (!isNonEmptyString(input.playerId) || input.eventKey !== 'underpass'
+    || !isNonEmptyString(input.cycleId) || input.encounterKey !== TUNNEL_MAW.id) {
     return fail(request, env, 'Invalid battle start request');
   }
   if (input.requestId !== undefined
     && (typeof input.requestId !== 'string'
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestId))) {
     return fail(request, env, 'Invalid battle start request id');
+  }
+
+  // Validate the server-selected encounter before reading or creating any permit.
+  // Invalid content must never leave the player holding an unusable battle permit.
+  try {
+    assertNoMonsterActionResource(TUNNEL_MAW);
+    assertValidEnemyStartingShield(TUNNEL_MAW);
+  } catch {
+    return fail(request, env, 'Encounter definition is invalid.', 500);
   }
 
   // The client retries only the same start attempt with the same random requestId.
@@ -409,7 +504,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
       permit.expires_at, permit.completed_at, permit.reward_state, permit.reward_clear_number,
       permit.reward_xp, permit.reward_currency, permit.reward_tier, permit.reward_level,
       permit.reward_remaining_xp, permit.reward_claim_token, permit.reward_claimed_at,
-      permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage, permit.enemy_hp, permit.enemy_shield, permit.last_enemy_shield_absorbed, permit.battle_status, permit.turn_count,
       (SELECT COUNT(*) FROM battle_history AS marker
         WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
       (SELECT COUNT(*) FROM battle_history AS marker
@@ -465,6 +560,9 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
         status: existing.battle_status,
         playerHp: existing.player_hp as number,
         playerMana: playerManaForSnapshot(existing),
+        ...projectPlayerShieldAudit(existing),
+        ...projectEnemyShield(existing.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
+          ...projectEnemyShieldAbsorbed(existing.last_enemy_shield_absorbed ?? 0),
         enemyHp: existing.enemy_hp as number,
         turnCount: existing.turn_count,
       },
@@ -479,11 +577,16 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   const cycle = await ensureUnderpassCycle(env.DB);
   if (cycle.id !== input.cycleId || phaseFor(cycle) !== 'open') return fail(request, env, 'The Underpass is sealed.', 409);
 
+  const initialEnemyShield = TUNNEL_MAW.startingShield ?? 0;
   const initialState = {
     permitId,
     status: 'active' as const,
     playerHp: TEST_DEGEN.maxHp,
     playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    ...projectEnemyShield(initialEnemyShield),
     enemyHp: TUNNEL_MAW.maxHp,
     turnCount: 0,
   };
@@ -493,12 +596,12 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
   // Recheck the cycle in the same statement: the earlier phase read is advisory.
   const issuedPermit = await env.DB.prepare(`INSERT INTO battle_permits (
       id, player_id, event_key, cycle_id, encounter_key, started_at, expires_at,
-      player_hp, player_mana, enemy_hp, battle_status, turn_count
+      player_hp, player_mana, player_shield, last_shield_absorbed, last_retaliation_damage, enemy_hp, enemy_shield, last_enemy_shield_absorbed, battle_status, turn_count
     )
     SELECT ?, ?, 'underpass', ?, ?,
       strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
       strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+20 minutes'),
-      ?, ?, ?, 'active', 0
+      ?, ?, ?, 0, 0, ?, ?, 0, 'active', 0
     WHERE EXISTS (
       SELECT 1 FROM world_event_cycles
       WHERE id = ? AND event_key = 'underpass'
@@ -521,7 +624,7 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
     ON CONFLICT(id) DO NOTHING
     RETURNING id, expires_at`)
     .bind(permitId, input.playerId, cycle.id, TUNNEL_MAW.id,
-      initialState.playerHp, initialState.playerMana, initialState.enemyHp, cycle.id, input.playerId,
+      initialState.playerHp, initialState.playerMana, initialState.playerShield, initialState.enemyHp, initialEnemyShield, cycle.id, input.playerId,
       permitId, permitId)
     .first<{ id: string; expires_at: string }>();
   if (!issuedPermit) {
@@ -547,7 +650,8 @@ async function handleStartBattle(request: Request, env: Env): Promise<Response> 
 
 async function handleBattleAction(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; permitId?: string; abilityId?: string; expectedTurnCount: number }>(request);
-  if (!input.playerId || !input.permitId || !input.abilityId) {
+  if (!isNonEmptyString(input.playerId) || !isNonEmptyString(input.permitId)
+    || !isNonEmptyString(input.abilityId)) {
     return fail(request, env, 'playerId, permitId, and abilityId are required');
   }
   // This is a compare-and-swap precondition only; combat state remains Worker-owned.
@@ -560,8 +664,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
 
   const permit = await env.DB.prepare(`SELECT
       permit.event_key, cycle.event_key AS cycle_event_key,
-      permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-      permit.enemy_hp, permit.battle_status, permit.turn_count
+      permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
+      permit.enemy_hp, permit.enemy_shield, permit.last_enemy_shield_absorbed, permit.battle_status, permit.turn_count
     FROM battle_permits AS permit
     LEFT JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
     WHERE permit.id = ? AND permit.player_id = ? AND permit.completed_at IS NULL
@@ -576,8 +680,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     // Preserve the existing awarded-receipt replay path for a delayed second tab.
     const completed = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
-        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
+        permit.enemy_hp, permit.enemy_shield, permit.last_enemy_shield_absorbed, permit.battle_status, permit.turn_count,
         (SELECT COUNT(*) FROM battle_history AS marker
           WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
         (SELECT COUNT(*) FROM battle_history AS marker
@@ -615,6 +719,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           status: completed.battle_status,
           playerHp: completed.player_hp,
           playerMana: playerManaForSnapshot(completed),
+          ...projectPlayerShieldAudit(completed),
+          ...projectEnemyShield(completed.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
+          ...projectEnemyShieldAbsorbed(completed.last_enemy_shield_absorbed ?? 0),
           enemyHp: completed.enemy_hp,
           turnCount: completed.turn_count,
         },
@@ -626,8 +733,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     // the permit or authorizes another action. Active expired permits still fail closed.
     const terminal = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
-        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
+        permit.enemy_hp, permit.enemy_shield, permit.last_enemy_shield_absorbed, permit.battle_status, permit.turn_count,
         permit.completed_at, permit.reward_state,
         (SELECT COUNT(*) FROM battle_history AS marker
           WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
@@ -669,6 +776,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           status: terminal.battle_status,
           playerHp: terminal.player_hp,
           playerMana: playerManaForSnapshot(terminal),
+          ...projectPlayerShieldAudit(terminal),
+          ...projectEnemyShield(terminal.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
+          ...projectEnemyShieldAbsorbed(terminal.last_enemy_shield_absorbed ?? 0),
           enemyHp: terminal.enemy_hp,
           turnCount: terminal.turn_count,
         },
@@ -680,7 +790,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     return fail(request, env, 'Unsupported battle permit.', 409);
   }
   if (permit.encounter_key !== TUNNEL_MAW.id) return fail(request, env, 'Unsupported encounter.', 409);
-  if (permit.player_hp === null || permit.enemy_hp === null
+  if (permit.player_hp === null || permit.player_shield === null || permit.enemy_hp === null
+    || permit.enemy_shield === null
     || (permit.player_mana === null && permit.battle_status === 'active')) {
     return fail(request, env, 'Battle state is unavailable.', 409);
   }
@@ -692,6 +803,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     status: permit.battle_status,
     playerHp: permit.player_hp,
     playerMana: playerManaForSnapshot(permit),
+    ...projectPlayerShieldAudit(permit),
+    ...projectEnemyShield(permit.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
+          ...projectEnemyShieldAbsorbed(permit.last_enemy_shield_absorbed ?? 0),
     enemyHp: permit.enemy_hp,
     turnCount: permit.turn_count,
   };
@@ -702,8 +816,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const conflict = async (message: string): Promise<Response> => {
     const latest = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
-        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
+        permit.enemy_hp, permit.enemy_shield, permit.last_enemy_shield_absorbed, permit.battle_status, permit.turn_count,
         (SELECT COUNT(*) FROM battle_history AS marker
           WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
         (SELECT COUNT(*) FROM battle_history AS marker
@@ -744,6 +858,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
         status: latest.battle_status,
         playerHp: latest.player_hp,
         playerMana: playerManaForSnapshot(latest),
+        ...projectPlayerShieldAudit(latest),
+        ...projectEnemyShield(latest.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
+          ...projectEnemyShieldAbsorbed(latest.last_enemy_shield_absorbed ?? 0),
         enemyHp: latest.enemy_hp,
         turnCount: latest.turn_count,
       },
@@ -763,12 +880,14 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   const turn = resolveCombatTurn({
     playerHp: permit.player_hp,
     playerMana: permit.player_mana,
+    playerShield: permit.player_shield,
     enemyHp: permit.enemy_hp,
+    enemyShield: permit.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0),
     ability,
     degen: TEST_DEGEN,
     enemy: TUNNEL_MAW,
   });
-  const { playerHp, playerMana, enemyHp, status } = turn;
+  const { playerHp, playerMana, playerShield, enemyHp, enemyShield, enemyShieldAbsorbed, status, shieldAbsorbed, retaliationDamage } = turn;
 
   // Do not persist an active state at the terminal safe-integer boundary: the
   // next increment would leave the active-state invariant. A victory or defeat
@@ -781,7 +900,7 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
   // Keep both deterministic terminal keys out of the action compare-and-swap so a
   // poisoned victory marker cannot mutate combat and strand the later reward claim.
   const actionUpdate = env.DB.prepare(`UPDATE battle_permits
-    SET player_hp = ?, player_mana = ?, enemy_hp = ?, battle_status = ?, turn_count = turn_count + 1
+    SET player_hp = ?, player_mana = ?, player_shield = ?, last_shield_absorbed = ?, last_retaliation_damage = ?, enemy_hp = ?, enemy_shield = ?, last_enemy_shield_absorbed = ?, battle_status = ?, turn_count = turn_count + 1
     WHERE id = ? AND player_id = ? AND completed_at IS NULL AND battle_status = 'active'
       AND julianday(expires_at) > julianday('now')
       AND event_key = 'underpass' AND encounter_key = ?
@@ -790,12 +909,13 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           AND julianday(opens_at) <= julianday(battle_permits.started_at)
           AND julianday(battle_permits.started_at) <= julianday('now')
           AND julianday(battle_permits.started_at) < julianday(closes_at))
-      AND turn_count = ?
+      AND turn_count = ? AND player_shield = ? AND enemy_shield = ?
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
       AND NOT EXISTS (SELECT 1 FROM battle_history WHERE id = ?)
     RETURNING turn_count`)
-    .bind(playerHp, playerMana, enemyHp, status, input.permitId, input.playerId,
-      TUNNEL_MAW.id, permit.turn_count, `${input.permitId}:defeat`, `${input.permitId}:victory`);
+    .bind(playerHp, playerMana, playerShield, shieldAbsorbed, retaliationDamage, enemyHp, enemyShield, enemyShieldAbsorbed, status, input.permitId, input.playerId,
+      TUNNEL_MAW.id, permit.turn_count, permit.player_shield, permit.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0),
+      `${input.permitId}:defeat`, `${input.permitId}:victory`);
 
   let updated: { turn_count: number } | null | undefined;
   if (status === 'defeat') {
@@ -824,8 +944,8 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     // A competing action may have committed after the SELECT. Return only persisted state.
     const latest = await env.DB.prepare(`SELECT
         permit.event_key, cycle.event_key AS cycle_event_key,
-        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana,
-        permit.enemy_hp, permit.battle_status, permit.turn_count,
+        permit.cycle_id, permit.encounter_key, permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage,
+        permit.enemy_hp, permit.enemy_shield, permit.last_enemy_shield_absorbed, permit.battle_status, permit.turn_count,
         (SELECT COUNT(*) FROM battle_history AS marker
           WHERE marker.id = (permit.id || ':victory')) AS victory_history_marker_count,
         (SELECT COUNT(*) FROM battle_history AS marker
@@ -864,6 +984,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
           status: latest.battle_status,
           playerHp: latest.player_hp,
           playerMana: playerManaForSnapshot(latest),
+          ...projectPlayerShieldAudit(latest),
+          ...projectEnemyShield(latest.enemy_shield ?? (TUNNEL_MAW.startingShield ?? 0)),
+          ...projectEnemyShieldAbsorbed(latest.last_enemy_shield_absorbed ?? 0),
           enemyHp: latest.enemy_hp,
           turnCount: latest.turn_count,
         },
@@ -878,6 +1001,11 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
     status,
     playerHp,
     playerMana,
+    playerShield,
+    shieldAbsorbed,
+    retaliationDamage,
+    ...projectEnemyShield(enemyShield),
+    ...projectEnemyShieldAbsorbed(enemyShieldAbsorbed),
     enemyHp,
     turnCount: updated.turn_count,
   });
@@ -885,7 +1013,9 @@ async function handleBattleAction(request: Request, env: Env): Promise<Response>
 
 async function handleCompleteBattle(request: Request, env: Env): Promise<Response> {
   const input = await body<{ playerId?: string; permitId?: string }>(request);
-  if (!input.playerId || !input.permitId) return fail(request, env, 'playerId and permitId are required');
+  if (!isNonEmptyString(input.playerId) || !isNonEmptyString(input.permitId)) {
+    return fail(request, env, 'playerId and permitId are required');
+  }
 
   type ReceiptRow = {
     cycle_id: string; encounter_key: string; reward_state: 'pending' | 'claiming' | 'awarded';
@@ -914,7 +1044,7 @@ async function handleCompleteBattle(request: Request, env: Env): Promise<Respons
     defeat_history_marker_count: number;
   };
   const loadReceipt = async () => env.DB.prepare(`SELECT permit.id AS permit_id, permit.event_key, permit.cycle_id, permit.encounter_key,
-      permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage, permit.enemy_hp, permit.enemy_shield, permit.last_enemy_shield_absorbed, permit.battle_status, permit.turn_count,
       permit.reward_state, permit.reward_clear_number, permit.reward_xp, permit.reward_currency, permit.reward_tier,
       permit.reward_level, permit.reward_remaining_xp, permit.completed_at,
       permit.reward_claim_token, permit.reward_claimed_at,
@@ -1344,7 +1474,7 @@ async function handlePendingBattleRewards(request: Request, env: Env, playerId: 
   // event-cycle chronology and persisted terminal state determine eligibility.
   const pending = await env.DB.prepare(`SELECT
       permit.id, permit.event_key, permit.cycle_id, permit.encounter_key,
-      permit.player_hp, permit.player_mana, permit.enemy_hp, permit.battle_status, permit.turn_count,
+      permit.player_hp, permit.player_mana, permit.player_shield, permit.last_shield_absorbed, permit.last_retaliation_damage, permit.enemy_hp, permit.enemy_shield, permit.last_enemy_shield_absorbed, permit.battle_status, permit.turn_count,
       cycle.event_key AS cycle_event_key
     FROM battle_permits AS permit
     JOIN world_event_cycles AS cycle ON cycle.id = permit.cycle_id
@@ -1392,12 +1522,12 @@ export default {
       if (request.method === 'PUT' && url.pathname === '/api/player/housing') return await handleHousing(request, env);
       if (request.method === 'GET' && url.pathname === '/api/battle/pending-rewards') {
         const playerId = url.searchParams.get('playerId');
-        if (!playerId) return fail(request, env, 'playerId is required');
+        if (!isNonEmptyString(playerId)) return fail(request, env, 'playerId is required');
         return await handlePendingBattleRewards(request, env, playerId);
       }
       if (request.method === 'GET' && url.pathname === '/api/world/underpass') {
         const playerId = url.searchParams.get('playerId');
-        if (!playerId) return fail(request, env, 'playerId is required');
+        if (!isNonEmptyString(playerId)) return fail(request, env, 'playerId is required');
         const snapshot = await worldSnapshot(env.DB, playerId);
         return json(request, env, snapshot);
       }

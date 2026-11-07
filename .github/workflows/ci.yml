@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, automation/degen/d1-migration-number-guard-v01]
 
 jobs:
   build:
@@ -18,6 +18,8 @@ jobs:
           node-version: 22
       - name: Install
         run: npm install
+      - name: Validate tracked D1 migration versions
+        run: npm run check:migrations
       - name: Run deterministic game tests
         run: npm test
       - name: Exercise isolated local Worker/D1 reward concurrency
@@ -30,6 +32,8 @@ jobs:
         run: node tests/worker-d1-cycle-rollover.mjs
       - name: Verify atomic defeat history on isolated local Worker/D1
         run: node tests/worker-d1-defeat-atomic.mjs
+      - name: Exercise isolated local Worker/D1 Shield state
+        run: node tests/worker-shield-integration.mjs
       - name: Exercise mobile browser housing persistence with isolated local Worker/D1
         run: node tests/browser-housing-persistence.mjs
       - name: Build web app

@@ -5,15 +5,15 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN } from '../src/data/combatPrototype.ts';
-import { isValidManaCost, isValidManaState } from '../src/game/combat/rules.ts';
+import { isValidManaCost, isValidManaState, isValidShieldGain } from '../src/game/combat/rules.ts';
 
 const source = readFileSync(new URL('../src/ui/views.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/\bexport const /g, 'const ');
-const buttonWithCostLabel = (manaCost: string | undefined, label: string) => {
+const buttonWithCostLabel = (manaCost: string | undefined, label: string, shieldGain = '0') => {
   const costLabel = { textContent: label };
   return {
-    dataset: { manaCost },
+    dataset: { manaCost, shieldGain },
     disabled: false,
     costLabel,
     querySelector: (selector: string) => selector === 'small' ? costLabel : null,
@@ -22,7 +22,7 @@ const buttonWithCostLabel = (manaCost: string | undefined, label: string) => {
 
 const ui = runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ battleView, updateBattleDom });',
-  { document: undefined, isValidManaCost, isValidManaState },
+  { document: undefined, isValidManaCost, isValidManaState, isValidShieldGain },
 ) as {
   battleView: (player: { displayName: string; level: number; currency: number }, degen: typeof TEST_DEGEN) => string;
   updateBattleDom: (snapshot: {
@@ -57,7 +57,7 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
 
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument, isValidManaCost, isValidManaState },
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
@@ -81,6 +81,7 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
     playerMaxHp: 120,
     playerMana,
     playerMaxMana: 12,
+    playerShield: 0,
     enemyName: 'Tunnel Maw',
     enemyHp: 51,
     enemyMaxHp: 92,
@@ -96,6 +97,8 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
     'an unaffordable paid move must explain why it is unavailable');
   assert.match(accessibleHud.textContent, /TEST_DEGEN: HP 73 of 120, Mana 0 of 12/);
   assert.match(accessibleHud.textContent, /Tunnel Maw: HP 51 of 92\. Turn 2\. Choose an action\./);
+  assert.doesNotMatch(accessibleHud.textContent, /Tunnel Maw: HP 51 of 92, Shield 0/,
+    'zero enemy Shield must stay out of the accessible HUD');
 
   boundUi.updateBattleDom(snapshot(4));
   assert.equal(buttons[0]?.disabled, false);
@@ -104,6 +107,76 @@ test('battle controls keep zero-cost abilities enabled and gate paid abilities b
   assert.equal(buttons[1]?.costLabel.textContent, '4 MANA',
     'the normal cost label returns when the move becomes affordable');
   assert.match(accessibleHud.textContent, /Mana 4 of 12/);
+});
+
+test('zero-Mana Shield abilities keep their gain visible and only free actions enabled', () => {
+  const shieldDegen = {
+    ...TEST_DEGEN,
+    maxMana: 0,
+    abilities: [
+      { ...TEST_DEGEN.abilities[0]!, shieldGain: 5 },
+      { ...TEST_DEGEN.abilities[1]!, shieldGain: 3 },
+    ],
+  };
+  const markup = ui.battleView(
+    { displayName: 'Player', level: 1, currency: 0 },
+    shieldDegen as typeof TEST_DEGEN,
+  );
+  assert.match(markup, /data-ability="slash" data-mana-cost="0" data-shield-gain="5"/);
+  assert.match(markup, /NO MANA · SHIELD \+5/);
+  assert.match(markup, /data-ability="crack" data-mana-cost="4" data-shield-gain="3"/);
+  assert.match(markup, /4 MANA · SHIELD \+3/);
+
+  const log = { innerHTML: '', append: (_node: unknown) => undefined };
+  const accessibleHud = { textContent: '' };
+  const buttons = [
+    buttonWithCostLabel('0', 'NO MANA', '5'),
+    buttonWithCostLabel('4', '4 MANA', '3'),
+  ];
+  const fakeDocument = {
+    querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
+    querySelectorAll: (_selector: string) => buttons,
+  };
+  const boundUi = runInNewContext(
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
+  ) as {
+    updateBattleDom: (snapshot: {
+      status: 'active' | 'victory' | 'defeat';
+      playerName: string;
+      playerHp: number;
+      playerMaxHp: number;
+      playerMana: number;
+      playerMaxMana: number;
+      playerShield: number;
+      enemyName: string;
+      enemyHp: number;
+      enemyMaxHp: number;
+      turnCount: number;
+      log: string[];
+    }) => void;
+  };
+
+  boundUi.updateBattleDom({
+    status: 'active',
+    playerName: 'TEST_DEGEN',
+    playerHp: 80,
+    playerMaxHp: 120,
+    playerMana: 0,
+    playerMaxMana: 0,
+    playerShield: 0,
+    enemyName: 'Tunnel Maw',
+    enemyHp: 50,
+    enemyMaxHp: 92,
+    turnCount: 0,
+    log: [],
+  });
+
+  assert.equal(buttons[0]?.disabled, false, 'zero-cost Shield ability remains usable at zero Mana');
+  assert.equal(buttons[0]?.costLabel.textContent, 'NO MANA · SHIELD +5');
+  assert.equal(buttons[1]?.disabled, true, 'paid Shield ability remains unavailable at zero Mana');
+  assert.equal(buttons[1]?.costLabel.textContent, 'NEED 4 MANA · SHIELD +3');
+  assert.match(accessibleHud.textContent, /Mana 0 of 0, Shield 0/);
 });
 
 test('battle terminal outcomes announce defeat/victory and disable every ability', () => {
@@ -124,7 +197,7 @@ test('battle terminal outcomes announce defeat/victory and disable every ability
   };
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument, isValidManaCost, isValidManaState },
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';
@@ -147,6 +220,7 @@ test('battle terminal outcomes announce defeat/victory and disable every ability
     playerMaxHp: 120,
     playerMana: 0,
     playerMaxMana: 12,
+    playerShield: 0,
     enemyName: 'Tunnel Maw',
     enemyHp: 51,
     enemyMaxHp: 92,
@@ -174,6 +248,60 @@ test('battle terminal outcomes announce defeat/victory and disable every ability
 });
 
 
+test('malformed Shield gain stays unavailable after the first snapshot update', () => {
+  const malformedDegen = {
+    ...TEST_DEGEN,
+    abilities: [
+      { ...TEST_DEGEN.abilities[0]!, shieldGain: null },
+      { ...TEST_DEGEN.abilities[1]!, shieldGain: -1 },
+      { ...TEST_DEGEN.abilities[0]!, id: 'string-shield', shieldGain: '5' },
+    ],
+  };
+  const markup = ui.battleView({ displayName: 'Player', level: 1, currency: 0 }, malformedDegen as unknown as typeof TEST_DEGEN);
+  assert.match(markup, /data-ability="slash" data-mana-cost="0" data-shield-gain="invalid" disabled/);
+  assert.match(markup, /data-ability="crack" data-mana-cost="4" data-shield-gain="invalid" disabled/);
+  assert.match(markup, /data-ability="string-shield" data-mana-cost="0" data-shield-gain="invalid" disabled/,
+    'a numeric string must not be normalized into a valid Shield definition');
+
+  const log = { innerHTML: '', append: (_node: unknown) => undefined };
+  const accessibleHud = { textContent: '' };
+  const buttons = [
+    buttonWithCostLabel('0', 'NO MANA', 'invalid'),
+    buttonWithCostLabel('4', '4 MANA', 'invalid'),
+    buttonWithCostLabel('0', 'NO MANA', 'invalid'),
+  ];
+  const fakeDocument = {
+    querySelector: (selector: string) => selector === '#battle-accessible-hud' ? accessibleHud : log,
+    querySelectorAll: (_selector: string) => buttons,
+  };
+  const boundUi = runInNewContext(
+    stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
+  ) as {
+    updateBattleDom: (snapshot: {
+      status: 'active' | 'victory' | 'defeat';
+      playerName: string;
+      playerHp: number;
+      playerMaxHp: number;
+      playerMana: number;
+      playerMaxMana: number;
+      playerShield: number;
+      enemyName: string;
+      enemyHp: number;
+      enemyMaxHp: number;
+      turnCount: number;
+      log: string[];
+    }) => void;
+  };
+  boundUi.updateBattleDom({
+    status: 'active', playerName: 'TEST_DEGEN', playerHp: 80, playerMaxHp: 120,
+    playerMana: 12, playerMaxMana: 12, playerShield: 0,
+    enemyName: 'Tunnel Maw', enemyHp: 50, enemyMaxHp: 92, turnCount: 1, log: [],
+  });
+  assert.ok(buttons.every((button) => button.disabled));
+  assert.ok(buttons.every((button) => button.costLabel.textContent === 'UNAVAILABLE'));
+});
+
 test('malformed Mana costs and snapshots fail closed in battle controls', () => {
   const malformedDegen = {
     ...TEST_DEGEN,
@@ -183,8 +311,8 @@ test('malformed Mana costs and snapshots fail closed in battle controls', () => 
     })),
   };
   const markup = ui.battleView({ displayName: 'Player', level: 1, currency: 0 }, malformedDegen as typeof TEST_DEGEN);
-  assert.match(markup, /data-ability="slash" data-mana-cost="" disabled/);
-  assert.match(markup, /data-ability="crack" data-mana-cost="" disabled/);
+  assert.match(markup, /data-ability="slash" data-mana-cost="" data-shield-gain="0" disabled/);
+  assert.match(markup, /data-ability="crack" data-mana-cost="" data-shield-gain="0" disabled/);
   assert.equal((markup.match(/UNAVAILABLE/g) ?? []).length, 2,
     'invalid costs must not be presented as usable abilities before the first snapshot update');
 
@@ -198,7 +326,7 @@ test('malformed Mana costs and snapshots fail closed in battle controls', () => 
   };
   const boundUi = runInNewContext(
     stripTypeScriptTypes(source, { mode: 'transform' }) + '\n({ updateBattleDom });',
-    { document: fakeDocument, isValidManaCost, isValidManaState },
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
   ) as {
     updateBattleDom: (snapshot: {
       status: 'active' | 'victory' | 'defeat';

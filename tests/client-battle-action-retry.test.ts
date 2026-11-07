@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
+import { maxAbilityDamage } from '../src/game/combat/rules.ts';
 
 const source = readFileSync(new URL('../src/app/api.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
@@ -17,6 +18,7 @@ const { GameApi, GameApiError } = runInNewContext(
     __API_BASE: '',
     TEST_DEGEN,
     TUNNEL_MAW,
+    maxAbilityDamage,
     fetch: globalThis.fetch,
     AbortController,
     setTimeout: globalThis.setTimeout,

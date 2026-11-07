@@ -36,13 +36,82 @@ function sql(query) {
   const row = Array.isArray(parsed) ? parsed[0] : parsed;
   return row?.results ?? row?.result?.[0]?.results ?? [];
 }
-function launch(name, exe, args, extra = {}) {
-  const child = spawn(exe, args, { cwd: root, env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
+function launch(name, exe, args, extra = {}, options = {}) {
+  const child = spawn(exe, args, {
+    cwd: root,
+    env: { ...env, ...extra },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: options.detached === true,
+  });
+  child.killProcessGroup = options.detached === true;
   logs.set(name, '');
   for (const stream of [child.stdout, child.stderr]) stream.on('data', data => {
     logs.set(name, (logs.get(name) + data.toString()).slice(-12000));
   });
   children.push(child);
+}
+
+async function waitForExit(child, timeout) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return Promise.race([
+    new Promise(resolveExit => child.once('exit', () => resolveExit(true))),
+    sleep(timeout).then(() => false),
+  ]);
+}
+
+async function waitForProcessGroupExit(pid, timeout) {
+  if (process.platform === 'win32') return true;
+  const deadline = Date.now() + timeout;
+  while (true) {
+    try {
+      process.kill(-pid, 0);
+    } catch (error) {
+      if (error?.code === 'ESRCH') return true;
+      throw error;
+    }
+    if (Date.now() >= deadline) return false;
+    await sleep(50);
+  }
+}
+
+function signalChild(child, signal) {
+  if (child.killProcessGroup && process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+    } catch (error) {
+      if (error?.code !== 'ESRCH') throw error;
+    }
+    return;
+  }
+  if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+}
+
+async function stopAll() {
+  for (const child of children.reverse()) {
+    const groupPid = child.killProcessGroup && process.platform !== 'win32' ? child.pid : undefined;
+    const childAlreadyExited = child.exitCode !== null || child.signalCode !== null;
+    const groupAlreadyExited = !groupPid || await waitForProcessGroupExit(groupPid, 0);
+    if (childAlreadyExited && groupAlreadyExited) continue;
+
+    signalChild(child, 'SIGTERM');
+    const childStopped = await waitForExit(child, 1500);
+    const groupStopped = !groupPid || await waitForProcessGroupExit(groupPid, 1500);
+    if (childStopped && groupStopped) continue;
+
+    signalChild(child, 'SIGKILL');
+    assert.equal(
+      await waitForExit(child, 5000),
+      true,
+      'child process must exit before its browser profile is removed',
+    );
+    if (groupPid) {
+      assert.equal(
+        await waitForProcessGroupExit(groupPid, 5000),
+        true,
+        'all browser descendants must exit before the profile directory is removed',
+      );
+    }
+  }
 }
 async function until(label, check, timeout = 30000) {
   const end = Date.now() + timeout;
@@ -131,7 +200,7 @@ try {
     '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--remote-allow-origins=*', '--remote-debugging-port=9222',
     '--user-data-dir=' + join(scratch, 'chrome'), 'about:blank',
-  ]);
+  ], {}, { detached: process.platform !== 'win32' });
   const target = await until('Chrome debugger', async () => {
     const r = await fetch('http://127.0.0.1:9222/json/list', { signal: AbortSignal.timeout(800) });
     if (!r.ok) return null;
@@ -197,7 +266,7 @@ try {
       Object.defineProperty(window, '__degenRenderedBattleText', { value: rendered });
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
-        if (typeof text === 'string' && (text.startsWith('MANA ') || text === 'MANIFESTED')) rendered.push(text);
+        if (typeof text === 'string' && text === 'MANIFESTED') rendered.push(text);
         return original.call(this, text, ...args);
       };
 
@@ -493,10 +562,10 @@ try {
   await cdp.send('Fetch.disable');
   assert.deepEqual(cdp.eventErrors, [], 'the intercepted module request must continue without CDP errors');
   await until('Phaser runtime loads only after entering battle', async () => (await loadedPhaserResources()).length > 0);
-  await until('rendered initial Mana HUD', () => cdp.evaluate("window.__degenRenderedBattleText?.includes('MANA 12/12') && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
+  await until('rendered initial combat status HUD', () => cdp.evaluate("document.querySelector('#battle-hp')?.textContent === 'HP 120/120' && document.querySelector('#battle-mana')?.textContent === 'MANA 12/12' && document.querySelector('#battle-shield')?.textContent === 'SHIELD 0' && document.querySelector('#battle-enemy-hp')?.textContent === 'ENEMY HP 92/92' && window.__degenRenderedBattleText?.includes('MANIFESTED')"));
   const initialAccessibleHud = await cdp.evaluate('document.querySelector("#battle-accessible-hud")?.textContent ?? ""');
   assert.equal(initialAccessibleHud,
-    'TEST_DEGEN: HP 120 of 120, Mana 12 of 12. Tunnel Maw: HP 92 of 92. Turn 0. Choose an action.',
+    'TEST_DEGEN: HP 120 of 120, Mana 12 of 12, Shield 0. Tunnel Maw: HP 92 of 92. Turn 0. Choose an action.',
     'the live DOM status must expose the initial Worker-backed battle snapshot outside the Phaser canvas');
   assert.deepEqual(await cdp.evaluate("(() => { const status = document.querySelector('#battle-action-status'); return { exists: !!status, hidden: status?.hidden, ariaLive: status?.getAttribute('aria-live'), display: status ? getComputedStyle(status).display : null }; })()"),
     { exists: true, hidden: true, ariaLive: 'polite', display: 'none' },
@@ -575,15 +644,20 @@ try {
     });
     for (const [key, value] of Object.entries(expected)) assert.equal(persisted[key], value, 'persisted turn ' + turn + ' ' + key);
     const displayedMana = `MANA ${expected.player_mana}/12`;
-    await until('rendered authoritative Mana HUD after turn ' + turn,
-      () => cdp.evaluate(`window.__degenRenderedBattleText?.includes(${JSON.stringify(displayedMana)})`));
-    const hudOrder = await cdp.evaluate(`(() => {
-      const rendered = window.__degenRenderedBattleText || [];
-      return { mana: rendered.lastIndexOf(${JSON.stringify(displayedMana)}), manifested: rendered.lastIndexOf('MANIFESTED') };
-    })()`);
-    assert.ok(hudOrder.mana >= 0, 'the current authoritative Mana value must be rendered');
-    assert.ok(hudOrder.manifested > hudOrder.mana,
-      'MANIFESTED must be rendered after the current Mana value, including at zero Mana');
+    await until('rendered authoritative Mana and Shield HUD after turn ' + turn,
+      () => cdp.evaluate(`document.querySelector('#battle-hp')?.textContent === ${JSON.stringify(`HP ${expected.player_hp}/120`)} && document.querySelector('#battle-enemy-hp')?.textContent === ${JSON.stringify(`ENEMY HP ${expected.enemy_hp}/92`)} && document.querySelector('#battle-mana')?.textContent === ${JSON.stringify(displayedMana)} && document.querySelector('#battle-shield')?.textContent === 'SHIELD 0'`));
+    const hudState = await cdp.evaluate(`(() => ({
+      hp: document.querySelector('#battle-hp')?.textContent ?? '',
+      enemyHp: document.querySelector('#battle-enemy-hp')?.textContent ?? '',
+      mana: document.querySelector('#battle-mana')?.textContent ?? '',
+      shield: document.querySelector('#battle-shield')?.textContent ?? '',
+      manifested: (window.__degenRenderedBattleText || []).includes('MANIFESTED'),
+    }))()`);
+    assert.equal(hudState.hp, `HP ${expected.player_hp}/120`, 'the current authoritative HP value must be rendered');
+    assert.equal(hudState.enemyHp, `ENEMY HP ${expected.enemy_hp}/92`, 'the current authoritative enemy HP value must be rendered');
+    assert.equal(hudState.mana, displayedMana, 'the current authoritative Mana value must be rendered');
+    assert.equal(hudState.shield, 'SHIELD 0', 'the current authoritative Shield value must be rendered');
+    assert.equal(hudState.manifested, true, 'MANIFESTED remains rendered, including at zero Mana');
 
     if (turn === 1) {
       const activeCycleId = sql("SELECT cycle_id FROM battle_permits WHERE id='" + permitId + "'")[0]?.cycle_id;
@@ -603,7 +677,7 @@ try {
       ));
       await tap("[data-resume-battle]");
       await until('persisted active encounter resumed after cycle closure', () => cdp.evaluate(
-        '(() => { const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? ""; return !!document.querySelector("[data-ability=crack]") && hud.includes("HP 110 of 120, Mana 8 of 12") && hud.includes("Tunnel Maw: HP 57 of 92. Turn 1."); })()',
+        '(() => { const hud = document.querySelector("#battle-accessible-hud")?.textContent ?? ""; return !!document.querySelector("[data-ability=crack]") && hud.includes("HP 110 of 120, Mana 8 of 12, Shield 0") && hud.includes("Tunnel Maw: HP 57 of 92. Turn 1."); })()',
       ));
       const resumedState = sql("SELECT player_hp, player_mana, enemy_hp, battle_status, turn_count FROM battle_permits WHERE id='" + permitId + "'")[0];
       assert.deepEqual(resumedState, {
@@ -805,19 +879,170 @@ try {
   }, 'the free action advances the real Worker-backed battle while Mana remains zero');
   await until('Phaser keeps the Degen manifested at zero Mana in the running app', () => cdp.evaluate(`(() => {
     const rendered = window.__degenRenderedBattleText || [];
-    const mana = rendered.lastIndexOf("MANA 0/12");
-    return mana >= 0 && rendered.lastIndexOf("MANIFESTED") > mana;
+    const mana = document.querySelector('#battle-mana')?.textContent;
+    return document.querySelector('#battle-hp')?.textContent === 'HP 100/120' && document.querySelector('#battle-enemy-hp')?.textContent === 'ENEMY HP 28/92' && mana === 'MANA 0/12' && rendered.includes('MANIFESTED');
   })()`));
 
-  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback and free-action continuation');
+  // Exercise the actual Vite-served combat engine and DOM in Chromium with a
+  // Worker-shaped authoritative result. The Worker/D1 Shield integration above
+  // independently verifies that the same result is produced and persisted.
+  const shieldLog = await cdp.evaluate(`(async () => {
+    const [engineModule, contentModule, viewModule] = await Promise.all([
+      import('/src/game/combat/engine.ts'),
+      import('/src/data/combatPrototype.ts'),
+      import('/src/ui/views.ts'),
+    ]);
+    const { BattleEngine } = engineModule;
+    const { TEST_DEGEN, TUNNEL_MAW } = contentModule;
+    const { battleView, updateBattleDom } = viewModule;
+    const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+    const player = {
+      id: 'shield-browser-player',
+      displayName: 'Shield Tester',
+      level: 1,
+      xp: 0,
+      currency: 0,
+      degenId: TEST_DEGEN.id,
+      inventory: [],
+      unlockedLocations: ['home'],
+      housing: { inventory: [], placements: [] },
+      defeatedBosses: [],
+    };
+    document.body.innerHTML = battleView(player, TEST_DEGEN);
+    const permitId = 'browser-shield-damage-log';
+    const battle = new BattleEngine(TEST_DEGEN, enemy, () => undefined, {
+      permitId,
+      status: 'active',
+      playerHp: TEST_DEGEN.maxHp,
+      playerMana: 0,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 0,
+      enemyHp: enemy.maxHp,
+      enemyShield: 5,
+      turnCount: 0,
+    });
+    battle.subscribe(updateBattleDom);
+    battle.applyAuthoritativeAction('slash', {
+      permitId,
+      status: 'active',
+      playerHp: TEST_DEGEN.maxHp - 10,
+      playerMana: 0,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 10,
+      enemyHp: enemy.maxHp - 24,
+      enemyShield: 0,
+      enemyShieldAbsorbed: 5,
+      turnCount: 1,
+    });
+    return document.querySelector('#battle-log')?.textContent ?? '';
+  })()`);
+  assert.match(shieldLog, /uses Slash: 29 damage\./,
+    'Chromium must render total ability damage rather than only enemy HP reduction');
+  assert.match(shieldLog, /Tunnel Maw Shield absorbs 5\./,
+    'Chromium must separately render the enemy Shield absorption');
+
+  // Verify the player's temporary Shield is visible in the real DOM/accessible HUD,
+  // including a free bespoke Shield-gain ability while Mana is already zero.
+  const playerShieldHud = await cdp.evaluate(`(async () => {
+    const [engineModule, contentModule, rulesModule, viewModule] = await Promise.all([
+      import('/src/game/combat/engine.ts'),
+      import('/src/data/combatPrototype.ts'),
+      import('/src/game/combat/rules.ts'),
+      import('/src/ui/views.ts'),
+    ]);
+    const { BattleEngine } = engineModule;
+    const { TEST_DEGEN, TUNNEL_MAW } = contentModule;
+    const { resolveCombatTurn } = rulesModule;
+    const { battleView, updateBattleDom } = viewModule;
+    const degen = {
+      ...TEST_DEGEN,
+      maxMana: 0,
+      abilities: TEST_DEGEN.abilities.map((candidate) => candidate.id === 'slash'
+        ? { ...candidate, shieldGain: 15 }
+        : candidate),
+    };
+    const player = {
+      id: 'player-shield-browser-player',
+      displayName: 'Shield Tester',
+      level: 1,
+      xp: 0,
+      currency: 0,
+      degenId: degen.id,
+      inventory: [],
+      unlockedLocations: ['home'],
+      housing: { inventory: [], placements: [] },
+      defeatedBosses: [],
+    };
+    document.body.innerHTML = battleView(player, degen);
+    const permitId = 'browser-player-shield-display';
+    const battle = new BattleEngine(degen, TUNNEL_MAW, () => undefined, {
+      permitId,
+      status: 'active',
+      playerHp: degen.maxHp,
+      playerMana: 0,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 0,
+      enemyHp: TUNNEL_MAW.maxHp,
+      enemyShield: 0,
+      enemyShieldAbsorbed: 0,
+      turnCount: 0,
+    });
+    battle.subscribe(updateBattleDom);
+    const ability = degen.abilities.find((candidate) => candidate.id === 'slash');
+    const turn = resolveCombatTurn({
+      playerHp: degen.maxHp,
+      playerMana: 0,
+      playerShield: 0,
+      enemyHp: TUNNEL_MAW.maxHp,
+      enemyShield: 0,
+      ability,
+      degen,
+      enemy: TUNNEL_MAW,
+    });
+    battle.applyAuthoritativeAction('slash', {
+      permitId,
+      status: turn.status,
+      playerHp: turn.playerHp,
+      playerMana: turn.playerMana,
+      playerShield: turn.playerShield,
+      shieldAbsorbed: turn.shieldAbsorbed,
+      retaliationDamage: turn.retaliationDamage,
+      enemyHp: turn.enemyHp,
+      enemyShield: turn.enemyShield,
+      enemyShieldAbsorbed: turn.enemyShieldAbsorbed,
+      turnCount: 1,
+    });
+    const button = document.querySelector('[data-ability="slash"]');
+    return {
+      shield: document.querySelector('#battle-shield')?.textContent ?? '',
+      hud: document.querySelector('#battle-accessible-hud')?.textContent ?? '',
+      log: document.querySelector('#battle-log')?.textContent ?? '',
+      cost: button?.querySelector('small')?.textContent ?? '',
+      disabled: button?.disabled ?? true,
+      playerHp: battle.snapshot.playerHp,
+      playerShield: battle.snapshot.playerShield,
+    };
+  })()`);
+  assert.equal(playerShieldHud.shield, 'SHIELD 5', 'Chromium must render remaining player Shield');
+  assert.match(playerShieldHud.hud, /Mana 0 of 0, Shield 5\./,
+    'the accessible combat HUD must expose player Shield at zero Mana');
+  assert.match(playerShieldHud.log, /Shield \+15\./, 'the battle log must show the granted Shield');
+  assert.match(playerShieldHud.log, /Shield absorbs 10\./, 'the battle log must show Shield absorbing retaliation');
+  assert.equal(playerShieldHud.cost, 'NO MANA · SHIELD +15');
+  assert.equal(playerShieldHud.disabled, false, 'the zero-cost Shield action remains available at zero Mana');
+  assert.equal(playerShieldHud.playerHp, 120, 'Shield absorbs retaliation before HP');
+  assert.equal(playerShieldHud.playerShield, 5, 'unused Shield carries into the next turn');
+
+  console.log('PASS Chromium + Vite + local Wrangler/D1: Map > District > Location > Home/Underpass > Degen battle > Worker reward > Home trophy, plus city zoom, zero-Mana affordability feedback, player/enemy Shield DOM, and free-action continuation');
 } catch (error) {
   console.error('Browser vertical slice FAILED:', error);
   for (const [name, output] of logs) console.error(name + ' logs:\n' + output);
   throw error;
 } finally {
   socket?.close();
-  for (const child of children.reverse()) if (child.exitCode === null) child.kill('SIGTERM');
-  await sleep(500);
-  for (const child of children) if (child.exitCode === null) child.kill('SIGKILL');
-  rmSync(scratch, { recursive: true, force: true });
+  await stopAll();
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
 }

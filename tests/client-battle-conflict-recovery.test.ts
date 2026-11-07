@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaCost, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaCost, isValidManaState, isValidShield, isValidShieldGain, maxAbilityDamage, resolveCombatTurn } from '../src/game/combat/rules.ts';
 
 class TestGameApiProtocolError extends Error {
   constructor(message: string) {
@@ -30,7 +30,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace(/\bexport class BattleEngine\b/g, 'class BattleEngine');
 const { BattleEngine } = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\n({ BattleEngine });',
-  { canUseAbility, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, maxAbilityDamage, resolveCombatTurn },
 ) as {
   BattleEngine: new (
     degen: typeof TEST_DEGEN,
@@ -74,11 +74,12 @@ const isAuthoritativeBattleActionState = (value: unknown, permitId: string): val
 
 const timers: Array<{ callback: () => void; delay: number }> = [];
 const storage = new Map<string, string>();
+const abilityButtons: Array<{ dataset: Record<string, string>; disabled: boolean }> = [];
 const actionStatus = { textContent: '', hidden: true };
 const root = {
   innerHTML: '',
   querySelector: (selector: string) => selector === '#battle-action-status' ? actionStatus : null,
-  querySelectorAll: (_selector: string) => [] as Array<{ dataset: Record<string, string>; disabled: boolean }>,
+  querySelectorAll: (_selector: string) => abilityButtons,
 };
 const scope = {
   TEST_DEGEN,
@@ -88,6 +89,7 @@ const scope = {
   GameApiProtocolError: TestGameApiProtocolError,
   isValidManaCost,
   isValidManaState,
+  isValidShieldGain,
   isAuthoritativeBattleActionState,
   createBattleGame: () => ({ destroy: () => {} }),
   underpassRewardForClear: () => ({ xp: 0, currency: 0, items: [] }),
@@ -164,12 +166,32 @@ test('lost action response followed by authoritative victory snapshot completes 
     applyReward(_reward: unknown) { this.localRewards += 1; },
     markBossDefeated(_bossId: string) {},
   };
+  const enemy = { ...TUNNEL_MAW, maxHp: 1 };
+  const initialState = {
+    permitId: 'permit-1',
+    status: 'active' as const,
+    playerHp: 100,
+    playerMana: 8,
+    enemyHp: enemy.maxHp,
+    turnCount: 0,
+  };
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initialState.playerHp,
+    playerMana: initialState.playerMana,
+    enemyHp: initialState.enemyHp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  assert.equal(turn.status, 'victory');
   const authoritativeVictory = {
     permitId: 'permit-1',
-    status: 'victory' as const,
-    playerHp: 80,
-    playerMana: 4,
-    enemyHp: 0,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    enemyHp: turn.enemyHp,
     turnCount: 1,
   };
   let actionCalls = 0;
@@ -192,17 +214,10 @@ test('lost action response followed by authoritative victory snapshot completes 
 
   let terminalCallbacks = 0;
   let controller!: InstanceType<typeof AppController>;
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, (status) => {
+  const engine = new BattleEngine(TEST_DEGEN, enemy, (status) => {
     terminalCallbacks += 1;
     void controller.finishBattle(status);
-  }, {
-    permitId: 'permit-1',
-    status: 'active',
-    playerHp: 100,
-    playerMana: 8,
-    enemyHp: TUNNEL_MAW.maxHp,
-    turnCount: 0,
-  });
+  }, initialState);
 
   controller = new AppController(root, store, api);
   controller.route = 'battle';
@@ -338,12 +353,43 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
     applyReward(_reward: unknown) { this.localRewards += 1; },
     markBossDefeated(_bossId: string) {},
   };
-  const latest = {
+  const enemy = { ...TUNNEL_MAW, startingShield: 42 };
+  const initialState = {
     permitId: 'permit-1',
     status: 'active' as const,
-    playerHp: 70,
-    playerMana: 0,
-    enemyHp: 63,
+    playerHp: 100,
+    playerMana: 4,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 42,
+    turnCount: 0,
+  };
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initialState.playerHp,
+    playerMana: initialState.playerMana,
+    playerShield: initialState.playerShield,
+    enemyHp: initialState.enemyHp,
+    enemyShield: initialState.enemyShield,
+    ability,
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  assert.equal(turn.status, 'active');
+  const latest = {
+    permitId: 'permit-1',
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    enemyShield: turn.enemyShield,
+    enemyShieldAbsorbed: turn.enemyShieldAbsorbed,
     turnCount: 1,
   };
   const api = {
@@ -356,16 +402,9 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
     },
     async completeUnderpass() { throw new Error('completion must not run for an active battle'); },
   };
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => {
     assert.fail('an active authoritative snapshot must not resolve the encounter');
-  }, {
-    permitId: 'permit-1',
-    status: 'active',
-    playerHp: 100,
-    playerMana: 8,
-    enemyHp: TUNNEL_MAW.maxHp,
-    turnCount: 0,
-  });
+  }, initialState);
   const controller = new AppController(root, store, api);
   controller.route = 'battle';
   controller.battlePermit = { permitId: 'permit-1' };
@@ -377,11 +416,108 @@ test('an insufficient-Mana conflict shows the server error and synchronizes the 
   assert.equal(actionStatus.hidden, false);
   assert.equal(actionStatus.textContent, 'Not enough Mana for that ability.');
   assert.equal(engine.snapshot.playerMana, 0);
-  assert.equal(engine.snapshot.enemyHp, 63);
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
+  assert.equal(engine.snapshot.enemyShield, turn.enemyShield, 'conflict resync must preserve the server-owned enemy Shield');
   assert.equal(engine.snapshot.turnCount, 1);
   assert.equal(store.localRewards, 0);
 });
 
+
+
+test('a structurally valid but mathematically conflicting snapshot keeps battle actions disabled', async (t) => {
+  timers.length = 0;
+  storage.clear();
+  abilityButtons.length = 0;
+  abilityButtons.push({ dataset: { manaCost: '0', shieldGain: '0' }, disabled: false });
+  t.after(() => { abilityButtons.length = 0; });
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const enemy = { ...TUNNEL_MAW, startingShield: 5 };
+  const initialState = {
+    permitId: 'permit-conflicting-shield-audit',
+    status: 'active' as const,
+    playerHp: 100,
+    playerMana: 8,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: enemy.maxHp,
+    enemyShield: 5,
+    turnCount: 0,
+  };
+  const before = new BattleEngine(TEST_DEGEN, enemy, () => {
+    assert.fail('a rejected conflict snapshot cannot resolve a local turn');
+  }, initialState).snapshot;
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'slash');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initialState.playerHp,
+    playerMana: initialState.playerMana,
+    playerShield: initialState.playerShield,
+    enemyHp: initialState.enemyHp,
+    enemyShield: initialState.enemyShield,
+    ability,
+    degen: TEST_DEGEN,
+    enemy,
+  });
+  assert.equal(turn.enemyShieldAbsorbed, 5);
+  const conflictingSnapshot = {
+    permitId: initialState.permitId,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    playerShield: turn.playerShield,
+    shieldAbsorbed: turn.shieldAbsorbed,
+    retaliationDamage: turn.retaliationDamage,
+    enemyHp: turn.enemyHp,
+    enemyShield: turn.enemyShield,
+    enemyShieldAbsorbed: 4,
+    turnCount: 1,
+  };
+  const api = {
+    enabled: true,
+    async actUnderpass() {
+      throw new TestGameApiError(409, {
+        error: 'Stale battle turn.',
+        battleState: conflictingSnapshot,
+      }, 'DEGEN API 409');
+    },
+    async completeUnderpass() {
+      assert.fail('a rejected snapshot cannot authorize reward completion');
+    },
+  };
+  const engine = new BattleEngine(TEST_DEGEN, enemy, () => {
+    assert.fail('the conflicting snapshot must not mutate combat');
+  }, initialState);
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: initialState.permitId };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('slash');
+
+  assert.deepEqual(engine.snapshot, before, 'the last accepted combat state must remain unchanged');
+  assert.equal(engine.snapshot.turnCount, 0);
+  assert.equal(engine.snapshot.playerMana, 8);
+  assert.equal(engine.snapshot.enemyHp, enemy.maxHp);
+  assert.equal(actionStatus.hidden, false);
+  assert.match(actionStatus.textContent, /conflicts with the last accepted turn/i);
+  assert.equal(abilityButtons[0]?.disabled, true,
+    'an unreconciled newer server snapshot must not re-enable stale ability buttons');
+  assert.equal(store.localRewards, 0);
+  abilityButtons.length = 0;
+});
 
 
 test('a confirmed victory still settles if the player abandons before the action response arrives', async () => {
@@ -1325,4 +1461,86 @@ test('unknown or authentication resume errors retain the permit and saved key', 
     assert.equal(controller.route, 'underpass');
     assert.equal(store.localRewards, 0);
   }
+});
+
+
+test('a successful response with mathematically inconsistent combat state fails closed', async (t) => {
+  timers.length = 0;
+  storage.clear();
+  abilityButtons.length = 0;
+  abilityButtons.push({ dataset: { manaCost: '0', shieldGain: '0' }, disabled: false });
+  t.after(() => { abilityButtons.length = 0; });
+  actionStatus.textContent = '';
+  actionStatus.hidden = true;
+
+  const store = {
+    snapshot: { id: 'player-1' },
+    replaced: 0,
+    localRewards: 0,
+    replaceFromServer(_player: unknown) { this.replaced += 1; },
+    applyReward(_reward: unknown) { this.localRewards += 1; },
+    markBossDefeated(_bossId: string) {},
+  };
+  const initialState = {
+    permitId: 'permit-success-conflict',
+    status: 'active' as const,
+    playerHp: TEST_DEGEN.maxHp,
+    playerMana: TEST_DEGEN.maxMana,
+    playerShield: 0,
+    shieldAbsorbed: 0,
+    retaliationDamage: 0,
+    enemyHp: TUNNEL_MAW.maxHp,
+    turnCount: 0,
+  };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => {
+    assert.fail('a mathematically rejected success response cannot resolve the battle');
+  }, initialState);
+  const slash = TEST_DEGEN.abilities.find((ability) => ability.id === 'slash');
+  assert.ok(slash);
+  const expected = resolveCombatTurn({
+    playerHp: initialState.playerHp,
+    playerMana: initialState.playerMana,
+    playerShield: initialState.playerShield,
+    enemyHp: initialState.enemyHp,
+    ability: slash,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  const impossible = {
+    permitId: initialState.permitId,
+    status: expected.status,
+    playerHp: expected.playerHp,
+    playerMana: expected.playerMana,
+    playerShield: expected.playerShield,
+    shieldAbsorbed: expected.shieldAbsorbed,
+    retaliationDamage: expected.retaliationDamage,
+    enemyHp: expected.enemyHp + 1,
+    enemyShield: expected.enemyShield,
+    enemyShieldAbsorbed: expected.enemyShieldAbsorbed,
+    turnCount: 1,
+  };
+  const api = {
+    enabled: true,
+    async actUnderpass() { return impossible; },
+    async completeUnderpass() {
+      assert.fail('a rejected combat response cannot request reward completion');
+    },
+  };
+  const controller = new AppController(root, store, api);
+  controller.route = 'battle';
+  controller.battlePermit = { permitId: initialState.permitId };
+  controller.battlePermitOwnerId = 'player-1';
+  controller.battleEngine = engine;
+
+  await controller.useBattleAbility('slash');
+
+  assert.equal(actionStatus.hidden, false);
+  assert.match(actionStatus.textContent, /conflicts with the last accepted turn/i);
+  assert.equal(engine.snapshot.turnCount, 0);
+  assert.equal(engine.snapshot.playerHp, initialState.playerHp);
+  assert.equal(engine.snapshot.playerMana, initialState.playerMana);
+  assert.equal(engine.snapshot.enemyHp, initialState.enemyHp);
+  assert.equal(abilityButtons[0]?.disabled, true, 'actions stay disabled until the encounter is safely resynchronized');
+  assert.equal(controller.battlePermit?.permitId, initialState.permitId, 'retain the permit for safe recovery');
+  assert.equal(store.localRewards, 0, 'the client never fabricates rewards');
 });

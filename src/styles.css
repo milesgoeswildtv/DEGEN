@@ -73,6 +73,9 @@ button:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 3px; }
 .secondary-action { border: 1px solid #3f3f49; background: transparent; color: #d4d4d8; }
 .battle-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr); gap: 16px; align-items: start; }
 .battle-canvas { min-height: 320px; border: 1px solid #2c2c35; border-radius: 14px; overflow: hidden; background: #0a0a0e; }
+.battle-arena { display: grid; gap: 12px; min-width: 0; }
+.battle-resources { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.battle-resource { border: 1px solid #34343e; border-radius: 999px; padding: 5px 10px; color: #d4d4d8; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
 .battle-controls { display: grid; gap: 12px; }
 .battle-action-status { margin: 0; padding: 10px 12px; border: 1px solid #5a4930; border-radius: 8px; background: #1b1710; color: #f0d7a6; font-size: 13px; line-height: 1.45; }
 .battle-action-status[hidden] { display: none; }

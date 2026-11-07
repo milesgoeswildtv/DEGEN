@@ -15,14 +15,16 @@ import { UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear } fr
 const source = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/^export default\s*\{/m, 'const worker = {');
-const handleBattleAction = runInNewContext(
+const createBattleActionHandler = (enemy: typeof TUNNEL_MAW = TUNNEL_MAW) => runInNewContext(
   stripTypeScriptTypes(source, { mode: 'transform' }) + '\nhandleBattleAction;',
   {
-    TEST_DEGEN, TUNNEL_MAW, canUseAbility, resolveCombatTurn,
+    TEST_DEGEN, TUNNEL_MAW: enemy, canUseAbility, resolveCombatTurn,
     UNDERPASS_FULL_REWARD_LIMIT, advanceLevel, underpassRewardForClear,
     crypto: webcrypto, Request, Response, URL, console, Uint32Array,
   },
 ) as (request: Request, env: { DB: unknown }) => Promise<Response>;
+const handleBattleAction = createBattleActionHandler();
+const handleBattleActionWithEnemyShield = createBattleActionHandler({ ...TUNNEL_MAW, startingShield: 7 });
 
 test('unaffordable battle conflict returns the latest persisted snapshot after a concurrent turn', async () => {
   const staleSnapshot = {
@@ -30,14 +32,17 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
     encounter_key: TUNNEL_MAW.id,
     player_hp: 80,
     player_mana: 0,
-    enemy_hp: 50,
+    player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0,
+enemy_hp: 50,
     battle_status: 'active',
     turn_count: 0,
   };
   const latestSnapshot = {
     ...staleSnapshot,
     player_hp: 70,
+    last_retaliation_damage: 10, last_enemy_shield_absorbed: 0,
     enemy_hp: 63,
+    enemy_shield: 7,
     turn_count: 1,
     permit_is_unexpired: 1,
   };
@@ -70,12 +75,12 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
     }),
   });
 
-  const response = await handleBattleAction(request, { DB: db });
+  const response = await handleBattleActionWithEnemyShield(request, { DB: db });
   const result = await response.json() as {
     error: string;
     battleState?: {
       permitId: string; status: string; playerHp: number; playerMana: number;
-      enemyHp: number; turnCount: number;
+      enemyShield?: number; enemyHp: number; turnCount: number;
     };
   };
 
@@ -86,6 +91,10 @@ test('unaffordable battle conflict returns the latest persisted snapshot after a
     status: 'active',
     playerHp: 70,
     playerMana: 0,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 10,
+      enemyShield: 7,
     enemyHp: 63,
     turnCount: 1,
   }, 'a rejected request must not resynchronize the client to a pre-race snapshot');
@@ -96,7 +105,7 @@ test('an expiry crossed during a conflict re-read does not return an unusable ac
   const activeSnapshot = {
     event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
     encounter_key: TUNNEL_MAW.id,
-    player_hp: 80, player_mana: 0, enemy_hp: 50, battle_status: 'active', turn_count: 0,
+    player_hp: 80, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0, enemy_hp: 50, battle_status: 'active', turn_count: 0,
   };
   const expiredSnapshot = { ...activeSnapshot, permit_is_unexpired: 0 };
   const reads: string[] = [];
@@ -138,7 +147,7 @@ test('a failed action compare-and-swap after expiry does not return an active sn
   const activeSnapshot = {
     event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
     encounter_key: TUNNEL_MAW.id,
-    player_hp: 80, player_mana: 12, enemy_hp: 92, battle_status: 'active', turn_count: 0,
+    player_hp: 80, player_mana: 12, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0, enemy_hp: 92, battle_status: 'active', turn_count: 0,
   };
   const expiredSnapshot = { ...activeSnapshot, permit_is_unexpired: 0 };
   const reads: string[] = [];
@@ -183,7 +192,8 @@ test('replayed action after reward settlement returns the persisted victory snap
     encounter_key: TUNNEL_MAW.id,
     player_hp: 70,
     player_mana: 0,
-    enemy_hp: 0,
+    player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0,
+enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
     victory_history_marker_count: 1,
@@ -236,6 +246,9 @@ test('replayed action after reward settlement returns the persisted victory snap
     status: 'victory',
     playerHp: 70,
     playerMana: 0,
+      playerShield: 0,
+      shieldAbsorbed: 0,
+      retaliationDamage: 0,
     enemyHp: 0,
     turnCount: 3,
   });
@@ -246,17 +259,17 @@ test('completed permits for unsupported encounters, events, or cycles are not re
   const unsupportedSnapshots = [
     {
       event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
-      encounter_key: 'different-monster', player_hp: 70, player_mana: 0, enemy_hp: 0,
+      encounter_key: 'different-monster', player_hp: 70, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0, enemy_hp: 0,
       battle_status: 'victory', turn_count: 3,
     },
     {
       event_key: 'unapproved-event', cycle_event_key: 'underpass', cycle_id: 'cycle-1',
-      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, enemy_hp: 0,
+      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0, enemy_hp: 0,
       battle_status: 'victory', turn_count: 3,
     },
     {
       event_key: 'underpass', cycle_event_key: 'unapproved-event', cycle_id: 'cycle-foreign',
-      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, enemy_hp: 0,
+      encounter_key: TUNNEL_MAW.id, player_hp: 70, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0, enemy_hp: 0,
       battle_status: 'victory', turn_count: 3,
     },
   ];
@@ -295,27 +308,27 @@ test('expired terminal retries recover only valid pending victory or defeat snap
     {
       state: {
         event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
-        player_hp: 70, player_mana: 0, enemy_hp: 0,
+        player_hp: 70, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 0, last_enemy_shield_absorbed: 0, enemy_hp: 0,
         battle_status: 'victory', turn_count: 3,
         completed_at: null, reward_state: 'pending',
       },
       expectedError: 'Battle victory is awaiting reward completion.',
       expectedState: {
         permitId: 'permit-1', status: 'victory',
-        playerHp: 70, playerMana: 0, enemyHp: 0, turnCount: 3,
+        playerHp: 70, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 0, enemyHp: 0, turnCount: 3,
       },
     },
     {
       state: {
         event_key: 'underpass', cycle_event_key: 'underpass', cycle_id: 'cycle-1', encounter_key: TUNNEL_MAW.id,
-        player_hp: 0, player_mana: 0, enemy_hp: 63,
+        player_hp: 0, player_mana: 0, player_shield: 0, last_shield_absorbed: 0, last_retaliation_damage: 10, last_enemy_shield_absorbed: 0, enemy_hp: 63,
         battle_status: 'defeat', turn_count: 1,
         completed_at: null, reward_state: 'pending',
       },
       expectedError: 'Battle is already defeated.',
       expectedState: {
         permitId: 'permit-1', status: 'defeat',
-        playerHp: 0, playerMana: 0, enemyHp: 63, turnCount: 1,
+        playerHp: 0, playerMana: 0, playerShield: 0, shieldAbsorbed: 0, retaliationDamage: 10, enemyHp: 63, turnCount: 1,
       },
     },
   ];
@@ -380,7 +393,8 @@ test('expired pre-Mana terminal outcomes recover display snapshots without reope
       encounter_key: TUNNEL_MAW.id,
       player_hp: scenario.playerHp,
       player_mana: null,
-      enemy_hp: scenario.enemyHp,
+      player_shield: 0, last_shield_absorbed: null, last_retaliation_damage: null, last_enemy_shield_absorbed: 0,
+enemy_hp: scenario.enemyHp,
       battle_status: scenario.status,
       turn_count: 3,
       completed_at: null,
@@ -455,7 +469,8 @@ test('malformed pre-Mana terminal snapshots fail closed without display fallback
       encounter_key: TUNNEL_MAW.id,
       player_hp: scenario.playerHp,
       player_mana: null,
-      enemy_hp: scenario.enemyHp,
+      player_shield: 0, last_shield_absorbed: null, last_retaliation_damage: null, last_enemy_shield_absorbed: 0,
+enemy_hp: scenario.enemyHp,
       battle_status: scenario.status,
       turn_count: scenario.turnCount,
       completed_at: null,
@@ -505,7 +520,8 @@ test('replayed action after reward settlement projects display Mana for a legacy
     encounter_key: TUNNEL_MAW.id,
     player_hp: 70,
     player_mana: null,
-    enemy_hp: 0,
+    player_shield: 0, last_shield_absorbed: null, last_retaliation_damage: null, last_enemy_shield_absorbed: 0,
+enemy_hp: 0,
     battle_status: 'victory',
     turn_count: 3,
     victory_history_marker_count: 1,

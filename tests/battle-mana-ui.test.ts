@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { isValidManaCost, isValidManaState } from '../src/game/combat/rules.ts';
+import { isValidManaCost, isValidManaState, isValidShieldGain } from '../src/game/combat/rules.ts';
 import type { BattleSnapshot } from '../src/game/combat/engine.ts';
 import type { PlayerState } from '../src/domain/types.ts';
 
@@ -15,6 +15,7 @@ const viewsSource = readFileSync(new URL('../src/ui/views.ts', import.meta.url),
 const viewContext: Record<string, unknown> = {
   isValidManaCost,
   isValidManaState,
+  isValidShieldGain,
   FURNITURE_CATALOG: [],
   WORLD_LOCATIONS: [],
   getFurniture: () => undefined,
@@ -47,6 +48,7 @@ const snapshot = (playerMana: number): BattleSnapshot => ({
   playerMaxHp: TEST_DEGEN.maxHp,
   playerMana,
   playerMaxMana: TEST_DEGEN.maxMana,
+  playerShield: 0,
   turnCount: 0,
   enemyName: TUNNEL_MAW.name,
   enemyLevel: TUNNEL_MAW.level,
@@ -97,4 +99,76 @@ test('ability controls disable only unaffordable abilities and preserve free act
   } finally {
     Reflect.deleteProperty(viewContext, 'document');
   }
+});
+
+
+test('Shield ability gains and the authoritative remaining Shield are visible in the battle HUD', () => {
+  const shieldDegen = {
+    ...TEST_DEGEN,
+    abilities: [{ ...TEST_DEGEN.abilities[0]!, shieldGain: 5 }],
+  };
+  const markup = battleView(player, shieldDegen as typeof TEST_DEGEN);
+  assert.match(markup, /data-shield-gain="5"/);
+  assert.ok(markup.includes('NO MANA · SHIELD +5'));
+
+  const log = { innerHTML: '', append: () => undefined };
+  const accessibleHud = { textContent: '' };
+  const manaPill = { textContent: '' };
+  const shieldPill = { textContent: '' };
+  const fakeDocument = {
+    querySelector: (selector: string) => ({
+      '#battle-accessible-hud': accessibleHud,
+      '#battle-mana': manaPill,
+      '#battle-shield': shieldPill,
+      '#battle-log': log,
+    } as Record<string, unknown>)[selector],
+    querySelectorAll: () => [],
+  };
+  const boundUi = runInNewContext(
+    stripTypeScriptTypes(viewsSource, { mode: 'transform' }) + '\n({ updateBattleDom });',
+    { document: fakeDocument, isValidManaCost, isValidManaState, isValidShieldGain },
+  ) as { updateBattleDom: (state: BattleSnapshot) => void };
+
+  boundUi.updateBattleDom({ ...snapshot(0), playerShield: 7, turnCount: 2 });
+  assert.equal(manaPill.textContent, 'MANA 0/12');
+  assert.equal(shieldPill.textContent, 'SHIELD 7');
+  assert.match(accessibleHud.textContent, /Mana 0 of 12, Shield 7/);
+});
+
+
+const controllerSource = readFileSync(new URL('../src/app/AppController.ts', import.meta.url), 'utf8');
+const methodStart = controllerSource.indexOf(
+  '  private setAbilityButtonsDisabled(disabled: boolean): void {',
+);
+const methodEnd = controllerSource.indexOf('\n  private setBattleActionStatus', methodStart);
+assert.ok(methodStart >= 0 && methodEnd > methodStart, 'AppController ability-disable method must remain available for focused regression coverage');
+const controllerMethod = controllerSource
+  .slice(methodStart, methodEnd)
+  .replace('  private setAbilityButtonsDisabled(disabled: boolean): void {', 'function setAbilityButtonsDisabled(disabled) {')
+  .replace(/\n  }\s*$/, '\n}');
+const setAbilityButtonsDisabled = runInNewContext(
+  stripTypeScriptTypes(controllerMethod + '\nsetAbilityButtonsDisabled;', { mode: 'transform' }),
+  { isValidManaCost, isValidManaState, isValidShieldGain },
+) as (this: {
+  battleEngine?: { snapshot: BattleSnapshot };
+  root: { querySelectorAll: () => Array<{ dataset: Record<string, string>; disabled: boolean }> };
+}, disabled: boolean) => void;
+test('controller re-enabling after a pending action keeps invalid Shield abilities disabled', () => {
+  const buttons = [
+    { dataset: { manaCost: '0', shieldGain: '-1' }, disabled: false },
+    { dataset: { manaCost: '0', shieldGain: '1.5' }, disabled: false },
+    { dataset: { manaCost: '0', shieldGain: '5' }, disabled: true },
+    { dataset: { manaCost: '4', shieldGain: '0' }, disabled: false },
+  ];
+  const controller = {
+    battleEngine: { snapshot: snapshot(0) },
+    root: { querySelectorAll: () => buttons },
+  };
+
+  setAbilityButtonsDisabled.call(controller, false);
+
+  assert.equal(buttons[0].disabled, true, 'negative Shield gain fails closed');
+  assert.equal(buttons[1].disabled, true, 'fractional Shield gain fails closed');
+  assert.equal(buttons[2].disabled, false, 'valid free Shield ability remains usable at zero Mana');
+  assert.equal(buttons[3].disabled, true, 'unaffordable Mana ability remains disabled');
 });

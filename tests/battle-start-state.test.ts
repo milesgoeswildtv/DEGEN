@@ -5,7 +5,8 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 import { TEST_DEGEN, TUNNEL_MAW } from '../src/data/combatPrototype.ts';
-import { canUseAbility, isValidManaState, resolveCombatTurn } from '../src/game/combat/rules.ts';
+import { maxAbilityDamage } from '../src/game/combat/rules.ts';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, resolveCombatTurn } from '../src/game/combat/rules.ts';
 import type { BattleActionResult } from '../src/domain/types.ts';
 
 // Load the real engine source without asking Node's native ESM resolver to
@@ -15,7 +16,7 @@ const engineSource = readFileSync(new URL('../src/game/combat/engine.ts', import
   .replace('export class BattleEngine', 'class BattleEngine');
 const BattleEngine = runInNewContext(
   stripTypeScriptTypes(engineSource, { mode: 'transform' }) + '\nBattleEngine;',
-  { canUseAbility, isValidManaState, resolveCombatTurn },
+  { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, maxAbilityDamage, resolveCombatTurn },
 ) as new (
   degen: typeof TEST_DEGEN,
   enemy: typeof TUNNEL_MAW,
@@ -49,8 +50,10 @@ test('BattleEngine initializes from the Worker snapshot instead of prototype def
   assert.equal(engine.snapshot.turnCount, 0);
 });
 
-test('a zero-Mana battle remains active and zero-cost abilities remain usable', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({ playerMana: 0 }));
+test('an offline zero-Mana preview remains active and zero-cost abilities remain usable', () => {
+  const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0 };
+  const previewEnemy = { ...TUNNEL_MAW, maxHp: 51 };
+  const engine = new BattleEngine(zeroManaDegen, previewEnemy, () => undefined);
   engine.useAbility('slash');
 
   assert.equal(engine.snapshot.status, 'active');
@@ -59,21 +62,43 @@ test('a zero-Mana battle remains active and zero-cost abilities remain usable', 
   assert.equal(engine.snapshot.turnCount, 1);
 });
 
-test('the client snapshot follows authoritative action HP, Mana, and enemy HP', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState());
+test('the client snapshot follows an exact legacy Worker action result', () => {
+  const initial = startState();
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, initial);
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    playerShield: 0,
+    enemyHp: initial.enemyHp,
+    enemyShield: 0,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  // Pre-Shield Worker snapshots omit all Shield audit fields. The engine infers
+  // retaliation from the returned HP delta, then validates the complete shared turn.
   engine.applyAuthoritativeAction('crack', {
-    permitId: 'permit-1', status: 'active', playerHp: 62, playerMana: 0, enemyHp: 25, turnCount: 1,
+    permitId: 'permit-1',
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    enemyHp: turn.enemyHp,
+    turnCount: 1,
   });
 
-  assert.equal(engine.snapshot.playerHp, 62);
-  assert.equal(engine.snapshot.playerMana, 0);
-  assert.equal(engine.snapshot.enemyHp, 25);
-  assert.equal(engine.snapshot.status, 'active');
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
+  assert.equal(engine.snapshot.playerMana, turn.playerMana);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
+  assert.equal(engine.snapshot.status, turn.status);
   assert.equal(engine.snapshot.turnCount, 1);
 });
 
-test('an unaffordable local preview action changes neither state nor turn count', () => {
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, () => undefined, startState({ playerMana: 0 }));
+test('an unaffordable offline preview action changes neither state nor turn count', () => {
+  const zeroManaDegen = { ...TEST_DEGEN, maxMana: 0 };
+  const previewEnemy = { ...TUNNEL_MAW, maxHp: 51 };
+  const engine = new BattleEngine(zeroManaDegen, previewEnemy, () => undefined);
   const before = engine.snapshot;
   engine.useAbility('crack');
 
@@ -129,22 +154,36 @@ test('a recovered authoritative victory snapshot completes the client battle exa
 
 test('a recovered authoritative defeat snapshot ends the client battle exactly once', () => {
   const completions: Array<'victory' | 'defeat'> = [];
-  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, status => completions.push(status), startState());
+  const initial = { ...startState(), playerHp: 10, playerMana: 4 };
+  const engine = new BattleEngine(TEST_DEGEN, TUNNEL_MAW, status => completions.push(status), initial);
+  const ability = TEST_DEGEN.abilities.find((candidate) => candidate.id === 'crack');
+  assert.ok(ability);
+  const turn = resolveCombatTurn({
+    playerHp: initial.playerHp,
+    playerMana: initial.playerMana,
+    enemyHp: initial.enemyHp,
+    ability,
+    degen: TEST_DEGEN,
+    enemy: TUNNEL_MAW,
+  });
+  assert.equal(turn.status, 'defeat');
 
+  // Pre-Shield recovery snapshots omit Shield audit fields. Use the shared resolver
+  // to prove this is a real one-turn defeat rather than a fabricated terminal state.
   const completedDefeat: BattleActionResult = {
     permitId: 'permit-1',
-    status: 'defeat',
-    playerHp: 0,
-    playerMana: 0,
-    enemyHp: 63,
+    status: turn.status,
+    playerHp: turn.playerHp,
+    playerMana: turn.playerMana,
+    enemyHp: turn.enemyHp,
     turnCount: 1,
   };
   engine.synchronizeAuthoritativeState(completedDefeat);
 
   assert.equal(engine.snapshot.status, 'defeat');
-  assert.equal(engine.snapshot.playerHp, 0);
-  assert.equal(engine.snapshot.playerMana, 0);
-  assert.equal(engine.snapshot.enemyHp, 63);
+  assert.equal(engine.snapshot.playerHp, turn.playerHp);
+  assert.equal(engine.snapshot.playerMana, turn.playerMana);
+  assert.equal(engine.snapshot.enemyHp, turn.enemyHp);
   assert.equal(engine.snapshot.turnCount, 1);
   assert.deepEqual(completions, ['defeat']);
 

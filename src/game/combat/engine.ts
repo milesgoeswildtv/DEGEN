@@ -1,5 +1,5 @@
 import type { BattleActionResult, BattleReward, DegenDefinition, EnemyDefinition } from '../../domain/types';
-import { canUseAbility, isValidManaState, resolveCombatTurn } from './rules';
+import { assertNoMonsterActionResource, canUseAbility, isValidManaState, isValidShield, maxAbilityDamage, resolveCombatTurn } from './rules.ts';
 
 export type BattleStatus = 'active' | 'victory' | 'defeat';
 
@@ -10,20 +10,27 @@ export interface BattleSnapshot {
   playerMaxHp: number;
   playerMana: number;
   playerMaxMana: number;
+  playerShield: number;
   turnCount: number;
   enemyName: string;
   enemyLevel: number;
   enemyHp: number;
   enemyMaxHp: number;
+  enemyShield?: number;
   log: string[];
 }
 
 export class BattleEngine {
   private playerHp: number;
   private playerMana: number;
+  private playerShield: number;
+  private shieldAbsorbed: number;
+  private retaliationDamage: number;
   private turnCount: number;
   private readonly permitId?: string;
   private enemyHp: number;
+  private enemyShield: number;
+  private enemyShieldAbsorbed: number;
   private status: BattleStatus = 'active';
   private log: string[] = [];
   private listeners = new Set<(snapshot: BattleSnapshot) => void>();
@@ -39,16 +46,102 @@ export class BattleEngine {
     onComplete: (status: Exclude<BattleStatus, 'active'>, reward?: BattleReward) => void,
     initialState?: BattleActionResult,
   ) {
+    assertNoMonsterActionResource(enemy);
     this.degen = degen;
     this.enemy = enemy;
     this.onComplete = onComplete;
+    this.permitId = initialState?.permitId;
+    if (enemy.startingShield !== undefined && !isValidShield(enemy.startingShield)) throw new Error('Invalid enemy starting Shield.');
+    // Distinguish an omitted offline-preview state from a supplied but malformed
+    // Worker payload. A server permit must never silently become a local battle.
+    if (initialState !== undefined && (
+      !initialState
+      || typeof initialState !== 'object'
+      || !this.isValidAuthoritativeState(initialState)
+      || initialState.status !== 'active'
+    )) {
+      throw new Error('Invalid authoritative battle start state.');
+    }
     this.playerHp = initialState?.playerHp ?? degen.maxHp;
     this.playerMana = initialState?.playerMana ?? degen.maxMana;
+    this.playerShield = initialState?.playerShield ?? 0;
+    this.shieldAbsorbed = initialState?.shieldAbsorbed ?? 0;
+    this.retaliationDamage = initialState?.retaliationDamage ?? 0;
     this.turnCount = initialState?.turnCount ?? 0;
-    this.permitId = initialState?.permitId;
     this.enemyHp = initialState?.enemyHp ?? enemy.maxHp;
+    this.enemyShield = initialState?.enemyShield ?? enemy.startingShield ?? 0;
+    this.enemyShieldAbsorbed = initialState?.enemyShieldAbsorbed ?? 0;
     this.status = initialState?.status ?? 'active';
     this.log = [`${degen.name} manifests.`, `${enemy.name} blocks the path.`];
+  }
+
+  // Validate Worker-owned snapshots at the engine boundary too; the API validator
+  // is not the only caller that can reach this stateful object.
+  private isValidAuthoritativeState(result: BattleActionResult): boolean {
+    if (!result || typeof result !== 'object') return false;
+    if (typeof this.permitId !== 'string' || this.permitId.trim().length === 0) return false;
+    if (typeof result.permitId !== 'string' || result.permitId !== this.permitId) return false;
+    if (!Number.isSafeInteger(result.turnCount) || result.turnCount < 0) return false;
+    if (!Number.isSafeInteger(result.playerHp)
+      || result.playerHp < 0 || result.playerHp > this.degen.maxHp) return false;
+    if (!isValidManaState(result.playerMana, this.degen.maxMana)) return false;
+    if (!Number.isSafeInteger(result.enemyHp)
+      || result.enemyHp < 0 || result.enemyHp > this.enemy.maxHp) return false;
+    const enemyShield = result.enemyShield === undefined ? (this.enemy.startingShield ?? 0) : result.enemyShield;
+    if ((this.enemy.startingShield ?? 0) > 0 && result.enemyShield === undefined) return false;
+    const maxEnemyShieldAbsorbed = maxAbilityDamage(this.degen);
+    const maxEnemyStartingShield = this.enemy.startingShield ?? 0;
+    const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
+    if (!isValidShield(enemyShield)
+      || enemyShield > maxEnemyStartingShield
+      || maxEnemyShieldAbsorbed === undefined
+      || !isValidShield(enemyShieldAbsorbed)
+      || enemyShieldAbsorbed > maxEnemyShieldAbsorbed
+      || enemyShieldAbsorbed > maxEnemyStartingShield - enemyShield) return false;
+
+    const shieldFields = [result.playerShield, result.shieldAbsorbed, result.retaliationDamage];
+    const hasLegacyShieldState = shieldFields.every((field) => field === undefined);
+    if (!hasLegacyShieldState && shieldFields.some((field) => field === undefined)) return false;
+    const playerShield = result.playerShield === undefined ? 0 : result.playerShield;
+    const shieldAbsorbed = result.shieldAbsorbed === undefined ? 0 : result.shieldAbsorbed;
+    const retaliationDamage = result.retaliationDamage === undefined ? 0 : result.retaliationDamage;
+    // Multi-turn recovery has no prior action to replay, so its persisted retaliation audit must match shared combat math.
+    if (!Number.isSafeInteger(this.enemy.damage) || this.enemy.damage < 0) return false;
+    const expectedRetaliationDamage = Math.max(1, this.enemy.damage - Math.floor(this.degen.guard * 0.45));
+    if (!isValidShield(playerShield)
+      || !isValidShield(shieldAbsorbed)
+      || !isValidShield(retaliationDamage)
+      || retaliationDamage > Math.max(1, this.enemy.damage)
+      || shieldAbsorbed > retaliationDamage) return false;
+
+    switch (result.status) {
+      case 'active': {
+        const hasConsistentAudit = hasLegacyShieldState
+          || (result.turnCount === 0
+            ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
+            : retaliationDamage === expectedRetaliationDamage
+              && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
+        return result.playerHp > 0 && result.enemyHp > 0
+          && result.turnCount < Number.MAX_SAFE_INTEGER
+          && (result.turnCount !== 0 || (
+            enemyShield === (this.enemy.startingShield ?? 0)
+            && (result.enemyShieldAbsorbed ?? 0) === 0
+          ))
+          && hasConsistentAudit;
+      }
+      case 'victory':
+        return result.turnCount > 0 && result.playerHp > 0 && result.enemyHp === 0
+          && enemyShield === 0
+          && shieldAbsorbed === 0 && retaliationDamage === 0;
+      case 'defeat': {
+        const legacyTerminalAudit = hasLegacyShieldState;
+        return result.turnCount > 0 && result.playerHp === 0 && result.enemyHp > 0
+          && playerShield === 0
+          && (legacyTerminalAudit || (retaliationDamage === expectedRetaliationDamage && shieldAbsorbed < retaliationDamage));
+      }
+      default:
+        return false;
+    }
   }
 
   get snapshot(): BattleSnapshot {
@@ -59,11 +152,13 @@ export class BattleEngine {
       playerMaxHp: this.degen.maxHp,
       playerMana: this.playerMana,
       playerMaxMana: this.degen.maxMana,
+      playerShield: this.playerShield,
       turnCount: this.turnCount,
       enemyName: this.enemy.name,
       enemyLevel: this.enemy.level,
       enemyHp: this.enemyHp,
       enemyMaxHp: this.enemy.maxHp,
+      ...(this.enemyShield > 0 ? { enemyShield: this.enemyShield } : {}),
       log: [...this.log],
     };
   }
@@ -74,26 +169,90 @@ export class BattleEngine {
     return () => this.listeners.delete(listener);
   }
 
-  // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
-  applyAuthoritativeAction(abilityId: string, result: BattleActionResult): void {
-    if (this.status !== 'active') return;
-    const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
-    if (!ability) return;
-    if (!this.permitId || result.permitId !== this.permitId) return;
-    if (result.turnCount !== this.turnCount + 1) {
-      this.synchronizeAuthoritativeState(result);
-      return;
+  private resolveAuthoritativeTurn(
+    result: BattleActionResult,
+    ability: DegenDefinition['abilities'][number],
+  ): ReturnType<typeof resolveCombatTurn> | undefined {
+    let expectedTurn: ReturnType<typeof resolveCombatTurn>;
+    try {
+      expectedTurn = resolveCombatTurn({
+        playerHp: this.playerHp,
+        playerMana: this.playerMana,
+        playerShield: this.playerShield,
+        enemyHp: this.enemyHp,
+        enemyShield: this.enemyShield,
+        ability,
+        degen: this.degen,
+        enemy: this.enemy,
+      });
+    } catch {
+      return undefined;
     }
 
-    const playerDamage = Math.max(0, this.enemyHp - result.enemyHp);
-    const retaliationDamage = Math.max(0, this.playerHp - result.playerHp);
+    const hasLegacyShieldResult = result.playerShield === undefined
+      && result.shieldAbsorbed === undefined
+      && result.retaliationDamage === undefined;
+    const nextPlayerShield = result.playerShield ?? 0;
+    const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
+    const shieldAbsorbed = result.shieldAbsorbed ?? 0;
+    // Pre-Shield Workers did not report audit deltas; infer retaliation only for
+    // that all-fields-omitted legacy shape, then validate the same shared turn.
+    const retaliationDamage = result.retaliationDamage
+      ?? (hasLegacyShieldResult ? Math.max(0, this.playerHp - result.playerHp) : 0);
+    const enemyShieldAbsorbed = result.enemyShieldAbsorbed;
+    if (
+      result.status !== expectedTurn.status
+      || result.playerHp !== expectedTurn.playerHp
+      || result.playerMana !== expectedTurn.playerMana
+      || nextPlayerShield !== expectedTurn.playerShield
+      || shieldAbsorbed !== expectedTurn.shieldAbsorbed
+      || retaliationDamage !== expectedTurn.retaliationDamage
+      || result.enemyHp !== expectedTurn.enemyHp
+      || nextEnemyShield !== expectedTurn.enemyShield
+      || (expectedTurn.enemyShieldAbsorbed > 0 && enemyShieldAbsorbed === undefined)
+      || (enemyShieldAbsorbed !== undefined && enemyShieldAbsorbed !== expectedTurn.enemyShieldAbsorbed)
+    ) return undefined;
+
+    return expectedTurn;
+  }
+
+  // Worker-backed battles render the authoritative result; offline preview alone resolves locally.
+  applyAuthoritativeAction(abilityId: string, result: BattleActionResult): boolean {
+    if (this.status !== 'active') return false;
+    const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
+    if (!ability || !this.isValidAuthoritativeState(result)) return false;
+    if (!this.permitId || result.permitId !== this.permitId) return false;
+    // A delayed response older than the already accepted snapshot is harmless;
+    // never let it replace newer state or disable actions against that newer turn.
+    if (result.turnCount < this.turnCount) return true;
+    if (result.turnCount !== this.turnCount + 1) {
+      return this.synchronizeAuthoritativeState(result);
+    }
+
+    const expectedTurn = this.resolveAuthoritativeTurn(result, ability);
+    if (!expectedTurn) return false;
+
+    const nextPlayerShield = result.playerShield ?? 0;
+    const nextEnemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
+    const enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
+    // The validated shared turn includes damage absorbed by enemy Shield; HP delta alone does not.
+    const playerDamage = expectedTurn.playerDamage;
     const manaSpent = Math.max(0, this.playerMana - result.playerMana);
+    const shieldGained = Math.max(0, nextPlayerShield + expectedTurn.shieldAbsorbed - this.playerShield);
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
+    this.playerShield = nextPlayerShield;
+    this.shieldAbsorbed = result.shieldAbsorbed ?? 0;
+    this.retaliationDamage = result.retaliationDamage ?? 0;
     this.enemyHp = result.enemyHp;
+    this.enemyShield = nextEnemyShield;
+    this.enemyShieldAbsorbed = enemyShieldAbsorbed;
     this.turnCount = result.turnCount;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${playerDamage} damage.`);
     if (manaSpent > 0) this.log.push(`Mana -${manaSpent}.`);
+    if (shieldGained > 0) this.log.push(`Shield +${shieldGained}.`);
+    if ((result.shieldAbsorbed ?? 0) > 0) this.log.push(`Shield absorbs ${result.shieldAbsorbed}.`);
+    if (enemyShieldAbsorbed > 0) this.log.push(`${this.enemy.name} Shield absorbs ${enemyShieldAbsorbed}.`);
 
     if (result.status === 'victory') {
       this.status = 'victory';
@@ -101,11 +260,11 @@ export class BattleEngine {
       this.trimLog();
       this.emit();
       this.finish('victory');
-      return;
+      return true;
     }
 
-    if (retaliationDamage > 0) {
-      this.log.push(`${this.enemy.name} hits back for ${retaliationDamage}.`);
+    if (expectedTurn.retaliationDamage > 0) {
+      this.log.push(`${this.enemy.name} hits back for ${expectedTurn.retaliationDamage}.`);
     }
     if (result.status === 'defeat') {
       this.status = 'defeat';
@@ -113,15 +272,17 @@ export class BattleEngine {
       this.trimLog();
       this.emit();
       this.finish('defeat');
-      return;
+      return true;
     }
     this.trimLog();
     this.emit();
+    return true;
   }
 
-  synchronizeAuthoritativeState(result: BattleActionResult): void {
-    if (this.status !== 'active' || !this.permitId || result.permitId !== this.permitId) return;
-    if (!Number.isSafeInteger(result.turnCount) || result.turnCount < this.turnCount) return;
+  synchronizeAuthoritativeState(result: BattleActionResult): boolean {
+    if (this.status !== 'active' || !this.isValidAuthoritativeState(result)) return false;
+    if (!this.permitId || result.permitId !== this.permitId) return false;
+    if (result.turnCount < this.turnCount) return false;
 
     // A turn count identifies one immutable combat snapshot. Same-turn retries
     // are idempotent only when every authoritative field agrees; a conflicting
@@ -129,18 +290,40 @@ export class BattleEngine {
     if (result.turnCount === this.turnCount && (
       result.playerHp !== this.playerHp
       || result.playerMana !== this.playerMana
+      || (result.playerShield ?? 0) !== this.playerShield
+      || (result.shieldAbsorbed ?? 0) !== this.shieldAbsorbed
+      || (result.retaliationDamage ?? 0) !== this.retaliationDamage
       || result.enemyHp !== this.enemyHp
+      || (result.enemyShield ?? this.enemy.startingShield ?? 0) !== this.enemyShield
+      || (result.enemyShieldAbsorbed ?? 0) !== this.enemyShieldAbsorbed
       || result.status !== this.status
-    )) return;
+    )) return false;
+
+    // When exactly one turn is missing, the current snapshot is sufficient to
+    // verify the competing tab's result against any bespoke Degen ability. For
+    // multi-turn catch-up, intermediate actions are unavailable, so Worker state
+    // remains the authority after the structural snapshot checks above.
+    if (result.turnCount === this.turnCount + 1
+      && !this.degen.abilities.some((ability) => this.resolveAuthoritativeTurn(result, ability))) return false;
 
     const changed = this.playerHp !== result.playerHp
       || this.playerMana !== result.playerMana
+      || this.playerShield !== (result.playerShield ?? 0)
+      || this.shieldAbsorbed !== (result.shieldAbsorbed ?? 0)
+      || this.retaliationDamage !== (result.retaliationDamage ?? 0)
       || this.enemyHp !== result.enemyHp
+      || this.enemyShield !== (result.enemyShield ?? this.enemy.startingShield ?? 0)
+      || this.enemyShieldAbsorbed !== (result.enemyShieldAbsorbed ?? 0)
       || this.turnCount !== result.turnCount
       || this.status !== result.status;
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
+    this.playerShield = result.playerShield ?? 0;
+    this.shieldAbsorbed = result.shieldAbsorbed ?? 0;
+    this.retaliationDamage = result.retaliationDamage ?? 0;
     this.enemyHp = result.enemyHp;
+    this.enemyShield = result.enemyShield ?? this.enemy.startingShield ?? 0;
+    this.enemyShieldAbsorbed = result.enemyShieldAbsorbed ?? 0;
     this.turnCount = result.turnCount;
     this.status = result.status;
     if (changed) this.log.push('Battle state synchronized with server.');
@@ -149,10 +332,13 @@ export class BattleEngine {
     this.trimLog();
     this.emit();
     if (this.status !== 'active') this.finish(this.status);
+    return true;
   }
 
   useAbility(abilityId: string): void {
-    if (this.status !== 'active') return;
+    // A permit means Worker/D1 owns every action and terminal outcome.
+    // Local simulation and its prototype reward callback are offline-preview only.
+    if (this.permitId || this.status !== 'active') return;
 
     const ability = this.degen.abilities.find((candidate) => candidate.id === abilityId);
     if (!ability) return;
@@ -174,7 +360,9 @@ export class BattleEngine {
     const result = resolveCombatTurn({
       playerHp: this.playerHp,
       playerMana: this.playerMana,
+      playerShield: this.playerShield,
       enemyHp: this.enemyHp,
+      enemyShield: this.enemyShield,
       ability,
       degen: this.degen,
       enemy: this.enemy,
@@ -182,13 +370,19 @@ export class BattleEngine {
 
     this.playerHp = result.playerHp;
     this.playerMana = result.playerMana;
+    this.playerShield = result.playerShield;
+    this.shieldAbsorbed = result.shieldAbsorbed;
+    this.retaliationDamage = result.retaliationDamage;
     this.enemyHp = result.enemyHp;
+    this.enemyShield = result.enemyShield;
+    this.enemyShieldAbsorbed = result.enemyShieldAbsorbed;
     this.turnCount += 1;
     this.log.push(`${this.degen.name} uses ${ability.name}: ${result.playerDamage} damage.`);
 
-    if (ability.manaCost > 0) {
-      this.log.push(`Mana -${ability.manaCost}.`);
-    }
+    if (ability.manaCost > 0) this.log.push(`Mana -${ability.manaCost}.`);
+    if ((ability.shieldGain ?? 0) > 0) this.log.push(`Shield +${ability.shieldGain}.`);
+    if (result.shieldAbsorbed > 0) this.log.push(`Shield absorbs ${result.shieldAbsorbed}.`);
+    if (result.enemyShieldAbsorbed > 0) this.log.push(`${this.enemy.name} Shield absorbs ${result.enemyShieldAbsorbed}.`);
 
     if (result.status === 'victory') {
       this.trimLog();

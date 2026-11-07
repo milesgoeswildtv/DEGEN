@@ -1,5 +1,6 @@
 import type { BattleActionResult, BattleCompletionResult, BattlePermit, HousingState, PlatformIdentity, PlayerState, WorldEventSnapshot } from '../domain/types';
 import { TEST_DEGEN, TUNNEL_MAW } from '../data/combatPrototype';
+import { maxAbilityDamage } from '../game/combat/rules.ts';
 
 const isBoundedSafeInteger = (value: unknown, minimum: number, maximum: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
@@ -7,33 +8,106 @@ const isBoundedSafeInteger = (value: unknown, minimum: number, maximum: number):
 const isAuthoritativeBattleStartState = (value: unknown, permitId: string): value is BattleActionResult => {
   if (!value || typeof value !== 'object') return false;
   const state = value as Record<string, unknown>;
+  const shieldFields = [state.playerShield, state.shieldAbsorbed, state.retaliationDamage];
+  const hasLegacyShieldState = shieldFields.every((field) => field === undefined);
+  const hasCompleteShieldState = shieldFields.every((field) => field !== undefined);
+  if (!hasLegacyShieldState && !hasCompleteShieldState) return false;
+  const playerShield = state.playerShield === undefined ? 0 : state.playerShield;
+  const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
+  const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
+  const enemyShield = state.enemyShield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemyShield;
+  const requiresExplicitEnemyShield = (TUNNEL_MAW.startingShield ?? 0) > 0;
+  const turnCount = state.turnCount;
+  const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
+  const maxPlayerAbilityDamage = maxAbilityDamage(TEST_DEGEN);
+  const maxEnemyStartingShield = TUNNEL_MAW.startingShield ?? 0;
+  const enemyShieldAbsorbed = state.enemyShieldAbsorbed === undefined ? 0 : state.enemyShieldAbsorbed;
+  // A shielded enemy's current Shield is authoritative state, not a value the client may reinitialize.
+  if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
+  // Pre-Shield permits omit all three audit fields; explicit zeros are current-format state.
+  const hasConsistentActiveShieldAudit = hasLegacyShieldState
+    || (turnCount === 0
+      ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
+      : retaliationDamage === expectedRetaliationDamage
+        && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
   return state.permitId === permitId
     && state.status === 'active'
     // An idempotent start retry may recover a battle that has already advanced
     // while its original response was delayed. Accept only a valid active turn.
-    && isBoundedSafeInteger(state.turnCount, 0, Number.MAX_SAFE_INTEGER - 1)
+    && isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER - 1)
     && isBoundedSafeInteger(state.playerHp, 1, TEST_DEGEN.maxHp)
     && isBoundedSafeInteger(state.playerMana, 0, TEST_DEGEN.maxMana)
+    && isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+    && isBoundedSafeInteger(retaliationDamage, 0, Math.max(1, TUNNEL_MAW.damage))
+    && isBoundedSafeInteger(enemyShield, 0, maxEnemyStartingShield)
+    && maxPlayerAbilityDamage !== undefined
+    && isBoundedSafeInteger(enemyShieldAbsorbed, 0, Math.min(maxPlayerAbilityDamage, maxEnemyStartingShield - enemyShield))
+    && shieldAbsorbed <= retaliationDamage
+    // A fresh start has no Shield or retaliation. An idempotent retry may return
+    // the current Shield and last-action audit after one or more accepted turns.
+    && hasConsistentActiveShieldAudit
+    && (turnCount !== 0 || enemyShield === (TUNNEL_MAW.startingShield ?? 0))
+    && (turnCount !== 0 || state.enemyShieldAbsorbed === undefined || state.enemyShieldAbsorbed === 0)
     && isBoundedSafeInteger(state.enemyHp, 1, TUNNEL_MAW.maxHp);
 };
 
 export const isAuthoritativeBattleActionState = (value: unknown, permitId: string): value is BattleActionResult => {
   if (!value || typeof value !== 'object') return false;
   const state = value as Record<string, unknown>;
+  const shieldFields = [state.playerShield, state.shieldAbsorbed, state.retaliationDamage];
+  const hasLegacyShieldState = shieldFields.every((field) => field === undefined);
+  const hasCompleteShieldState = shieldFields.every((field) => field !== undefined);
+  if (!hasLegacyShieldState && !hasCompleteShieldState) return false;
   const playerHp = state.playerHp;
   const playerMana = state.playerMana;
+  // Legacy snapshots may omit Shield fields; explicit null is corrupt and must fail closed.
+  const playerShield = state.playerShield === undefined ? 0 : state.playerShield;
+  const shieldAbsorbed = state.shieldAbsorbed === undefined ? 0 : state.shieldAbsorbed;
+  const retaliationDamage = state.retaliationDamage === undefined ? 0 : state.retaliationDamage;
+  const enemyShield = state.enemyShield === undefined ? (TUNNEL_MAW.startingShield ?? 0) : state.enemyShield;
+  const requiresExplicitEnemyShield = (TUNNEL_MAW.startingShield ?? 0) > 0;
   const enemyHp = state.enemyHp;
+  // Missing current Shield must fail closed; falling back to the starting value can resurrect it on recovery.
+  if (requiresExplicitEnemyShield && state.enemyShield === undefined) return false;
   const turnCount = state.turnCount;
+  const expectedRetaliationDamage = Math.max(1, TUNNEL_MAW.damage - Math.floor(TEST_DEGEN.guard * 0.45));
+  const maxPlayerAbilityDamage = maxAbilityDamage(TEST_DEGEN);
+  const maxEnemyStartingShield = TUNNEL_MAW.startingShield ?? 0;
+  const enemyShieldAbsorbed = state.enemyShieldAbsorbed === undefined ? 0 : state.enemyShieldAbsorbed;
   if (state.permitId !== permitId
     || (state.status !== 'active' && state.status !== 'victory' && state.status !== 'defeat')
     || !isBoundedSafeInteger(playerHp, 0, TEST_DEGEN.maxHp)
     || !isBoundedSafeInteger(playerMana, 0, TEST_DEGEN.maxMana)
+    || !isBoundedSafeInteger(playerShield, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(shieldAbsorbed, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedSafeInteger(retaliationDamage, 0, Math.max(1, TUNNEL_MAW.damage))
+    || !isBoundedSafeInteger(enemyShield, 0, maxEnemyStartingShield)
+    || maxPlayerAbilityDamage === undefined
+    || !isBoundedSafeInteger(enemyShieldAbsorbed, 0, Math.min(maxPlayerAbilityDamage, maxEnemyStartingShield - enemyShield))
+    || shieldAbsorbed > retaliationDamage
     || !isBoundedSafeInteger(enemyHp, 0, TUNNEL_MAW.maxHp)
     || !isBoundedSafeInteger(turnCount, 0, Number.MAX_SAFE_INTEGER)) return false;
 
-  if (state.status === 'active') return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER;
-  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0;
-  return turnCount > 0 && playerHp === 0 && enemyHp > 0;
+  if (state.status === 'active') {
+    // Pre-Shield permits omit all three audit fields; explicit zeros are current-format state.
+    const hasConsistentActiveShieldAudit = hasLegacyShieldState
+      || (turnCount === 0
+        ? playerShield === 0 && shieldAbsorbed === 0 && retaliationDamage === 0
+        : retaliationDamage === expectedRetaliationDamage
+          && (playerShield === 0 || shieldAbsorbed === retaliationDamage));
+    return playerHp > 0 && enemyHp > 0 && turnCount < Number.MAX_SAFE_INTEGER
+      && hasConsistentActiveShieldAudit
+      && (turnCount !== 0 || enemyShield === (TUNNEL_MAW.startingShield ?? 0))
+      && (turnCount !== 0 || state.enemyShieldAbsorbed === undefined || state.enemyShieldAbsorbed === 0);
+  }
+  if (state.status === 'victory') return turnCount > 0 && playerHp > 0 && enemyHp === 0
+    && enemyShield === 0 && retaliationDamage === 0 && shieldAbsorbed === 0;
+  // A pre-Shield defeat is legacy only when all three audit fields are omitted.
+  // Explicit zero/zero fields cannot stand in for missing historical evidence.
+  return turnCount > 0 && playerHp === 0 && enemyHp > 0 && playerShield === 0
+    && (hasLegacyShieldState
+      || (retaliationDamage === expectedRetaliationDamage && shieldAbsorbed < retaliationDamage));
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
