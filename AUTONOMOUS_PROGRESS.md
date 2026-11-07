@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-11-06 (migration guard branch reconciled with current main)
+
+- **Authoritative main SHA:** `d2ac6f29d5def86d9c5319623f930c8c62d6487b`, including merged PR #117's server-backed Home trophy collection/display.
+- **Current branch / PR:** `automation/degen/d1-migration-number-guard-v01` / PR [#114](https://github.com/milesgoeswildtv/DEGEN/pull/114). Prior head `1f8c332c7aff0dbaa3959cf795b31a2573b1a972` was one commit behind main. Reconciled with a normal two-parent merge commit `f623dbc4d84c8c611762b26daaac6c7195d47cc8` (first parent prior #114 head, second parent current main). No force-push, rebase, history rewrite, or direct-main write.
+- **Files changed by reconciliation:** `src/styles.css`, `src/ui/views.ts`, and `tests/browser-battle-vertical-slice.mjs` now carry main's trophy display styles, server-inventory-derived collection/placement UI, and browser persistence assertions; `tests/home-trophy-display.test.ts` is included. The migration-version guard, npm script guards, deploy preflight, and existing duplicate-version tests were retained unchanged.
+- **Exact-head QA:** prior #114 head `1f8c332` passed [CI 42314499655](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42314499655), including migration-version preflight, deterministic tests, Worker/D1 reward/recovery, Underpass cycle/rollover, defeat history, housing, build, Chromium battle vertical slice, and Wrangler validation. That run predates this merge. Fresh exact-head CI for `f623dbc` is required; no local test/build/Wrangler result or new-head CI success is claimed yet.
+- **Stacked dependency:** PR #126 is based on the previous #114 head `1f8c332`; its branch must merge the new #114 head before it is considered current. PR #125 remains draft; #122 remains separate. Preserve #114 → #126 → #122 and #125.
+- **Mana / battle authority:** Mana is COMPLETE / MERGED on main. Worker/D1 owns battle permits, player HP/Mana, enemy HP, turn CAS, terminal outcomes, reward receipts, XP/level-up, currency, inventory, and housing state. No client reward/economy authority was changed.
+- **D1 / deployment safety:** main still tracks migrations through `0007_player_inventory_quantity_guards.sql`; draft auth PR #14 still proposes conflicting `0007_player_sessions.sql`. This guard detects duplicate migration versions but does not choose ownership or renumber either file. Main's current deploy workflow still performs schema → migrations → Worker without the new PR #114/#126 guard/QA gate; do not manually deploy or bypass the release chain. No remote D1 write, migration apply, or Worker deployment occurred.
+- **One best next task:** sync stacked PR #126 to new #114 head `f623dbc`, then obtain exact-head CI for both before any review/merge decision.
+
+---
+
 ## Latest run — 2026-11-06 (D1 guard reconciled; Shield exact-head CI green)
 
 - **Authoritative main SHA:** `794aa106493860d3633530dbf95bf8d7bb2c5adf`. Main CI [42305957095](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42305957095) completed SUCCESS: migration preflight, deterministic tests, Worker/D1 reward concurrency and transient recovery, Underpass cycle/rollover concurrency, atomic defeat history, Shield integration, Chromium housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler validation. Pages preview [42305957054](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42305957054) also passed. This is isolated CI/preview evidence; no production D1 write or Worker deployment occurred.
