@@ -26,6 +26,8 @@ jobs:
           node-version: 22
       - name: Install
         run: npm install
+      - name: Validate tracked D1 migration versions
+        run: npm run check:migrations
       - name: Apply D1 schema
         run: npm run db:apply
         env:
