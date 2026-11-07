@@ -1,5 +1,18 @@
 # DEGEN — AUTONOMOUS PROGRESS
 
+## Latest run — 2026-11-06 (stacked deploy gate reconciled with updated migration guard and current main)
+
+- **Authoritative main SHA:** `d2ac6f29d5def86d9c5319623f930c8c62d6487b`, including merged PR #117's server-backed Home trophy collection/display.
+- **Stacked branch / PR:** `automation/degen/worker-shared-runtime-deploy-triggers-v01` / PR [#126](https://github.com/milesgoeswildtv/DEGEN/pull/126), based on PR #114. Prior #126 head `ac2b0d0df2148893c46bcb5204fc665972032be6` included old #114 head `1f8c332c7aff0dbaa3959cf795b31a2573b1a972`. This merge incorporates updated #114 head `9de17e0755a3ab05819f1fd39224c4e842a67ee2` and current main using a normal two-parent merge (first parent old #126 head, second parent updated #114). No force-push, rebase, history rewrite, or direct-main write.
+- **Files added from updated #114/main:** `src/styles.css`, `src/ui/views.ts`, `tests/browser-battle-vertical-slice.mjs`, and `tests/home-trophy-display.test.ts` now include the Home trophy collection styles, server-inventory-derived display/placement UI, and persisted browser checks. PR #126's deploy trigger logic, CI QA gate, and dedicated deploy-trigger tests are retained unchanged.
+- **Exact-head QA:** prior #126 head `ac2b0d0` passed [CI 42314851346](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42314851346), including migration preflight, deterministic tests, Worker/D1 reward/recovery, Underpass cycle/rollover, defeat history, housing, build, Chromium battle vertical slice, and Wrangler validation. Prior #114 head `1f8c332` passed [CI 42314499655](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42314499655). Both results predate this stacked reconciliation; fresh exact-head CI is required for new #114/#126 heads.
+- **Mana / battle authority:** Mana remains COMPLETE / MERGED on main. Worker/D1 owns permits, HP/Mana, enemy HP, action CAS, terminal outcomes/history, reward receipts, XP/level-up, currency, inventory, and housing persistence. Trophy UI reads persisted housing inventory/placements and cannot mint rewards.
+- **D1 / release gate:** PR #114 adds duplicate migration-version preflight/guards; PR #126 gates remote D1 writes behind QA and limits production deploy to main. Main still tracks `0007_player_inventory_quantity_guards.sql`, while draft auth PR #14 proposes conflicting `0007_player_sessions.sql`. The guard does not choose ownership or renumber either migration. No remote D1 write, migration apply, or Worker deployment occurred.
+- **Dependency order:** preserve #114 → #126 → #122 and #125. PR #122's exact-head CI [42318101480](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42318101480) is green on its own head; its Worker import of shared combat rules still needs the guarded deploy path merged before production rollout. PR #125 remains DRAFT pending the migration/auth decision.
+- **One best next task:** obtain exact-head CI for updated #114 and #126, then continue the guarded review sequence without merging or deploying around the unresolved 0007 ownership decision.
+
+---
+
 ## Latest run — 2026-11-06 (stacked deploy gate reconciled with current migration guard)
 
 - **Authoritative main SHA:** `794aa106493860d3633530dbf95bf8d7bb2c5adf`; main CI [42305957095](https://github.com/milesgoeswildtv/DEGEN/actions/runs/42305957095) is SUCCESS across deterministic tests, Worker/D1 reward concurrency/recovery, Underpass cycle/rollover, defeat history, Shield integration, housing persistence, production build, Chromium mobile battle vertical slice, and Wrangler validation.
